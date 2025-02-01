@@ -1,0 +1,91 @@
+Hardware goals (first in [[Verilog]], then in [[RHDL]])
+- Emergency stop line
+	- Can be activated through interrupts in software (probably Ctrl+C)
+	- Can be activated by PL safety cores (below)
+	- Can send interrupt TO software in case of a PL core initiating
+	- Triggers Shutdown_Force pin
+	- Latches high until E-stop reset signal sent
+	- Activate from empty DAC buffer? Can we make an error code register for different crash statuses?
+- E-stop reset
+	- Does a buffer drain/reset
+	- Resets the E-stop line and sends ~shutdown_reset
+- Software defined SPI clock
+	- Frequency and phase defined relative to 10 MHz scanner input clock
+	- Handle clock domain crossings and proper update rate
+- Trigger core
+	- Software-defined trigger lockout
+	- Force trigger from PS
+- Safety cores
+	- Integrator: Integrates both DAC and ADC separately over (software-defined? pre-set?) time relative to software-defined total threshold, triggers E-stop if passed
+	- Shutdown sense: Cycles shutdown_sense_sel bits to strobe shutdown_sense across all DACs, triggering E-stop if any DAC has thermally latched
+- 50 kHz DAC sampling rate. 
+	- Each 8ch DAC gets an update every 20$\mu$s.
+	- One update is a 8 24-bit command words. $\frac{24 \times 8}{20 \,\mu \text{s}}=9.6 \text{ MHz}$ SPI clock minimum
+	- Preload DAC before first trigger, trigger goes to ~LDACn and starts next cycle
+- 50 kHz ADC sampling rate
+	- Same deal
+- FIFO streaming to and from DMA (and to/from SD card)
+	- $\frac{16 \times 8}{20 \,\mu \text{s}}=6.4 \text{ Mbps}$ stream in and out minimum, can be averaged over 25ms
+	- Store 25ms of DAC on-chip (160 kbit) of memory buffer (for 32x1024 bit blocks, each DAC would use 5 BRAM blocks)
+- Static shimming functionality
+	- Use the extra 4 bits per 32 bits in the BRAM width to indicate trigger breaks.
+	- Still load the next commands, just don't send LDAC. 
+- Buffer drain/reset
+	- Doesn't need to be done fast, 1 second is perfectly fine during scan breaks
+	- Triggered from software or hardware
+- Waveform is generated/loaded beforehand
+- Calibration core
+	- Measure offset and gain error using ADC and DAC via streaming, calculate in software
+	- Write offset and slope adjustments to a calibration core that will adjust the DAC words as they're loaded from buffer
+	- Datasheet maximum offset error is $\frac{\pm1.5\,\text{mV}}{4\,\text{V}} \times 2^{16}\,\text{LSB} = \pm25\,\text{LSB}$, 5 bits for signed offset error
+	- Datasheet maximum gain error is $\pm 0.06\% \times 2^{16} \,\text{LSB} = \pm 30 \,\text{LSB}$, 5 bits for signed gain error
+	- Core/software should handle 1 LSB precision for both
+	- Ignore this offset in the DAC integrator core
+	- Do NOT use this for shimming!
+
+Software goals:
+- One main CLI tool that stays activated the entire time.
+	- PL input registers:
+		- E-stop and reset
+		- SPI clock freq and phase
+		- Buffer drain
+		- Integrator threshold and timeframe
+		- Calibration offset and slope (per DAC. per channel?)
+		- Trigger lockout
+	- PL output registers:
+		- FIFO status
+		- Stopped
+		- Reading any values set above
+	- Commands (any set values can be from a config file loaded on init):
+		- Stop: Manually E-stop. Should also be triggered by ctrl+c
+		- Reset: Pulse reset to reset the system, including E-stop. Do we need to re-set register values as part of this?
+		- Calibrate: Run calibration and set calibration values
+		- Empty buffer: Drain/reset the buffer
+		- Set/read clock
+		- Set/read safety threshold
+		- Set/read calibration
+		- Set/read lockout
+		- Manual trigger
+		- Static shim: simple commands to manually set shim levels
+		- Start stream: connect a DAC waveform input file and ADC sample output file and start a second stream that keeps the DMA flowing
+		- Stop stream: stop the streams and reset the system
+		- Read temp: Read temperatures off of I2C bus
+- Backup CLI safety tool that just sends a shutdown in case the first crashes in a weird way
+
+Milestones:
+- Parity with original OCRA code -- DAC playback works with load on the bench
+- Software-defined SPI clock
+- Trigger core
+- E-stop system with input from software interrupt
+- E-stop error codes and interrupt to software
+- **Experiment:** Noise test --> RF noise floor variance changes less than 2% when DACs and ADCs operate during image encode readout window
+- New trigger core with force trigger from software (for debugging, static shim).
+- DAC streaming with DMA on the bench
+- **Experiment:** Successfully update slice-by-slice shims in 2D EPI acquisitions and verify that currents settle in < 1ms and cause no image detectable image artifacts
+- **Experiment:** Play out an arbitrary waveform during an MRI acquisition using a local encoding coil and verify that image encoding occurs as expected.  For example, play out trapezoid diffusion encode waveforms in a triggered 2D spin-echo EPI sequence (classic Stejskal-Tanner experiment).
+- **Experiment:** Create Pulseq acquisition with chemical shift imaging to map the applied field field in phantom at every point during readout to measure the field and verify that it follows the current accurately; use for image recon calibration if needed.
+- ADC streaming with DMA on the bench
+- Buffer drain
+- Calibration core with software tool
+- Integrator
+- Shutdown sense
