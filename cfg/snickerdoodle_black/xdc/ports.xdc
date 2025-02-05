@@ -149,7 +149,9 @@ set_property PACKAGE_PIN  G20      [get_ports {DAC_MOSI_n[7]}]
 #   DAC_MISO[6] JA2.29 M17 (+) / JA2.31 M18 (-)
 #   DAC_MISO[7] JA1.32 G17 (+) / JA1.30 G18 (-)
 set_property IOSTANDARD   LVDS_25  [get_ports {DAC_MISO_p[*]}]
+set_property DIFF_TERM    TRUE     [get_ports {DAC_MISO_p[*]}]
 set_property IOSTANDARD   LVDS_25  [get_ports {DAC_MISO_n[*]}]
+set_property DIFF_TERM    TRUE     [get_ports {DAC_MISO_n[*]}]
 set_property PACKAGE_PIN  R16      [get_ports {DAC_MISO_p[0]}]
 set_property PACKAGE_PIN  R17      [get_ports {DAC_MISO_n[0]}]
 set_property PACKAGE_PIN  P14      [get_ports {DAC_MISO_p[1]}]
@@ -241,7 +243,9 @@ set_property PACKAGE_PIN  M20      [get_ports {ADC_MOSI_n[7]}]
 #   ADC_MISO[6] JA2.29 M17 (+) / JA2.31 M18 (-)
 #   ADC_MISO[7] JA1.35 J18 (+) / JA1.37 H18 (-)
 set_property IOSTANDARD   LVDS_25  [get_ports {ADC_MISO_p[*]}]
+set_property DIFF_TERM    TRUE     [get_ports {ADC_MISO_p[*]}]
 set_property IOSTANDARD   LVDS_25  [get_ports {ADC_MISO_n[*]}]
+set_property DIFF_TERM    TRUE     [get_ports {ADC_MISO_n[*]}]
 set_property PACKAGE_PIN  T17      [get_ports {ADC_MISO_p[0]}]
 set_property PACKAGE_PIN  R18      [get_ports {ADC_MISO_n[0]}]
 set_property PACKAGE_PIN  V12      [get_ports {ADC_MISO_p[1]}]
@@ -275,7 +279,9 @@ set_property PACKAGE_PIN  H18      [get_ports {ADC_MISO_n[7]}]
 #   MISO_SCK[6] JA2.38 K17 (+) / JA2.36 K18 (-)
 #   MISO_SCK[7] JA2.35 L16 (+) / JA2.37 L17 (-)
 set_property IOSTANDARD   LVDS_25  [get_ports {MISO_SCK_p[*]}]
+set_property DIFF_TERM    TRUE     [get_ports {MISO_SCK_p[*]}]
 set_property IOSTANDARD   LVDS_25  [get_ports {MISO_SCK_n[*]}]
+set_property DIFF_TERM    TRUE     [get_ports {MISO_SCK_n[*]}]
 set_property PACKAGE_PIN  N20      [get_ports {MISO_SCK_p[0]}]
 set_property PACKAGE_PIN  P20      [get_ports {MISO_SCK_n[0]}]
 set_property PACKAGE_PIN  U18      [get_ports {MISO_SCK_p[1]}]
