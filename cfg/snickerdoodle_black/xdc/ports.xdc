@@ -73,8 +73,7 @@ set_property PACKAGE_PIN  G14       [get_ports n_Shutdown_Reset]
 
 # LDAC (LDAC+/-)
 # Pins:
-#   LDAC_p JB2.26 V16
-#   LDAC_n JB2.24 W16
+#   LDAC_p JB2.26 V16 (+) / JB2.24 W16 (-)
 set_property IOSTANDARD   LVDS_25  [get_ports {LDAC_p}]
 set_property PACKAGE_PIN  V16      [get_ports {LDAC_p}]
 set_property IOSTANDARD   LVDS_25  [get_ports {LDAC_n}]
@@ -179,7 +178,7 @@ set_property PACKAGE_PIN  G18      [get_ports {DAC_MISO_n[7]}]
 #   n_ADC_CS[0] JB2.17 V17 (+) / JB2.19 V18 (-)
 #   n_ADC_CS[1] JB1.8  T12 (+) / JB1.6  U12 (-)
 #   n_ADC_CS[2] JC1.29 U9  (+) / JC1.31 U8  (-)
-#   n_ADC_CS[3] JB1.26 Y16 (+) / JB1.24 Y17 (-)
+#   n_ADC_CS[3] JB2.32 Y18 (+) / JB2.30 Y19 (-)
 #   n_ADC_CS[4] JC1.26 W11 (+) / JC1.24 Y11 (-)
 #   n_ADC_CS[5] JA1.8  D19 (+) / JA1.6  D20 (-)
 #   n_ADC_CS[6] JA2.5  L14 (+) / JA2.7  L15 (-)
@@ -192,8 +191,8 @@ set_property PACKAGE_PIN  T12      [get_ports {n_ADC_CS_p[1]}]
 set_property PACKAGE_PIN  U12      [get_ports {n_ADC_CS_n[1]}]
 set_property PACKAGE_PIN  U9       [get_ports {n_ADC_CS_p[2]}]
 set_property PACKAGE_PIN  U8       [get_ports {n_ADC_CS_n[2]}]
-set_property PACKAGE_PIN  Y16      [get_ports {n_ADC_CS_p[3]}]
-set_property PACKAGE_PIN  Y17      [get_ports {n_ADC_CS_n[3]}]
+set_property PACKAGE_PIN  Y18      [get_ports {n_ADC_CS_p[3]}]
+set_property PACKAGE_PIN  Y19      [get_ports {n_ADC_CS_n[3]}]
 set_property PACKAGE_PIN  W11      [get_ports {n_ADC_CS_p[4]}]
 set_property PACKAGE_PIN  Y11      [get_ports {n_ADC_CS_n[4]}]
 set_property PACKAGE_PIN  D19      [get_ports {n_ADC_CS_p[5]}]
@@ -206,9 +205,9 @@ set_property PACKAGE_PIN  N16      [get_ports {n_ADC_CS_n[7]}]
 # ADC MOSI (ADC_MOSI[+/-][0-7])
 # Pins:
 #   ADC_MOSI[0] JB2.8  P15 (+) / JB2.6  P16 (-)
-#   ADC_MOSI[1] JB1.8  T12 (+) / JB1.6  U12 (-)
+#   ADC_MOSI[1] JB1.17 U13 (+) / JB1.19 V13 (-)
 #   ADC_MOSI[2] JC1.23 V8  (+) / JC1.25 W8  (-)
-#   ADC_MOSI[3] JB1.17 U13 (+) / JB1.19 V13 (-)
+#   ADC_MOSI[3] JB2.29 V20 (+) / JB2.31 W20 (-)
 #   ADC_MOSI[4] JC1.5  U7  (+) / JC1.7  V7  (-)
 #   ADC_MOSI[5] JA1.17 E17 (+) / JA1.19 D18 (-)
 #   ADC_MOSI[6] JA2.14 H15 (+) / JA2.12 G15 (-)
@@ -217,12 +216,12 @@ set_property IOSTANDARD   LVDS_25  [get_ports {ADC_MOSI_p[*]}]
 set_property IOSTANDARD   LVDS_25  [get_ports {ADC_MOSI_n[*]}]
 set_property PACKAGE_PIN  P15      [get_ports {ADC_MOSI_p[0]}]
 set_property PACKAGE_PIN  P16      [get_ports {ADC_MOSI_n[0]}]
-set_property PACKAGE_PIN  T12      [get_ports {ADC_MOSI_p[1]}]
-set_property PACKAGE_PIN  U12      [get_ports {ADC_MOSI_n[1]}]
+set_property PACKAGE_PIN  U13      [get_ports {ADC_MOSI_p[1]}]
+set_property PACKAGE_PIN  V13      [get_ports {ADC_MOSI_n[1]}]
 set_property PACKAGE_PIN  V8       [get_ports {ADC_MOSI_p[2]}]
 set_property PACKAGE_PIN  W8       [get_ports {ADC_MOSI_n[2]}]
-set_property PACKAGE_PIN  U13      [get_ports {ADC_MOSI_p[3]}]
-set_property PACKAGE_PIN  V13      [get_ports {ADC_MOSI_n[3]}]
+set_property PACKAGE_PIN  V20      [get_ports {ADC_MOSI_p[3]}]
+set_property PACKAGE_PIN  W20      [get_ports {ADC_MOSI_n[3]}]
 set_property PACKAGE_PIN  U7       [get_ports {ADC_MOSI_p[4]}]
 set_property PACKAGE_PIN  V7       [get_ports {ADC_MOSI_n[4]}]
 set_property PACKAGE_PIN  E17      [get_ports {ADC_MOSI_p[5]}]
@@ -236,9 +235,9 @@ set_property PACKAGE_PIN  M20      [get_ports {ADC_MOSI_n[7]}]
 # Pins:
 #   ADC_MISO[0] JB2.11 T17 (+) / JB2.13 R18 (-)
 #   ADC_MISO[1] JB1.14 V12 (+) / JB1.12 W13 (-)
-#   ADC_MISO[2] JC1.14 W10 (+) / JC1.12 Y13 (-)
+#   ADC_MISO[2] JC1.14 Y12 (+) / JC1.12 Y13 (-)
 #   ADC_MISO[3] JB1.26 Y16 (+) / JB1.24 Y17 (-)
-#   ADC_MISO[4] JC1.32 W10 (+) / JC1.30 W9  (-)
+#   ADC_MISO[4] JC1.32 Y7  (+) / JC1.30 Y6  (-)
 #   ADC_MISO[5] JA1.14 C20 (+) / JA1.12 B20 (-)
 #   ADC_MISO[6] JA2.29 M17 (+) / JA2.31 M18 (-)
 #   ADC_MISO[7] JA1.35 J18 (+) / JA1.37 H18 (-)
@@ -250,12 +249,12 @@ set_property PACKAGE_PIN  T17      [get_ports {ADC_MISO_p[0]}]
 set_property PACKAGE_PIN  R18      [get_ports {ADC_MISO_n[0]}]
 set_property PACKAGE_PIN  V12      [get_ports {ADC_MISO_p[1]}]
 set_property PACKAGE_PIN  W13      [get_ports {ADC_MISO_n[1]}]
-set_property PACKAGE_PIN  W10      [get_ports {ADC_MISO_p[2]}]
+set_property PACKAGE_PIN  Y12      [get_ports {ADC_MISO_p[2]}]
 set_property PACKAGE_PIN  Y13      [get_ports {ADC_MISO_n[2]}]
 set_property PACKAGE_PIN  Y16      [get_ports {ADC_MISO_p[3]}]
 set_property PACKAGE_PIN  Y17      [get_ports {ADC_MISO_n[3]}]
-set_property PACKAGE_PIN  W10      [get_ports {ADC_MISO_p[4]}]
-set_property PACKAGE_PIN  W9       [get_ports {ADC_MISO_n[4]}]
+set_property PACKAGE_PIN  Y7       [get_ports {ADC_MISO_p[4]}]
+set_property PACKAGE_PIN  Y6       [get_ports {ADC_MISO_n[4]}]
 set_property PACKAGE_PIN  C20      [get_ports {ADC_MISO_p[5]}]
 set_property PACKAGE_PIN  B20      [get_ports {ADC_MISO_n[5]}]
 set_property PACKAGE_PIN  M17      [get_ports {ADC_MISO_p[6]}]
