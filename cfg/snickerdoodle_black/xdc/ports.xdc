@@ -13,26 +13,25 @@
 # Pin: 10MHz_In JB2.38 N18
 set_property IOSTANDARD   LVCMOS25  [get_ports Scanner_10Mhz_In]
 set_property PACKAGE_PIN  N18       [get_ports Scanner_10Mhz_In]
+set_property PULLTYPE     PULLDOWN  [get_ports Scanner_10Mhz_In]
 
 # Trigger in (Trigger_In)
 # Pin: Trigger_In JB2.36 P19
 set_property IOSTANDARD   LVCMOS25  [get_ports Trigger_In]
 set_property PACKAGE_PIN  P19       [get_ports Trigger_In]
+set_property PULLTYPE     PULLDOWN  [get_ports Trigger_In]
 
 # Shutdown Sense (Shutdown_Sense)
 # Pin: Shutdown_Sense JA2.4 J15
 set_property IOSTANDARD   LVCMOS25  [get_ports Shutdown_Sense]
 set_property PACKAGE_PIN  J15       [get_ports Shutdown_Sense]
+set_property PULLTYPE     PULLDOWN  [get_ports Shutdown_Sense]
 
-# Ethernet Clock (Eth_Clk)
-# Pin: Eth_Clk JA1.25 F20
-set_property IOSTANDARD   LVCMOS25  [get_ports Eth_Clk]
-set_property PACKAGE_PIN  F20       [get_ports Eth_Clk]
-
-# Shutdown Reset (~Shutdown_Reset)
-# Pin: n_Shutdown_Reset JA1.4 G14
-set_property IOSTANDARD   LVCMOS25  [get_ports n_Shutdown_Reset]
-set_property PACKAGE_PIN  G14       [get_ports n_Shutdown_Reset]
+# External Shutdown Button (Shutdown_Button)
+# Pin: Shutdown_Button JA1.25 F20
+set_property IOSTANDARD   LVCMOS25  [get_ports Shutdown_Button]
+set_property PACKAGE_PIN  F20       [get_ports Shutdown_Button]
+set_property PULLTYPE     PULLDOWN  [get_ports Shutdown_Button]
 
 
 #------------------------------------------------------------
@@ -53,6 +52,11 @@ set_property PACKAGE_PIN  V5        [get_ports {Shutdown_Sense_Sel[2]}]
 # Pin: Shutdown_Force JA1.23 F19
 set_property IOSTANDARD   LVCMOS25  [get_ports Shutdown_Force]
 set_property PACKAGE_PIN  F19       [get_ports Shutdown_Force]
+
+# Shutdown Reset (~Shutdown_Reset)
+# Pin: n_Shutdown_Reset JA1.4 G14
+set_property IOSTANDARD   LVCMOS25  [get_ports n_Shutdown_Reset]
+set_property PACKAGE_PIN  G14       [get_ports n_Shutdown_Reset]
 
 
 

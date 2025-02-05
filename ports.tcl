@@ -15,10 +15,8 @@ create_bd_port -dir I Scanner_10Mhz_In
 create_bd_port -dir I Shutdown_Sense
 # (Trigger_In)
 create_bd_port -dir I Trigger_In
-# (Eth_Clk)
-create_bd_port -dir I Eth_Clk
-# (~Shutdown_Reset)
-create_bd_port -dir I n_Shutdown_Reset
+# (Shutdown_Button)
+create_bd_port -dir I Shutdown_Button
 
 
 #------------------------------------------------------------
@@ -29,6 +27,8 @@ create_bd_port -dir I n_Shutdown_Reset
 create_bd_port -dir O -from 2 -to 0 Shutdown_Sense_Sel
 # (Shutdown_Force)
 create_bd_port -dir O Shutdown_Force
+# (~Shutdown_Reset)
+create_bd_port -dir I n_Shutdown_Reset
 
 
 
