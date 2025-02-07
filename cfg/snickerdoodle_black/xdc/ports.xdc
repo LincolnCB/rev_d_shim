@@ -237,7 +237,7 @@ set_property PACKAGE_PIN  M20      [get_ports {ADC_MOSI_n[7]}]
 #   ADC_MISO[1] JB1.14 V12 (+) / JB1.12 W13 (-)
 #   ADC_MISO[2] JC1.14 Y12 (+) / JC1.12 Y13 (-)
 #   ADC_MISO[3] JB1.26 Y16 (+) / JB1.24 Y17 (-)
-#   ADC_MISO[4] JC1.32 W9  (+) / JC1.30 W10  (-)
+#   ADC_MISO[4] JC1.32 W10 (+) / JC1.30 W9  (-)
 #   ADC_MISO[5] JA1.14 C20 (+) / JA1.12 B20 (-)
 #   ADC_MISO[6] JA2.29 M17 (+) / JA2.31 M18 (-)
 #   ADC_MISO[7] JA1.35 J18 (+) / JA1.37 H18 (-)
@@ -253,8 +253,8 @@ set_property PACKAGE_PIN  Y12      [get_ports {ADC_MISO_p[2]}]
 set_property PACKAGE_PIN  Y13      [get_ports {ADC_MISO_n[2]}]
 set_property PACKAGE_PIN  Y16      [get_ports {ADC_MISO_p[3]}]
 set_property PACKAGE_PIN  Y17      [get_ports {ADC_MISO_n[3]}]
-set_property PACKAGE_PIN  W9       [get_ports {ADC_MISO_p[4]}]
-set_property PACKAGE_PIN  W10       [get_ports {ADC_MISO_n[4]}]
+set_property PACKAGE_PIN  W10      [get_ports {ADC_MISO_p[4]}]
+set_property PACKAGE_PIN  W9       [get_ports {ADC_MISO_n[4]}]
 set_property PACKAGE_PIN  C20      [get_ports {ADC_MISO_p[5]}]
 set_property PACKAGE_PIN  B20      [get_ports {ADC_MISO_n[5]}]
 set_property PACKAGE_PIN  M17      [get_ports {ADC_MISO_p[6]}]
