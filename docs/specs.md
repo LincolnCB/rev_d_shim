@@ -1,21 +1,27 @@
 Hardware goals (first in [[Verilog]], then in [[RHDL]])
-- Software defined SPI clock
+- Software defined SPI clock core
 	- Frequency and phase defined relative to 10 MHz scanner input clock
 	- Handle clock domain crossings and proper update rate
-- Emergency stop line
-	- Can be activated through interrupts in software (probably Ctrl+C)
-	- Can be activated by PL safety cores (below)
-	- Can send interrupt TO software in case of a PL core initiating
-	- Triggers Shutdown_Force pin
-	- Latches high until E-stop reset signal sent
-	- Activate from empty DAC buffer? Can we make an error code register for different crash statuses?
-- E-stop reset
+- Emergency stop core (SPI clock domain)
+	- Latches high on activation
+	- Activates from:
+		- Software interrupt
+		- PL safety cores (see below)
+		- Empty DAC FIFO
+		- External E-stop button
+	- Deactivates from Rst/En core
+	- Sends:
+		- RST signal to everything on SPI clock domain
+		- Interrupt to software
+		- Shutdown_Force pin on activation
+		- ~Shutdown_Reset on deactivation
+- Rst/En core
 	- Does a buffer drain/reset
-	- Resets the E-stop line and sends ~shutdown_reset
+	- Resets the E-stop core
 - Trigger core
 	- Software-defined trigger lockout
 	- Force trigger from PS
-- Safety cores
+- Safety cores:
 	- Integrator: Integrates both DAC and ADC separately over (software-defined? pre-set?) time relative to software-defined total threshold, triggers E-stop if passed
 	- Shutdown sense: Cycles shutdown_sense_sel bits to strobe shutdown_sense across all DACs, triggering E-stop if any DAC has thermally latched
 - 50 kHz DAC (AD5676) sampling rate. 
