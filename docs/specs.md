@@ -1,4 +1,7 @@
 Hardware goals (first in [[Verilog]], then in [[RHDL]])
+- Software defined SPI clock
+	- Frequency and phase defined relative to 10 MHz scanner input clock
+	- Handle clock domain crossings and proper update rate
 - Emergency stop line
 	- Can be activated through interrupts in software (probably Ctrl+C)
 	- Can be activated by PL safety cores (below)
@@ -9,9 +12,6 @@ Hardware goals (first in [[Verilog]], then in [[RHDL]])
 - E-stop reset
 	- Does a buffer drain/reset
 	- Resets the E-stop line and sends ~shutdown_reset
-- Software defined SPI clock
-	- Frequency and phase defined relative to 10 MHz scanner input clock
-	- Handle clock domain crossings and proper update rate
 - Trigger core
 	- Software-defined trigger lockout
 	- Force trigger from PS
