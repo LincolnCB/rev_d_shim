@@ -18,11 +18,11 @@ Hardware goals (first in [[Verilog]], then in [[RHDL]])
 - Safety cores
 	- Integrator: Integrates both DAC and ADC separately over (software-defined? pre-set?) time relative to software-defined total threshold, triggers E-stop if passed
 	- Shutdown sense: Cycles shutdown_sense_sel bits to strobe shutdown_sense across all DACs, triggering E-stop if any DAC has thermally latched
-- 50 kHz DAC sampling rate. 
+- 50 kHz DAC (AD5676) sampling rate. 
 	- Each 8ch DAC gets an update every 20$\mu$s.
 	- One update is a 8 24-bit command words. $\frac{24 \times 8}{20 \,\mu \text{s}}=9.6 \text{ MHz}$ SPI clock minimum
 	- Preload DAC before first trigger, trigger goes to ~LDACn and starts next cycle
-- 50 kHz ADC sampling rate
+- 50 kHz ADC (AD7689) sampling rate
 	- Same deal
 - FIFO streaming to and from DMA (and to/from SD card)
 	- $\frac{16 \times 8}{20 \,\mu \text{s}}=6.4 \text{ Mbps}$ stream in and out minimum, can be averaged over 25ms
