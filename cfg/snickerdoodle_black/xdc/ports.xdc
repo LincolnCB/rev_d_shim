@@ -274,7 +274,7 @@ set_property PACKAGE_PIN  H18      [get_ports {ADC_MISO_n[7]}]
 #   MISO_SCK[2] JC1.8  T9  (+) / JC1.6  U10 (-)
 #   MISO_SCK[3] JB1.35 U14 (+) / JB1.37 U15 (-)
 #   MISO_SCK[4] JC1.35 Y9  (+) / JC1.37 Y8  (-)
-#   MISO_SCK[5] JA1.36 H17 (+) / JA1.38 H16 (-)
+#   MISO_SCK[5] JA1.38 H16 (+) / JA1.36 H17 (-)
 #   MISO_SCK[6] JA2.38 K17 (+) / JA2.36 K18 (-)
 #   MISO_SCK[7] JA2.35 L16 (+) / JA2.37 L17 (-)
 set_property IOSTANDARD   LVDS_25  [get_ports {MISO_SCK_p[*]}]
@@ -291,8 +291,8 @@ set_property PACKAGE_PIN  U14      [get_ports {MISO_SCK_p[3]}]
 set_property PACKAGE_PIN  U15      [get_ports {MISO_SCK_n[3]}]
 set_property PACKAGE_PIN  Y9       [get_ports {MISO_SCK_p[4]}]
 set_property PACKAGE_PIN  Y8       [get_ports {MISO_SCK_n[4]}]
-set_property PACKAGE_PIN  H17      [get_ports {MISO_SCK_p[5]}]
-set_property PACKAGE_PIN  H16      [get_ports {MISO_SCK_n[5]}]
+set_property PACKAGE_PIN  H16      [get_ports {MISO_SCK_p[5]}]
+set_property PACKAGE_PIN  H17      [get_ports {MISO_SCK_n[5]}]
 set_property PACKAGE_PIN  K17      [get_ports {MISO_SCK_p[6]}]
 set_property PACKAGE_PIN  K18      [get_ports {MISO_SCK_n[6]}]
 set_property PACKAGE_PIN  L16      [get_ports {MISO_SCK_p[7]}]

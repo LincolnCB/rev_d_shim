@@ -22,7 +22,7 @@ Hardware goals (first in [[Verilog]], then in [[RHDL]])
 	- Software-defined trigger lockout
 	- Force trigger from PS
 - Safety cores:
-	- Integrator: Integrates both DAC and ADC separately over (software-defined? pre-set?) time relative to software-defined total threshold, triggers E-stop if passed
+	- Integrator: Integrates both DAC and ADC separately over software-defined time relative to software-defined total threshold, triggers E-stop if passed
 	- Shutdown sense: Cycles shutdown_sense_sel bits to strobe shutdown_sense across all DACs, triggering E-stop if any DAC has thermally latched
 - 50 kHz DAC (AD5676) sampling rate. 
 	- Each 8ch DAC gets an update every 20$\mu$s.
