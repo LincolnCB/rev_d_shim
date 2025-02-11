@@ -10,9 +10,9 @@
 #------------------------------------------------------------
 
 # (10Mhz_In)
-create_bd_port -dir I Scanner_10Mhz_In
+create_bd_port -dir I -type clk -freq_hz 10000000 Scanner_10Mhz_In
 # (Shutdown_Sense)
-create_bd_port -dir I Shutdown_Sense
+create_bd_port -dir I -type data Shutdown_Sense
 # (Trigger_In)
 create_bd_port -dir I Trigger_In
 # (Shutdown_Button)
@@ -24,11 +24,11 @@ create_bd_port -dir I Shutdown_Button
 #------------------------------------------------------------
 
 # (Shutdown_Sense_Sel0-2)
-create_bd_port -dir O -from 2 -to 0 Shutdown_Sense_Sel
+create_bd_port -dir O -from 2 -to 0 -type data Shutdown_Sense_Sel
 # (Shutdown_Force)
 create_bd_port -dir O Shutdown_Force
 # (~Shutdown_Reset)
-create_bd_port -dir I n_Shutdown_Reset
+create_bd_port -dir I -type data n_Shutdown_Reset
 
 
 
@@ -44,21 +44,21 @@ create_bd_port -dir I n_Shutdown_Reset
 #------------------------------------------------------------
 
 # (LDAC+)
-create_bd_port -dir O -from 0 -to 0 LDAC_p
+create_bd_port -dir O -from 0 -to 0 -type data LDAC_p
 # (LDAC-)
-create_bd_port -dir O -from 0 -to 0 LDAC_n
+create_bd_port -dir O -from 0 -to 0 -type data LDAC_n
 # (~DAC_CS+)
-create_bd_port -dir O -from 7 -to 0 n_DAC_CS_p
+create_bd_port -dir O -from 7 -to 0 -type data n_DAC_CS_p
 # (~DAC_CS-)
-create_bd_port -dir O -from 7 -to 0 n_DAC_CS_n
+create_bd_port -dir O -from 7 -to 0 -type data n_DAC_CS_n
 # (DAC_MOSI+)
-create_bd_port -dir O -from 7 -to 0 DAC_MOSI_p
+create_bd_port -dir O -from 7 -to 0 -type data DAC_MOSI_p
 # (DAC_MOSI-)
-create_bd_port -dir O -from 7 -to 0 DAC_MOSI_n
+create_bd_port -dir O -from 7 -to 0 -type data DAC_MOSI_n
 # (DAC_MISO+)
-create_bd_port -dir I -from 7 -to 0 DAC_MISO_p
+create_bd_port -dir I -from 7 -to 0 -type data DAC_MISO_p
 # (DAC_MISO-)
-create_bd_port -dir I -from 7 -to 0 DAC_MISO_n
+create_bd_port -dir I -from 7 -to 0 -type data DAC_MISO_n
 
 
 #------------------------------------------------------------
@@ -66,17 +66,17 @@ create_bd_port -dir I -from 7 -to 0 DAC_MISO_n
 #------------------------------------------------------------
 
 # (~ADC_CS+)
-create_bd_port -dir O -from 7 -to 0 n_ADC_CS_p
+create_bd_port -dir O -from 7 -to 0 -type data n_ADC_CS_p
 # (~ADC_CS-)
-create_bd_port -dir O -from 7 -to 0 n_ADC_CS_n
+create_bd_port -dir O -from 7 -to 0 -type data n_ADC_CS_n
 # (ADC_MOSI+)
-create_bd_port -dir O -from 7 -to 0 ADC_MOSI_p
+create_bd_port -dir O -from 7 -to 0 -type data ADC_MOSI_p
 # (ADC_MOSI-)
-create_bd_port -dir O -from 7 -to 0 ADC_MOSI_n
+create_bd_port -dir O -from 7 -to 0 -type data ADC_MOSI_n
 # (ADC_MISO+)
-create_bd_port -dir I -from 7 -to 0 ADC_MISO_p
+create_bd_port -dir I -from 7 -to 0 -type data ADC_MISO_p
 # (ADC_MISO-)
-create_bd_port -dir I -from 7 -to 0 ADC_MISO_n
+create_bd_port -dir I -from 7 -to 0 -type data ADC_MISO_n
 
 
 #------------------------------------------------------------
