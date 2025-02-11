@@ -23,11 +23,29 @@ init_ps ps_0 {
 ### AXI Smart Connect
 cell xilinx.com:ip:smartconnect:1.0 axi_smc {
   NUM_SI 1
-  NUM_MI 1
+  NUM_MI 3
 } {
-  S00_AXI /ps_0/M_AXI_GP0
   aclk ps_0/FCLK_CLK0
+  S00_AXI /ps_0/M_AXI_GP0
 }
+
+### Configuration register
+cell pavel-demin:user:axi_cfg_register:1.0 config_reg {
+  CFG_DATA_WIDTH 256
+} {
+  aclk ps_0/FCLK_CLK0
+  S_AXI axi_smc/M00_AXI
+}
+addr 0x40000000 128 config_reg/S_AXI
+### Status register
+cell pavel-demin:user:axi_sts_register:1.0 status_reg {
+  STS_DATA_WIDTH 1024
+} {
+  aclk ps_0/FCLK_CLK0
+  S_AXI axi_smc/M01_AXI
+}
+addr 0x40010000 128 status_reg/S_AXI
+
 
 ### SPI clock control
 ## Clocking wizard contains automatic buffer insertion
@@ -42,11 +60,11 @@ cell xilinx.com:ip:clk_wiz:6.0 spi_clk {
   CLKOUT1_REQUESTED_OUT_FREQ 200.000
   MMCM_REF_JITTER1 0.001
 } {
-  clk_in1 Scanner_10Mhz_In
   s_axi_aclk ps_0/FCLK_CLK0
-  s_axi_lite axi_smc/M00_AXI
+  s_axi_lite axi_smc/M02_AXI
+  clk_in1 Scanner_10Mhz_In
 }
-addr 0x40000000 2048 spi_clk/s_axi_lite
+addr 0x40020000 2048 spi_clk/s_axi_lite
 
 
 ### Create I/O buffers for differential signals
