@@ -20,14 +20,34 @@ init_ps ps_0 {
   M_AXI_GP0_ACLK ps_0/FCLK_CLK0
 }
 
-
-### SPI clock control module
-module spi_clk_ctrl {
-  source projects/rev_d_shim/modules/spi_clk_ctrl.tcl
+### AXI Smart Connect
+cell xilinx.com:ip:smartconnect:1.0 axi_smc {
+  NUM_SI 1
+  NUM_MI 1
 } {
-  ext_10mhz_in Scanner_10Mhz_In
-  s_axi_aclk ps_0/FCLK_CLK0
+  S00_AXI /ps_0/M_AXI_GP0
+  aclk ps_0/FCLK_CLK0
 }
+
+### SPI clock control
+## Clocking wizard contains automatic buffer insertion
+cell xilinx.com:ip:clk_wiz:6.0 spi_clk {
+  PRIMITIVE MMCM
+  USE_POWER_DOWN true
+  USE_DYN_RECONFIG true
+  PRIM_IN_FREQ 10
+  JITTER_OPTIONS PS
+  CLKIN1_JITTER_PS 100.0
+  CLKIN1_UI_JITTER 0.001
+  CLKOUT1_REQUESTED_OUT_FREQ 200.000
+  MMCM_REF_JITTER1 0.001
+} {
+  clk_in1 Scanner_10Mhz_In
+  s_axi_aclk ps_0/FCLK_CLK0
+  s_axi_lite axi_smc/M00_AXI
+}
+addr 0x40000000 2048 spi_clk/s_axi_lite
+
 
 ### Create I/O buffers for differential signals
 
@@ -96,6 +116,7 @@ cell lcb:user:differential_in_buffer:1.0 miso_sck_ibuf {
 cell lcb:user:differential_out_buffer:1.0 n_mosi_sck_obuf {
   DIFF_BUFFER_WIDTH 1
 } {
+  d_in spi_clk/clk_out1
   diff_out_p n_MOSI_SCK_p
   diff_out_n n_MOSI_SCK_n
 }
