@@ -20,6 +20,7 @@ init_ps ps_0 {
   M_AXI_GP0_ACLK ps_0/FCLK_CLK0
 }
 
+
 ### AXI Smart Connect
 cell xilinx.com:ip:smartconnect:1.0 axi_smc {
   NUM_SI 1
@@ -29,22 +30,135 @@ cell xilinx.com:ip:smartconnect:1.0 axi_smc {
   S00_AXI /ps_0/M_AXI_GP0
 }
 
+
 ### Configuration register
 cell pavel-demin:user:axi_cfg_register:1.0 config_reg {
-  CFG_DATA_WIDTH 256
+  CFG_DATA_WIDTH 1024
 } {
   aclk ps_0/FCLK_CLK0
   S_AXI axi_smc/M00_AXI
 }
 addr 0x40000000 128 config_reg/S_AXI
+## Slices
+#   31:0   -- 32b Trigger lockout
+#   47:32  -- 32b Calibration offset
+#   63:48  --     Reserved
+#   95:64  -- 32b Integrator threshold
+#  127:96  -- 32b Integrator span
+#  128     --  1b Integrator enable
+#  159:129 --     Reserved
+#  160     --  1b Hardware enable
+# 1023:161 --     Reserved
+cell xilinx.com:ip:xlslice:1.0 trigger_lockout_slice {
+  DIN_WIDTH 1024
+  DIN_FROM 31
+  DIN_TO 0
+} {
+  Din config_reg/cfg_data 
+}
+cell xilinx.com:ip:xlslice:1.0 cal_offset_slice {
+  DIN_WIDTH 1024
+  DIN_FROM 47
+  DIN_TO 32
+} {
+  Din config_reg/cfg_data 
+}
+cell xilinx.com:ip:xlslice:1.0 integrator_threshold_slice {
+  DIN_WIDTH 1024
+  DIN_FROM 95
+  DIN_TO 64
+} {
+  Din config_reg/cfg_data 
+}
+cell xilinx.com:ip:xlslice:1.0 integrator_span_slice {
+  DIN_WIDTH 1024
+  DIN_FROM 127
+  DIN_TO 96
+} {
+  Din config_reg/cfg_data 
+}
+cell xilinx.com:ip:xlslice:1.0 integrator_enable_slice {
+  DIN_WIDTH 1024
+  DIN_FROM 128
+  DIN_TO 128
+} {
+  Din config_reg/cfg_data 
+}
+cell xilinx.com:ip:xlslice:1.0 hardware_enable_slice {
+  DIN_WIDTH 1024
+  DIN_FROM 160
+  DIN_TO 160
+} {
+  Din config_reg/cfg_data 
+}
+
+
+
 ### Status register
 cell pavel-demin:user:axi_sts_register:1.0 status_reg {
-  STS_DATA_WIDTH 1024
+  STS_DATA_WIDTH 2048
 } {
   aclk ps_0/FCLK_CLK0
   S_AXI axi_smc/M01_AXI
 }
-addr 0x40010000 128 status_reg/S_AXI
+addr 0x40100000 256 status_reg/S_AXI
+## Concatenation
+#   31:0    -- 32b Hardware status code (31 stopped; 30:0 code)
+#   63:32   --     Reserved
+#  127:64   -- 64b DAC0 FIFO status (see FIFO module)
+#  191:128  -- 64b ADC0 FIFO status
+#  255:192  -- 64b DAC1 FIFO status
+#  319:256  -- 64b ADC1 FIFO status
+#  383:320  -- 64b DAC2 FIFO status
+#  447:384  -- 64b ADC2 FIFO status
+#  511:448  -- 64b DAC3 FIFO status
+#  575:512  -- 64b ADC3 FIFO status
+#  639:576  -- 64b DAC4 FIFO status
+#  703:640  -- 64b ADC4 FIFO status
+#  767:704  -- 64b DAC5 FIFO status
+#  831:768  -- 64b ADC5 FIFO status
+#  895:832  -- 64b DAC6 FIFO status
+#  959:896  -- 64b ADC6 FIFO status
+# 1023:960  -- 64b DAC7 FIFO status
+# 1087:1024 -- 64b ADC7 FIFO status
+# 2047:1088 --     Reserved
+cell xilinx.com:ip:xlconstant:1.1 pad_32 {
+  CONST_VAL 0
+  CONST_WIDTH 32
+} {}
+cell xilinx.com:ip:xlconstant:1.1 pad_960 {
+  CONST_VAL 0
+  CONST_WIDTH 32
+} {}
+cell xilinx.com:ip:xlconcat:2.1 sts_concat {
+  NUM_PORTS 19
+} {
+  In1  pad_32/dout
+  In18 pad_960/dout
+  dout status_reg/sts_data
+}
+
+### DAC and ADC FIFOs
+module dac_fifo_0 {
+  source projects/rev_d_shim/modules/dac_fifo.tcl
+} {
+  fifo_sts_word sts_concat/In2
+}
+module adc_fifo_0 {
+  source projects/rev_d_shim/modules/adc_fifo.tcl
+} {
+  fifo_sts_word sts_concat/In3
+}
+module dac_fifo_1 {
+  source projects/rev_d_shim/modules/dac_fifo.tcl
+} {
+  fifo_sts_word sts_concat/In4
+}
+module adc_fifo_1 {
+  source projects/rev_d_shim/modules/adc_fifo.tcl
+} {
+  fifo_sts_word sts_concat/In5
+}
 
 
 ### SPI clock control
@@ -64,7 +178,7 @@ cell xilinx.com:ip:clk_wiz:6.0 spi_clk {
   s_axi_lite axi_smc/M02_AXI
   clk_in1 Scanner_10Mhz_In
 }
-addr 0x40020000 2048 spi_clk/s_axi_lite
+addr 0x40200000 2048 spi_clk/s_axi_lite
 
 
 ### Create I/O buffers for differential signals
