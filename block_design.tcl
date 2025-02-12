@@ -48,7 +48,8 @@ addr 0x40000000 128 config_reg/S_AXI
 #  128     --  1b Integrator enable
 #  159:129 --     Reserved
 #  160     --  1b Hardware enable
-# 1023:161 --     Reserved
+#  191:161 --     Reserved
+# 1023:192 --     Reserved
 cell xilinx.com:ip:xlslice:1.0 trigger_lockout_slice {
   DIN_WIDTH 1024
   DIN_FROM 31
@@ -159,20 +160,81 @@ module adc_fifo_1 {
 } {
   fifo_sts_word sts_concat/In5
 }
+module dac_fifo_2 {
+  source projects/rev_d_shim/modules/dac_fifo.tcl
+} {
+  fifo_sts_word sts_concat/In6
+}
+module adc_fifo_2 {
+  source projects/rev_d_shim/modules/adc_fifo.tcl
+} {
+  fifo_sts_word sts_concat/In7
+}
+module dac_fifo_3 {
+  source projects/rev_d_shim/modules/dac_fifo.tcl
+} {
+  fifo_sts_word sts_concat/In8
+}
+module adc_fifo_3 {
+  source projects/rev_d_shim/modules/adc_fifo.tcl
+} {
+  fifo_sts_word sts_concat/In9
+}
+module dac_fifo_4 {
+  source projects/rev_d_shim/modules/dac_fifo.tcl
+} {
+  fifo_sts_word sts_concat/In10
+}
+module adc_fifo_4 {
+  source projects/rev_d_shim/modules/adc_fifo.tcl
+} {
+  fifo_sts_word sts_concat/In11
+}
+module dac_fifo_5 {
+  source projects/rev_d_shim/modules/dac_fifo.tcl
+} {
+  fifo_sts_word sts_concat/In12
+}
+module adc_fifo_5 {
+  source projects/rev_d_shim/modules/adc_fifo.tcl
+} {
+  fifo_sts_word sts_concat/In13
+}
+module dac_fifo_6 {
+  source projects/rev_d_shim/modules/dac_fifo.tcl
+} {
+  fifo_sts_word sts_concat/In14
+}
+module adc_fifo_6 {
+  source projects/rev_d_shim/modules/adc_fifo.tcl
+} {
+  fifo_sts_word sts_concat/In15
+}
+module dac_fifo_7 {
+  source projects/rev_d_shim/modules/dac_fifo.tcl
+} {
+  fifo_sts_word sts_concat/In16
+}
+module adc_fifo_7 {
+  source projects/rev_d_shim/modules/adc_fifo.tcl
+} {
+  fifo_sts_word sts_concat/In17
+}
 
 
 ### SPI clock control
-## Clocking wizard contains automatic buffer insertion
+# MMCM (handles down to 10 MHz input)
+# Includes power down and dynamic reconfiguration
+# Safe clock startup prevents clock output when not locked
 cell xilinx.com:ip:clk_wiz:6.0 spi_clk {
   PRIMITIVE MMCM
   USE_POWER_DOWN true
   USE_DYN_RECONFIG true
+  USE_SAFE_CLOCK_STARTUP true
   PRIM_IN_FREQ 10
-  JITTER_OPTIONS PS
-  CLKIN1_JITTER_PS 100.0
-  CLKIN1_UI_JITTER 0.001
   CLKOUT1_REQUESTED_OUT_FREQ 200.000
-  MMCM_REF_JITTER1 0.001
+  FEEDBACK_SOURCE FDBK_AUTO
+  CLKOUT1_DRIVES BUFGCE
 } {
   s_axi_aclk ps_0/FCLK_CLK0
   s_axi_lite axi_smc/M02_AXI
