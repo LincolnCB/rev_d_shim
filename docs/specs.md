@@ -1,4 +1,94 @@
-Hardware goals (first in [[Verilog]], then in [[RHDL]])
+# Hardware
+- [ ] Hardware completed in [[Verilog]]
+- [ ] Hardware completed in [[RHDL]]
+
+## Main Clock Domain
+### Interfaces
+- PS AXI Interface
+	- IRQ in/out
+		- #unfinished
+	- In
+		- [MMCM dynamic reconfig AXI interface](https://docs.amd.com/r/en-US/pg065-clk-wiz/Register-Space)
+		- 32b - Trigger lockout
+		- 16b - Calibration offset
+		- 32b - Integrator threshold
+		- 32b - Integrator timeframe
+		- 1b - Enable
+		- 1b - Integrator enable
+	- Out
+		- 416b - FIFO status (8x52b)
+		  (Round up to 8x64b)
+			- 24b - Write count
+			- 24b - Read count
+			- 1b - Empty
+			- 1b - Full
+			- 1b - Underflow
+			- 1b - Overflow
+		- 32b - Hardware status
+			- 1b - Stopped
+			- 31b - Status code
+- DMA Interface
+	- In
+		- 8x DAC RAM to AXI stream
+	- Out
+		- 8x ADC AXI to RAM stream
+- SPI Clock Domain Interface
+	- In
+		- 8x 16-bit ADC FIFO
+	- Out
+		- 1b - SPI Clk
+		- 1b - SPI CD rst/en
+		- 32b - Trigger lockout
+		- 16b - Calibration offset
+		- 8x 16-bit DAC FIFO
+- External
+	- In
+		- 1b - Scanner clock
+		- 1b - Shutdown sense
+		- 3b - Shutdown sense select
+	- Out
+		- 1b - Shutdown force
+		- 1b - Shutdown reset
+
+### Cores
+- [[SPI clock core]]
+- Rst/En Core
+- Hardware sense safety core
+- AXI DMA Bridge
+- Integrator safety core
+
+## SPI Clock Domain
+### Interfaces
+- Main Clock Domain Interface
+	- In
+		- 1b - SPI clk
+		- 1b - Rst/en
+		- 32b - Trigger lockout
+		- 16b - Calibration offset
+		- 8x 16-bit DAC FIFO
+	- Out
+		- 8x 16-bit ADC FIFO
+- External
+	- In
+		- 1b - Trigger
+		- 8b - 8x DAC MISO SDA
+		- 8b - 8x ADC MISO SDA
+		- 8b - 8x MISO SCK
+	- Out
+		- 1b - MOSI SCK
+		- 8b - 8x DAC MOSI SDA
+		- 8b - 8x DAC CS
+		- 8b - 8x DAC LDAC
+		- 8b - 8x ADC SDA
+		- 8b - 8x ADC CS
+### Cores
+- Trigger core
+- 8x DAC core
+- 8x ADC core
+
+
+# Summary
+
 - Software defined SPI clock core
 	- Frequency and phase defined relative to 10 MHz scanner input clock
 	- Handle clock domain crossings and proper update rate
