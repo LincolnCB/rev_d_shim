@@ -12,32 +12,19 @@
 
 #define CMA_ALLOC _IOWR('Z', 0, uint32_t)
 
-#define AXI_BASE        (uint32_t)               0x40000000
-#define AXI_CFG         (uint32_t) AXI_HUB_BASE + 0x0000000
-#define AXI_STS         (uint32_t) AXI_HUB_BASE + 0x0100000
-#define AXI_SPI_CLK     (uint32_t) AXI_HUB_BASE + 0x0200000
+#define AXI_BASE        (uint32_t)           0x40000000
+#define AXI_CFG         (uint32_t) AXI_BASE + 0x0000000
+#define AXI_STS         (uint32_t) AXI_BASE + 0x0100000
+#define AXI_SPI_CLK     (uint32_t) AXI_BASE + 0x0200000
 
 #define CFG_SIZE        (uint32_t) 1024 / 8 // Size of the configuration register in bytes
 #define STS_SIZE        (uint32_t) 2048 / 8 // Size of the status register in bytes
+#define SPI_CLK_SIZE    (uint32_t) 2048 // Size of the SPI_CLK interface in bytes
 
 
 
 //////////////////// Function Prototypes ////////////////////
 
-// Get the write count from the status register
-uint32_t wr_count(volatile void *sts);
-// Get the FULL flag from the status register
-uint32_t is_full(volatile void *sts);
-// Get the OVERFLOW flag from the status register
-uint32_t is_overflow(volatile void *sts);
-// Get the read count from the status register
-uint32_t rd_count(volatile void *sts);
-// Get the EMPTY flag from the status register
-uint32_t is_empty(volatile void *sts);
-// Get the UNDERFLOW flag from the status register
-uint32_t is_underflow(volatile void *sts);
-// Print out the full status of the FIFO
-void print_fifo_status(volatile void *sts);
 // Print out the available commands
 void print_help();
 
@@ -290,6 +277,25 @@ int main()
     } else if(strcmp(token, "clk_reset") == 0) { // clk_reset command
       printf("Pulsing a software reset to the clock\n");
       *spi_clk_reset = 0xA;
+    } else if(strcmp(token, "trigger_lockout") == 0) { // trigger_lockout command
+      token = strtok(NULL, " ");
+      if(token == NULL) {
+        uint32_t val = *trigger_lockout;
+        printf("Current trigger lockout value: %u\n", val);
+        printf("To change the lockout, use the same command but specify val.\n");
+        continue;
+      }
+      uint32_t val = strtoul(token, &num_endptr, 10);
+      if(num_endptr == token) {
+        printf("Invalid val specified: %s\n", token);
+        continue;
+      }
+
+      printf("Setting trigger lockout value: val = %u\n", val);
+      *trigger_lockout = val;
+    } else if(strcmp(token, "hw_status") == 0) { // hw_status command
+      uint32_t val = *hardware_status;
+      printf("Hardware status code: %u\n", val);
     } else if(strcmp(token, "exit") == 0) { // exit command
       break;
     } else { // Unknown command
@@ -297,19 +303,17 @@ int main()
       print_help();
     }
   } // End of command loop
-  
+
   //////////////////// 4. Cleanup ////////////////////
 
   // Unmap memory
   printf("Unmapping memory...\n");
-  munmap((void *)cfg, sysconf(_SC_PAGESIZE));
-  munmap((void *)sts, sysconf(_SC_PAGESIZE));
-  munmap((void *)fifo, sysconf(_SC_PAGESIZE));
-  munmap((void *)bram, sysconf(_SC_PAGESIZE));
+  munmap((void *)cfg, cfg_page_count * pagesize);
+  munmap((void *)sts, sts_page_count * pagesize);
+  munmap((void *)spi_clk, spi_clk_page_count * pagesize);
 
   printf("Exiting program.\n");
 }
-
 
 
 //////////////////// Functions ////////////////////
@@ -350,6 +354,11 @@ void print_help()
   printf("    - Print all the current clock settings and the locked bit\n");
   printf("\n  clk_reset\n");
   printf("    - Pulse a software reset to the clock\n");
+  printf("\n  trigger_lockout <val (uint32)>\n");
+  printf("    - Set the trigger lockout in SPI clock cycles\n");
+  printf("      If no val is specified, prints the current value.\n");
+  printf("\n  hw_status\n");
+  printf("    - Print the hardware status code\n");
   printf("\n  exit\n");
   printf("    - Exit the program\n");
 }

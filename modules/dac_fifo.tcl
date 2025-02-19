@@ -7,6 +7,30 @@ cell xilinx.com:ip:xlconstant:1.1 sts_word_padding {
   CONST_VAL 0
   CONST_WIDTH 6
 } {}
+cell xilinx.com:ip:xlconstant:1.1 TODO_read_count {
+  CONST_VAL 0
+  CONST_WIDTH 24
+} {}
+cell xilinx.com:ip:xlconstant:1.1 TODO_write_count {
+  CONST_VAL 0
+  CONST_WIDTH 24
+} {}
+cell xilinx.com:ip:xlconstant:1.1 TODO_underflow {
+  CONST_VAL 0
+  CONST_WIDTH 1
+} {}
+cell xilinx.com:ip:xlconstant:1.1 TODO_empty {
+  CONST_VAL 0
+  CONST_WIDTH 1
+} {}
+cell xilinx.com:ip:xlconstant:1.1 TODO_overflow {
+  CONST_VAL 0
+  CONST_WIDTH 1
+} {}
+cell xilinx.com:ip:xlconstant:1.1 TODO_full {
+  CONST_VAL 0
+  CONST_WIDTH 1
+} {}
 
 # Concatenate the read and empty/underflow status signals into a 32-bit word
 # 23:0  -- 24b Read count
@@ -16,7 +40,10 @@ cell xilinx.com:ip:xlconstant:1.1 sts_word_padding {
 cell xilinx.com:ip:xlconcat:2.1 read_empty_sts {
   NUM_PORTS 4
 } {
+  In0 TODO_read_count/dout
   In1 sts_word_padding/dout
+  In2 TODO_underflow/dout
+  In3 TODO_empty/dout
 }
 # Concatenate the write and full/overflow status signals into a 32-bit word
 # 23:0  -- 24b Write count
@@ -26,7 +53,10 @@ cell xilinx.com:ip:xlconcat:2.1 read_empty_sts {
 cell xilinx.com:ip:xlconcat:2.1 write_full_sts {
   NUM_PORTS 4
 } {
+  In0 TODO_write_count/dout
   In1 sts_word_padding/dout
+  In2 TODO_overflow/dout
+  In3 TODO_full/dout
 }
 
 # Concatenate all the status signals into a 64-bit word

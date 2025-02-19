@@ -1,8 +1,10 @@
+##################################################
+
 ### Create processing system
 # Enable UART1 and I2C0
 # Pullup for UART1 RX
 # Turn off FCLK1-3 and reset1-3
-init_ps ps_0 {
+init_ps ps {
   PCW_USE_M_AXI_GP0 1
   PCW_USE_S_AXI_ACP 0
   PCW_EN_CLK1_PORT 0
@@ -17,7 +19,16 @@ init_ps ps_0 {
   PCW_MIO_37_PULLUP enabled
   PCW_I2C0_I2C0_IO {MIO 38 .. 39}
 } {
-  M_AXI_GP0_ACLK ps_0/FCLK_CLK0
+  M_AXI_GP0_ACLK ps/FCLK_CLK0
+}
+
+## PS reset core
+# Create xlconstant (default value 1) to hold reset high (active low)
+cell xilinx.com:ip:xlconstant const_1b1
+# Create proc_sys_reset
+cell xilinx.com:ip:proc_sys_reset:5.0 ps_rst {} {
+  ext_reset_in const_1b1/dout
+  slowest_sync_clk ps/FCLK_CLK0
 }
 
 
@@ -26,17 +37,20 @@ cell xilinx.com:ip:smartconnect:1.0 axi_smc {
   NUM_SI 1
   NUM_MI 3
 } {
-  aclk ps_0/FCLK_CLK0
-  S00_AXI /ps_0/M_AXI_GP0
+  aclk ps/FCLK_CLK0
+  S00_AXI /ps/M_AXI_GP0
+  aresetn ps_rst/peripheral_aresetn
 }
 
+##################################################
 
 ### Configuration register
 cell pavel-demin:user:axi_cfg_register:1.0 config_reg {
   CFG_DATA_WIDTH 1024
 } {
-  aclk ps_0/FCLK_CLK0
+  aclk ps/FCLK_CLK0
   S_AXI axi_smc/M00_AXI
+  aresetn ps_rst/peripheral_aresetn
 }
 addr 0x40000000 128 config_reg/S_AXI
 ## Slices
@@ -55,52 +69,53 @@ cell xilinx.com:ip:xlslice:1.0 trigger_lockout_slice {
   DIN_FROM 31
   DIN_TO 0
 } {
-  Din config_reg/cfg_data 
+  Din config_reg/cfg_data
 }
 cell xilinx.com:ip:xlslice:1.0 cal_offset_slice {
   DIN_WIDTH 1024
   DIN_FROM 47
   DIN_TO 32
 } {
-  Din config_reg/cfg_data 
+  Din config_reg/cfg_data
 }
 cell xilinx.com:ip:xlslice:1.0 integrator_threshold_slice {
   DIN_WIDTH 1024
   DIN_FROM 95
   DIN_TO 64
 } {
-  Din config_reg/cfg_data 
+  Din config_reg/cfg_data
 }
 cell xilinx.com:ip:xlslice:1.0 integrator_span_slice {
   DIN_WIDTH 1024
   DIN_FROM 127
   DIN_TO 96
 } {
-  Din config_reg/cfg_data 
+  Din config_reg/cfg_data
 }
 cell xilinx.com:ip:xlslice:1.0 integrator_enable_slice {
   DIN_WIDTH 1024
   DIN_FROM 128
   DIN_TO 128
 } {
-  Din config_reg/cfg_data 
+  Din config_reg/cfg_data
 }
 cell xilinx.com:ip:xlslice:1.0 hardware_enable_slice {
   DIN_WIDTH 1024
   DIN_FROM 160
   DIN_TO 160
 } {
-  Din config_reg/cfg_data 
+  Din config_reg/cfg_data
 }
 
-
+##################################################
 
 ### Status register
 cell pavel-demin:user:axi_sts_register:1.0 status_reg {
   STS_DATA_WIDTH 2048
 } {
-  aclk ps_0/FCLK_CLK0
+  aclk ps/FCLK_CLK0
   S_AXI axi_smc/M01_AXI
+  aresetn ps_rst/peripheral_aresetn
 }
 addr 0x40100000 256 status_reg/S_AXI
 ## Concatenation
@@ -127,17 +142,26 @@ cell xilinx.com:ip:xlconstant:1.1 pad_32 {
   CONST_VAL 0
   CONST_WIDTH 32
 } {}
-cell xilinx.com:ip:xlconstant:1.1 pad_960 {
+## TODO add HW status code
+cell xilinx.com:ip:xlconstant:1.1 TODO_hw_sts_code {
   CONST_VAL 0
   CONST_WIDTH 32
+} {}
+## Pad reserved bits
+cell xilinx.com:ip:xlconstant:1.1 pad_960 {
+  CONST_VAL 0
+  CONST_WIDTH 960
 } {}
 cell xilinx.com:ip:xlconcat:2.1 sts_concat {
   NUM_PORTS 19
 } {
+  In0  TODO_hw_sts_code/dout
   In1  pad_32/dout
   In18 pad_960/dout
   dout status_reg/sts_data
 }
+
+##################################################
 
 ### DAC and ADC FIFOs
 module dac_fifo_0 {
@@ -221,6 +245,7 @@ module adc_fifo_7 {
   fifo_sts_word sts_concat/In17
 }
 
+##################################################
 
 ### SPI clock control
 # MMCM (handles down to 10 MHz input)
@@ -236,12 +261,14 @@ cell xilinx.com:ip:clk_wiz:6.0 spi_clk {
   FEEDBACK_SOURCE FDBK_AUTO
   CLKOUT1_DRIVES BUFGCE
 } {
-  s_axi_aclk ps_0/FCLK_CLK0
+  s_axi_aclk ps/FCLK_CLK0
+  s_axi_aresetn ps_rst/peripheral_aresetn
   s_axi_lite axi_smc/M02_AXI
   clk_in1 Scanner_10Mhz_In
 }
 addr 0x40200000 2048 spi_clk/s_axi_lite
 
+##################################################
 
 ### Create I/O buffers for differential signals
 
@@ -264,6 +291,7 @@ cell lcb:user:differential_out_buffer:1.0 n_dac_cs_obuf {
 cell lcb:user:differential_out_buffer:1.0 dac_mosi_obuf {
   DIFF_BUFFER_WIDTH 8
 } {
+  d_in spi_clk/locked
   diff_out_p DAC_MOSI_p
   diff_out_n DAC_MOSI_n
 }
@@ -314,3 +342,4 @@ cell lcb:user:differential_out_buffer:1.0 n_mosi_sck_obuf {
   diff_out_p n_MOSI_SCK_p
   diff_out_n n_MOSI_SCK_n
 }
+##################################################
