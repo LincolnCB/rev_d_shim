@@ -109,57 +109,19 @@ cell xilinx.com:ip:xlslice:1.0 hardware_enable_slice {
 
 ##################################################
 
-### Status register
-cell pavel-demin:user:axi_sts_register:1.0 status_reg {
-  STS_DATA_WIDTH 2048
+### Hardware manager
+cell lcb:user:hw_manager:1.0 hw_manager {
+  BUF_LOAD_WAIT  250000000
+  SPI_START_WAIT 250000000
+  SPI_STOP_WAIT  250000000
 } {
-  aclk ps/FCLK_CLK0
-  S_AXI axi_smc/M01_AXI
-  aresetn ps_rst/peripheral_aresetn
+  clk ps/FCLK_CLK0
+  sys_en hardware_enable_slice/DOUT
+  ext_shutdown Shutdown_Button
+  shutdown_force Shutdown_Force
+  n_shutdown_rst n_Shutdown_Reset
 }
-addr 0x40100000 256 status_reg/S_AXI
-## Concatenation
-#   31:0    -- 32b Hardware status code (31 stopped; 30:0 code)
-#   63:32   --     Reserved
-#  127:64   -- 64b DAC0 FIFO status (see FIFO module)
-#  191:128  -- 64b ADC0 FIFO status
-#  255:192  -- 64b DAC1 FIFO status
-#  319:256  -- 64b ADC1 FIFO status
-#  383:320  -- 64b DAC2 FIFO status
-#  447:384  -- 64b ADC2 FIFO status
-#  511:448  -- 64b DAC3 FIFO status
-#  575:512  -- 64b ADC3 FIFO status
-#  639:576  -- 64b DAC4 FIFO status
-#  703:640  -- 64b ADC4 FIFO status
-#  767:704  -- 64b DAC5 FIFO status
-#  831:768  -- 64b ADC5 FIFO status
-#  895:832  -- 64b DAC6 FIFO status
-#  959:896  -- 64b ADC6 FIFO status
-# 1023:960  -- 64b DAC7 FIFO status
-# 1087:1024 -- 64b ADC7 FIFO status
-# 2047:1088 --     Reserved
-cell xilinx.com:ip:xlconstant:1.1 pad_32 {
-  CONST_VAL 0
-  CONST_WIDTH 32
-} {}
-## TODO add HW status code
-cell xilinx.com:ip:xlconstant:1.1 TODO_hw_sts_code {
-  CONST_VAL 0
-  CONST_WIDTH 32
-} {}
-## Pad reserved bits
-cell xilinx.com:ip:xlconstant:1.1 pad_960 {
-  CONST_VAL 0
-  CONST_WIDTH 960
-} {}
-cell xilinx.com:ip:xlconcat:2.1 sts_concat {
-  NUM_PORTS 19
-} {
-  In0  TODO_hw_sts_code/dout
-  In1  pad_32/dout
-  In18 pad_960/dout
-  dout status_reg/sts_data
-}
+
 
 ##################################################
 
@@ -167,82 +129,67 @@ cell xilinx.com:ip:xlconcat:2.1 sts_concat {
 module dac_fifo_0 {
   source projects/rev_d_shim/modules/dac_fifo.tcl
 } {
-  fifo_sts_word sts_concat/In2
 }
 module adc_fifo_0 {
   source projects/rev_d_shim/modules/adc_fifo.tcl
 } {
-  fifo_sts_word sts_concat/In3
 }
 module dac_fifo_1 {
   source projects/rev_d_shim/modules/dac_fifo.tcl
 } {
-  fifo_sts_word sts_concat/In4
 }
 module adc_fifo_1 {
   source projects/rev_d_shim/modules/adc_fifo.tcl
 } {
-  fifo_sts_word sts_concat/In5
 }
 module dac_fifo_2 {
   source projects/rev_d_shim/modules/dac_fifo.tcl
 } {
-  fifo_sts_word sts_concat/In6
 }
 module adc_fifo_2 {
   source projects/rev_d_shim/modules/adc_fifo.tcl
 } {
-  fifo_sts_word sts_concat/In7
 }
 module dac_fifo_3 {
   source projects/rev_d_shim/modules/dac_fifo.tcl
 } {
-  fifo_sts_word sts_concat/In8
 }
 module adc_fifo_3 {
   source projects/rev_d_shim/modules/adc_fifo.tcl
 } {
-  fifo_sts_word sts_concat/In9
 }
 module dac_fifo_4 {
   source projects/rev_d_shim/modules/dac_fifo.tcl
 } {
-  fifo_sts_word sts_concat/In10
 }
 module adc_fifo_4 {
   source projects/rev_d_shim/modules/adc_fifo.tcl
 } {
-  fifo_sts_word sts_concat/In11
 }
 module dac_fifo_5 {
   source projects/rev_d_shim/modules/dac_fifo.tcl
 } {
-  fifo_sts_word sts_concat/In12
 }
 module adc_fifo_5 {
   source projects/rev_d_shim/modules/adc_fifo.tcl
 } {
-  fifo_sts_word sts_concat/In13
 }
 module dac_fifo_6 {
   source projects/rev_d_shim/modules/dac_fifo.tcl
 } {
-  fifo_sts_word sts_concat/In14
 }
 module adc_fifo_6 {
   source projects/rev_d_shim/modules/adc_fifo.tcl
 } {
-  fifo_sts_word sts_concat/In15
 }
 module dac_fifo_7 {
   source projects/rev_d_shim/modules/dac_fifo.tcl
 } {
-  fifo_sts_word sts_concat/In16
 }
 module adc_fifo_7 {
   source projects/rev_d_shim/modules/adc_fifo.tcl
 } {
-  fifo_sts_word sts_concat/In17
+  
 }
 
 ##################################################
@@ -265,8 +212,74 @@ cell xilinx.com:ip:clk_wiz:6.0 spi_clk {
   s_axi_aresetn ps_rst/peripheral_aresetn
   s_axi_lite axi_smc/M02_AXI
   clk_in1 Scanner_10Mhz_In
+  power_down hw_manager/n_sck_pow
 }
 addr 0x40200000 2048 spi_clk/s_axi_lite
+
+##################################################
+
+### Status register
+cell pavel-demin:user:axi_sts_register:1.0 status_reg {
+  STS_DATA_WIDTH 2048
+} {
+  aclk ps/FCLK_CLK0
+  S_AXI axi_smc/M01_AXI
+  aresetn ps_rst/peripheral_aresetn
+}
+addr 0x40100000 256 status_reg/S_AXI
+## Concatenation
+#   31:0    -- 32b Hardware status code (31 running, 30 stopping, 29 dma running, 28 spi running, 27 halted, 26:24 board number, 23:0 status code)
+#   63:32   --     Reserved
+#  127:64   -- 64b DAC0 FIFO status (see FIFO module)
+#  191:128  -- 64b ADC0 FIFO status
+#  255:192  -- 64b DAC1 FIFO status
+#  319:256  -- 64b ADC1 FIFO status
+#  383:320  -- 64b DAC2 FIFO status
+#  447:384  -- 64b ADC2 FIFO status
+#  511:448  -- 64b DAC3 FIFO status
+#  575:512  -- 64b ADC3 FIFO status
+#  639:576  -- 64b DAC4 FIFO status
+#  703:640  -- 64b ADC4 FIFO status
+#  767:704  -- 64b DAC5 FIFO status
+#  831:768  -- 64b ADC5 FIFO status
+#  895:832  -- 64b DAC6 FIFO status
+#  959:896  -- 64b ADC6 FIFO status
+# 1023:960  -- 64b DAC7 FIFO status
+# 1087:1024 -- 64b ADC7 FIFO status
+# 2047:1088 --     Reserved
+cell xilinx.com:ip:xlconstant:1.1 pad_32 {
+  CONST_VAL 0
+  CONST_WIDTH 32
+} {}
+## Pad reserved bits
+cell xilinx.com:ip:xlconstant:1.1 pad_960 {
+  CONST_VAL 0
+  CONST_WIDTH 960
+} {}
+cell xilinx.com:ip:xlconcat:2.1 sts_concat {
+  NUM_PORTS 19
+} {
+  In0  hw_manager/status_word
+  In1  pad_32/dout
+  In2  dac_fifo_0/fifo_sts_word
+  In3  adc_fifo_0/fifo_sts_word
+  In4  dac_fifo_1/fifo_sts_word
+  In5  adc_fifo_1/fifo_sts_word
+  In6  dac_fifo_2/fifo_sts_word
+  In7  adc_fifo_2/fifo_sts_word
+  In8  dac_fifo_3/fifo_sts_word
+  In9  adc_fifo_3/fifo_sts_word
+  In10 dac_fifo_4/fifo_sts_word
+  In11 adc_fifo_4/fifo_sts_word
+  In12 dac_fifo_5/fifo_sts_word
+  In13 adc_fifo_5/fifo_sts_word
+  In14 dac_fifo_6/fifo_sts_word
+  In15 adc_fifo_6/fifo_sts_word
+  In16 dac_fifo_7/fifo_sts_word
+  In17 adc_fifo_7/fifo_sts_word
+  In18 pad_960/dout
+  dout status_reg/sts_data
+}
 
 ##################################################
 

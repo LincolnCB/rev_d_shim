@@ -28,7 +28,7 @@ create_bd_port -dir O -from 2 -to 0 -type data Shutdown_Sense_Sel
 # (Shutdown_Force)
 create_bd_port -dir O Shutdown_Force
 # (~Shutdown_Reset)
-create_bd_port -dir I -type data n_Shutdown_Reset
+create_bd_port -dir O n_Shutdown_Reset
 
 
 
