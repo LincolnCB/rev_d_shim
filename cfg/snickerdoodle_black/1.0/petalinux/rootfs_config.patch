@@ -7,6 +7,15 @@
  # CONFIG_sudo-dbg is not set
  # CONFIG_sudo-dev is not set
  
+@@ -490,7 +490,7 @@
+ #
+ # lrzsz 
+ #
+-# CONFIG_lrzsz is not set
++CONFIG_lrzsz=y
+ # CONFIG_lrzsz-dbg is not set
+ # CONFIG_lrzsz-dev is not set
+ 
 @@ -3705,7 +3705,7 @@
  #
  # packagegroup-petalinux 

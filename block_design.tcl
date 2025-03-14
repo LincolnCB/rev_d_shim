@@ -111,6 +111,7 @@ cell xilinx.com:ip:xlslice:1.0 hardware_enable_slice {
 
 ### Hardware manager
 cell lcb:user:hw_manager:1.0 hw_manager {
+  POWERON_WAIT   250000000
   BUF_LOAD_WAIT  250000000
   SPI_START_WAIT 250000000
   SPI_STOP_WAIT  250000000
@@ -212,9 +213,16 @@ cell xilinx.com:ip:clk_wiz:6.0 spi_clk {
   s_axi_aresetn ps_rst/peripheral_aresetn
   s_axi_lite axi_smc/M02_AXI
   clk_in1 Scanner_10Mhz_In
-  power_down hw_manager/n_sck_pow
 }
 addr 0x40200000 2048 spi_clk/s_axi_lite
+# Negate spi_en to power down the clock
+cell xilinx.com:ip:util_vector_logic n_spi_en {
+  C_SIZE 1
+  C_OPERATION not
+} {
+  Op1 hw_manager/spi_en
+  Res spi_clk/power_down
+}
 
 ##################################################
 
@@ -228,7 +236,7 @@ cell pavel-demin:user:axi_sts_register:1.0 status_reg {
 }
 addr 0x40100000 256 status_reg/S_AXI
 ## Concatenation
-#   31:0    -- 32b Hardware status code (31 running, 30 stopping, 29 dma running, 28 spi running, 27 halted, 26:24 board number, 23:0 status code)
+#   31:0    -- 32b Hardware status code (31:29 board num, 28:4 status code, 3:0 internal state)
 #   63:32   --     Reserved
 #  127:64   -- 64b DAC0 FIFO status (see FIFO module)
 #  191:128  -- 64b ADC0 FIFO status
