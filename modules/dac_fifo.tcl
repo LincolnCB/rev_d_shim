@@ -1,5 +1,3 @@
-
-
 # 64-bit Status word
 create_bd_pin -dir O -from 64 -to 0 fifo_sts_word
 

@@ -226,6 +226,16 @@ cell xilinx.com:ip:util_vector_logic n_spi_en {
 
 ##################################################
 
+### SPI clock domain
+module spi_clk_domain {
+  source projects/rev_d_shim/modules/spi_clk_domain.tcl
+} {
+  sck spi_clk/clk_out1
+  rst hw_manager/sys_rst
+}
+
+##################################################
+
 ### Status register
 cell pavel-demin:user:axi_sts_register:1.0 status_reg {
   STS_DATA_WIDTH 2048
