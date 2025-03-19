@@ -45,67 +45,29 @@ cell xilinx.com:ip:smartconnect:1.0 axi_smc {
 ##################################################
 
 ### Configuration register
-cell pavel-demin:user:axi_cfg_register:1.0 config_reg {
-  CFG_DATA_WIDTH 1024
+## 32-bit offsets
+# +0 Trigger lockout
+# +1 Calibration offset (signed, 16b cap)
+# +2 DAC divider (unsigned, 16b cap)
+# +3 Integrator threshold average (unsigned, 16b cap)
+# +4 Integrator window (unsigned, 32b cap)
+# +5 Integrator enable (1b cap)
+# +6 Hardware enable (1b cap)
+# +7 SPI enable (1b cap)
+cell lcb:user:axi_shim_cfg:1.0 axi_shim_cfg {
+  TRIGGER_LOCKOUT_DEFAULT 250000
+  CALIBRATION_OFFSET_DEFAULT 0
+  DAC_DIVIDER_DEFAULT 1000
+  INTEGRATOR_THRESHOLD_AVERAGE_DEFAULT 16384
+  INTEGRATOR_WINDOW_DEFAULT 5000000
+  INTEG_EN_DEFAULT 1
 } {
   aclk ps/FCLK_CLK0
-  S_AXI axi_smc/M00_AXI
   aresetn ps_rst/peripheral_aresetn
+  S_AXI axi_smc/M00_AXI
 }
-addr 0x40000000 128 config_reg/S_AXI
-## Slices
-#   31:0   -- 32b Trigger lockout
-#   47:32  -- 32b Calibration offset
-#   63:48  --     Reserved
-#   95:64  -- 32b Integrator threshold
-#  127:96  -- 32b Integrator span
-#  128     --  1b Integrator enable
-#  159:129 --     Reserved
-#  160     --  1b Hardware enable
-#  191:161 --     Reserved
-# 1023:192 --     Reserved
-cell xilinx.com:ip:xlslice:1.0 trigger_lockout_slice {
-  DIN_WIDTH 1024
-  DIN_FROM 31
-  DIN_TO 0
-} {
-  Din config_reg/cfg_data
-}
-cell xilinx.com:ip:xlslice:1.0 cal_offset_slice {
-  DIN_WIDTH 1024
-  DIN_FROM 47
-  DIN_TO 32
-} {
-  Din config_reg/cfg_data
-}
-cell xilinx.com:ip:xlslice:1.0 integrator_threshold_slice {
-  DIN_WIDTH 1024
-  DIN_FROM 95
-  DIN_TO 64
-} {
-  Din config_reg/cfg_data
-}
-cell xilinx.com:ip:xlslice:1.0 integrator_span_slice {
-  DIN_WIDTH 1024
-  DIN_FROM 127
-  DIN_TO 96
-} {
-  Din config_reg/cfg_data
-}
-cell xilinx.com:ip:xlslice:1.0 integrator_enable_slice {
-  DIN_WIDTH 1024
-  DIN_FROM 128
-  DIN_TO 128
-} {
-  Din config_reg/cfg_data
-}
-cell xilinx.com:ip:xlslice:1.0 hardware_enable_slice {
-  DIN_WIDTH 1024
-  DIN_FROM 160
-  DIN_TO 160
-} {
-  Din config_reg/cfg_data
-}
+addr 0x40000000 128 axi_shim_cfg/S_AXI
+  
 
 ##################################################
 
@@ -117,10 +79,17 @@ cell lcb:user:hw_manager:1.0 hw_manager {
   SPI_STOP_WAIT  250000000
 } {
   clk ps/FCLK_CLK0
-  sys_en hardware_enable_slice/DOUT
+  sys_en axi_shim_cfg/sys_en
   ext_shutdown Shutdown_Button
   shutdown_force Shutdown_Force
   n_shutdown_rst n_Shutdown_Reset
+  trig_lockout_oob axi_shim_cfg/trig_lockout_oob
+  cal_offset_oob axi_shim_cfg/cal_offset_oob
+  dac_divider_oob axi_shim_cfg/dac_divider_oob
+  integ_thresh_avg_oob axi_shim_cfg/integ_thresh_avg_oob
+  integ_window_oob axi_shim_cfg/integ_window_oob
+  lock_viol axi_shim_cfg/lock_viol
+  unlock_cfg axi_shim_cfg/unlock
 }
 
 
