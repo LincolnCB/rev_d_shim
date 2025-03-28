@@ -1,5 +1,5 @@
 # 64-bit Status word
-create_bd_pin -dir O -from 64 -to 0 fifo_sts_word
+create_bd_pin -dir O -from 63 -to 0 fifo_sts_word
 
 cell xilinx.com:ip:xlconstant:1.1 sts_word_padding {
   CONST_VAL 0

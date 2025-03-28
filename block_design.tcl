@@ -81,7 +81,7 @@ cell lcb:user:hw_manager:1.0 hw_manager {
   clk ps/FCLK_CLK0
   sys_en axi_shim_cfg/sys_en
   ext_shutdown Shutdown_Button
-  shutdown_force Shutdown_Force
+  n_shutdown_force n_Shutdown_Force
   n_shutdown_rst n_Shutdown_Reset
   trig_lockout_oob axi_shim_cfg/trig_lockout_oob
   cal_offset_oob axi_shim_cfg/cal_offset_oob
@@ -201,6 +201,14 @@ module spi_clk_domain {
 } {
   sck spi_clk/clk_out1
   rst hw_manager/sys_rst
+  clk ps/FCLK_CLK0
+  trig_lockout axi_shim_cfg/trig_lockout
+  cal_offset axi_shim_cfg/cal_offset
+  dac_divider axi_shim_cfg/dac_divider
+  integ_thresh_avg axi_shim_cfg/integ_thresh_avg
+  integ_window axi_shim_cfg/integ_window
+  integ_en axi_shim_cfg/integ_en
+  spi_en hw_manager/spi_en
 }
 
 ##################################################

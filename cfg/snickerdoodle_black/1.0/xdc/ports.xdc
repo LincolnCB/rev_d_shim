@@ -48,10 +48,10 @@ set_property PACKAGE_PIN  R19       [get_ports {Shutdown_Sense_Sel[0]}]
 set_property PACKAGE_PIN  T19       [get_ports {Shutdown_Sense_Sel[1]}]
 set_property PACKAGE_PIN  V5        [get_ports {Shutdown_Sense_Sel[2]}]
 
-# Shutdown Force (Shutdown_Force)
-# Pin: Shutdown_Force JA1.23 F19
-set_property IOSTANDARD   LVCMOS25  [get_ports Shutdown_Force]
-set_property PACKAGE_PIN  F19       [get_ports Shutdown_Force]
+# Shutdown Force (~Shutdown_Force)
+# Pin: n_Shutdown_Force JA1.23 F19
+set_property IOSTANDARD   LVCMOS25  [get_ports n_Shutdown_Force]
+set_property PACKAGE_PIN  F19       [get_ports n_Shutdown_Force]
 
 # Shutdown Reset (~Shutdown_Reset)
 # Pin: n_Shutdown_Reset JA1.4 G14
