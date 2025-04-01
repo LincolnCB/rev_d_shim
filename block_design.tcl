@@ -88,10 +88,82 @@ cell lcb:user:hw_manager:1.0 hw_manager {
   dac_divider_oob axi_shim_cfg/dac_divider_oob
   integ_thresh_avg_oob axi_shim_cfg/integ_thresh_avg_oob
   integ_window_oob axi_shim_cfg/integ_window_oob
+  integ_en_oob axi_shim_cfg/integ_en_oob
+  sys_en_oob axi_shim_cfg/sys_en_oob
   lock_viol axi_shim_cfg/lock_viol
   unlock_cfg axi_shim_cfg/unlock
 }
 
+##################################################
+
+### SPI clock control
+# MMCM (handles down to 10 MHz input)
+# Includes power down and dynamic reconfiguration
+# Safe clock startup prevents clock output when not locked
+cell xilinx.com:ip:clk_wiz:6.0 spi_clk {
+  PRIMITIVE MMCM
+  USE_POWER_DOWN true
+  USE_DYN_RECONFIG true
+  USE_SAFE_CLOCK_STARTUP true
+  PRIM_IN_FREQ 10
+  CLKOUT1_REQUESTED_OUT_FREQ 50.000
+  FEEDBACK_SOURCE FDBK_AUTO
+  CLKOUT1_DRIVES BUFGCE
+} {
+  s_axi_aclk ps/FCLK_CLK0
+  s_axi_aresetn ps_rst/peripheral_aresetn
+  s_axi_lite axi_smc/M02_AXI
+  clk_in1 Scanner_10Mhz_In
+}
+addr 0x40200000 2048 spi_clk/s_axi_lite
+# Negate spi_en to power down the clock
+cell xilinx.com:ip:util_vector_logic n_spi_en {
+  C_SIZE 1
+  C_OPERATION not
+} {
+  Op1 hw_manager/spi_en
+  Res spi_clk/power_down
+}
+
+##################################################
+
+### SPI clock domain
+module spi_clk_domain {
+  source projects/rev_d_shim/modules/spi_clk_domain.tcl
+} {
+  sck spi_clk/clk_out1
+  rst hw_manager/sys_rst
+  clk ps/FCLK_CLK0
+  trig_lockout axi_shim_cfg/trig_lockout
+  cal_offset axi_shim_cfg/cal_offset
+  dac_divider axi_shim_cfg/dac_divider
+  integ_thresh_avg axi_shim_cfg/integ_thresh_avg
+  integ_window axi_shim_cfg/integ_window
+  integ_en axi_shim_cfg/integ_en
+  spi_en hw_manager/spi_en
+  spi_running hw_manager/spi_running
+  dac_over_thresh hw_manager/dac_over_thresh
+  adc_over_thresh hw_manager/adc_over_thresh
+  dac_thresh_underflow hw_manager/dac_thresh_underflow
+  dac_thresh_overflow hw_manager/dac_thresh_overflow
+  adc_thresh_underflow hw_manager/adc_thresh_underflow
+  adc_thresh_overflow hw_manager/adc_thresh_overflow
+  dac_buf_underflow hw_manager/dac_buf_underflow
+  adc_buf_underflow hw_manager/adc_buf_underflow
+  premat_dac_trig hw_manager/premat_dac_trig
+  premat_adc_trig hw_manager/premat_adc_trig
+  premat_dac_div hw_manager/premat_dac_div
+  premat_adc_div hw_manager/premat_adc_div
+}
+## Trigger enable AND gate
+cell xilinx.com:ip:util_vector_logic trig_en_and {
+  C_SIZE 1
+  C_OPERATION and
+} {
+  Op1 hw_manager/trig_en
+  Op2 Trigger_In
+  Res spi_clk_domain/trigger_gated
+}
 
 ##################################################
 
@@ -159,56 +231,6 @@ module dac_fifo_7 {
 module adc_fifo_7 {
   source projects/rev_d_shim/modules/adc_fifo.tcl
 } {
-  
-}
-
-##################################################
-
-### SPI clock control
-# MMCM (handles down to 10 MHz input)
-# Includes power down and dynamic reconfiguration
-# Safe clock startup prevents clock output when not locked
-cell xilinx.com:ip:clk_wiz:6.0 spi_clk {
-  PRIMITIVE MMCM
-  USE_POWER_DOWN true
-  USE_DYN_RECONFIG true
-  USE_SAFE_CLOCK_STARTUP true
-  PRIM_IN_FREQ 10
-  CLKOUT1_REQUESTED_OUT_FREQ 200.000
-  FEEDBACK_SOURCE FDBK_AUTO
-  CLKOUT1_DRIVES BUFGCE
-} {
-  s_axi_aclk ps/FCLK_CLK0
-  s_axi_aresetn ps_rst/peripheral_aresetn
-  s_axi_lite axi_smc/M02_AXI
-  clk_in1 Scanner_10Mhz_In
-}
-addr 0x40200000 2048 spi_clk/s_axi_lite
-# Negate spi_en to power down the clock
-cell xilinx.com:ip:util_vector_logic n_spi_en {
-  C_SIZE 1
-  C_OPERATION not
-} {
-  Op1 hw_manager/spi_en
-  Res spi_clk/power_down
-}
-
-##################################################
-
-### SPI clock domain
-module spi_clk_domain {
-  source projects/rev_d_shim/modules/spi_clk_domain.tcl
-} {
-  sck spi_clk/clk_out1
-  rst hw_manager/sys_rst
-  clk ps/FCLK_CLK0
-  trig_lockout axi_shim_cfg/trig_lockout
-  cal_offset axi_shim_cfg/cal_offset
-  dac_divider axi_shim_cfg/dac_divider
-  integ_thresh_avg axi_shim_cfg/integ_thresh_avg
-  integ_window axi_shim_cfg/integ_window
-  integ_en axi_shim_cfg/integ_en
-  spi_en hw_manager/spi_en
 }
 
 ##################################################
@@ -285,6 +307,7 @@ cell xilinx.com:ip:xlconcat:2.1 sts_concat {
 cell lcb:user:differential_out_buffer:1.0 ldac_obuf {
   DIFF_BUFFER_WIDTH 1
 } {
+  d_in spi_clk_domain/ldac
   diff_out_p LDAC_p
   diff_out_n LDAC_n
 }
@@ -292,6 +315,7 @@ cell lcb:user:differential_out_buffer:1.0 ldac_obuf {
 cell lcb:user:differential_out_buffer:1.0 n_dac_cs_obuf {
   DIFF_BUFFER_WIDTH 8
 } {
+  d_in spi_clk_domain/n_dac_cs
   diff_out_p n_DAC_CS_p
   diff_out_n n_DAC_CS_n
 }
@@ -299,7 +323,7 @@ cell lcb:user:differential_out_buffer:1.0 n_dac_cs_obuf {
 cell lcb:user:differential_out_buffer:1.0 dac_mosi_obuf {
   DIFF_BUFFER_WIDTH 8
 } {
-  d_in spi_clk/locked
+  d_in spi_clk_domain/dac_mosi
   diff_out_p DAC_MOSI_p
   diff_out_n DAC_MOSI_n
 }
@@ -309,6 +333,7 @@ cell lcb:user:differential_in_buffer:1.0 dac_miso_ibuf {
 } {
   diff_in_p DAC_MISO_p
   diff_in_n DAC_MISO_n
+  d_out spi_clk_domain/dac_miso
 }
 
 ## ADC
@@ -316,6 +341,7 @@ cell lcb:user:differential_in_buffer:1.0 dac_miso_ibuf {
 cell lcb:user:differential_out_buffer:1.0 n_adc_cs_obuf {
   DIFF_BUFFER_WIDTH 8
 } {
+  d_in spi_clk_domain/n_adc_cs
   diff_out_p n_ADC_CS_p
   diff_out_n n_ADC_CS_n
 }
@@ -323,6 +349,7 @@ cell lcb:user:differential_out_buffer:1.0 n_adc_cs_obuf {
 cell lcb:user:differential_out_buffer:1.0 adc_mosi_obuf {
   DIFF_BUFFER_WIDTH 8
 } {
+  d_in spi_clk_domain/adc_mosi
   diff_out_p ADC_MOSI_p
   diff_out_n ADC_MOSI_n
 }
@@ -332,6 +359,7 @@ cell lcb:user:differential_in_buffer:1.0 adc_miso_ibuf {
 } {
   diff_in_p ADC_MISO_p
   diff_in_n ADC_MISO_n
+  d_out spi_clk_domain/adc_miso
 }
 
 ## Clocks
@@ -341,6 +369,7 @@ cell lcb:user:differential_in_buffer:1.0 miso_sck_ibuf {
 } {
   diff_in_p MISO_SCK_p
   diff_in_n MISO_SCK_n
+  d_out spi_clk_domain/miso_sck
 }
 # (~MOSI_SCK)
 cell lcb:user:differential_out_buffer:1.0 n_mosi_sck_obuf {
