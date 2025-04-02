@@ -94,6 +94,18 @@ cell lcb:user:hw_manager:1.0 hw_manager {
   unlock_cfg axi_shim_cfg/unlock
 }
 
+## Shutdown sense
+## Shutdown sense
+cell lcb:user:shutdown_sense:1.0 shutdown_sense {
+  CLK_FREQ_HZ 100000000
+} {
+  clk ps/FCLK_CLK0
+  rst hw_manager/sys_rst
+  shutdown_sense_pin Shutdown_Sense
+  shutdown_sense hw_manager/shutdown_sense
+  shutdown_sense_sel Shutdown_Sense_Sel
+}
+
 ##################################################
 
 ### SPI clock control
