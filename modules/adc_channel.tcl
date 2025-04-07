@@ -7,7 +7,7 @@ create_bd_pin -dir I -type reset rst
 
 # Config parameters
 create_bd_pin -dir I -from 31 -to 0 integ_window
-create_bd_pin -dir I -from 15 -to 0 integ_thresh_avg
+create_bd_pin -dir I -from 14 -to 0 integ_thresh_avg
 create_bd_pin -dir I integ_en
 create_bd_pin -dir I spi_en
 

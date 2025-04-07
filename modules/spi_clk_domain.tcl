@@ -15,7 +15,7 @@ create_bd_pin -dir I -type reset rst
 create_bd_pin -dir I -from 31 -to 0 trig_lockout
 create_bd_pin -dir I -from 15 -to 0 cal_offset
 create_bd_pin -dir I -from 15 -to 0 dac_divider
-create_bd_pin -dir I -from 15 -to 0 integ_thresh_avg
+create_bd_pin -dir I -from 14 -to 0 integ_thresh_avg
 create_bd_pin -dir I -from 31 -to 0 integ_window
 create_bd_pin -dir I integ_en
 create_bd_pin -dir I spi_en
@@ -39,7 +39,7 @@ create_bd_pin -dir O -from 7 -to 0 premat_adc_div
 create_bd_pin -dir I trigger_gated
 
 # SPI interface signals (out)
-create_bd_pin -dir O -from 7 -to 0 ldac
+create_bd_pin -dir O ldac
 create_bd_pin -dir O -from 7 -to 0 n_dac_cs
 create_bd_pin -dir O -from 7 -to 0 dac_mosi
 create_bd_pin -dir O -from 7 -to 0 n_adc_cs
@@ -275,20 +275,6 @@ module adc_ch8 {
 ### SPI signals
 
 ## Outputs
-# LDAC
-cell xilinx.com:ip:xlconcat:2.1 ldac_concat {
-  NUM_PORTS 8
-} {
-  In0 dac_ch1/ldac
-  In1 dac_ch2/ldac
-  In2 dac_ch3/ldac
-  In3 dac_ch4/ldac
-  In4 dac_ch5/ldac
-  In5 dac_ch6/ldac
-  In6 dac_ch7/ldac
-  In7 dac_ch8/ldac
-  dout ldac
-}
 # ~DAC_CS
 cell xilinx.com:ip:xlconcat:2.1 n_dac_cs_concat {
   NUM_PORTS 8
