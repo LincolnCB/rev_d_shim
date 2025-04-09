@@ -1,25 +1,32 @@
 ##################################################
 
 ### Create processing system
-# Enable UART1 and I2C0
+# Enable M_AXI_GP0 and S_AXI_ACP
+# Tie AxUSER pins to 1 for ACP port (to enable coherency?)
+# Enable UART1 on the correct MIO pins
+# UART1 baud rate 921600
 # Pullup for UART1 RX
+# Enable I2C0 on the correct MIO pins
 # Turn off FCLK1-3 and reset1-3
 init_ps ps {
   PCW_USE_M_AXI_GP0 1
-  PCW_USE_S_AXI_ACP 0
+  PCW_USE_S_AXI_ACP 1
+  USE_DEFAULT_ACP_USER_VAL 1
+  PCW_UART1_PERIPHERAL_ENABLE 1
+  PCW_UART1_UART1_IO {MIO 36 .. 37}
+  PCW_UART1_BAUD_RATE 921600
+  PCW_MIO_37_PULLUP enabled
+  PCW_I2C0_PERIPHERAL_ENABLE 1
+  PCW_I2C0_I2C0_IO {MIO 38 .. 39}
   PCW_EN_CLK1_PORT 0
   PCW_EN_CLK2_PORT 0
   PCW_EN_CLK3_PORT 0
   PCW_EN_RST1_PORT 0
   PCW_EN_RST2_PORT 0
   PCW_EN_RST3_PORT 0
-  PCW_UART1_PERIPHERAL_ENABLE 1
-  PCW_UART1_UART1_IO {MIO 36 .. 37}
-  PCW_I2C0_PERIPHERAL_ENABLE 1
-  PCW_MIO_37_PULLUP enabled
-  PCW_I2C0_I2C0_IO {MIO 38 .. 39}
 } {
   M_AXI_GP0_ACLK ps/FCLK_CLK0
+  S_AXI_ACP_ACLK ps/FCLK_CLK0
 }
 
 ## PS reset core
