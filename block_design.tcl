@@ -2,7 +2,7 @@
 
 ### Create processing system
 # Enable M_AXI_GP0 and S_AXI_ACP
-# Tie AxUSER pins to 1 for ACP port (to enable coherency?)
+# Tie AxUSER pins to 1 for ACP port (to enable coherency)
 # Enable UART1 on the correct MIO pins
 # UART1 baud rate 921600
 # Pullup for UART1 RX
@@ -30,11 +30,9 @@ init_ps ps {
 }
 
 ## PS reset core
-# Create xlconstant (default value 1) to hold reset high (active low)
-cell xilinx.com:ip:xlconstant const_1b1
 # Create proc_sys_reset
 cell xilinx.com:ip:proc_sys_reset:5.0 ps_rst {} {
-  ext_reset_in const_1b1/dout
+  ext_reset_in ps/FCLK_RESET0_N
   slowest_sync_clk ps/FCLK_CLK0
 }
 
