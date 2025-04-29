@@ -10,8 +10,7 @@
 # Turn off FCLK1-3 and reset1-3
 init_ps ps {
   PCW_USE_M_AXI_GP0 1
-  PCW_USE_S_AXI_ACP 1
-  USE_DEFAULT_ACP_USER_VAL 1
+  PCW_USE_S_AXI_ACP 0
   PCW_UART1_PERIPHERAL_ENABLE 1
   PCW_UART1_UART1_IO {MIO 36 .. 37}
   PCW_UART1_BAUD_RATE 921600
@@ -26,7 +25,6 @@ init_ps ps {
   PCW_EN_RST3_PORT 0
 } {
   M_AXI_GP0_ACLK ps/FCLK_CLK0
-  S_AXI_ACP_ACLK ps/FCLK_CLK0
 }
 
 ## PS reset core
@@ -38,7 +36,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 ps_rst {} {
 
 
 ### AXI Smart Connect
-cell xilinx.com:ip:smartconnect:1.0 axi_smc {
+cell xilinx.com:ip:smartconnect:1.0 ps_periph_axi_intercon {
   NUM_SI 1
   NUM_MI 3
 } {
@@ -69,9 +67,9 @@ cell lcb:user:axi_shim_cfg:1.0 axi_shim_cfg {
 } {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
-  S_AXI axi_smc/M00_AXI
+  S_AXI ps_periph_axi_intercon/M00_AXI
 }
-addr 0x40000000 128 axi_shim_cfg/S_AXI
+addr 0x40000000 128 axi_shim_cfg/S_AXI ps/M_AXI_GP0
   
 
 ##################################################
@@ -129,10 +127,10 @@ cell xilinx.com:ip:clk_wiz:6.0 spi_clk {
 } {
   s_axi_aclk ps/FCLK_CLK0
   s_axi_aresetn ps_rst/peripheral_aresetn
-  s_axi_lite axi_smc/M02_AXI
+  s_axi_lite ps_periph_axi_intercon/M02_AXI
   clk_in1 Scanner_10Mhz_In
 }
-addr 0x40200000 2048 spi_clk/s_axi_lite
+addr 0x40200000 2048 spi_clk/s_axi_lite ps/M_AXI_GP0
 # Negate spi_en to power down the clock
 cell xilinx.com:ip:util_vector_logic n_spi_en {
   C_SIZE 1
@@ -257,10 +255,10 @@ cell pavel-demin:user:axi_sts_register:1.0 status_reg {
   STS_DATA_WIDTH 2048
 } {
   aclk ps/FCLK_CLK0
-  S_AXI axi_smc/M01_AXI
+  S_AXI ps_periph_axi_intercon/M01_AXI
   aresetn ps_rst/peripheral_aresetn
 }
-addr 0x40100000 256 status_reg/S_AXI
+addr 0x40100000 256 status_reg/S_AXI ps/M_AXI_GP0
 ## Concatenation
 #   31:0    -- 32b Hardware status code (31:29 board num, 28:4 status code, 3:0 internal state)
 #   63:32   --     Reserved

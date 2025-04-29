@@ -93,181 +93,29 @@ cell lcb:user:spi_sts_sync:1.0 spi_sts_sync {
 ##################################################
 
 ### DAC and ADC Channels
-
-## Channel 1
-module dac_ch1 {
-  source projects/rev_d_shim/modules/dac_channel.tcl
-} {
-  sck sck
-  rst rst
-  integ_window spi_cfg_sync/integ_window_stable
-  integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-  integ_en spi_cfg_sync/integ_en_stable
-  spi_en spi_cfg_sync/spi_en_stable
-}
-module adc_ch1 {
-  source projects/rev_d_shim/modules/adc_channel.tcl
-} {
-  sck sck
-  rst rst
-  integ_window spi_cfg_sync/integ_window_stable
-  integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-  integ_en spi_cfg_sync/integ_en_stable
-  spi_en spi_cfg_sync/spi_en_stable
-}
-
-## Channel 2
-module dac_ch2 {
-  source projects/rev_d_shim/modules/dac_channel.tcl
-} {
-  sck sck
-  rst rst
-  integ_window spi_cfg_sync/integ_window_stable
-  integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-  integ_en spi_cfg_sync/integ_en_stable
-  spi_en spi_cfg_sync/spi_en_stable
-}
-module adc_ch2 {
-  source projects/rev_d_shim/modules/adc_channel.tcl
-} {
-  sck sck
-  rst rst
-  integ_window spi_cfg_sync/integ_window_stable
-  integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-  integ_en spi_cfg_sync/integ_en_stable
-  spi_en spi_cfg_sync/spi_en_stable
-}
-
-## Channel 3
-module dac_ch3 {
-  source projects/rev_d_shim/modules/dac_channel.tcl
-} {
-  sck sck
-  rst rst
-  integ_window spi_cfg_sync/integ_window_stable
-  integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-  integ_en spi_cfg_sync/integ_en_stable
-  spi_en spi_cfg_sync/spi_en_stable
-}
-module adc_ch3 {
-  source projects/rev_d_shim/modules/adc_channel.tcl
-} {
-  sck sck
-  rst rst
-  integ_window spi_cfg_sync/integ_window_stable
-  integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-  integ_en spi_cfg_sync/integ_en_stable
-  spi_en spi_cfg_sync/spi_en_stable
-}
-
-## Channel 4
-module dac_ch4 {
-  source projects/rev_d_shim/modules/dac_channel.tcl
-} {
-  sck sck
-  rst rst
-  integ_window spi_cfg_sync/integ_window_stable
-  integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-  integ_en spi_cfg_sync/integ_en_stable
-  spi_en spi_cfg_sync/spi_en_stable
-}
-module adc_ch4 {
-  source projects/rev_d_shim/modules/adc_channel.tcl
-} {
-  sck sck
-  rst rst
-  integ_window spi_cfg_sync/integ_window_stable
-  integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-  integ_en spi_cfg_sync/integ_en_stable
-  spi_en spi_cfg_sync/spi_en_stable
-}
-
-## Channel 5
-module dac_ch5 {
-  source projects/rev_d_shim/modules/dac_channel.tcl
-} {
-  sck sck
-  rst rst
-  integ_window spi_cfg_sync/integ_window_stable
-  integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-  integ_en spi_cfg_sync/integ_en_stable
-  spi_en spi_cfg_sync/spi_en_stable
-}
-module adc_ch5 {
-  source projects/rev_d_shim/modules/adc_channel.tcl
-} {
-  sck sck
-  rst rst
-  integ_window spi_cfg_sync/integ_window_stable
-  integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-  integ_en spi_cfg_sync/integ_en_stable
-  spi_en spi_cfg_sync/spi_en_stable
-}
-
-## Channel 6
-module dac_ch6 {
-  source projects/rev_d_shim/modules/dac_channel.tcl
-} {
-  sck sck
-  rst rst
-  integ_window spi_cfg_sync/integ_window_stable
-  integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-  integ_en spi_cfg_sync/integ_en_stable
-  spi_en spi_cfg_sync/spi_en_stable
-}
-module adc_ch6 {
-  source projects/rev_d_shim/modules/adc_channel.tcl
-} {
-  sck sck
-  rst rst
-  integ_window spi_cfg_sync/integ_window_stable
-  integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-  integ_en spi_cfg_sync/integ_en_stable
-  spi_en spi_cfg_sync/spi_en_stable
-}
-
-## Channel 7
-module dac_ch7 {
-  source projects/rev_d_shim/modules/dac_channel.tcl
-} {
-  sck sck
-  rst rst
-  integ_window spi_cfg_sync/integ_window_stable
-  integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-  integ_en spi_cfg_sync/integ_en_stable
-  spi_en spi_cfg_sync/spi_en_stable
-}
-module adc_ch7 {
-  source projects/rev_d_shim/modules/adc_channel.tcl
-} {
-  sck sck
-  rst rst
-  integ_window spi_cfg_sync/integ_window_stable
-  integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-  integ_en spi_cfg_sync/integ_en_stable
-  spi_en spi_cfg_sync/spi_en_stable
-}
-
-## Channel 8
-module dac_ch8 {
-  source projects/rev_d_shim/modules/dac_channel.tcl
-} {
-  sck sck
-  rst rst
-  integ_window spi_cfg_sync/integ_window_stable
-  integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-  integ_en spi_cfg_sync/integ_en_stable
-  spi_en spi_cfg_sync/spi_en_stable
-}
-module adc_ch8 {
-  source projects/rev_d_shim/modules/adc_channel.tcl
-} {
-  sck sck
-  rst rst
-  integ_window spi_cfg_sync/integ_window_stable
-  integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-  integ_en spi_cfg_sync/integ_en_stable
-  spi_en spi_cfg_sync/spi_en_stable
+for {set i 1} {$i <= 8} {incr i} {
+    ## DAC Channel
+    module dac_ch$i {
+        source projects/rev_d_shim/modules/dac_channel.tcl
+    } {
+        sck sck
+        rst rst
+        integ_window spi_cfg_sync/integ_window_stable
+        integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
+        integ_en spi_cfg_sync/integ_en_stable
+        spi_en spi_cfg_sync/spi_en_stable
+    }
+    ## ADC Channel
+    module adc_ch$i {
+        source projects/rev_d_shim/modules/adc_channel.tcl
+    } {
+        sck sck
+        rst rst
+        integ_window spi_cfg_sync/integ_window_stable
+        integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
+        integ_en spi_cfg_sync/integ_en_stable
+        spi_en spi_cfg_sync/spi_en_stable
+    }
 }
 
 ##################################################
