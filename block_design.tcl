@@ -143,9 +143,7 @@ cell xilinx.com:ip:util_vector_logic n_spi_en {
 ##################################################
 
 ### SPI clock domain
-module spi_clk_domain {
-  source projects/rev_d_shim/modules/spi_clk_domain.tcl
-} {
+module spi_clk_domain spi_clk_domain {
   sck spi_clk/clk_out1
   rst hw_manager/sys_rst
   clk ps/FCLK_CLK0
@@ -183,69 +181,9 @@ cell xilinx.com:ip:util_vector_logic trig_en_and {
 ##################################################
 
 ### DAC and ADC FIFOs
-module dac_fifo_0 {
-  source projects/rev_d_shim/modules/dac_fifo.tcl
-} {
-}
-module adc_fifo_0 {
-  source projects/rev_d_shim/modules/adc_fifo.tcl
-} {
-}
-module dac_fifo_1 {
-  source projects/rev_d_shim/modules/dac_fifo.tcl
-} {
-}
-module adc_fifo_1 {
-  source projects/rev_d_shim/modules/adc_fifo.tcl
-} {
-}
-module dac_fifo_2 {
-  source projects/rev_d_shim/modules/dac_fifo.tcl
-} {
-}
-module adc_fifo_2 {
-  source projects/rev_d_shim/modules/adc_fifo.tcl
-} {
-}
-module dac_fifo_3 {
-  source projects/rev_d_shim/modules/dac_fifo.tcl
-} {
-}
-module adc_fifo_3 {
-  source projects/rev_d_shim/modules/adc_fifo.tcl
-} {
-}
-module dac_fifo_4 {
-  source projects/rev_d_shim/modules/dac_fifo.tcl
-} {
-}
-module adc_fifo_4 {
-  source projects/rev_d_shim/modules/adc_fifo.tcl
-} {
-}
-module dac_fifo_5 {
-  source projects/rev_d_shim/modules/dac_fifo.tcl
-} {
-}
-module adc_fifo_5 {
-  source projects/rev_d_shim/modules/adc_fifo.tcl
-} {
-}
-module dac_fifo_6 {
-  source projects/rev_d_shim/modules/dac_fifo.tcl
-} {
-}
-module adc_fifo_6 {
-  source projects/rev_d_shim/modules/adc_fifo.tcl
-} {
-}
-module dac_fifo_7 {
-  source projects/rev_d_shim/modules/dac_fifo.tcl
-} {
-}
-module adc_fifo_7 {
-  source projects/rev_d_shim/modules/adc_fifo.tcl
-} {
+for {set i 0} {$i < 8} {incr i} {
+  module dac_fifo dac_fifo_$i {}
+  module adc_fifo adc_fifo_$i {}
 }
 
 ##################################################

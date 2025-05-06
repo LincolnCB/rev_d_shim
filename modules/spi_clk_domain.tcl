@@ -95,9 +95,7 @@ cell lcb:user:spi_sts_sync:1.0 spi_sts_sync {
 ### DAC and ADC Channels
 for {set i 1} {$i <= 8} {incr i} {
     ## DAC Channel
-    module dac_ch$i {
-        source projects/rev_d_shim/modules/dac_channel.tcl
-    } {
+    module dac_channel dac_ch$i {
         sck sck
         rst rst
         integ_window spi_cfg_sync/integ_window_stable
@@ -106,9 +104,7 @@ for {set i 1} {$i <= 8} {incr i} {
         spi_en spi_cfg_sync/spi_en_stable
     }
     ## ADC Channel
-    module adc_ch$i {
-        source projects/rev_d_shim/modules/adc_channel.tcl
-    } {
+    module adc_channel adc_ch$i {
         sck sck
         rst rst
         integ_window spi_cfg_sync/integ_window_stable
@@ -391,9 +387,7 @@ cell xilinx.com:ip:xlslice:1.0 adc_miso_ch8 {
 ### Status signals
 
 ## setup_done AND chain
-module dac_setup_done {
-  source projects/rev_d_shim/modules/8ch_and.tcl
-} {
+module 8ch_and dac_setup_done {
   Op1 dac_ch1/setup_done
   Op2 dac_ch2/setup_done
   Op3 dac_ch3/setup_done
@@ -403,9 +397,7 @@ module dac_setup_done {
   Op7 dac_ch7/setup_done
   Op8 dac_ch8/setup_done
 }
-module adc_setup_done {
-  source projects/rev_d_shim/modules/8ch_and.tcl
-} {
+module 8ch_and adc_setup_done {
   Op1 adc_ch1/setup_done
   Op2 adc_ch2/setup_done
   Op3 adc_ch3/setup_done
