@@ -1,5 +1,3 @@
-# filepath: projects/rev_d_shim/modules/8ch_and.tcl
-
 # Create input pins for the eight channels
 create_bd_pin -dir I Op1
 create_bd_pin -dir I Op2
