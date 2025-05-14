@@ -94,24 +94,24 @@ cell lcb:user:spi_sts_sync:1.0 spi_sts_sync {
 
 ### DAC and ADC Channels
 for {set i 1} {$i <= 8} {incr i} {
-    ## DAC Channel
-    module dac_channel dac_ch$i {
-        sck sck
-        rst rst
-        integ_window spi_cfg_sync/integ_window_stable
-        integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-        integ_en spi_cfg_sync/integ_en_stable
-        spi_en spi_cfg_sync/spi_en_stable
-    }
-    ## ADC Channel
-    module adc_channel adc_ch$i {
-        sck sck
-        rst rst
-        integ_window spi_cfg_sync/integ_window_stable
-        integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-        integ_en spi_cfg_sync/integ_en_stable
-        spi_en spi_cfg_sync/spi_en_stable
-    }
+  ## DAC Channel
+  module dac_channel dac_ch$i {
+    sck sck
+    rst rst
+    integ_window spi_cfg_sync/integ_window_stable
+    integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
+    integ_en spi_cfg_sync/integ_en_stable
+    spi_en spi_cfg_sync/spi_en_stable
+  }
+  ## ADC Channel
+  module adc_channel adc_ch$i {
+    sck sck
+    rst rst
+    integ_window spi_cfg_sync/integ_window_stable
+    integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
+    integ_en spi_cfg_sync/integ_en_stable
+    spi_en spi_cfg_sync/spi_en_stable
+  }
 }
 
 ##################################################

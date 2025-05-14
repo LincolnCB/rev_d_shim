@@ -12,59 +12,59 @@ create_bd_pin -dir I Op8
 create_bd_pin -dir O Res
 
 # Instantiate a chain of AND gates to combine all eight channels
-cell xilinx.com:ip:util_vector_logic and_0 {
+
+# First stage
+cell xilinx.com:ip:util_vector_logic and_1_1 {
   C_SIZE 1
   C_OPERATION and
 } {
   Op1 Op1
   Op2 Op2
 }
-
-cell xilinx.com:ip:util_vector_logic and_1 {
+cell xilinx.com:ip:util_vector_logic and_1_2 {
   C_SIZE 1
   C_OPERATION and
 } {
-  Op1 and_0/Res
-  Op2 Op3
-}
-
-cell xilinx.com:ip:util_vector_logic and_2 {
-  C_SIZE 1
-  C_OPERATION and
-} {
-  Op1 and_1/Res
+  Op1 Op3
   Op2 Op4
 }
-
-cell xilinx.com:ip:util_vector_logic and_3 {
+cell xilinx.com:ip:util_vector_logic and_1_3 {
   C_SIZE 1
   C_OPERATION and
 } {
-  Op1 and_2/Res
-  Op2 Op5
-}
-
-cell xilinx.com:ip:util_vector_logic and_4 {
-  C_SIZE 1
-  C_OPERATION and
-} {
-  Op1 and_3/Res
+  Op1 Op5
   Op2 Op6
 }
-
-cell xilinx.com:ip:util_vector_logic and_5 {
+cell xilinx.com:ip:util_vector_logic and_1_4 {
   C_SIZE 1
   C_OPERATION and
 } {
-  Op1 and_4/Res
-  Op2 Op7
+  Op1 Op7
+  Op2 Op8
 }
 
-cell xilinx.com:ip:util_vector_logic and_6 {
+# Second stage
+cell xilinx.com:ip:util_vector_logic and_2_1 {
   C_SIZE 1
   C_OPERATION and
 } {
-  Op1 and_5/Res
-  Op2 Op8
+  Op1 and_1_1/Res
+  Op2 and_1_2/Res
+}
+cell xilinx.com:ip:util_vector_logic and_2_2 {
+  C_SIZE 1
+  C_OPERATION and
+} {
+  Op1 and_1_3/Res
+  Op2 and_1_4/Res
+}
+
+# Final stage
+cell xilinx.com:ip:util_vector_logic and_3_1 {
+  C_SIZE 1
+  C_OPERATION and
+} {
+  Op1 and_2_1/Res
+  Op2 and_2_2/Res
   Res Res
 }
