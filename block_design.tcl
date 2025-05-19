@@ -50,17 +50,13 @@ cell xilinx.com:ip:smartconnect:1.0 ps_periph_axi_intercon {
 ### Configuration register
 ## 32-bit offsets
 # +0 Trigger lockout
-# +1 Calibration offset (signed, 16b cap)
-# +2 DAC divider (unsigned, 16b cap)
-# +3 Integrator threshold average (unsigned, 16b cap)
-# +4 Integrator window (unsigned, 32b cap)
-# +5 Integrator enable (1b cap)
-# +6 Hardware enable (1b cap)
-# +7 SPI enable (1b cap)
+# +1 Integrator threshold average (unsigned, 16b cap)
+# +2 Integrator window (unsigned, 32b cap)
+# +3 Integrator enable (1b cap)
+# +4 Buffer reset (16b)
+# +5 Hardware enable (1b cap)
 cell lcb:user:axi_shim_cfg:1.0 axi_shim_cfg {
   TRIGGER_LOCKOUT_DEFAULT 250000
-  CALIBRATION_OFFSET_DEFAULT 0
-  DAC_DIVIDER_DEFAULT 1000
   INTEGRATOR_THRESHOLD_AVERAGE_DEFAULT 16384
   INTEGRATOR_WINDOW_DEFAULT 5000000
   INTEG_EN_DEFAULT 1
@@ -87,8 +83,6 @@ cell lcb:user:hw_manager:1.0 hw_manager {
   n_shutdown_force n_Shutdown_Force
   n_shutdown_rst n_Shutdown_Reset
   trig_lockout_oob axi_shim_cfg/trig_lockout_oob
-  cal_offset_oob axi_shim_cfg/cal_offset_oob
-  dac_divider_oob axi_shim_cfg/dac_divider_oob
   integ_thresh_avg_oob axi_shim_cfg/integ_thresh_avg_oob
   integ_window_oob axi_shim_cfg/integ_window_oob
   integ_en_oob axi_shim_cfg/integ_en_oob
@@ -148,8 +142,6 @@ module spi_clk_domain spi_clk_domain {
   rst hw_manager/sys_rst
   clk ps/FCLK_CLK0
   trig_lockout axi_shim_cfg/trig_lockout
-  cal_offset axi_shim_cfg/cal_offset
-  dac_divider axi_shim_cfg/dac_divider
   integ_thresh_avg axi_shim_cfg/integ_thresh_avg
   integ_window axi_shim_cfg/integ_window
   integ_en axi_shim_cfg/integ_en
@@ -163,10 +155,8 @@ module spi_clk_domain spi_clk_domain {
   adc_thresh_overflow hw_manager/adc_thresh_overflow
   dac_buf_underflow hw_manager/dac_buf_underflow
   adc_buf_underflow hw_manager/adc_buf_underflow
-  premat_dac_trig hw_manager/premat_dac_trig
-  premat_adc_trig hw_manager/premat_adc_trig
-  premat_dac_div hw_manager/premat_dac_div
-  premat_adc_div hw_manager/premat_adc_div
+  unexp_dac_trig hw_manager/unexp_dac_trig
+  unexp_adc_trig hw_manager/unexp_adc_trig
 }
 ## Trigger enable AND gate
 cell xilinx.com:ip:util_vector_logic trig_en_and {
@@ -226,30 +216,19 @@ cell xilinx.com:ip:xlconstant:1.1 pad_960 {
   CONST_VAL 0
   CONST_WIDTH 960
 } {}
+# Status register concatenation
+# Use TCL's subst, join, and lmap to loop through the 8 pairs of DAC/ADC FIFO status words as inputs
 cell xilinx.com:ip:xlconcat:2.1 sts_concat {
   NUM_PORTS 19
-} {
+} [subst {
   In0  hw_manager/status_word
   In1  pad_32/dout
-  In2  dac_fifo_0/fifo_sts_word
-  In3  adc_fifo_0/fifo_sts_word
-  In4  dac_fifo_1/fifo_sts_word
-  In5  adc_fifo_1/fifo_sts_word
-  In6  dac_fifo_2/fifo_sts_word
-  In7  adc_fifo_2/fifo_sts_word
-  In8  dac_fifo_3/fifo_sts_word
-  In9  adc_fifo_3/fifo_sts_word
-  In10 dac_fifo_4/fifo_sts_word
-  In11 adc_fifo_4/fifo_sts_word
-  In12 dac_fifo_5/fifo_sts_word
-  In13 adc_fifo_5/fifo_sts_word
-  In14 dac_fifo_6/fifo_sts_word
-  In15 adc_fifo_6/fifo_sts_word
-  In16 dac_fifo_7/fifo_sts_word
-  In17 adc_fifo_7/fifo_sts_word
+  [join [lmap i {0 1 2 3 4 5 6 7} {
+    "In[expr {2*$i+2}] dac_fifo_$i/fifo_sts_word\nIn[expr {2*$i+3}] adc_fifo_$i/fifo_sts_word"
+  }] "\n"]
   In18 pad_960/dout
   dout status_reg/sts_data
-}
+}]
 
 ##################################################
 

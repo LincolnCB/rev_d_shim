@@ -17,8 +17,7 @@ create_bd_pin -dir O err_thresh_overflow
 create_bd_pin -dir O err_thresh_underflow
 create_bd_pin -dir O buf_overflow
 create_bd_pin -dir O over_threshold
-create_bd_pin -dir O premat_trig
-create_bd_pin -dir O premat_div
+create_bd_pin -dir O unexp_trig
 
 # Trigger
 create_bd_pin -dir I trigger
