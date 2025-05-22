@@ -19,6 +19,11 @@ create_bd_pin -dir O buf_underflow
 create_bd_pin -dir O over_threshold
 create_bd_pin -dir O unexp_trig
 
+# Commands
+create_bd_pin -dir I -from 31 -to 0 dac_cmd
+create_bd_pin -dir O dac_cmd_rd_en
+create_bd_pin -dir I dac_cmd_empty
+
 # Trigger
 create_bd_pin -dir I trigger
 

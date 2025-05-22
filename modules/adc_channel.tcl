@@ -19,6 +19,14 @@ create_bd_pin -dir O buf_overflow
 create_bd_pin -dir O over_threshold
 create_bd_pin -dir O unexp_trig
 
+# Commands and data
+create_bd_pin -dir I -from 31 -to 0 adc_cmd
+create_bd_pin -dir O adc_cmd_rd_en
+create_bd_pin -dir I adc_cmd_empty
+create_bd_pin -dir O -from 31 -to 0 adc_data
+create_bd_pin -dir O adc_data_wr_en
+create_bd_pin -dir I adc_data_full
+
 # Trigger
 create_bd_pin -dir I trigger
 

@@ -170,64 +170,125 @@ cell xilinx.com:ip:util_vector_logic trig_en_and {
 
 ##################################################
 
-### DAC and ADC FIFOs
+### DAC/ADC Command and Data FIFOs
+cell xilinx.com:ip:xlconstant:1.1 sts_word_padding {
+  CONST_VAL 0
+  CONST_WIDTH 19
+} {}
 for {set i 1} {$i <= 8} {incr i} {
-  module dac_fifo dac_fifo_$i {}
-  module adc_fifo adc_fifo_$i {}
+  cell lcb:user:fifo_async_count dac_cmd_fifo_$i {
+    DATA_WIDTH 32
+    ADDR_WIDTH 10
+  } {
+    wr_clk ps/FCLK_CLK0
+    rd_clk spi_clk/clk_out1
+    rd_data spi_clk_domain/dac_ch${i}_cmd
+    rd_en spi_clk_domain/dac_ch${i}_cmd_rd_en
+    empty spi_clk_domain/dac_ch${i}_cmd_empty
+  }
+  cell xilinx.com:ip:xlconcat:2.1 dac_cmd_fifo_${i}_sts_word {
+    NUM_PORTS 4
+  } {
+    In0 dac_cmd_fifo_$i/fifo_count_wr_clk
+    In1 sts_word_padding/dout
+    In2 dac_cmd_fifo_$i/full
+    In3 dac_cmd_fifo_$i/almost_full
+  }
+
+  cell lcb:user:fifo_async_count adc_cmd_fifo_$i {
+    DATA_WIDTH 32
+    ADDR_WIDTH 10
+  } {
+    wr_clk ps/FCLK_CLK0
+    rd_clk spi_clk/clk_out1
+    rd_data spi_clk_domain/adc_ch${i}_cmd
+    rd_en spi_clk_domain/adc_ch${i}_cmd_rd_en
+    empty spi_clk_domain/adc_ch${i}_cmd_empty
+  }
+  cell xilinx.com:ip:xlconcat:2.1 adc_cmd_fifo_${i}_sts_word {
+    NUM_PORTS 4
+  } {
+    In0 adc_cmd_fifo_$i/fifo_count_wr_clk
+    In1 sts_word_padding/dout
+    In2 adc_cmd_fifo_$i/full
+    In3 adc_cmd_fifo_$i/almost_full
+  }
+
+  cell lcb:user:fifo_async_count adc_data_fifo_$i {
+    DATA_WIDTH 32
+    ADDR_WIDTH 10
+  } {
+    wr_clk spi_clk/clk_out1
+    rd_clk ps/FCLK_CLK0
+    wr_data spi_clk_domain/adc_ch${i}_data
+    wr_en spi_clk_domain/adc_ch${i}_data_wr_en
+    full spi_clk_domain/adc_ch${i}_data_full
+  }
+  cell xilinx.com:ip:xlconcat:2.1 adc_data_fifo_${i}_sts_word {
+    NUM_PORTS 4
+  } {
+    In0 adc_data_fifo_$i/fifo_count_rd_clk
+    In1 sts_word_padding/dout
+    In2 adc_data_fifo_$i/empty
+    In3 adc_data_fifo_$i/almost_empty
+  }
 }
 
 ##################################################
 
 ### Status register
 cell pavel-demin:user:axi_sts_register:1.0 status_reg {
-  STS_DATA_WIDTH 2048
+  STS_DATA_WIDTH 1024
 } {
   aclk ps/FCLK_CLK0
   S_AXI ps_periph_axi_intercon/M01_AXI
   aresetn ps_rst/peripheral_aresetn
 }
-addr 0x40100000 256 status_reg/S_AXI ps/M_AXI_GP0
+addr 0x40100000 128 status_reg/S_AXI ps/M_AXI_GP0
 ## Concatenation
-#   31:0    -- 32b Hardware status code (31:29 board num, 28:4 status code, 3:0 internal state)
-#   63:32   --     Reserved
-#  127:64   -- 64b DAC0 FIFO status (see FIFO module)
-#  191:128  -- 64b ADC0 FIFO status
-#  255:192  -- 64b DAC1 FIFO status
-#  319:256  -- 64b ADC1 FIFO status
-#  383:320  -- 64b DAC2 FIFO status
-#  447:384  -- 64b ADC2 FIFO status
-#  511:448  -- 64b DAC3 FIFO status
-#  575:512  -- 64b ADC3 FIFO status
-#  639:576  -- 64b DAC4 FIFO status
-#  703:640  -- 64b ADC4 FIFO status
-#  767:704  -- 64b DAC5 FIFO status
-#  831:768  -- 64b ADC5 FIFO status
-#  895:832  -- 64b DAC6 FIFO status
-#  959:896  -- 64b ADC6 FIFO status
-# 1023:960  -- 64b DAC7 FIFO status
-# 1087:1024 -- 64b ADC7 FIFO status
-# 2047:1088 --     Reserved
-cell xilinx.com:ip:xlconstant:1.1 pad_32 {
-  CONST_VAL 0
-  CONST_WIDTH 32
-} {}
+#   31:0   -- 32b Hardware status code (31:29 board num, 28:4 status code, 3:0 internal state)
+#   63:32  -- 32b DAC 1 command FIFO status word
+#   95:64  -- 32b ADC 1 command FIFO status word
+#  127:96  -- 32b ADC 1 data FIFO status word
+#  159:128 -- 32b DAC 2 command FIFO status word
+#  191:160 -- 32b ADC 2 command FIFO status word
+#  223:192 -- 32b ADC 2 data FIFO status word
+#  255:224 -- 32b DAC 3 command FIFO status word
+#  287:256 -- 32b ADC 3 command FIFO status word
+#  319:288 -- 32b ADC 3 data FIFO status word
+#  351:320 -- 32b DAC 4 command FIFO status word
+#  383:352 -- 32b ADC 4 command FIFO status word
+#  415:384 -- 32b ADC 4 data FIFO status word
+#  447:416 -- 32b DAC 5 command FIFO status word
+#  479:448 -- 32b ADC 5 command FIFO status word
+#  511:480 -- 32b ADC 5 data FIFO status word
+#  543:512 -- 32b DAC 6 command FIFO status word
+#  575:544 -- 32b ADC 6 command FIFO status word
+#  607:576 -- 32b ADC 6 data FIFO status word
+#  639:608 -- 32b DAC 7 command FIFO status word
+#  671:640 -- 32b ADC 7 command FIFO status word
+#  703:672 -- 32b ADC 7 data FIFO status word
+#  735:704 -- 32b DAC 8 command FIFO status word
+#  767:736 -- 32b ADC 8 command FIFO status word
+#  799:768 -- 32b ADC 8 data FIFO status word
+# 1023:800 -- 224b reserved
 ## Pad reserved bits
-cell xilinx.com:ip:xlconstant:1.1 pad_960 {
+cell xilinx.com:ip:xlconstant:1.1 pad_224 {
   CONST_VAL 0
-  CONST_WIDTH 960
+  CONST_WIDTH 224
 } {}
 # Status register concatenation
-# Use TCL's subst, join, and lmap to loop through the 8 pairs of DAC/ADC FIFO status words as inputs
+# Concatenate: hw_manager/status_word, pad_32, then for each i=1..8: dac_cmd_fifo_$i/fifo_sts_word, adc_cmd_fifo_$i/fifo_sts_word, adc_data_fifo_$i/fifo_sts_word, then pad_448
 cell xilinx.com:ip:xlconcat:2.1 sts_concat {
-  NUM_PORTS 19
-} [subst {
+  NUM_PORTS 26
+} {
   In0  hw_manager/status_word
-  In1  pad_32/dout
-  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {2*$i}]} {dac_fifo_$i/fifo_sts_word}]
-  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {2*$i+1}]} {adc_fifo_$i/fifo_sts_word}]
-  In18 pad_960/dout
+  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {3*($i-1)+1}]}   {dac_cmd_fifo_${i}_sts_word/dout}]
+  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {3*($i-1)+2}]}   {adc_cmd_fifo_${i}_sts_word/dout}]
+  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {3*($i-1)+3}]}   {adc_data_fifo_${i}_sts_word/dout}]
+  In25 pad_224/dout
   dout status_reg/sts_data
-}]
+}
 
 ##################################################
 
