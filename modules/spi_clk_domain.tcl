@@ -115,36 +115,28 @@ for {set i 1} {$i <= 8} {incr i} {
 cell xilinx.com:ip:xlconcat:2.1 n_dac_cs_concat {
   NUM_PORTS 8
 } [subst {
-  [join [lmap i {1 2 3 4 5 6 7 8} {
-    "In[expr {$i-1}] dac_ch$i/n_cs"
-  }] "\n"]
+  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {dac_ch$i/n_cs}]
   dout n_dac_cs
 }]
 # DAC_MOSI
 cell xilinx.com:ip:xlconcat:2.1 dac_mosi_concat {
   NUM_PORTS 8
 } [subst {
-  [join [lmap i {1 2 3 4 5 6 7 8} {
-    "In[expr {$i-1}] dac_ch$i/mosi"
-  }] "\n"]
+  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {dac_ch$i/mosi}]
   dout dac_mosi
 }]
 # ~ADC_CS
 cell xilinx.com:ip:xlconcat:2.1 n_adc_cs_concat {
   NUM_PORTS 8
 } [subst {
-  [join [lmap i {1 2 3 4 5 6 7 8} {
-    "In[expr {$i-1}] adc_ch$i/n_cs"
-  }] "\n"]
+  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {adc_ch$i/n_cs}]
   dout n_adc_cs
 }]
 # ADC_MOSI
 cell xilinx.com:ip:xlconcat:2.1 adc_mosi_concat {
   NUM_PORTS 8
 } [subst {
-  [join [lmap i {1 2 3 4 5 6 7 8} {
-    "In[expr {$i-1}] adc_ch$i/mosi"
-  }] "\n"]
+  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {adc_ch$i/mosi}]
   dout adc_mosi
 }]
 
@@ -192,14 +184,10 @@ for {set i 1} {$i <= 8} {incr i} {
 
 ## setup_done AND chain
 module 8ch_and dac_setup_done [subst {
-  [join [lmap i {1 2 3 4 5 6 7 8} {
-    "Op$i dac_ch$i/setup_done"
-  }] "\n"]
+  [loop_pins i {1 2 3 4 5 6 7 8} {Op$i} {dac_ch$i/setup_done}]
 }]
 module 8ch_and adc_setup_done [subst {
-  [join [lmap i {1 2 3 4 5 6 7 8} {
-    "Op$i adc_ch$i/setup_done"
-  }] "\n"]
+  [loop_pins i {1 2 3 4 5 6 7 8} {Op$i} {adc_ch$i/setup_done}]
 }]
 cell xilinx.com:ip:util_vector_logic setup_done_and {
   C_SIZE 1
@@ -214,80 +202,60 @@ cell xilinx.com:ip:util_vector_logic setup_done_and {
 cell xilinx.com:ip:xlconcat:2.1 dac_over_threshold_concat {
   NUM_PORTS 8
 } [subst {
-  [join [lmap i {1 2 3 4 5 6 7 8} {
-    "In[expr {$i-1}] dac_ch$i/over_threshold"
-  }] "\n"]
+  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {dac_ch$i/over_threshold}]
   dout spi_sts_sync/dac_over_thresh
 }]
 cell xilinx.com:ip:xlconcat:2.1 adc_over_threshold_concat {
   NUM_PORTS 8
 } [subst {
-  [join [lmap i {1 2 3 4 5 6 7 8} {
-    "In[expr {$i-1}] adc_ch$i/over_threshold"
-  }] "\n"]
+  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {adc_ch$i/over_threshold}]
   dout spi_sts_sync/adc_over_thresh
 }]
 cell xilinx.com:ip:xlconcat:2.1 dac_err_thresh_overflow_concat {
   NUM_PORTS 8
 } [subst {
-  [join [lmap i {1 2 3 4 5 6 7 8} {
-    "In[expr {$i-1}] dac_ch$i/err_thresh_overflow"
-  }] "\n"]
+  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {dac_ch$i/err_thresh_overflow}]
   dout spi_sts_sync/dac_thresh_overflow
 }]
 cell xilinx.com:ip:xlconcat:2.1 dac_err_thresh_underflow_concat {
   NUM_PORTS 8
 } [subst {
-  [join [lmap i {1 2 3 4 5 6 7 8} {
-    "In[expr {$i-1}] dac_ch$i/err_thresh_underflow"
-  }] "\n"]
+  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {dac_ch$i/err_thresh_underflow}]
   dout spi_sts_sync/dac_thresh_underflow
 }]
 cell xilinx.com:ip:xlconcat:2.1 adc_err_thresh_overflow_concat {
   NUM_PORTS 8
 } [subst {
-  [join [lmap i {1 2 3 4 5 6 7 8} {
-    "In[expr {$i-1}] adc_ch$i/err_thresh_overflow"
-  }] "\n"]
+  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {adc_ch$i/err_thresh_overflow}]
   dout spi_sts_sync/adc_thresh_overflow
 }]
 cell xilinx.com:ip:xlconcat:2.1 adc_err_thresh_underflow_concat {
   NUM_PORTS 8
 } [subst {
-  [join [lmap i {1 2 3 4 5 6 7 8} {
-    "In[expr {$i-1}] adc_ch$i/err_thresh_underflow"
-  }] "\n"]
+  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {adc_ch$i/err_thresh_underflow}]
   dout spi_sts_sync/adc_thresh_underflow
 }]
 cell xilinx.com:ip:xlconcat:2.1 dac_buf_underflow_concat {
   NUM_PORTS 8
 } [subst {
-  [join [lmap i {1 2 3 4 5 6 7 8} {
-    "In[expr {$i-1}] dac_ch$i/buf_underflow"
-  }] "\n"]
+  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {dac_ch$i/buf_underflow}]
   dout spi_sts_sync/dac_buf_underflow
 }]
 cell xilinx.com:ip:xlconcat:2.1 adc_buf_overflow_concat {
   NUM_PORTS 8
 } [subst {
-  [join [lmap i {1 2 3 4 5 6 7 8} {
-    "In[expr {$i-1}] adc_ch$i/buf_overflow"
-  }] "\n"]
+  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {adc_ch$i/buf_overflow}]
   dout spi_sts_sync/adc_buf_overflow
 }]
 cell xilinx.com:ip:xlconcat:2.1 unexp_dac_trig_concat {
   NUM_PORTS 8
 } [subst {
-  [join [lmap i {1 2 3 4 5 6 7 8} {
-    "In[expr {$i-1}] dac_ch$i/unexp_trig"
-  }] "\n"]
+  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {dac_ch$i/unexp_trig}]
   dout spi_sts_sync/unexp_dac_trig
 }]
 cell xilinx.com:ip:xlconcat:2.1 unexp_adc_trig_concat {
   NUM_PORTS 8
 } [subst {
-  [join [lmap i {1 2 3 4 5 6 7 8} {
-    "In[expr {$i-1}] adc_ch$i/unexp_trig"
-  }] "\n"]
+  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {adc_ch$i/unexp_trig}]
   dout spi_sts_sync/unexp_adc_trig
 }]

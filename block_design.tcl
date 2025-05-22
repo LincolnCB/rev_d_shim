@@ -171,7 +171,7 @@ cell xilinx.com:ip:util_vector_logic trig_en_and {
 ##################################################
 
 ### DAC and ADC FIFOs
-for {set i 0} {$i < 8} {incr i} {
+for {set i 1} {$i <= 8} {incr i} {
   module dac_fifo dac_fifo_$i {}
   module adc_fifo adc_fifo_$i {}
 }
@@ -223,9 +223,8 @@ cell xilinx.com:ip:xlconcat:2.1 sts_concat {
 } [subst {
   In0  hw_manager/status_word
   In1  pad_32/dout
-  [join [lmap i {0 1 2 3 4 5 6 7} {
-    "In[expr {2*$i+2}] dac_fifo_$i/fifo_sts_word\nIn[expr {2*$i+3}] adc_fifo_$i/fifo_sts_word"
-  }] "\n"]
+  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {2*$i}]} {dac_fifo_$i/fifo_sts_word}]
+  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {2*$i+1}]} {adc_fifo_$i/fifo_sts_word}]
   In18 pad_960/dout
   dout status_reg/sts_data
 }]
