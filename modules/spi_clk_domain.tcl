@@ -7,9 +7,9 @@
 ### Ports
 
 # System ports
-create_bd_pin -dir I -type clock clk
-create_bd_pin -dir I -type clock sck
-create_bd_pin -dir I -type reset rst
+create_bd_pin -dir I -type clock aclk
+create_bd_pin -dir I -type reset aresetn
+create_bd_pin -dir I -type clock spi_clk
 
 # Configuration signals (need synchronization)
 create_bd_pin -dir I -from 31 -to 0 trig_lockout
@@ -19,7 +19,7 @@ create_bd_pin -dir I integ_en
 create_bd_pin -dir I spi_en
 
 # Status signals (need synchronization)
-create_bd_pin -dir O -from 7 -to 0 spi_running
+create_bd_pin -dir O -from 7 -to 0 spi_off
 create_bd_pin -dir O -from 7 -to 0 dac_over_thresh
 create_bd_pin -dir O -from 7 -to 0 adc_over_thresh
 create_bd_pin -dir O -from 7 -to 0 dac_thresh_underflow
@@ -64,12 +64,25 @@ create_bd_pin -dir I -from 7 -to 0 adc_miso
 
 ### Clock domain crossings
 
+## SPI clock domain reset 
+# Negate spi_en to give a reset to the SPI clock domain
+cell xilinx.com:ip:util_vector_logic n_spi_en {
+  C_SIZE 1
+  C_OPERATION not
+} {
+  Op1 spi_en
+}
+# Create proc_sys_reset
+cell xilinx.com:ip:proc_sys_reset:5.0 spi_rst {} {
+  ext_reset_in n_spi_en/Res
+  slowest_sync_clk spi_clk
+}
+
 ## SPI system configuration synchronization
 cell lcb:user:spi_cfg_sync:1.0 spi_cfg_sync {
 } {
-  clk clk
-  spi_clk sck
-  rst rst
+  spi_clk spi_clk
+  spi_resetn spi_rst/peripheral_aresetn
   trig_lockout trig_lockout
   integ_thresh_avg integ_thresh_avg
   integ_window integ_window
@@ -80,10 +93,9 @@ cell lcb:user:spi_cfg_sync:1.0 spi_cfg_sync {
 ## SPI system status synchronization
 cell lcb:user:spi_sts_sync:1.0 spi_sts_sync {
 } {
-  clk clk
-  spi_clk sck
-  rst rst
-  spi_running_stable spi_running
+  aclk aclk
+  aresetn aresetn
+  spi_off_stable spi_off
   dac_over_thresh_stable dac_over_thresh
   adc_over_thresh_stable adc_over_thresh
   dac_thresh_underflow_stable dac_thresh_underflow
@@ -102,8 +114,8 @@ cell lcb:user:spi_sts_sync:1.0 spi_sts_sync {
 for {set i 1} {$i <= 8} {incr i} {
   ## DAC Channel
   module dac_channel dac_ch$i {
-    sck sck
-    rst rst
+    spi_clk spi_clk
+    aresetn spi_rst/peripheral_aresetn
     integ_window spi_cfg_sync/integ_window_stable
     integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
     integ_en spi_cfg_sync/integ_en_stable
@@ -114,8 +126,8 @@ for {set i 1} {$i <= 8} {incr i} {
   }
   ## ADC Channel
   module adc_channel adc_ch$i {
-    sck sck
-    rst rst
+    spi_clk spi_clk
+    aresetn spi_rst/peripheral_aresetn
     integ_window spi_cfg_sync/integ_window_stable
     integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
     integ_en spi_cfg_sync/integ_en_stable
@@ -218,8 +230,15 @@ cell xilinx.com:ip:util_vector_logic setup_done_and {
 } {
   Op1 dac_setup_done/Res
   Op2 adc_setup_done/Res
-  Res spi_sts_sync/spi_running
 }
+cell xilinx.com:ip:util_vector_logic setup_done_n {
+  C_SIZE 1
+  C_OPERATION not
+} {
+  Op1 setup_done_and/Res
+  Res spi_sts_sync/spi_off
+}
+
 
 ## Concatenate error signals
 cell xilinx.com:ip:xlconcat:2.1 dac_over_threshold_concat {

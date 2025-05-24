@@ -2,8 +2,8 @@
 # This module implements a DAC channel with an integrator and SPI interface.
 
 # System signals
-create_bd_pin -dir I -type clock sck
-create_bd_pin -dir I -type reset rst
+create_bd_pin -dir I -type clock spi_clk
+create_bd_pin -dir I -type reset aresetn
 
 # Config parameters
 create_bd_pin -dir I -from 31 -to 0 integ_window
@@ -63,8 +63,8 @@ cell xilinx.com:ip:util_vector_logic setup_done_logic {
 
 # Instantiate the threshold integrator module
 cell lcb:user:threshold_integrator:1.0 threshold_core {} {
-  clk sck
-  rst rst
+  clk spi_clk
+  aresetn aresetn
   enable spi_and_integ_en/Res
   window integ_window
   threshold_average integ_thresh_avg
