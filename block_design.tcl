@@ -141,12 +141,9 @@ module spi_clk_domain spi_clk_domain {
   integ_en axi_shim_cfg/integ_en
   spi_en hw_manager/spi_en
   spi_off hw_manager/spi_off
-  dac_over_thresh hw_manager/dac_over_thresh
-  adc_over_thresh hw_manager/adc_over_thresh
-  dac_thresh_underflow hw_manager/dac_thresh_underflow
-  dac_thresh_overflow hw_manager/dac_thresh_overflow
-  adc_thresh_underflow hw_manager/adc_thresh_underflow
-  adc_thresh_overflow hw_manager/adc_thresh_overflow
+  over_thresh hw_manager/over_thresh
+  thresh_underflow hw_manager/thresh_underflow
+  thresh_overflow hw_manager/thresh_overflow
   dac_buf_underflow hw_manager/dac_buf_underflow
   adc_buf_underflow hw_manager/adc_buf_underflow
   unexp_dac_trig hw_manager/unexp_dac_trig

@@ -20,12 +20,9 @@ create_bd_pin -dir I spi_en
 
 # Status signals (need synchronization)
 create_bd_pin -dir O -from 7 -to 0 spi_off
-create_bd_pin -dir O -from 7 -to 0 dac_over_thresh
-create_bd_pin -dir O -from 7 -to 0 adc_over_thresh
-create_bd_pin -dir O -from 7 -to 0 dac_thresh_underflow
-create_bd_pin -dir O -from 7 -to 0 dac_thresh_overflow
-create_bd_pin -dir O -from 7 -to 0 adc_thresh_underflow
-create_bd_pin -dir O -from 7 -to 0 adc_thresh_overflow
+create_bd_pin -dir O -from 7 -to 0 over_thresh
+create_bd_pin -dir O -from 7 -to 0 thresh_underflow
+create_bd_pin -dir O -from 7 -to 0 thresh_overflow
 create_bd_pin -dir O -from 7 -to 0 dac_buf_underflow
 create_bd_pin -dir O -from 7 -to 0 adc_buf_underflow
 create_bd_pin -dir O -from 7 -to 0 unexp_dac_trig
@@ -96,12 +93,9 @@ cell lcb:user:spi_sts_sync:1.0 spi_sts_sync {
   aclk aclk
   aresetn aresetn
   spi_off_stable spi_off
-  dac_over_thresh_stable dac_over_thresh
-  adc_over_thresh_stable adc_over_thresh
-  dac_thresh_underflow_stable dac_thresh_underflow
-  dac_thresh_overflow_stable dac_thresh_overflow
-  adc_thresh_underflow_stable adc_thresh_underflow
-  adc_thresh_overflow_stable adc_thresh_overflow
+  over_thresh_stable over_thresh
+  thresh_underflow_stable thresh_underflow
+  thresh_overflow_stable thresh_overflow
   dac_buf_underflow_stable dac_buf_underflow
   adc_buf_overflow_stable adc_buf_underflow
   unexp_dac_trig_stable unexp_dac_trig
@@ -128,9 +122,6 @@ for {set i 1} {$i <= 8} {incr i} {
   module adc_channel adc_ch$i {
     spi_clk spi_clk
     aresetn spi_rst/peripheral_aresetn
-    integ_window spi_cfg_sync/integ_window_stable
-    integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-    integ_en spi_cfg_sync/integ_en_stable
     spi_en spi_cfg_sync/spi_en_stable
     adc_cmd adc_ch${i}_cmd
     adc_cmd_rd_en adc_ch${i}_cmd_rd_en
@@ -241,41 +232,23 @@ cell xilinx.com:ip:util_vector_logic setup_done_n {
 
 
 ## Concatenate error signals
-cell xilinx.com:ip:xlconcat:2.1 dac_over_threshold_concat {
+cell xilinx.com:ip:xlconcat:2.1 over_threshold_concat {
   NUM_PORTS 8
 } {
   [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {dac_ch$i/over_threshold}]
-  dout spi_sts_sync/dac_over_thresh
+  dout spi_sts_sync/over_thresh
 }
-cell xilinx.com:ip:xlconcat:2.1 adc_over_threshold_concat {
-  NUM_PORTS 8
-} {
-  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {adc_ch$i/over_threshold}]
-  dout spi_sts_sync/adc_over_thresh
-}
-cell xilinx.com:ip:xlconcat:2.1 dac_err_thresh_overflow_concat {
+cell xilinx.com:ip:xlconcat:2.1 err_thresh_overflow_concat {
   NUM_PORTS 8
 } {
   [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {dac_ch$i/err_thresh_overflow}]
-  dout spi_sts_sync/dac_thresh_overflow
+  dout spi_sts_sync/thresh_overflow
 }
-cell xilinx.com:ip:xlconcat:2.1 dac_err_thresh_underflow_concat {
+cell xilinx.com:ip:xlconcat:2.1 err_thresh_underflow_concat {
   NUM_PORTS 8
 } {
   [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {dac_ch$i/err_thresh_underflow}]
-  dout spi_sts_sync/dac_thresh_underflow
-}
-cell xilinx.com:ip:xlconcat:2.1 adc_err_thresh_overflow_concat {
-  NUM_PORTS 8
-} {
-  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {adc_ch$i/err_thresh_overflow}]
-  dout spi_sts_sync/adc_thresh_overflow
-}
-cell xilinx.com:ip:xlconcat:2.1 adc_err_thresh_underflow_concat {
-  NUM_PORTS 8
-} {
-  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {adc_ch$i/err_thresh_underflow}]
-  dout spi_sts_sync/adc_thresh_underflow
+  dout spi_sts_sync/thresh_underflow
 }
 cell xilinx.com:ip:xlconcat:2.1 dac_buf_underflow_concat {
   NUM_PORTS 8
