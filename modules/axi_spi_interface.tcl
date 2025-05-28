@@ -1,5 +1,22 @@
 ### DAC/ADC Command and Data FIFOs Module
 
+# Get the board count from the calling context
+set board_count [module_get_upvar board_count]
+
+# If the board count is not 8, then error out
+if {$board_count < 1 || $board_count > 8} {
+  puts "Error: board_count must be between 1 and 8."
+  exit 1
+}
+# 1 to board_count
+set board_set [join [lmap i {1 2 3 4 5 6 7 8} {if {$i <= $board_count} {set i}}] " "]
+# board_count + 1 to 8
+set board_set_compl [join [lmap i {1 2 3 4 5 6 7 8} {if {$i > $board_count} {set i}}] " "]
+
+##################################################
+
+### Ports
+
 # System signals
 create_bd_pin -dir I -type clock aclk
 create_bd_pin -dir I -type reset aresetn
@@ -12,7 +29,7 @@ create_bd_intf_pin -mode slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_AXI
 create_bd_pin -dir O -from 767 -to 0 fifo_sts
 
 # DAC/ADC command and data channels
-for {set i 1} {$i <= 8} {incr i} {
+for {set i 1} {$i <= $board_count} {incr i} {
   # DAC command channel
   create_bd_pin -dir O -from 31 -to 0 dac_ch${i}_cmd
   create_bd_pin -dir I dac_ch${i}_cmd_rd_en
@@ -29,10 +46,10 @@ for {set i 1} {$i <= 8} {incr i} {
   create_bd_pin -dir O adc_ch${i}_data_full
 }
 
-# DAC/ADC AXI smart connect, per board (1 master, 8 slaves)
+# DAC/ADC AXI smart connect, per board (1 master, board_count slaves)
 cell xilinx.com:ip:smartconnect:1.0 board_ch_axi_intercon {
   NUM_SI 1
-  NUM_MI 8
+  NUM_MI $board_count
 } {
   aclk aclk
   S00_AXI S_AXI
@@ -46,7 +63,7 @@ cell xilinx.com:ip:xlconstant:1.1 sts_word_padding {
 
 ## FIFO declarations
 # Each FIFO has a 32-bit data width and 10-bit address width
-for {set i 1} {$i <= 8} {incr i} {
+for {set i 1} {$i <= $board_count} {incr i} {
   # DAC/ADC channel smart connect
   cell xilinx.com:ip:smartconnect:1.0 ch${i}_axi_intercon {
     NUM_SI 1
@@ -161,11 +178,20 @@ for {set i 1} {$i <= 8} {incr i} {
 }
 
 ## Status concatenation out
+# 32-bit padding for unused boards
+cell xilinx.com:ip:xlconstant:1.1 empty_sts_word {
+  CONST_VAL 0
+  CONST_WIDTH 32
+} {}
+# Concatenate status words from all FIFOs
 cell xilinx.com:ip:xlconcat:2.1 fifo_sts_concat {
   NUM_PORTS 24
 } {
-  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {3*($i-1)+0}]}   {dac_cmd_fifo_${i}_sts_word/dout}]
-  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {3*($i-1)+1}]}   {adc_cmd_fifo_${i}_sts_word/dout}]
-  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {3*($i-1)+2}]}   {adc_data_fifo_${i}_sts_word/dout}]
+  [loop_pins i $board_set {In[expr {3*($i-1)+0}]}   {dac_cmd_fifo_${i}_sts_word/dout}]
+  [loop_pins i $board_set {In[expr {3*($i-1)+1}]}   {adc_cmd_fifo_${i}_sts_word/dout}]
+  [loop_pins i $board_set {In[expr {3*($i-1)+2}]}   {adc_data_fifo_${i}_sts_word/dout}]
+  [loop_pins i $board_set_compl {In[expr {3*($i-1)+0}]} {empty_sts_word/dout}]
+  [loop_pins i $board_set_compl {In[expr {3*($i-1)+1}]} {empty_sts_word/dout}]
+  [loop_pins i $board_set_compl {In[expr {3*($i-1)+2}]} {empty_sts_word/dout}]
   dout fifo_sts
 }
