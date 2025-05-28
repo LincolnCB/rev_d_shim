@@ -30,13 +30,17 @@ create_bd_pin -dir O -from 7 -to 0 unexp_adc_trig
 
 # Commands and data
 for {set i 1} {$i <= 8} {incr i} {
+  # DAC command channel
   create_bd_pin -dir I -from 31 -to 0 dac_ch${i}_cmd
   create_bd_pin -dir O dac_ch${i}_cmd_rd_en
   create_bd_pin -dir I dac_ch${i}_cmd_empty
 
+  # ADC command channel
   create_bd_pin -dir I -from 31 -to 0 adc_ch${i}_cmd
   create_bd_pin -dir O adc_ch${i}_cmd_rd_en
   create_bd_pin -dir I adc_ch${i}_cmd_empty
+
+  # ADC data channel
   create_bd_pin -dir O -from 31 -to 0 adc_ch${i}_data
   create_bd_pin -dir O adc_ch${i}_data_wr_en
   create_bd_pin -dir I adc_ch${i}_data_full
