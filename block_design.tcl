@@ -182,15 +182,18 @@ module axi_spi_interface axi_spi_interface {
   aresetn ps_rst/peripheral_aresetn
   spi_clk spi_clk/clk_out1
   S_AXI ps/M_AXI_GP1
-  [loop_pins i $board_set {dac_ch${i}_cmd} {spi_clk_domain/dac_ch${i}_cmd}]
-  [loop_pins i $board_set {dac_ch${i}_cmd_rd_en} {spi_clk_domain/dac_ch${i}_cmd_rd_en}]
-  [loop_pins i $board_set {dac_ch${i}_cmd_empty} {spi_clk_domain/dac_ch${i}_cmd_empty}]
-  [loop_pins i $board_set {adc_ch${i}_cmd} {spi_clk_domain/adc_ch${i}_cmd}]
-  [loop_pins i $board_set {adc_ch${i}_cmd_rd_en} {spi_clk_domain/adc_ch${i}_cmd_rd_en}]
-  [loop_pins i $board_set {adc_ch${i}_cmd_empty} {spi_clk_domain/adc_ch${i}_cmd_empty}]
-  [loop_pins i $board_set {adc_ch${i}_data} {spi_clk_domain/adc_ch${i}_data}]
-  [loop_pins i $board_set {adc_ch${i}_data_wr_en} {spi_clk_domain/adc_ch${i}_data_wr_en}]
-  [loop_pins i $board_set {adc_ch${i}_data_full} {spi_clk_domain/adc_ch${i}_data_full}]
+}
+# Wire channel pins for the module
+for {set i 1} {$i <= $board_count} {incr i} {
+  wire axi_spi_interface/dac_ch${i}_cmd spi_clk_domain/dac_ch${i}_cmd
+  wire axi_spi_interface/dac_ch${i}_cmd_rd_en spi_clk_domain/dac_ch${i}_cmd_rd_en
+  wire axi_spi_interface/dac_ch${i}_cmd_empty spi_clk_domain/dac_ch${i}_cmd_empty
+  wire axi_spi_interface/adc_ch${i}_cmd spi_clk_domain/adc_ch${i}_cmd
+  wire axi_spi_interface/adc_ch${i}_cmd_rd_en spi_clk_domain/adc_ch${i}_cmd_rd_en
+  wire axi_spi_interface/adc_ch${i}_cmd_empty spi_clk_domain/adc_ch${i}_cmd_empty
+  wire axi_spi_interface/adc_ch${i}_data spi_clk_domain/adc_ch${i}_data
+  wire axi_spi_interface/adc_ch${i}_data_wr_en spi_clk_domain/adc_ch${i}_data_wr_en
+  wire axi_spi_interface/adc_ch${i}_data_full spi_clk_domain/adc_ch${i}_data_full
 }
 ## Address assignment
 for {set i 1} {$i <= $board_count} {incr i} {

@@ -187,11 +187,17 @@ cell xilinx.com:ip:xlconstant:1.1 empty_sts_word {
 cell xilinx.com:ip:xlconcat:2.1 fifo_sts_concat {
   NUM_PORTS 24
 } {
-  [loop_pins i $board_set {In[expr {3*($i-1)+0}]}   {dac_cmd_fifo_${i}_sts_word/dout}]
-  [loop_pins i $board_set {In[expr {3*($i-1)+1}]}   {adc_cmd_fifo_${i}_sts_word/dout}]
-  [loop_pins i $board_set {In[expr {3*($i-1)+2}]}   {adc_data_fifo_${i}_sts_word/dout}]
-  [loop_pins i $board_set_compl {In[expr {3*($i-1)+0}]} {empty_sts_word/dout}]
-  [loop_pins i $board_set_compl {In[expr {3*($i-1)+1}]} {empty_sts_word/dout}]
-  [loop_pins i $board_set_compl {In[expr {3*($i-1)+2}]} {empty_sts_word/dout}]
   dout fifo_sts
+}
+# Wire used board status words to the concatenation
+for {set i 1} {$i <= $board_count} {incr i} {
+  wire fifo_sts_concat/In[expr {3*($i-1)+0}] dac_cmd_fifo_${i}_sts_word/dout
+  wire fifo_sts_concat/In[expr {3*($i-1)+1}] adc_cmd_fifo_${i}_sts_word/dout
+  wire fifo_sts_concat/In[expr {3*($i-1)+2}] adc_data_fifo_${i}_sts_word/dout
+}
+# Wire unused board status words to the concatenation
+for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
+  wire fifo_sts_concat/In[expr {3*($i-1)+0}] empty_sts_word/dout
+  wire fifo_sts_concat/In[expr {3*($i-1)+1}] empty_sts_word/dout
+  wire fifo_sts_concat/In[expr {3*($i-1)+2}] empty_sts_word/dout
 }
