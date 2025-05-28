@@ -1,4 +1,5 @@
-set dummy_example "Trying out upvar"
+# Variably define the channel count (MUST BE 8 OR BELOW)
+set board_count 2
 
 ##################################################
 

@@ -2,6 +2,19 @@
 # This module implements the SPI clock domain containing the DAC and ADC channels.
 # It synchronizes the configuration settings across clock domains
 
+# Get the board count from the calling context
+set board_count [module_get_upvar board_count]
+
+# If the board count is not 8, then error out
+if {$board_count < 1 || $board_count > 8} {
+  puts "Error: board_count must be between 1 and 8."
+  exit 1
+}
+# 1 to board_count
+set board_set [join [lmap i {1 2 3 4 5 6 7 8} {if {$i <= $board_count} {set i}}] " "]
+# board_count + 1 to 8
+set board_set_compl [join [lmap i {1 2 3 4 5 6 7 8} {if {$i > $board_count} {set i}}] " "]
+
 ##################################################
 
 ### Ports
@@ -29,7 +42,7 @@ create_bd_pin -dir O -from 7 -to 0 unexp_dac_trig
 create_bd_pin -dir O -from 7 -to 0 unexp_adc_trig
 
 # Commands and data
-for {set i 1} {$i <= 8} {incr i} {
+for {set i 1} {$i <= $board_count} {incr i} {
   # DAC command channel
   create_bd_pin -dir I -from 31 -to 0 dac_ch${i}_cmd
   create_bd_pin -dir O dac_ch${i}_cmd_rd_en
@@ -109,9 +122,9 @@ cell lcb:user:spi_sts_sync:1.0 spi_sts_sync {
 ##################################################
 
 ### DAC and ADC Channels
-for {set i 1} {$i <= 8} {incr i} {
+for {set i 1} {$i <= $board_count} {incr i} {
   ## DAC Channel
-  module dac_channel dac_ch$i {
+  module spi_dac_channel dac_ch$i {
     spi_clk spi_clk
     aresetn spi_rst/peripheral_aresetn
     integ_window spi_cfg_sync/integ_window_stable
@@ -123,7 +136,7 @@ for {set i 1} {$i <= 8} {incr i} {
     dac_cmd_empty dac_ch${i}_cmd_empty
   }
   ## ADC Channel
-  module adc_channel adc_ch$i {
+  module spi_adc_channel adc_ch$i {
     spi_clk spi_clk
     aresetn spi_rst/peripheral_aresetn
     spi_en spi_cfg_sync/spi_en_stable
@@ -143,37 +156,38 @@ for {set i 1} {$i <= 8} {incr i} {
 ## Outputs
 # ~DAC_CS
 cell xilinx.com:ip:xlconcat:2.1 n_dac_cs_concat {
-  NUM_PORTS 8
+  NUM_PORTS $board_count
 } {
-  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {dac_ch$i/n_cs}]
+  [loop_pins i $board_set {In[expr {$i-1}]} {dac_ch$i/n_cs}]
   dout n_dac_cs
 }
 # DAC_MOSI
 cell xilinx.com:ip:xlconcat:2.1 dac_mosi_concat {
-  NUM_PORTS 8
+  NUM_PORTS $board_count
 } {
-  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {dac_ch$i/mosi}]
+  [loop_pins i $board_set {In[expr {$i-1}]} {dac_ch$i/mosi}]
+
   dout dac_mosi
 }
 # ~ADC_CS
 cell xilinx.com:ip:xlconcat:2.1 n_adc_cs_concat {
   NUM_PORTS 8
 } {
-  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {adc_ch$i/n_cs}]
+  [loop_pins i $board_set {In[expr {$i-1}]} {adc_ch$i/n_cs}]
   dout n_adc_cs
 }
 # ADC_MOSI
 cell xilinx.com:ip:xlconcat:2.1 adc_mosi_concat {
   NUM_PORTS 8
 } {
-  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {adc_ch$i/mosi}]
+  [loop_pins i $board_set {In[expr {$i-1}]} {adc_ch$i/mosi}]
   dout adc_mosi
 }
 
 
 ## Inputs
 # MISO_SCK
-for {set i 1} {$i <= 8} {incr i} {
+for {set i 1} {$i <= $board_count} {incr i} {
   cell xilinx.com:ip:xlslice:1.0 miso_sck_ch$i {
     DIN_WIDTH 8
     DIN_FROM [expr {$i-1}]
@@ -185,7 +199,7 @@ for {set i 1} {$i <= 8} {incr i} {
   }
 }
 # DAC_MISO
-for {set i 1} {$i <= 8} {incr i} {
+for {set i 1} {$i <= $board_count} {incr i} {
   cell xilinx.com:ip:xlslice:1.0 dac_miso_ch$i {
     DIN_WIDTH 8
     DIN_FROM [expr {$i-1}]
@@ -196,7 +210,7 @@ for {set i 1} {$i <= 8} {incr i} {
   }
 }
 # ADC_MISO
-for {set i 1} {$i <= 8} {incr i} {
+for {set i 1} {$i <= $board_count} {incr i} {
   cell xilinx.com:ip:xlslice:1.0 adc_miso_ch$i {
     DIN_WIDTH 8
     DIN_FROM [expr {$i-1}]
@@ -213,24 +227,41 @@ for {set i 1} {$i <= 8} {incr i} {
 ### Status signals
 
 ## setup_done AND chain
-module 8ch_and dac_setup_done {
-  [loop_pins i {1 2 3 4 5 6 7 8} {Op$i} {dac_ch$i/setup_done}]
+for {set i 1} {$i <= $board_count} {incr i} {
+  if {$i > 1} {
+    # AND gate for each channel's setup_done signal
+    cell xilinx.com:ip:util_vector_logic ch_${i}_done {
+      C_SIZE 1
+      C_OPERATION and
+    } {
+      Op1 dac_ch$i/setup_done
+      Op2 adc_ch$i/setup_done
+    }
+    # Chain the AND gates together
+    cell xilinx.com:ip:util_vector_logic chs_to_${i}_done {
+      C_SIZE 1
+      C_OPERATION and
+    } {
+      Op1 ch_${i}_done/Res
+      Op2 chs_to_[expr {$i-1}]_done/Res
+    }
+  } else {
+    # For the first channel, no chain.
+    cell xilinx.com:ip:util_vector_logic chs_to_${i}_done {
+      C_SIZE 1
+      C_OPERATION and
+    } {
+      Op1 dac_ch$i/setup_done
+      Op2 adc_ch$i/setup_done
+    }
+  }
 }
-module 8ch_and adc_setup_done {
-  [loop_pins i {1 2 3 4 5 6 7 8} {Op$i} {adc_ch$i/setup_done}]
-}
-cell xilinx.com:ip:util_vector_logic setup_done_and {
-  C_SIZE 1
-  C_OPERATION and
-} {
-  Op1 dac_setup_done/Res
-  Op2 adc_setup_done/Res
-}
+# Negate the final setup_done signal
 cell xilinx.com:ip:util_vector_logic setup_done_n {
   C_SIZE 1
   C_OPERATION not
 } {
-  Op1 setup_done_and/Res
+  Op1 chs_to_${board_count}_done/Res
   Res spi_sts_sync/spi_off
 }
 
@@ -239,42 +270,42 @@ cell xilinx.com:ip:util_vector_logic setup_done_n {
 cell xilinx.com:ip:xlconcat:2.1 over_threshold_concat {
   NUM_PORTS 8
 } {
-  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {dac_ch$i/over_threshold}]
+  [loop_pins i $board_set {In[expr {$i-1}]} {dac_ch$i/over_threshold}]
   dout spi_sts_sync/over_thresh
 }
 cell xilinx.com:ip:xlconcat:2.1 err_thresh_overflow_concat {
   NUM_PORTS 8
 } {
-  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {dac_ch$i/err_thresh_overflow}]
+  [loop_pins i $board_set {In[expr {$i-1}]} {dac_ch$i/err_thresh_overflow}]
   dout spi_sts_sync/thresh_overflow
 }
 cell xilinx.com:ip:xlconcat:2.1 err_thresh_underflow_concat {
   NUM_PORTS 8
 } {
-  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {dac_ch$i/err_thresh_underflow}]
+  [loop_pins i $board_set {In[expr {$i-1}]} {dac_ch$i/err_thresh_underflow}]
   dout spi_sts_sync/thresh_underflow
 }
 cell xilinx.com:ip:xlconcat:2.1 dac_buf_underflow_concat {
   NUM_PORTS 8
 } {
-  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {dac_ch$i/buf_underflow}]
+  [loop_pins i $board_set {In[expr {$i-1}]} {dac_ch$i/buf_underflow}]
   dout spi_sts_sync/dac_buf_underflow
 }
 cell xilinx.com:ip:xlconcat:2.1 adc_buf_overflow_concat {
   NUM_PORTS 8
 } {
-  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {adc_ch$i/buf_overflow}]
+  [loop_pins i $board_set {In[expr {$i-1}]} {adc_ch$i/buf_overflow}]
   dout spi_sts_sync/adc_buf_overflow
 }
 cell xilinx.com:ip:xlconcat:2.1 unexp_dac_trig_concat {
   NUM_PORTS 8
 } {
-  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {dac_ch$i/unexp_trig}]
+  [loop_pins i $board_set {In[expr {$i-1}]} {dac_ch$i/unexp_trig}]
   dout spi_sts_sync/unexp_dac_trig
 }
 cell xilinx.com:ip:xlconcat:2.1 unexp_adc_trig_concat {
   NUM_PORTS 8
 } {
-  [loop_pins i {1 2 3 4 5 6 7 8} {In[expr {$i-1}]} {adc_ch$i/unexp_trig}]
+  [loop_pins i $board_set {In[expr {$i-1}]} {adc_ch$i/unexp_trig}]
   dout spi_sts_sync/unexp_adc_trig
 }
