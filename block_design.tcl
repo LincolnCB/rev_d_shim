@@ -1,3 +1,5 @@
+set dummy_example "Trying out upvar"
+
 ##################################################
 
 ### Create processing system
@@ -163,82 +165,82 @@ cell xilinx.com:ip:util_vector_logic trig_en_and {
 
 ##################################################
 
-### DAC/ADC Command and Data FIFOs Module
-module axi_spi_interface axi_spi_interface {
-  aclk ps/FCLK_CLK0
-  aresetn ps_rst/peripheral_aresetn
-  spi_clk spi_clk/clk_out1
-  S_AXI ps/M_AXI_GP1
-  [loop_pins i {1 2 3 4 5 6 7 8} {dac_ch${i}_cmd} {spi_clk_domain/dac_ch${i}_cmd}]
-  [loop_pins i {1 2 3 4 5 6 7 8} {dac_ch${i}_cmd_rd_en} {spi_clk_domain/dac_ch${i}_cmd_rd_en}]
-  [loop_pins i {1 2 3 4 5 6 7 8} {dac_ch${i}_cmd_empty} {spi_clk_domain/dac_ch${i}_cmd_empty}]
-  [loop_pins i {1 2 3 4 5 6 7 8} {adc_ch${i}_cmd} {spi_clk_domain/adc_ch${i}_cmd}]
-  [loop_pins i {1 2 3 4 5 6 7 8} {adc_ch${i}_cmd_rd_en} {spi_clk_domain/adc_ch${i}_cmd_rd_en}]
-  [loop_pins i {1 2 3 4 5 6 7 8} {adc_ch${i}_cmd_empty} {spi_clk_domain/adc_ch${i}_cmd_empty}]
-  [loop_pins i {1 2 3 4 5 6 7 8} {adc_ch${i}_data} {spi_clk_domain/adc_ch${i}_data}]
-  [loop_pins i {1 2 3 4 5 6 7 8} {adc_ch${i}_data_wr_en} {spi_clk_domain/adc_ch${i}_data_wr_en}]
-  [loop_pins i {1 2 3 4 5 6 7 8} {adc_ch${i}_data_full} {spi_clk_domain/adc_ch${i}_data_full}]
-}
-## Address assignment
-for {set i 1} {$i <= 8} {incr i} {
-  addr 0x800[expr {$i-1}]0000 128 axi_spi_interface/dac_cmd_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
-  addr 0x800[expr {$i-1}]1000 128 axi_spi_interface/adc_cmd_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
-  addr 0x800[expr {$i-1}]2000 128 axi_spi_interface/adc_data_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
-}
+# ### DAC/ADC Command and Data FIFOs Module
+# module axi_spi_interface axi_spi_interface {
+#   aclk ps/FCLK_CLK0
+#   aresetn ps_rst/peripheral_aresetn
+#   spi_clk spi_clk/clk_out1
+#   S_AXI ps/M_AXI_GP1
+#   [loop_pins i {1 2 3 4 5 6 7 8} {dac_ch${i}_cmd} {spi_clk_domain/dac_ch${i}_cmd}]
+#   [loop_pins i {1 2 3 4 5 6 7 8} {dac_ch${i}_cmd_rd_en} {spi_clk_domain/dac_ch${i}_cmd_rd_en}]
+#   [loop_pins i {1 2 3 4 5 6 7 8} {dac_ch${i}_cmd_empty} {spi_clk_domain/dac_ch${i}_cmd_empty}]
+#   [loop_pins i {1 2 3 4 5 6 7 8} {adc_ch${i}_cmd} {spi_clk_domain/adc_ch${i}_cmd}]
+#   [loop_pins i {1 2 3 4 5 6 7 8} {adc_ch${i}_cmd_rd_en} {spi_clk_domain/adc_ch${i}_cmd_rd_en}]
+#   [loop_pins i {1 2 3 4 5 6 7 8} {adc_ch${i}_cmd_empty} {spi_clk_domain/adc_ch${i}_cmd_empty}]
+#   [loop_pins i {1 2 3 4 5 6 7 8} {adc_ch${i}_data} {spi_clk_domain/adc_ch${i}_data}]
+#   [loop_pins i {1 2 3 4 5 6 7 8} {adc_ch${i}_data_wr_en} {spi_clk_domain/adc_ch${i}_data_wr_en}]
+#   [loop_pins i {1 2 3 4 5 6 7 8} {adc_ch${i}_data_full} {spi_clk_domain/adc_ch${i}_data_full}]
+# }
+# ## Address assignment
+# for {set i 1} {$i <= 8} {incr i} {
+#   addr 0x800[expr {$i-1}]0000 128 axi_spi_interface/dac_cmd_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
+#   addr 0x800[expr {$i-1}]1000 128 axi_spi_interface/adc_cmd_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
+#   addr 0x800[expr {$i-1}]2000 128 axi_spi_interface/adc_data_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
+# }
 
-##################################################
+# ##################################################
 
-### Status register
-cell pavel-demin:user:axi_sts_register:1.0 status_reg {
-  STS_DATA_WIDTH 1024
-} {
-  aclk ps/FCLK_CLK0
-  S_AXI ps_periph_axi_intercon/M01_AXI
-  aresetn ps_rst/peripheral_aresetn
-}
-addr 0x40100000 128 status_reg/S_AXI ps/M_AXI_GP0
-## Concatenation
-#   31:0   -- 32b Hardware status code (31:29 board num, 28:4 status code, 3:0 internal state)
-#   63:32  -- 32b DAC 1 command FIFO status word
-#   95:64  -- 32b ADC 1 command FIFO status word
-#  127:96  -- 32b ADC 1 data FIFO status word
-#  159:128 -- 32b DAC 2 command FIFO status word
-#  191:160 -- 32b ADC 2 command FIFO status word
-#  223:192 -- 32b ADC 2 data FIFO status word
-#  255:224 -- 32b DAC 3 command FIFO status word
-#  287:256 -- 32b ADC 3 command FIFO status word
-#  319:288 -- 32b ADC 3 data FIFO status word
-#  351:320 -- 32b DAC 4 command FIFO status word
-#  383:352 -- 32b ADC 4 command FIFO status word
-#  415:384 -- 32b ADC 4 data FIFO status word
-#  447:416 -- 32b DAC 5 command FIFO status word
-#  479:448 -- 32b ADC 5 command FIFO status word
-#  511:480 -- 32b ADC 5 data FIFO status word
-#  543:512 -- 32b DAC 6 command FIFO status word
-#  575:544 -- 32b ADC 6 command FIFO status word
-#  607:576 -- 32b ADC 6 data FIFO status word
-#  639:608 -- 32b DAC 7 command FIFO status word
-#  671:640 -- 32b ADC 7 command FIFO status word
-#  703:672 -- 32b ADC 7 data FIFO status word
-#  735:704 -- 32b DAC 8 command FIFO status word
-#  767:736 -- 32b ADC 8 command FIFO status word
-#  799:768 -- 32b ADC 8 data FIFO status word
-# 1023:800 -- 224b reserved
-## Pad reserved bits
-cell xilinx.com:ip:xlconstant:1.1 pad_224 {
-  CONST_VAL 0
-  CONST_WIDTH 224
-} {}
-# Status register concatenation
-# Concatenate: hw_manager/status_word, pad_32, then for each i=1..8: dac_cmd_fifo_$i/fifo_sts_word, adc_cmd_fifo_$i/fifo_sts_word, adc_data_fifo_$i/fifo_sts_word, then pad_448
-cell xilinx.com:ip:xlconcat:2.1 sts_concat {
-  NUM_PORTS 3
-} {
-  In0 hw_manager/status_word
-  In1 axi_spi_interface/fifo_sts
-  In2 pad_224/dout
-  dout status_reg/sts_data
-}
+# ### Status register
+# cell pavel-demin:user:axi_sts_register:1.0 status_reg {
+#   STS_DATA_WIDTH 1024
+# } {
+#   aclk ps/FCLK_CLK0
+#   S_AXI ps_periph_axi_intercon/M01_AXI
+#   aresetn ps_rst/peripheral_aresetn
+# }
+# addr 0x40100000 128 status_reg/S_AXI ps/M_AXI_GP0
+# ## Concatenation
+# #   31:0   -- 32b Hardware status code (31:29 board num, 28:4 status code, 3:0 internal state)
+# #   63:32  -- 32b DAC 1 command FIFO status word
+# #   95:64  -- 32b ADC 1 command FIFO status word
+# #  127:96  -- 32b ADC 1 data FIFO status word
+# #  159:128 -- 32b DAC 2 command FIFO status word
+# #  191:160 -- 32b ADC 2 command FIFO status word
+# #  223:192 -- 32b ADC 2 data FIFO status word
+# #  255:224 -- 32b DAC 3 command FIFO status word
+# #  287:256 -- 32b ADC 3 command FIFO status word
+# #  319:288 -- 32b ADC 3 data FIFO status word
+# #  351:320 -- 32b DAC 4 command FIFO status word
+# #  383:352 -- 32b ADC 4 command FIFO status word
+# #  415:384 -- 32b ADC 4 data FIFO status word
+# #  447:416 -- 32b DAC 5 command FIFO status word
+# #  479:448 -- 32b ADC 5 command FIFO status word
+# #  511:480 -- 32b ADC 5 data FIFO status word
+# #  543:512 -- 32b DAC 6 command FIFO status word
+# #  575:544 -- 32b ADC 6 command FIFO status word
+# #  607:576 -- 32b ADC 6 data FIFO status word
+# #  639:608 -- 32b DAC 7 command FIFO status word
+# #  671:640 -- 32b ADC 7 command FIFO status word
+# #  703:672 -- 32b ADC 7 data FIFO status word
+# #  735:704 -- 32b DAC 8 command FIFO status word
+# #  767:736 -- 32b ADC 8 command FIFO status word
+# #  799:768 -- 32b ADC 8 data FIFO status word
+# # 1023:800 -- 224b reserved
+# ## Pad reserved bits
+# cell xilinx.com:ip:xlconstant:1.1 pad_224 {
+#   CONST_VAL 0
+#   CONST_WIDTH 224
+# } {}
+# # Status register concatenation
+# # Concatenate: hw_manager/status_word, pad_32, then for each i=1..8: dac_cmd_fifo_$i/fifo_sts_word, adc_cmd_fifo_$i/fifo_sts_word, adc_data_fifo_$i/fifo_sts_word, then pad_448
+# cell xilinx.com:ip:xlconcat:2.1 sts_concat {
+#   NUM_PORTS 3
+# } {
+#   In0 hw_manager/status_word
+#   In1 axi_spi_interface/fifo_sts
+#   In2 pad_224/dout
+#   dout status_reg/sts_data
+# }
 
 ##################################################
 

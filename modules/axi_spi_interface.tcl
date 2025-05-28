@@ -1,5 +1,22 @@
 ### DAC/ADC Command and Data FIFOs Module
 
+# Helper to check if a variable exists before using upvar
+proc safe_upvar {level varname alias} {
+  if {[uplevel $level [list info exists $varname]]} {
+    upvar $level $varname $alias
+    return 1
+  }
+  return 0
+}
+
+# Loop over levels and check if safe_upvar can be used
+for {set i 0} {$i < 10} {incr i} {
+  if {[safe_upvar $i dummy_example dummy_alias]} {
+    puts "Successfully upvar'ed dummy_example to dummy_alias at level $i"
+    puts "Value of dummy_alias: $dummy_alias"
+  }
+}
+
 # System signals
 create_bd_pin -dir I -type clock aclk
 create_bd_pin -dir I -type reset aresetn
