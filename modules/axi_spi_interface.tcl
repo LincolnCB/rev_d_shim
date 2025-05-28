@@ -8,10 +8,6 @@ if {$board_count < 1 || $board_count > 8} {
   puts "Error: board_count must be between 1 and 8."
   exit 1
 }
-# 1 to board_count
-set board_set [join [lmap i {1 2 3 4 5 6 7 8} {if {$i <= $board_count} {set i}}] " "]
-# board_count + 1 to 8
-set board_set_compl [join [lmap i {1 2 3 4 5 6 7 8} {if {$i > $board_count} {set i}}] " "]
 
 ##################################################
 
