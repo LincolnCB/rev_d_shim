@@ -1,16 +1,17 @@
-## ADC Channel Module
-# This module implements an ADC channel with an integrator and SPI interface.
+### ADC Channel Module
+## This module implements an ADC channel with an integrator and SPI interface.
 
 # System signals
 create_bd_pin -dir I -type clock spi_clk
-create_bd_pin -dir I -type reset aresetn
+create_bd_pin -dir I -type reset resetn
 
-# Config parameters
-create_bd_pin -dir I spi_en
-
-# Status signals
+## Status signals
+# System status
 create_bd_pin -dir O setup_done
-create_bd_pin -dir O buf_overflow
+# ADC status
+create_bd_pin -dir O bad_cmd
+create_bd_pin -dir O cmd_buf_underflow
+create_bd_pin -dir O data_buf_overflow
 create_bd_pin -dir O unexp_trig
 
 # Commands and data

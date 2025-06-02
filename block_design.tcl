@@ -155,9 +155,14 @@ module spi_clk_domain spi_clk_domain {
   over_thresh hw_manager/over_thresh
   thresh_underflow hw_manager/thresh_underflow
   thresh_overflow hw_manager/thresh_overflow
-  dac_buf_underflow hw_manager/dac_buf_underflow
-  adc_buf_underflow hw_manager/adc_buf_underflow
+  bad_dac_cmd hw_manager/bad_dac_cmd
+  dac_cal_oob hw_manager/dac_cal_oob
+  dac_val_oob hw_manager/dac_val_oob
+  dac_cmd_buf_underflow hw_manager/dac_cmd_buf_underflow
   unexp_dac_trig hw_manager/unexp_dac_trig
+  bad_adc_cmd hw_manager/bad_adc_cmd
+  adc_cmd_buf_underflow hw_manager/adc_cmd_buf_underflow
+  adc_data_buf_overflow hw_manager/adc_data_buf_overflow
   unexp_adc_trig hw_manager/unexp_adc_trig
 }
 ## Trigger enable AND gate
