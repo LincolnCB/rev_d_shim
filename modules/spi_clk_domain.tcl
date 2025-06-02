@@ -84,16 +84,12 @@ create_bd_pin -dir I -from 7 -to 0 adc_miso
 ### Clock domain crossings
 
 ## SPI clock domain crossing reset (first reset)
-# Negate spi_en to give a reset to the SPI clock domain
-cell xilinx.com:ip:util_vector_logic n_spi_en {
-  C_SIZE 1
-  C_OPERATION not
+# Create proc_sys_reset for the synchronization reset
+cell xilinx.com:ip:proc_sys_reset:5.0 sync_rst {
+  C_AUX_RESET_HIGH.VALUE_SRC USER
+  C_AUX_RESET_HIGH 0
 } {
-  Op1 spi_en
-}
-# Create proc_sys_reset
-cell xilinx.com:ip:proc_sys_reset:5.0 sync_rst {} {
-  ext_reset_in n_spi_en/Res
+  aux_reset_in spi_en
   slowest_sync_clk spi_clk
 }
 ## SPI system configuration synchronization
@@ -108,16 +104,12 @@ cell lcb:user:spi_cfg_sync:1.0 spi_cfg_sync {
   spi_en spi_en
 }
 ## SPI system reset
-# Negate the stabilized spi_en signal (aligned with all the incoming config signals) for the SPI-system-wide reset
-cell xilinx.com:ip:util_vector_logic n_spi_en_stable {
-  C_SIZE 1
-  C_OPERATION not
-} {
-  Op1 spi_cfg_sync/spi_en_stable
-}
 # Create proc_sys_reset for SPI-system-wide reset
-cell xilinx.com:ip:proc_sys_reset:5.0 spi_rst {} {
-  ext_reset_in n_spi_en_stable/Res
+cell xilinx.com:ip:proc_sys_reset:5.0 spi_rst {
+  C_AUX_RESET_HIGH.VALUE_SRC USER
+  C_AUX_RESET_HIGH 0
+} {
+  aux_reset_in spi_cfg_sync/spi_en_stable
   slowest_sync_clk spi_clk
 }
 

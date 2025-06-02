@@ -181,6 +181,7 @@ cell xilinx.com:ip:util_vector_logic trig_en_and {
 module axi_spi_interface axi_spi_interface {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
+  buffer_reset axi_shim_cfg/buffer_reset
   spi_clk spi_clk/clk_out1
   S_AXI ps/M_AXI_GP1
 }

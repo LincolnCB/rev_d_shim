@@ -16,6 +16,7 @@ if {$board_count < 1 || $board_count > 8} {
 # System signals
 create_bd_pin -dir I -type clock aclk
 create_bd_pin -dir I -type reset aresetn
+create_bd_pin -dir I -from 23 -to 0 buffer_reset
 create_bd_pin -dir I -type clock spi_clk
 
 # AXI interface
@@ -42,6 +43,8 @@ for {set i 1} {$i <= $board_count} {incr i} {
   create_bd_pin -dir O adc_ch${i}_data_full
 }
 
+#######################################################
+
 # DAC/ADC AXI smart connect, per board (1 master, board_count slaves)
 cell xilinx.com:ip:smartconnect:1.0 board_ch_axi_intercon {
   NUM_SI 1
@@ -60,7 +63,9 @@ cell xilinx.com:ip:xlconstant:1.1 sts_word_padding {
 ## FIFO declarations
 # Each FIFO has a 32-bit data width and 10-bit address width
 for {set i 1} {$i <= $board_count} {incr i} {
-  # DAC/ADC channel smart connect
+
+
+  ## DAC/ADC channel smart connect
   cell xilinx.com:ip:smartconnect:1.0 ch${i}_axi_intercon {
     NUM_SI 1
     NUM_MI 3
@@ -70,13 +75,39 @@ for {set i 1} {$i <= $board_count} {incr i} {
     aresetn aresetn
   }
   
+
+  ## DAC command FIFO
+  # DAC command FIFO resetn
+  cell xilinx.com:ip:xlslice:1.0 dac_cmd_fifo_${i}_rst_slice {
+    DIN_WIDTH 24
+    DIN_FROM [expr {3*($i-1)+0}]
+    DIN_TO [expr {3*($i-1)+0}]
+  } {
+    din buffer_reset
+  }
+  cell xilinx.com:ip:proc_sys_reset:5.0 dac_cmd_fifo_${i}_spi_clk_rst {
+    C_AUX_RESET_HIGH.VALUE_SRC USER
+    C_AUX_RESET_HIGH 0
+  } {
+    aux_reset_in dac_cmd_fifo_${i}_rst_slice/dout
+    slowest_sync_clk spi_clk
+  }
+  cell xilinx.com:ip:proc_sys_reset:5.0 dac_cmd_fifo_${i}_aclk_rst {
+    C_AUX_RESET_HIGH.VALUE_SRC USER
+    C_AUX_RESET_HIGH 0
+  } {
+    aux_reset_in dac_cmd_fifo_${i}_rst_slice/dout
+    slowest_sync_clk aclk
+  }
   # DAC command FIFO
   cell lcb:user:fifo_async_count dac_cmd_fifo_$i {
     DATA_WIDTH 32
     ADDR_WIDTH 10
   } {
     wr_clk aclk
+    wr_rst_n dac_cmd_fifo_${i}_aclk_rst/peripheral_aresetn
     rd_clk spi_clk
+    rd_rst_n dac_cmd_fifo_${i}_spi_clk_rst/peripheral_aresetn
     rd_data dac_ch${i}_cmd
     rd_en dac_ch${i}_cmd_rd_en
     empty dac_ch${i}_cmd_empty
@@ -104,13 +135,39 @@ for {set i 1} {$i <= $board_count} {incr i} {
     fifo_full dac_cmd_fifo_$i/full
   }
 
+
+  ## ADC command FIFO
+  # ADC command FIFO resetn
+  cell xilinx.com:ip:xlslice:1.0 adc_cmd_fifo_${i}_rst_slice {
+    DIN_WIDTH 24
+    DIN_FROM [expr {3*($i-1)+1}]
+    DIN_TO [expr {3*($i-1)+1}]
+  } {
+    din buffer_reset
+  }
+  cell xilinx.com:ip:proc_sys_reset:5.0 adc_cmd_fifo_${i}_spi_clk_rst {
+    C_AUX_RESET_HIGH.VALUE_SRC USER
+    C_AUX_RESET_HIGH 0
+  } {
+    aux_reset_in adc_cmd_fifo_${i}_rst_slice/dout
+    slowest_sync_clk spi_clk
+  }
+  cell xilinx.com:ip:proc_sys_reset:5.0 adc_cmd_fifo_${i}_aclk_rst {
+    C_AUX_RESET_HIGH.VALUE_SRC USER
+    C_AUX_RESET_HIGH 0
+  } {
+    aux_reset_in adc_cmd_fifo_${i}_rst_slice/dout
+    slowest_sync_clk aclk
+  }
   # ADC command FIFO
   cell lcb:user:fifo_async_count adc_cmd_fifo_$i {
     DATA_WIDTH 32
     ADDR_WIDTH 10
   } {
     wr_clk aclk
+    wr_rst_n adc_cmd_fifo_${i}_aclk_rst/peripheral_aresetn
     rd_clk spi_clk
+    rd_rst_n adc_cmd_fifo_${i}_spi_clk_rst/peripheral_aresetn
     rd_data adc_ch${i}_cmd
     rd_en adc_ch${i}_cmd_rd_en
     empty adc_ch${i}_cmd_empty
@@ -138,13 +195,39 @@ for {set i 1} {$i <= $board_count} {incr i} {
     fifo_full adc_cmd_fifo_$i/full
   }
 
+
+  ## ADC data FIFO
+  # ADC data FIFO resetn
+  cell xilinx.com:ip:xlslice:1.0 adc_data_fifo_${i}_rst_slice {
+    DIN_WIDTH 24
+    DIN_FROM [expr {3*($i-1)+2}]
+    DIN_TO [expr {3*($i-1)+2}]
+  } {
+    din buffer_reset
+  }
+  cell xilinx.com:ip:proc_sys_reset:5.0 adc_data_fifo_${i}_spi_clk_rst {
+    C_AUX_RESET_HIGH.VALUE_SRC USER
+    C_AUX_RESET_HIGH 0
+  } {
+    aux_reset_in adc_data_fifo_${i}_rst_slice/dout
+    slowest_sync_clk spi_clk
+  }
+  cell xilinx.com:ip:proc_sys_reset:5.0 adc_data_fifo_${i}_aclk_rst {
+    C_AUX_RESET_HIGH.VALUE_SRC USER
+    C_AUX_RESET_HIGH 0
+  } {
+    aux_reset_in adc_data_fifo_${i}_rst_slice/dout
+    slowest_sync_clk aclk
+  }
   # ADC data FIFO
   cell lcb:user:fifo_async_count adc_data_fifo_$i {
     DATA_WIDTH 32
     ADDR_WIDTH 10
   } {
     wr_clk spi_clk
+    wr_rst_n adc_data_fifo_${i}_spi_clk_rst/peripheral_aresetn
     rd_clk aclk
+    rd_rst_n adc_data_fifo_${i}_aclk_rst/peripheral_aresetn
     wr_data adc_ch${i}_data
     wr_en adc_ch${i}_data_wr_en
     full adc_ch${i}_data_full
