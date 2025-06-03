@@ -32,15 +32,16 @@ create_bd_pin -dir O mosi
 create_bd_pin -dir I miso_sck
 create_bd_pin -dir I miso
 
-# TODO: Temporary constant signal for setup_done
-cell xilinx.com:ip:xlconstant:1.1 setup_done_const {
+# TODO: Temporary constant signal for setup_done and waiting_for_trigger
+cell xilinx.com:ip:xlconstant:1.1 const_one {
   CONST_VAL 0
   CONST_WIDTH 1
 } {
   dout setup_done
+  dout waiting_for_trigger
 }
 
-# Loopback AND of miso_sck and miso to mosi
+# TODO: Temporary loopback AND of miso_sck and miso to mosi
 cell xilinx.com:ip:util_vector_logic mosi_loopback {
   C_SIZE 1
   C_OPERATION and
