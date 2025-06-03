@@ -24,6 +24,7 @@ create_bd_pin -dir I adc_data_full
 
 # Trigger
 create_bd_pin -dir I trigger
+create_bd_pin -dir O waiting_for_trigger
 
 # SPI interface signals
 create_bd_pin -dir O n_cs
