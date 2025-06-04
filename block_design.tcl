@@ -60,14 +60,12 @@ cell xilinx.com:ip:smartconnect:1.0 ps_periph_axi_intercon {
 
 ### Configuration register
 ## 32-bit offsets
-# +0 Trigger lockout
-# +1 Integrator threshold average (unsigned, 16b cap)
-# +2 Integrator window (unsigned, 32b cap)
-# +3 Integrator enable (1b cap)
-# +4 Buffer reset (16b)
-# +5 Hardware enable (1b cap)
+# +0 Integrator threshold average (unsigned, 16b cap)
+# +1 Integrator window (unsigned, 32b cap)
+# +2 Integrator enable (1b cap)
+# +3 Buffer reset (25b)
+# +4 Hardware enable (1b cap)
 cell lcb:user:axi_shim_cfg:1.0 axi_shim_cfg {
-  TRIGGER_LOCKOUT_DEFAULT 250000
   INTEGRATOR_THRESHOLD_AVERAGE_DEFAULT 16384
   INTEGRATOR_WINDOW_DEFAULT 5000000
   INTEG_EN_DEFAULT 1
@@ -92,7 +90,6 @@ cell lcb:user:hw_manager:1.0 hw_manager {
   aresetn ps_rst/peripheral_aresetn
   sys_en axi_shim_cfg/sys_en
   ext_shutdown Shutdown_Button
-  trig_lockout_oob axi_shim_cfg/trig_lockout_oob
   integ_thresh_avg_oob axi_shim_cfg/integ_thresh_avg_oob
   integ_window_oob axi_shim_cfg/integ_window_oob
   integ_en_oob axi_shim_cfg/integ_en_oob
@@ -146,7 +143,6 @@ module spi_clk_domain spi_clk_domain {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
   spi_clk spi_clk/clk_out1
-  trig_lockout axi_shim_cfg/trig_lockout
   integ_thresh_avg axi_shim_cfg/integ_thresh_avg
   integ_window axi_shim_cfg/integ_window
   integ_en axi_shim_cfg/integ_en

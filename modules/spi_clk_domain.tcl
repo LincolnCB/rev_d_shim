@@ -21,7 +21,6 @@ create_bd_pin -dir I -type reset aresetn
 create_bd_pin -dir I -type clock spi_clk
 
 # Configuration signals (need synchronization)
-create_bd_pin -dir I -from 31 -to 0 trig_lockout
 create_bd_pin -dir I -from 14 -to 0 integ_thresh_avg
 create_bd_pin -dir I -from 31 -to 0 integ_window
 create_bd_pin -dir I integ_en
@@ -97,7 +96,6 @@ cell lcb:user:spi_cfg_sync:1.0 spi_cfg_sync {
 } {
   spi_clk spi_clk
   sync_resetn sync_rst/peripheral_aresetn
-  trig_lockout trig_lockout
   integ_thresh_avg integ_thresh_avg
   integ_window integ_window
   integ_en integ_en
