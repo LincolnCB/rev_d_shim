@@ -65,7 +65,7 @@ cell xilinx.com:ip:smartconnect:1.0 ps_periph_axi_intercon {
 # +2 Integrator enable (1b cap)
 # +3 Buffer reset (25b)
 # +4 Hardware enable (1b cap)
-cell lcb:user:axi_shim_cfg:1.0 axi_shim_cfg {
+cell lcb:user:axi_shim_prestart_cfg:1.0 axi_shim_prestart_cfg {
   INTEGRATOR_THRESHOLD_AVERAGE_DEFAULT 16384
   INTEGRATOR_WINDOW_DEFAULT 5000000
   INTEG_EN_DEFAULT 1
@@ -74,7 +74,7 @@ cell lcb:user:axi_shim_cfg:1.0 axi_shim_cfg {
   aresetn ps_rst/peripheral_aresetn
   S_AXI ps_periph_axi_intercon/M00_AXI
 }
-addr 0x40000000 128 axi_shim_cfg/S_AXI ps/M_AXI_GP0
+addr 0x40000000 128 axi_shim_prestart_cfg/S_AXI ps/M_AXI_GP0
   
 
 ##################################################
@@ -88,14 +88,14 @@ cell lcb:user:hw_manager:1.0 hw_manager {
 } {
   clk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
-  sys_en axi_shim_cfg/sys_en
+  sys_en axi_shim_prestart_cfg/sys_en
   ext_shutdown Shutdown_Button
-  integ_thresh_avg_oob axi_shim_cfg/integ_thresh_avg_oob
-  integ_window_oob axi_shim_cfg/integ_window_oob
-  integ_en_oob axi_shim_cfg/integ_en_oob
-  sys_en_oob axi_shim_cfg/sys_en_oob
-  lock_viol axi_shim_cfg/lock_viol
-  unlock_cfg axi_shim_cfg/unlock
+  integ_thresh_avg_oob axi_shim_prestart_cfg/integ_thresh_avg_oob
+  integ_window_oob axi_shim_prestart_cfg/integ_window_oob
+  integ_en_oob axi_shim_prestart_cfg/integ_en_oob
+  sys_en_oob axi_shim_prestart_cfg/sys_en_oob
+  lock_viol axi_shim_prestart_cfg/lock_viol
+  unlock_cfg axi_shim_prestart_cfg/unlock
   n_shutdown_force n_Shutdown_Force
   n_shutdown_rst n_Shutdown_Reset
 }
@@ -143,9 +143,9 @@ module spi_clk_domain spi_clk_domain {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
   spi_clk spi_clk/clk_out1
-  integ_thresh_avg axi_shim_cfg/integ_thresh_avg
-  integ_window axi_shim_cfg/integ_window
-  integ_en axi_shim_cfg/integ_en
+  integ_thresh_avg axi_shim_prestart_cfg/integ_thresh_avg
+  integ_window axi_shim_prestart_cfg/integ_window
+  integ_en axi_shim_prestart_cfg/integ_en
   spi_en hw_manager/spi_en
   spi_off hw_manager/spi_off
   over_thresh hw_manager/over_thresh
@@ -177,7 +177,7 @@ cell xilinx.com:ip:util_vector_logic trig_en_and {
 module axi_spi_interface axi_spi_interface {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
-  buffer_reset axi_shim_cfg/buffer_reset
+  buffer_reset axi_shim_prestart_cfg/buffer_reset
   spi_clk spi_clk/clk_out1
   S_AXI ps/M_AXI_GP1
 }
