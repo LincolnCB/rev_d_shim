@@ -65,7 +65,7 @@ cell xilinx.com:ip:smartconnect:1.0 ps_periph_axi_intercon {
 # +2 Integrator enable (1b cap)
 # +3 Buffer reset (25b)
 # +4 Hardware enable (1b cap)
-cell lcb:user:shim_axi_prestart_cfg:1.0 shim_axi_prestart_cfg {
+cell lcb:user:shim_axi_prestart_cfg:1.0 axi_prestart_cfg {
   INTEGRATOR_THRESHOLD_AVERAGE_DEFAULT 16384
   INTEGRATOR_WINDOW_DEFAULT 5000000
   INTEG_EN_DEFAULT 1
@@ -74,13 +74,13 @@ cell lcb:user:shim_axi_prestart_cfg:1.0 shim_axi_prestart_cfg {
   aresetn ps_rst/peripheral_aresetn
   S_AXI ps_periph_axi_intercon/M00_AXI
 }
-addr 0x40000000 128 shim_axi_prestart_cfg/S_AXI ps/M_AXI_GP0
+addr 0x40000000 128 axi_prestart_cfg/S_AXI ps/M_AXI_GP0
   
 
 ##################################################
 
 ### Hardware manager
-cell lcb:user:hw_manager:1.0 hw_manager {
+cell lcb:user:shim_hw_manager:1.0 hw_manager {
   POWERON_WAIT   250000000
   BUF_LOAD_WAIT  250000000
   SPI_START_WAIT 250000000
@@ -88,21 +88,21 @@ cell lcb:user:hw_manager:1.0 hw_manager {
 } {
   clk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
-  sys_en shim_axi_prestart_cfg/sys_en
+  sys_en axi_prestart_cfg/sys_en
   ext_shutdown Shutdown_Button
-  integ_thresh_avg_oob shim_axi_prestart_cfg/integ_thresh_avg_oob
-  integ_window_oob shim_axi_prestart_cfg/integ_window_oob
-  integ_en_oob shim_axi_prestart_cfg/integ_en_oob
-  sys_en_oob shim_axi_prestart_cfg/sys_en_oob
-  lock_viol shim_axi_prestart_cfg/lock_viol
-  unlock_cfg shim_axi_prestart_cfg/unlock
+  integ_thresh_avg_oob axi_prestart_cfg/integ_thresh_avg_oob
+  integ_window_oob axi_prestart_cfg/integ_window_oob
+  integ_en_oob axi_prestart_cfg/integ_en_oob
+  sys_en_oob axi_prestart_cfg/sys_en_oob
+  lock_viol axi_prestart_cfg/lock_viol
+  unlock_cfg axi_prestart_cfg/unlock
   n_shutdown_force n_Shutdown_Force
   n_shutdown_rst n_Shutdown_Reset
 }
 
 ## Shutdown sense
 ## Shutdown sense
-cell lcb:user:shutdown_sense:1.0 shutdown_sense {
+cell lcb:user:shim_shutdown_sense:1.0 shutdown_sense {
   CLK_FREQ_HZ 100000000
 } {
   clk ps/FCLK_CLK0
@@ -143,14 +143,15 @@ module spi_clk_domain spi_clk_domain {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
   spi_clk spi_clk/clk_out1
-  integ_thresh_avg shim_axi_prestart_cfg/integ_thresh_avg
-  integ_window shim_axi_prestart_cfg/integ_window
-  integ_en shim_axi_prestart_cfg/integ_en
+  integ_thresh_avg axi_prestart_cfg/integ_thresh_avg
+  integ_window axi_prestart_cfg/integ_window
+  integ_en axi_prestart_cfg/integ_en
   spi_en hw_manager/spi_en
   spi_off hw_manager/spi_off
   over_thresh hw_manager/over_thresh
   thresh_underflow hw_manager/thresh_underflow
   thresh_overflow hw_manager/thresh_overflow
+  bad_trig_cmd hw_manager/bad_trig_cmd
   bad_dac_cmd hw_manager/bad_dac_cmd
   dac_cal_oob hw_manager/dac_cal_oob
   dac_val_oob hw_manager/dac_val_oob
@@ -177,11 +178,12 @@ cell xilinx.com:ip:util_vector_logic trig_en_and {
 module axi_spi_interface axi_spi_interface {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
-  buffer_reset shim_axi_prestart_cfg/buffer_reset
+  buffer_reset axi_prestart_cfg/buffer_reset
   spi_clk spi_clk/clk_out1
   S_AXI ps/M_AXI_GP1
 }
-# Wire channel pins for the module
+## Wire channel pins for the module
+# DAC and ADC FIFOs
 for {set i 1} {$i <= $board_count} {incr i} {
   wire axi_spi_interface/dac_ch${i}_cmd spi_clk_domain/dac_ch${i}_cmd
   wire axi_spi_interface/dac_ch${i}_cmd_rd_en spi_clk_domain/dac_ch${i}_cmd_rd_en
@@ -193,8 +195,12 @@ for {set i 1} {$i <= $board_count} {incr i} {
   wire axi_spi_interface/adc_ch${i}_data_wr_en spi_clk_domain/adc_ch${i}_data_wr_en
   wire axi_spi_interface/adc_ch${i}_data_full spi_clk_domain/adc_ch${i}_data_full
 }
+# Trigger command FIFO
+wire axi_spi_interface/trigger_cmd spi_clk_domain/trigger_cmd
+wire axi_spi_interface/trigger_cmd_rd_en spi_clk_domain/trigger_cmd_rd_en
+wire axi_spi_interface/trigger_cmd_empty spi_clk_domain/trigger_cmd_empty
 ## Address assignment
-# DAC and ADC command FIFOs
+# DAC and ADC FIFOs
 for {set i 1} {$i <= $board_count} {incr i} {
   addr 0x800[expr {$i-1}]0000 128 axi_spi_interface/dac_cmd_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
   addr 0x800[expr {$i-1}]1000 128 axi_spi_interface/adc_cmd_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1

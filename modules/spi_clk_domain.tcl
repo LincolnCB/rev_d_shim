@@ -33,6 +33,8 @@ create_bd_pin -dir O spi_off
 create_bd_pin -dir O -from 7 -to 0 over_thresh
 create_bd_pin -dir O -from 7 -to 0 thresh_underflow
 create_bd_pin -dir O -from 7 -to 0 thresh_overflow
+# Trigger channel status
+create_bd_pin -dir O bad_trig_cmd
 # DAC channel status
 create_bd_pin -dir O -from 7 -to 0 bad_dac_cmd
 create_bd_pin -dir O -from 7 -to 0 dac_cal_oob
@@ -62,6 +64,10 @@ for {set i 1} {$i <= $board_count} {incr i} {
   create_bd_pin -dir O adc_ch${i}_data_wr_en
   create_bd_pin -dir I adc_ch${i}_data_full
 }
+# Trigger command channel
+create_bd_pin -dir I -from 31 -to 0 trigger_cmd
+create_bd_pin -dir O trigger_cmd_rd_en
+create_bd_pin -dir I trigger_cmd_empty
 
 # Trigger
 create_bd_pin -dir I trigger_gated
@@ -78,6 +84,14 @@ create_bd_pin -dir I -from 7 -to 0 miso_sck
 create_bd_pin -dir I -from 7 -to 0 dac_miso
 create_bd_pin -dir I -from 7 -to 0 adc_miso
 
+## 0 and 1 constants to fill bits for unused boards
+cell xilinx.com:ip:xlconstant:1.1 const_0 {
+  WIDTH 8
+} {}
+cell xilinx.com:ip:xlconstant:1.1 const_1 {
+  WIDTH 8
+} {}
+
 ##################################################
 
 ### Clock domain crossings
@@ -92,8 +106,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 sync_rst {
   slowest_sync_clk spi_clk
 }
 ## SPI system configuration synchronization
-cell lcb:user:shim_spi_cfg_sync:1.0 shim_spi_cfg_sync {
-} {
+cell lcb:user:shim_spi_cfg_sync:1.0 spi_cfg_sync {} {
   spi_clk spi_clk
   sync_resetn sync_rst/peripheral_aresetn
   integ_thresh_avg integ_thresh_avg
@@ -107,21 +120,21 @@ cell xilinx.com:ip:proc_sys_reset:5.0 spi_rst {
   C_AUX_RESET_HIGH.VALUE_SRC USER
   C_AUX_RESET_HIGH 0
 } {
-  aux_reset_in shim_spi_cfg_sync/spi_en_stable
+  aux_reset_in spi_cfg_sync/spi_en_stable
   slowest_sync_clk spi_clk
 }
 
 
 
 ## SPI system status synchronization
-cell lcb:user:shim_spi_sts_sync:1.0 shim_spi_sts_sync {
-} {
+cell lcb:user:shim_spi_sts_sync:1.0 spi_sts_sync {} {
   aclk aclk
   aresetn aresetn
   spi_off_stable spi_off
   over_thresh_stable over_thresh
   thresh_underflow_stable thresh_underflow
   thresh_overflow_stable thresh_overflow
+  bad_trig_cmd_stable bad_trig_cmd
   bad_dac_cmd_stable bad_dac_cmd
   dac_cal_oob_stable dac_cal_oob
   dac_val_oob_stable dac_val_oob
@@ -135,18 +148,35 @@ cell lcb:user:shim_spi_sts_sync:1.0 shim_spi_sts_sync {
 
 ##################################################
 
+### Trigger core
+
+cell lcb:user:shim_trigger_core:1.0 trigger_core {
+  TRIGGER_LOCKOUT_DEFAULT 5000
+} {
+  clk spi_clk
+  resetn spi_rst/peripheral_aresetn
+  cmd_word_rd_en trigger_cmd_rd_en
+  cmd_word trigger_cmd
+  cmd_buf_empty trigger_cmd_empty
+  ext_trigger trigger_gated
+  bad_cmd spi_sts_sync/bad_trig_cmd
+} 
+
+##################################################
+
 ### DAC and ADC Channels
 for {set i 1} {$i <= $board_count} {incr i} {
   ## DAC Channel
   module spi_dac_channel dac_ch$i {
     spi_clk spi_clk
     resetn spi_rst/peripheral_aresetn
-    integ_window shim_spi_cfg_sync/integ_window_stable
-    integ_thresh_avg shim_spi_cfg_sync/integ_thresh_avg_stable
-    integ_en shim_spi_cfg_sync/integ_en_stable
+    integ_window spi_cfg_sync/integ_window_stable
+    integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
+    integ_en spi_cfg_sync/integ_en_stable
     dac_cmd dac_ch${i}_cmd
     dac_cmd_rd_en dac_ch${i}_cmd_rd_en
     dac_cmd_empty dac_ch${i}_cmd_empty
+    trigger trigger_core/trigger_out
   }
   ## ADC Channel
   module spi_adc_channel adc_ch$i {
@@ -158,23 +188,73 @@ for {set i 1} {$i <= $board_count} {incr i} {
     adc_data adc_ch${i}_data
     adc_data_wr_en adc_ch${i}_data_wr_en
     adc_data_full adc_ch${i}_data_full
+    trigger trigger_core/trigger_out
   }
 }
+# Waiting for trigger signals
+cell xilinx.com:ip:xlconcat:2.1 dac_waiting_for_trigger_concat {
+  NUM_PORTS 8
+} {
+  dout trigger_core/dac_waiting_for_trigger
+}
+cell xilinx.com:ip:xlconcat:2.1 adc_waiting_for_trigger_concat {
+  NUM_PORTS 8
+} {
+  dout trigger_core/adc_waiting_for_trigger
+}
+for {set i 1} {$i <= $board_count} {incr i} {
+  wire dac_waiting_for_trigger_concat/In[expr {$i-1}] dac_ch$i/waiting_for_trigger
+  wire adc_waiting_for_trigger_concat/In[expr {$i-1}] adc_ch$i/waiting_for_trigger
+}
+for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
+  wire dac_waiting_for_trigger_concat/In[expr {$i-1}] const_1/dout
+  wire adc_waiting_for_trigger_concat/In[expr {$i-1}] const_1/dout
+}
+
 
 ##################################################
 
 ### SPI signals
 
-## 0 and 1 constants to fill bits for unused boards
-cell xilinx.com:ip:xlconstant:1.1 const_0 {
-  WIDTH 8
-} {}
-cell xilinx.com:ip:xlconstant:1.1 const_1 {
-  WIDTH 8
-} {}
-
-
 ## Outputs
+
+# LDAC
+## Cascade OR for LDAC
+for {set i 1} {$i <= $board_count} {incr i} {
+  if {$i > 1} {
+    # OR gate for each channel's ldac signal
+    cell xilinx.com:ip:util_vector_logic ch_${i}_ldac {
+      C_SIZE 1
+      C_OPERATION or
+    } {
+      Op1 dac_ch$i/ldac
+      Op2 chs_to_[expr {$i-1}]_ldac/Res
+    }
+    # Chain the OR gates together
+    cell xilinx.com:ip:util_vector_logic chs_to_${i}_ldac {
+      C_SIZE 1
+      C_OPERATION or
+    } {
+      Op1 ch_${i}_ldac/Res
+      Op2 chs_to_[expr {$i-1}]_ldac/Res
+    }
+  } else {
+    # For the first channel, no chain.
+    cell xilinx.com:ip:util_vector_logic chs_to_${i}_ldac {
+      C_SIZE 1
+      C_OPERATION or
+    } {
+      Op1 dac_ch$i/ldac
+      Op2 dac_ch$i/ldac
+    }
+  }
+}
+# Connect the final OR output to the ldac output pin
+wire chs_to_${board_count}_ldac/Res ldac
+# Also connect to the lac_shared of the dac channels
+for {set i 1} {$i <= $board_count} {incr i} {
+  wire chs_to_${board_count}_ldac/Res dac_ch$i/ldac_shared
+}
 
 # ~DAC_CS
 cell xilinx.com:ip:xlconcat:2.1 n_dac_cs_concat {
@@ -227,7 +307,6 @@ for {set i 1} {$i <= $board_count} {incr i} {
 for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
   wire adc_mosi_concat/In[expr {$i-1}] const_0/dout
 }
-
 
 ## Inputs
 # MISO_SCK
@@ -307,7 +386,7 @@ cell xilinx.com:ip:util_vector_logic setup_done_n {
   C_OPERATION not
 } {
   Op1 chs_to_${board_count}_done/Res
-  Res shim_spi_sts_sync/spi_off
+  Res spi_sts_sync/spi_off
 }
 
 
@@ -315,7 +394,7 @@ cell xilinx.com:ip:util_vector_logic setup_done_n {
 cell xilinx.com:ip:xlconcat:2.1 over_thresh_concat {
   NUM_PORTS 8
 } {
-  dout shim_spi_sts_sync/over_thresh
+  dout spi_sts_sync/over_thresh
 }
 for {set i 1} {$i <= $board_count} {incr i} {
   wire over_thresh_concat/In[expr {$i-1}] dac_ch$i/over_thresh
@@ -328,7 +407,7 @@ for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
 cell xilinx.com:ip:xlconcat:2.1 thresh_underflow_concat {
   NUM_PORTS 8
 } {
-  dout shim_spi_sts_sync/thresh_underflow
+  dout spi_sts_sync/thresh_underflow
 }
 for {set i 1} {$i <= $board_count} {incr i} {
   wire thresh_underflow_concat/In[expr {$i-1}] dac_ch$i/thresh_underflow
@@ -341,7 +420,7 @@ for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
 cell xilinx.com:ip:xlconcat:2.1 thresh_overflow_concat {
   NUM_PORTS 8
 } {
-  dout shim_spi_sts_sync/thresh_overflow
+  dout spi_sts_sync/thresh_overflow
 }
 for {set i 1} {$i <= $board_count} {incr i} {
   wire thresh_overflow_concat/In[expr {$i-1}] dac_ch$i/thresh_overflow
@@ -354,7 +433,7 @@ for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
 cell xilinx.com:ip:xlconcat:2.1 bad_dac_cmd_concat {
   NUM_PORTS 8
 } {
-  dout shim_spi_sts_sync/bad_dac_cmd
+  dout spi_sts_sync/bad_dac_cmd
 }
 for {set i 1} {$i <= $board_count} {incr i} {
   wire bad_dac_cmd_concat/In[expr {$i-1}] dac_ch$i/bad_cmd
@@ -367,7 +446,7 @@ for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
 cell xilinx.com:ip:xlconcat:2.1 dac_cal_oob_concat {
   NUM_PORTS 8
 } {
-  dout shim_spi_sts_sync/dac_cal_oob
+  dout spi_sts_sync/dac_cal_oob
 }
 for {set i 1} {$i <= $board_count} {incr i} {
   wire dac_cal_oob_concat/In[expr {$i-1}] dac_ch$i/cal_oob
@@ -380,7 +459,7 @@ for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
 cell xilinx.com:ip:xlconcat:2.1 dac_val_oob_concat {
   NUM_PORTS 8
 } {
-  dout shim_spi_sts_sync/dac_val_oob
+  dout spi_sts_sync/dac_val_oob
 }
 for {set i 1} {$i <= $board_count} {incr i} {
   wire dac_val_oob_concat/In[expr {$i-1}] dac_ch$i/dac_val_oob
@@ -393,7 +472,7 @@ for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
 cell xilinx.com:ip:xlconcat:2.1 dac_cmd_buf_underflow_concat {
   NUM_PORTS 8
 } {
-  dout shim_spi_sts_sync/dac_cmd_buf_underflow
+  dout spi_sts_sync/dac_cmd_buf_underflow
 }
 for {set i 1} {$i <= $board_count} {incr i} {
   wire dac_cmd_buf_underflow_concat/In[expr {$i-1}] dac_ch$i/cmd_buf_underflow
@@ -406,7 +485,7 @@ for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
 cell xilinx.com:ip:xlconcat:2.1 unexp_dac_trig_concat {
   NUM_PORTS 8
 } {
-  dout shim_spi_sts_sync/unexp_dac_trig
+  dout spi_sts_sync/unexp_dac_trig
 }
 for {set i 1} {$i <= $board_count} {incr i} {
   wire unexp_dac_trig_concat/In[expr {$i-1}] dac_ch$i/unexp_trig
@@ -419,7 +498,7 @@ for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
 cell xilinx.com:ip:xlconcat:2.1 bad_adc_cmd_concat {
   NUM_PORTS 8
 } {
-  dout shim_spi_sts_sync/bad_adc_cmd
+  dout spi_sts_sync/bad_adc_cmd
 }
 for {set i 1} {$i <= $board_count} {incr i} {
   wire bad_adc_cmd_concat/In[expr {$i-1}] adc_ch$i/bad_cmd
@@ -432,7 +511,7 @@ for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
 cell xilinx.com:ip:xlconcat:2.1 adc_cmd_buf_underflow_concat {
   NUM_PORTS 8
 } {
-  dout shim_spi_sts_sync/adc_cmd_buf_underflow
+  dout spi_sts_sync/adc_cmd_buf_underflow
 }
 for {set i 1} {$i <= $board_count} {incr i} {
   wire adc_cmd_buf_underflow_concat/In[expr {$i-1}] adc_ch$i/cmd_buf_underflow
@@ -445,7 +524,7 @@ for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
 cell xilinx.com:ip:xlconcat:2.1 adc_data_buf_overflow_concat {
   NUM_PORTS 8
 } {
-  dout shim_spi_sts_sync/adc_data_buf_overflow
+  dout spi_sts_sync/adc_data_buf_overflow
 }
 for {set i 1} {$i <= $board_count} {incr i} {
   wire adc_data_buf_overflow_concat/In[expr {$i-1}] adc_ch$i/data_buf_overflow
@@ -458,7 +537,7 @@ for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
 cell xilinx.com:ip:xlconcat:2.1 unexp_adc_trig_concat {
   NUM_PORTS 8
 } {
-  dout shim_spi_sts_sync/unexp_adc_trig
+  dout spi_sts_sync/unexp_adc_trig
 }
 for {set i 1} {$i <= $board_count} {incr i} {
   wire unexp_adc_trig_concat/In[expr {$i-1}] adc_ch$i/unexp_trig

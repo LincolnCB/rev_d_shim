@@ -47,7 +47,7 @@ create_bd_pin -dir I miso_sck
 ### DAC SPI Controller
 
 ## DAC SPI core
-cell lcb:user:ad5676_dac_ctrl:1.0 dac_spi {
+cell lcb:user:shim_ad5676_dac_ctrl:1.0 dac_spi {
   ABS_CAL_MAX 4096
 } {
   clk spi_clk
@@ -74,9 +74,8 @@ cell lcb:user:ad5676_dac_ctrl:1.0 dac_spi {
 
 ### Integrator
 
-
 # Instantiate the threshold integrator module
-cell lcb:user:threshold_integrator:1.0 threshold_core {} {
+cell lcb:user:shim_threshold_integrator:1.0 threshold_core {} {
   clk spi_clk
   resetn resetn
   enable integ_en
