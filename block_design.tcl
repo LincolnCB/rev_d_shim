@@ -65,7 +65,7 @@ cell xilinx.com:ip:smartconnect:1.0 ps_periph_axi_intercon {
 # +2 Integrator enable (1b cap)
 # +3 Buffer reset (25b)
 # +4 Hardware enable (1b cap)
-cell lcb:user:shim_axi_prestart_cfg:1.0 axi_prestart_cfg {
+cell lcb:user:shim_axi_prestart_cfg axi_prestart_cfg {
   INTEGRATOR_THRESHOLD_AVERAGE_DEFAULT 16384
   INTEGRATOR_WINDOW_DEFAULT 5000000
   INTEG_EN_DEFAULT 1
@@ -80,7 +80,7 @@ addr 0x40000000 128 axi_prestart_cfg/S_AXI ps/M_AXI_GP0
 ##################################################
 
 ### Hardware manager
-cell lcb:user:shim_hw_manager:1.0 hw_manager {
+cell lcb:user:shim_hw_manager hw_manager {
   POWERON_WAIT   250000000
   BUF_LOAD_WAIT  250000000
   SPI_START_WAIT 250000000
@@ -102,7 +102,7 @@ cell lcb:user:shim_hw_manager:1.0 hw_manager {
 
 ## Shutdown sense
 ## Shutdown sense
-cell lcb:user:shim_shutdown_sense:1.0 shutdown_sense {
+cell lcb:user:shim_shutdown_sense shutdown_sense {
   CLK_FREQ_HZ 100000000
 } {
   clk ps/FCLK_CLK0
@@ -226,7 +226,7 @@ wire axi_spi_interface/trig_data_buf_underflow hw_manager/trig_data_buf_underflo
 ##################################################
 
 ### Status register
-cell pavel-demin:user:axi_sts_register:1.0 status_reg {
+cell pavel-demin:user:axi_sts_register status_reg {
   STS_DATA_WIDTH 1024
 } {
   aclk ps/FCLK_CLK0
@@ -264,7 +264,7 @@ cell xilinx.com:ip:xlconcat:2.1 sts_concat {
 
 ## DAC
 # (LDAC)
-cell lcb:user:differential_out_buffer:1.0 ldac_obuf {
+cell lcb:user:differential_out_buffer ldac_obuf {
   DIFF_BUFFER_WIDTH 1
 } {
   d_in spi_clk_domain/ldac
@@ -272,7 +272,7 @@ cell lcb:user:differential_out_buffer:1.0 ldac_obuf {
   diff_out_n LDAC_n
 }
 # (~DAC_CS)
-cell lcb:user:differential_out_buffer:1.0 n_dac_cs_obuf {
+cell lcb:user:differential_out_buffer n_dac_cs_obuf {
   DIFF_BUFFER_WIDTH 8
 } {
   d_in spi_clk_domain/n_dac_cs
@@ -280,7 +280,7 @@ cell lcb:user:differential_out_buffer:1.0 n_dac_cs_obuf {
   diff_out_n n_DAC_CS_n
 }
 # (DAC_MOSI)
-cell lcb:user:differential_out_buffer:1.0 dac_mosi_obuf {
+cell lcb:user:differential_out_buffer dac_mosi_obuf {
   DIFF_BUFFER_WIDTH 8
 } {
   d_in spi_clk_domain/dac_mosi
@@ -288,7 +288,7 @@ cell lcb:user:differential_out_buffer:1.0 dac_mosi_obuf {
   diff_out_n DAC_MOSI_n
 }
 # (DAC_MISO)
-cell lcb:user:differential_in_buffer:1.0 dac_miso_ibuf {
+cell lcb:user:differential_in_buffer dac_miso_ibuf {
   DIFF_BUFFER_WIDTH 8
 } {
   diff_in_p DAC_MISO_p
@@ -298,7 +298,7 @@ cell lcb:user:differential_in_buffer:1.0 dac_miso_ibuf {
 
 ## ADC
 # (~ADC_CS)
-cell lcb:user:differential_out_buffer:1.0 n_adc_cs_obuf {
+cell lcb:user:differential_out_buffer n_adc_cs_obuf {
   DIFF_BUFFER_WIDTH 8
 } {
   d_in spi_clk_domain/n_adc_cs
@@ -306,7 +306,7 @@ cell lcb:user:differential_out_buffer:1.0 n_adc_cs_obuf {
   diff_out_n n_ADC_CS_n
 }
 # (ADC_MOSI)
-cell lcb:user:differential_out_buffer:1.0 adc_mosi_obuf {
+cell lcb:user:differential_out_buffer adc_mosi_obuf {
   DIFF_BUFFER_WIDTH 8
 } {
   d_in spi_clk_domain/adc_mosi
@@ -314,7 +314,7 @@ cell lcb:user:differential_out_buffer:1.0 adc_mosi_obuf {
   diff_out_n ADC_MOSI_n
 }
 # (ADC_MISO)
-cell lcb:user:differential_in_buffer:1.0 adc_miso_ibuf {
+cell lcb:user:differential_in_buffer adc_miso_ibuf {
   DIFF_BUFFER_WIDTH 8
 } {
   diff_in_p ADC_MISO_p
@@ -324,7 +324,7 @@ cell lcb:user:differential_in_buffer:1.0 adc_miso_ibuf {
 
 ## Clocks
 # (MISO_SCK)
-cell lcb:user:differential_in_buffer:1.0 miso_sck_ibuf {
+cell lcb:user:differential_in_buffer miso_sck_ibuf {
   DIFF_BUFFER_WIDTH 8
 } {
   diff_in_p MISO_SCK_p
@@ -332,7 +332,7 @@ cell lcb:user:differential_in_buffer:1.0 miso_sck_ibuf {
   d_out spi_clk_domain/miso_sck
 }
 # (~MOSI_SCK)
-cell lcb:user:differential_out_buffer:1.0 n_mosi_sck_obuf {
+cell lcb:user:differential_out_buffer n_mosi_sck_obuf {
   DIFF_BUFFER_WIDTH 1
 } {
   d_in spi_clk/clk_out1

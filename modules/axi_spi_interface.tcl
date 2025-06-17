@@ -149,7 +149,7 @@ for {set i 1} {$i <= $board_count} {incr i} {
     In3 dac_cmd_fifo_$i/almost_full
   }
   # DAC command FIFO AXI interface
-  cell lcb:user:axi_fifo_bridge:1.0 dac_cmd_fifo_${i}_axi_bridge {
+  cell lcb:user:axi_fifo_bridge dac_cmd_fifo_${i}_axi_bridge {
     AXI_ADDR_WIDTH 32
     AXI_DATA_WIDTH 32
     ENABLE_READ 0
@@ -209,7 +209,7 @@ for {set i 1} {$i <= $board_count} {incr i} {
     In3 adc_cmd_fifo_$i/almost_full
   }
   # ADC command FIFO AXI interface
-  cell lcb:user:axi_fifo_bridge:1.0 adc_cmd_fifo_${i}_axi_bridge {
+  cell lcb:user:axi_fifo_bridge adc_cmd_fifo_${i}_axi_bridge {
     AXI_ADDR_WIDTH 32
     AXI_DATA_WIDTH 32
     ENABLE_READ 0
@@ -269,7 +269,7 @@ for {set i 1} {$i <= $board_count} {incr i} {
     In3 adc_data_fifo_$i/almost_empty
   }
   # ADC data FIFO AXI interface
-  cell lcb:user:axi_fifo_bridge:1.0 adc_data_fifo_${i}_axi_bridge {
+  cell lcb:user:axi_fifo_bridge adc_data_fifo_${i}_axi_bridge {
     AXI_ADDR_WIDTH 32
     AXI_DATA_WIDTH 32
     ENABLE_WRITE 0
@@ -329,7 +329,7 @@ cell xilinx.com:ip:xlconcat:2.1 trig_cmd_fifo_sts_word {
   In3 trig_cmd_fifo/almost_full
 }
 # Trigger command FIFO AXI interface
-cell lcb:user:axi_fifo_bridge:1.0 trig_cmd_fifo_axi_bridge {
+cell lcb:user:axi_fifo_bridge trig_cmd_fifo_axi_bridge {
   AXI_ADDR_WIDTH 32
   AXI_DATA_WIDTH 32
   ENABLE_READ 0
@@ -389,7 +389,7 @@ cell xilinx.com:ip:xlconcat:2.1 trig_data_fifo_sts_word {
   In3 trig_data_fifo/almost_empty
 }
 # Trigger data FIFO AXI interface
-cell lcb:user:axi_fifo_bridge:1.0 trig_data_fifo_axi_bridge {
+cell lcb:user:axi_fifo_bridge trig_data_fifo_axi_bridge {
   AXI_ADDR_WIDTH 32
   AXI_DATA_WIDTH 32
   ENABLE_WRITE 0

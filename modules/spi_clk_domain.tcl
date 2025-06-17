@@ -113,7 +113,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 sync_rst_core {
   slowest_sync_clk spi_clk
 }
 ## SPI system configuration synchronization
-cell lcb:user:shim_spi_cfg_sync:1.0 spi_cfg_sync {} {
+cell lcb:user:shim_spi_cfg_sync spi_cfg_sync {} {
   spi_clk spi_clk
   sync_resetn sync_rst_core/peripheral_aresetn
   integ_thresh_avg integ_thresh_avg
@@ -134,7 +134,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 spi_rst_core {
 
 
 ## SPI system status synchronization
-cell lcb:user:shim_spi_sts_sync:1.0 spi_sts_sync {} {
+cell lcb:user:shim_spi_sts_sync spi_sts_sync {} {
   aclk aclk
   aresetn aresetn
   spi_off_stable spi_off
@@ -158,7 +158,7 @@ cell lcb:user:shim_spi_sts_sync:1.0 spi_sts_sync {} {
 
 ### Trigger core
 
-cell lcb:user:shim_trigger_core:1.0 trig_core {
+cell lcb:user:shim_trigger_core trig_core {
   TRIGGER_LOCKOUT_DEFAULT 5000
 } {
   clk spi_clk

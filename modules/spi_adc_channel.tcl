@@ -37,7 +37,7 @@ create_bd_pin -dir I miso
 ### ADC SPI Controller
 
 ## ADC SPI core
-cell lcb:user:shim_ads816x_adc_ctrl:1.0 adc_spi {} {
+cell lcb:user:shim_ads816x_adc_ctrl adc_spi {} {
   clk spi_clk
   resetn resetn
   cmd_word_rd_en adc_cmd_rd_en
