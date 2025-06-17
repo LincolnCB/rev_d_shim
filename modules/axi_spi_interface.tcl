@@ -127,7 +127,7 @@ for {set i 1} {$i <= $board_count} {incr i} {
     slowest_sync_clk aclk
   }
   # DAC command FIFO
-  cell lcb:user:fifo_async_count dac_cmd_fifo_$i {
+  cell lcb:user:fifo_async dac_cmd_fifo_$i {
     DATA_WIDTH 32
     ADDR_WIDTH 10
   } {
@@ -187,7 +187,7 @@ for {set i 1} {$i <= $board_count} {incr i} {
     slowest_sync_clk aclk
   }
   # ADC command FIFO
-  cell lcb:user:fifo_async_count adc_cmd_fifo_$i {
+  cell lcb:user:fifo_async adc_cmd_fifo_$i {
     DATA_WIDTH 32
     ADDR_WIDTH 10
   } {
@@ -247,7 +247,7 @@ for {set i 1} {$i <= $board_count} {incr i} {
     slowest_sync_clk aclk
   }
   # ADC data FIFO
-  cell lcb:user:fifo_async_count adc_data_fifo_$i {
+  cell lcb:user:fifo_async adc_data_fifo_$i {
     DATA_WIDTH 32
     ADDR_WIDTH 10
   } {
@@ -307,7 +307,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 trig_cmd_fifo_aclk_rst {
   slowest_sync_clk aclk
 }
 # Trigger command FIFO
-cell lcb:user:fifo_async_count trig_cmd_fifo {
+cell lcb:user:fifo_async trig_cmd_fifo {
   DATA_WIDTH 32
   ADDR_WIDTH 10
 } {
@@ -366,7 +366,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 trig_data_fifo_aclk_rst {
   slowest_sync_clk aclk
 }
 # Trigger data FIFO
-cell lcb:user:fifo_async_count trig_data_fifo {
+cell lcb:user:fifo_async trig_data_fifo {
   DATA_WIDTH 32
   ADDR_WIDTH 10
 } {
