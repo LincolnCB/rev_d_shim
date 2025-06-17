@@ -170,7 +170,7 @@ cell xilinx.com:ip:util_vector_logic trig_en_and {
 } {
   Op1 hw_manager/trig_en
   Op2 Trigger_In
-  Res spi_clk_domain/trigger_gated
+  Res spi_clk_domain/trig_gated
 }
 
 ##################################################
@@ -197,14 +197,14 @@ for {set i 1} {$i <= $board_count} {incr i} {
   wire axi_spi_interface/adc_ch${i}_data_full spi_clk_domain/adc_ch${i}_data_full
 }
 # Trigger command FIFO
-wire axi_spi_interface/trigger_cmd spi_clk_domain/trigger_cmd
-wire axi_spi_interface/trigger_cmd_rd_en spi_clk_domain/trigger_cmd_rd_en
-wire axi_spi_interface/trigger_cmd_empty spi_clk_domain/trigger_cmd_empty
+wire axi_spi_interface/trig_cmd spi_clk_domain/trig_cmd
+wire axi_spi_interface/trig_cmd_rd_en spi_clk_domain/trig_cmd_rd_en
+wire axi_spi_interface/trig_cmd_empty spi_clk_domain/trig_cmd_empty
 # Trigger data FIFO
-wire axi_spi_interface/trigger_data spi_clk_domain/trigger_data
-wire axi_spi_interface/trigger_data_wr_en spi_clk_domain/trigger_data_wr_en
-wire axi_spi_interface/trigger_data_full spi_clk_domain/trigger_data_full
-wire axi_spi_interface/trigger_data_almost_full spi_clk_domain/trigger_data_almost_full
+wire axi_spi_interface/trig_data spi_clk_domain/trig_data
+wire axi_spi_interface/trig_data_wr_en spi_clk_domain/trig_data_wr_en
+wire axi_spi_interface/trig_data_full spi_clk_domain/trig_data_full
+wire axi_spi_interface/trig_data_almost_full spi_clk_domain/trig_data_almost_full
 ## Address assignment
 # DAC and ADC FIFOs
 for {set i 1} {$i <= $board_count} {incr i} {
@@ -213,15 +213,15 @@ for {set i 1} {$i <= $board_count} {incr i} {
   addr 0x800[expr {$i-1}]2000 128 axi_spi_interface/adc_data_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
 }
 # Trigger command and data FIFOs
-addr 0x800[expr {$board_count}]0000 128 axi_spi_interface/trigger_cmd_fifo_axi_bridge/S_AXI ps/M_AXI_GP1
-addr 0x800[expr {$board_count}]1000 128 axi_spi_interface/trigger_data_fifo_axi_bridge/S_AXI ps/M_AXI_GP1
+addr 0x800[expr {$board_count}]0000 128 axi_spi_interface/trig_cmd_fifo_axi_bridge/S_AXI ps/M_AXI_GP1
+addr 0x800[expr {$board_count}]1000 128 axi_spi_interface/trig_data_fifo_axi_bridge/S_AXI ps/M_AXI_GP1
 
 ## AXI-domain over/underflow detection
-wire axi_spi_interface/dac_cmd_fifo_overflow hw_manager/dac_cmd_fifo_overflow
-wire axi_spi_interface/adc_cmd_fifo_overflow hw_manager/adc_cmd_fifo_overflow
-wire axi_spi_interface/adc_data_fifo_underflow hw_manager/adc_data_fifo_underflow
-wire axi_spi_interface/trigger_cmd_fifo_overflow hw_manager/trigger_cmd_fifo_overflow
-wire axi_spi_interface/trigger_data_fifo_underflow hw_manager/trigger_data_fifo_underflow
+wire axi_spi_interface/dac_cmd_buf_overflow hw_manager/dac_cmd_buf_overflow
+wire axi_spi_interface/adc_cmd_buf_overflow hw_manager/adc_cmd_buf_overflow
+wire axi_spi_interface/adc_data_buf_underflow hw_manager/adc_data_buf_underflow
+wire axi_spi_interface/trig_cmd_buf_overflow hw_manager/trig_cmd_buf_overflow
+wire axi_spi_interface/trig_data_buf_underflow hw_manager/trig_data_buf_underflow
 
 ##################################################
 

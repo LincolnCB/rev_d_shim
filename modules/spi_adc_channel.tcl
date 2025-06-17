@@ -24,7 +24,7 @@ create_bd_pin -dir I adc_data_full
 
 # Trigger
 create_bd_pin -dir I trigger
-create_bd_pin -dir O waiting_for_trigger
+create_bd_pin -dir O waiting_for_trig
 
 # SPI interface signals
 create_bd_pin -dir O n_cs
@@ -32,21 +32,29 @@ create_bd_pin -dir O mosi
 create_bd_pin -dir I miso_sck
 create_bd_pin -dir I miso
 
-# TODO: Temporary constant signal for setup_done and waiting_for_trigger
-cell xilinx.com:ip:xlconstant:1.1 const_one {
-  CONST_VAL 0
-  CONST_WIDTH 1
-} {
-  dout setup_done
-  dout waiting_for_trigger
-}
+##################################################
 
-# TODO: Temporary loopback AND of miso_sck and miso to mosi
-cell xilinx.com:ip:util_vector_logic mosi_loopback {
-  C_SIZE 1
-  C_OPERATION and
-} {
-  Op1 miso
-  Op2 miso_sck
-  Res mosi
+### ADC SPI Controller
+
+## ADC SPI core
+cell lcb:user:shim_ads816x_adc_ctrl:1.0 adc_spi {} {
+  clk spi_clk
+  resetn resetn
+  cmd_word_rd_en adc_cmd_rd_en
+  cmd_word adc_cmd
+  cmd_buf_empty adc_cmd_empty
+  data_word_wr_en adc_data_wr_en
+  data_word adc_data
+  data_buf_full adc_data_full
+  trigger trigger
+  setup_done setup_done
+  bad_cmd bad_cmd
+  cmd_buf_underflow cmd_buf_underflow
+  data_buf_overflow data_buf_overflow
+  unexp_trig unexp_trig
+  waiting_for_trig waiting_for_trig
+  n_cs n_cs
+  mosi mosi
+  miso_sck miso_sck
+  miso miso
 }

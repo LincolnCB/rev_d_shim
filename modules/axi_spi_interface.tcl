@@ -44,22 +44,22 @@ for {set i 1} {$i <= $board_count} {incr i} {
 }
 
 # Trigger command channel
-create_bd_pin -dir O -from 31 -to 0 trigger_cmd
-create_bd_pin -dir I trigger_cmd_rd_en
-create_bd_pin -dir O trigger_cmd_empty
+create_bd_pin -dir O -from 31 -to 0 trig_cmd
+create_bd_pin -dir I trig_cmd_rd_en
+create_bd_pin -dir O trig_cmd_empty
 
 # Trigger data channel
-create_bd_pin -dir I -from 31 -to 0 trigger_data
-create_bd_pin -dir I trigger_data_wr_en
-create_bd_pin -dir O trigger_data_full
-create_bd_pin -dir O trigger_data_almost_full
+create_bd_pin -dir I -from 31 -to 0 trig_data
+create_bd_pin -dir I trig_data_wr_en
+create_bd_pin -dir O trig_data_full
+create_bd_pin -dir O trig_data_almost_full
 
 # Overflow and underflow signals
 create_bd_pin -dir O -from 7 -to 0 dac_cmd_buf_overflow
 create_bd_pin -dir O -from 7 -to 0 adc_cmd_buf_overflow
 create_bd_pin -dir O -from 7 -to 0 adc_data_buf_underflow
-create_bd_pin -dir O trigger_cmd_buf_overflow
-create_bd_pin -dir O trigger_data_buf_underflow
+create_bd_pin -dir O trig_cmd_buf_overflow
+create_bd_pin -dir O trig_data_buf_underflow
 
 ## 0 and 1 constants to fill bits for unused boards
 cell xilinx.com:ip:xlconstant:1.1 const_0 {
@@ -285,51 +285,51 @@ for {set i 1} {$i <= $board_count} {incr i} {
 
 ## Trigger command FIFO
 # Trigger command FIFO resetn
-cell xilinx.com:ip:xlslice:1.0 trigger_cmd_fifo_rst_slice {
+cell xilinx.com:ip:xlslice:1.0 trig_cmd_fifo_rst_slice {
   DIN_WIDTH 26
   DIN_FROM 24
   DIN_TO 24
 } {
   din buffer_reset
 }
-cell xilinx.com:ip:proc_sys_reset:5.0 trigger_cmd_fifo_spi_clk_rst {
+cell xilinx.com:ip:proc_sys_reset:5.0 trig_cmd_fifo_spi_clk_rst {
   C_AUX_RESET_HIGH.VALUE_SRC USER
   C_AUX_RESET_HIGH 0
 } {
-  aux_reset_in trigger_cmd_fifo_rst_slice/dout
+  aux_reset_in trig_cmd_fifo_rst_slice/dout
   slowest_sync_clk spi_clk
 }
-cell xilinx.com:ip:proc_sys_reset:5.0 trigger_cmd_fifo_aclk_rst {
+cell xilinx.com:ip:proc_sys_reset:5.0 trig_cmd_fifo_aclk_rst {
   C_AUX_RESET_HIGH.VALUE_SRC USER
   C_AUX_RESET_HIGH 0
 } {
-  aux_reset_in trigger_cmd_fifo_rst_slice/dout
+  aux_reset_in trig_cmd_fifo_rst_slice/dout
   slowest_sync_clk aclk
 }
 # Trigger command FIFO
-cell lcb:user:fifo_async_count trigger_cmd_fifo {
+cell lcb:user:fifo_async_count trig_cmd_fifo {
   DATA_WIDTH 32
   ADDR_WIDTH 10
 } {
   wr_clk aclk
-  wr_rst_n trigger_cmd_fifo_aclk_rst/peripheral_aresetn
+  wr_rst_n trig_cmd_fifo_aclk_rst/peripheral_aresetn
   rd_clk spi_clk
-  rd_rst_n trigger_cmd_fifo_spi_clk_rst/peripheral_aresetn
-  rd_data trigger_cmd
-  rd_en trigger_cmd_rd_en
-  empty trigger_cmd_empty
+  rd_rst_n trig_cmd_fifo_spi_clk_rst/peripheral_aresetn
+  rd_data trig_cmd
+  rd_en trig_cmd_rd_en
+  empty trig_cmd_empty
 }
 # 32-bit trigger command FIFO status word
-cell xilinx.com:ip:xlconcat:2.1 trigger_cmd_fifo_sts_word {
+cell xilinx.com:ip:xlconcat:2.1 trig_cmd_fifo_sts_word {
   NUM_PORTS 4
 } {
-  In0 trigger_cmd_fifo/fifo_count_wr_clk
+  In0 trig_cmd_fifo/fifo_count_wr_clk
   In1 sts_word_padding/dout
-  In2 trigger_cmd_fifo/full
-  In3 trigger_cmd_fifo/almost_full
+  In2 trig_cmd_fifo/full
+  In3 trig_cmd_fifo/almost_full
 }
 # Trigger command FIFO AXI interface
-cell lcb:user:axi_fifo_bridge:1.0 trigger_cmd_fifo_axi_bridge {
+cell lcb:user:axi_fifo_bridge:1.0 trig_cmd_fifo_axi_bridge {
   AXI_ADDR_WIDTH 32
   AXI_DATA_WIDTH 32
   ENABLE_READ 0
@@ -337,59 +337,59 @@ cell lcb:user:axi_fifo_bridge:1.0 trigger_cmd_fifo_axi_bridge {
   aclk aclk
   aresetn aresetn
   S_AXI board_ch_axi_intercon/M0[expr {$board_count}]_AXI
-  fifo_wr_data trigger_cmd_fifo/wr_data
-  fifo_wr_en trigger_cmd_fifo/wr_en
-  fifo_full trigger_cmd_fifo/full
+  fifo_wr_data trig_cmd_fifo/wr_data
+  fifo_wr_en trig_cmd_fifo/wr_en
+  fifo_full trig_cmd_fifo/full
 }
 
 ## Trigger data FIFO
 # Trigger data FIFO resetn
-cell xilinx.com:ip:xlslice:1.0 trigger_data_fifo_rst_slice {
+cell xilinx.com:ip:xlslice:1.0 trig_data_fifo_rst_slice {
   DIN_WIDTH 26
   DIN_FROM 25
   DIN_TO 25
 } {
   din buffer_reset
 }
-cell xilinx.com:ip:proc_sys_reset:5.0 trigger_data_fifo_spi_clk_rst {
+cell xilinx.com:ip:proc_sys_reset:5.0 trig_data_fifo_spi_clk_rst {
   C_AUX_RESET_HIGH.VALUE_SRC USER
   C_AUX_RESET_HIGH 0
 } {
-  aux_reset_in trigger_data_fifo_rst_slice/dout
+  aux_reset_in trig_data_fifo_rst_slice/dout
   slowest_sync_clk spi_clk
 }
-cell xilinx.com:ip:proc_sys_reset:5.0 trigger_data_fifo_aclk_rst {
+cell xilinx.com:ip:proc_sys_reset:5.0 trig_data_fifo_aclk_rst {
   C_AUX_RESET_HIGH.VALUE_SRC USER
   C_AUX_RESET_HIGH 0
 } {
-  aux_reset_in trigger_data_fifo_rst_slice/dout
+  aux_reset_in trig_data_fifo_rst_slice/dout
   slowest_sync_clk aclk
 }
 # Trigger data FIFO
-cell lcb:user:fifo_async_count trigger_data_fifo {
+cell lcb:user:fifo_async_count trig_data_fifo {
   DATA_WIDTH 32
   ADDR_WIDTH 10
 } {
   wr_clk spi_clk
-  wr_rst_n trigger_data_fifo_spi_clk_rst/peripheral_aresetn
+  wr_rst_n trig_data_fifo_spi_clk_rst/peripheral_aresetn
   rd_clk aclk
-  rd_rst_n trigger_data_fifo_aclk_rst/peripheral_aresetn
-  wr_data trigger_data
-  wr_en trigger_data_wr_en
-  full trigger_data_full
-  almost_full trigger_data_almost_full
+  rd_rst_n trig_data_fifo_aclk_rst/peripheral_aresetn
+  wr_data trig_data
+  wr_en trig_data_wr_en
+  full trig_data_full
+  almost_full trig_data_almost_full
 }
 # 32-bit trigger data FIFO status word
-cell xilinx.com:ip:xlconcat:2.1 trigger_data_fifo_sts_word {
+cell xilinx.com:ip:xlconcat:2.1 trig_data_fifo_sts_word {
   NUM_PORTS 4
 } {
-  In0 trigger_data_fifo/fifo_count_rd_clk
+  In0 trig_data_fifo/fifo_count_rd_clk
   In1 sts_word_padding/dout
-  In2 trigger_data_fifo/empty
-  In3 trigger_data_fifo/almost_empty
+  In2 trig_data_fifo/empty
+  In3 trig_data_fifo/almost_empty
 }
 # Trigger data FIFO AXI interface
-cell lcb:user:axi_fifo_bridge:1.0 trigger_data_fifo_axi_bridge {
+cell lcb:user:axi_fifo_bridge:1.0 trig_data_fifo_axi_bridge {
   AXI_ADDR_WIDTH 32
   AXI_DATA_WIDTH 32
   ENABLE_WRITE 0
@@ -397,9 +397,9 @@ cell lcb:user:axi_fifo_bridge:1.0 trigger_data_fifo_axi_bridge {
   aclk aclk
   aresetn aresetn
   S_AXI board_ch_axi_intercon/M0[expr {$board_count+1}]_AXI
-  fifo_rd_data trigger_data_fifo/rd_data
-  fifo_rd_en trigger_data_fifo/rd_en
-  fifo_empty trigger_data_fifo/empty
+  fifo_rd_data trig_data_fifo/rd_data
+  fifo_rd_en trig_data_fifo/rd_en
+  fifo_empty trig_data_fifo/empty
 }
 
 ## Status concatenation out
@@ -427,13 +427,13 @@ for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
   wire fifo_sts_concat/In[expr {3*($i-1)+2}] empty_sts_word/dout
 }
 # Wire trigger command and data FIFO status words to the concatenation
-wire fifo_sts_concat/In24 trigger_cmd_fifo_sts_word/dout
-wire fifo_sts_concat/In25 trigger_data_fifo_sts_word/dout
+wire fifo_sts_concat/In24 trig_cmd_fifo_sts_word/dout
+wire fifo_sts_concat/In25 trig_data_fifo_sts_word/dout
 
 ## Overflow and underflow signals
 # Concatenate DAC command FIFO overflow signals
 cell xilinx.com:ip:xlconcat:2.1 dac_cmd_buf_overflow_concat {
-  NUM_PORTS $board_count
+  NUM_PORTS 8
 } {
   dout dac_cmd_buf_overflow
 }
@@ -445,7 +445,7 @@ for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
 }
 # Concatenate ADC command FIFO overflow signals
 cell xilinx.com:ip:xlconcat:2.1 adc_cmd_buf_overflow_concat {
-  NUM_PORTS $board_count
+  NUM_PORTS 8
 } {
   dout adc_cmd_buf_overflow
 }
@@ -457,7 +457,7 @@ for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
 }
 # Concatenate ADC data FIFO underflow signals
 cell xilinx.com:ip:xlconcat:2.1 adc_data_buf_underflow_concat {
-  NUM_PORTS $board_count
+  NUM_PORTS 8
 } {
   dout adc_data_buf_underflow
 }
@@ -468,5 +468,5 @@ for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
   wire adc_data_buf_underflow_concat/In[expr {$i-1}] const_0/dout
 }
 # Wire trigger command/data FIFO overflow and underflow signals
-wire trigger_cmd_buf_overflow trigger_cmd_fifo_axi_bridge/fifo_overflow
-wire trigger_data_buf_underflow trigger_data_fifo_axi_bridge/fifo_underflow
+wire trig_cmd_buf_overflow trig_cmd_fifo_axi_bridge/fifo_overflow
+wire trig_data_buf_underflow trig_data_fifo_axi_bridge/fifo_underflow
