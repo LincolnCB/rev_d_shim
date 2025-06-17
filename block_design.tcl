@@ -152,6 +152,7 @@ module spi_clk_domain spi_clk_domain {
   thresh_underflow hw_manager/thresh_underflow
   thresh_overflow hw_manager/thresh_overflow
   bad_trig_cmd hw_manager/bad_trig_cmd
+  trig_data_buf_overflow hw_manager/trig_data_buf_overflow
   bad_dac_cmd hw_manager/bad_dac_cmd
   dac_cal_oob hw_manager/dac_cal_oob
   dac_val_oob hw_manager/dac_val_oob
@@ -199,6 +200,11 @@ for {set i 1} {$i <= $board_count} {incr i} {
 wire axi_spi_interface/trigger_cmd spi_clk_domain/trigger_cmd
 wire axi_spi_interface/trigger_cmd_rd_en spi_clk_domain/trigger_cmd_rd_en
 wire axi_spi_interface/trigger_cmd_empty spi_clk_domain/trigger_cmd_empty
+# Trigger data FIFO
+wire axi_spi_interface/trigger_data spi_clk_domain/trigger_data
+wire axi_spi_interface/trigger_data_wr_en spi_clk_domain/trigger_data_wr_en
+wire axi_spi_interface/trigger_data_full spi_clk_domain/trigger_data_full
+wire axi_spi_interface/trigger_data_almost_full spi_clk_domain/trigger_data_almost_full
 ## Address assignment
 # DAC and ADC FIFOs
 for {set i 1} {$i <= $board_count} {incr i} {
@@ -206,9 +212,16 @@ for {set i 1} {$i <= $board_count} {incr i} {
   addr 0x800[expr {$i-1}]1000 128 axi_spi_interface/adc_cmd_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
   addr 0x800[expr {$i-1}]2000 128 axi_spi_interface/adc_data_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
 }
-# Trigger command FIFO
+# Trigger command and data FIFOs
 addr 0x800[expr {$board_count}]0000 128 axi_spi_interface/trigger_cmd_fifo_axi_bridge/S_AXI ps/M_AXI_GP1
+addr 0x800[expr {$board_count}]1000 128 axi_spi_interface/trigger_data_fifo_axi_bridge/S_AXI ps/M_AXI_GP1
 
+## AXI-domain over/underflow detection
+wire axi_spi_interface/dac_cmd_fifo_overflow hw_manager/dac_cmd_fifo_overflow
+wire axi_spi_interface/adc_cmd_fifo_overflow hw_manager/adc_cmd_fifo_overflow
+wire axi_spi_interface/adc_data_fifo_underflow hw_manager/adc_data_fifo_underflow
+wire axi_spi_interface/trigger_cmd_fifo_overflow hw_manager/trigger_cmd_fifo_overflow
+wire axi_spi_interface/trigger_data_fifo_underflow hw_manager/trigger_data_fifo_underflow
 
 ##################################################
 
@@ -227,11 +240,12 @@ addr 0x40100000 128 status_reg/S_AXI ps/M_AXI_GP0
 #  (95+96*(n-1)) : (64+96*(n-1)) -- 32b ADC ch(n) command FIFO status word (n=1..8)
 # (127+96*(n-1)) : (96+96*(n-1)) -- 32b ADC ch(n) data FIFO status word    (n=1..8)
 #            831 : 800           -- 32b Trigger command FIFO status word
-#           1023 : 832           -- 192b padding (reserved bits)
+#            863 : 832           -- 32b Trigger data FIFO status word
+#           1023 : 864           -- 160b reserved bits
 ## Pad reserved bits
-cell xilinx.com:ip:xlconstant:1.1 pad_192 {
+cell xilinx.com:ip:xlconstant:1.1 pad_160 {
   CONST_VAL 0
-  CONST_WIDTH 192
+  CONST_WIDTH 160
 } {}
 # Status register concatenation
 # Concatenate: hw_manager/status_word, pad_32, then for each i=1..8: dac_cmd_fifo_$i/fifo_sts_word, adc_cmd_fifo_$i/fifo_sts_word, adc_data_fifo_$i/fifo_sts_word, then pad_448
@@ -240,7 +254,7 @@ cell xilinx.com:ip:xlconcat:2.1 sts_concat {
 } {
   In0 hw_manager/status_word
   In1 axi_spi_interface/fifo_sts
-  In2 pad_192/dout
+  In2 pad_160/dout
   dout status_reg/sts_data
 }
 

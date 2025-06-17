@@ -16,14 +16,14 @@ if {$board_count < 1 || $board_count > 8} {
 # System signals
 create_bd_pin -dir I -type clock aclk
 create_bd_pin -dir I -type reset aresetn
-create_bd_pin -dir I -from 24 -to 0 buffer_reset
+create_bd_pin -dir I -from 25 -to 0 buffer_reset
 create_bd_pin -dir I -type clock spi_clk
 
 # AXI interface
 create_bd_intf_pin -mode slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_AXI
 
 # Status concatenated out
-create_bd_pin -dir O -from 799 -to 0 fifo_sts
+create_bd_pin -dir O -from 831 -to 0 fifo_sts
 
 # DAC/ADC command and data channels
 for {set i 1} {$i <= $board_count} {incr i} {
@@ -48,12 +48,34 @@ create_bd_pin -dir O -from 31 -to 0 trigger_cmd
 create_bd_pin -dir I trigger_cmd_rd_en
 create_bd_pin -dir O trigger_cmd_empty
 
+# Trigger data channel
+create_bd_pin -dir I -from 31 -to 0 trigger_data
+create_bd_pin -dir I trigger_data_wr_en
+create_bd_pin -dir O trigger_data_full
+create_bd_pin -dir O trigger_data_almost_full
+
+# Overflow and underflow signals
+create_bd_pin -dir O -from 7 -to 0 dac_cmd_buf_overflow
+create_bd_pin -dir O -from 7 -to 0 adc_cmd_buf_overflow
+create_bd_pin -dir O -from 7 -to 0 adc_data_buf_underflow
+create_bd_pin -dir O trigger_cmd_buf_overflow
+create_bd_pin -dir O trigger_data_buf_underflow
+
+## 0 and 1 constants to fill bits for unused boards
+cell xilinx.com:ip:xlconstant:1.1 const_0 {
+  WIDTH 8
+} {}
+cell xilinx.com:ip:xlconstant:1.1 const_1 {
+  WIDTH 8
+} {}
+
 #######################################################
 
-# DAC/ADC AXI smart connect, per board (1 master, board_count + 1 slaves, one per channel and one for the trigger command FIFO)
+# DAC/ADC AXI smart connect, per board (1 slave, [board_count + 2] masters)
+#  (one per board channel, one for each of the trigger command and data channels)
 cell xilinx.com:ip:smartconnect:1.0 board_ch_axi_intercon {
   NUM_SI 1
-  NUM_MI [expr {$board_count + 1}]
+  NUM_MI [expr {$board_count + 2}]
 } {
   aclk aclk
   S00_AXI S_AXI
@@ -84,7 +106,7 @@ for {set i 1} {$i <= $board_count} {incr i} {
   ## DAC command FIFO
   # DAC command FIFO resetn
   cell xilinx.com:ip:xlslice:1.0 dac_cmd_fifo_${i}_rst_slice {
-    DIN_WIDTH 25
+    DIN_WIDTH 26
     DIN_FROM [expr {3*($i-1)+0}]
     DIN_TO [expr {3*($i-1)+0}]
   } {
@@ -144,7 +166,7 @@ for {set i 1} {$i <= $board_count} {incr i} {
   ## ADC command FIFO
   # ADC command FIFO resetn
   cell xilinx.com:ip:xlslice:1.0 adc_cmd_fifo_${i}_rst_slice {
-    DIN_WIDTH 25
+    DIN_WIDTH 26
     DIN_FROM [expr {3*($i-1)+1}]
     DIN_TO [expr {3*($i-1)+1}]
   } {
@@ -204,7 +226,7 @@ for {set i 1} {$i <= $board_count} {incr i} {
   ## ADC data FIFO
   # ADC data FIFO resetn
   cell xilinx.com:ip:xlslice:1.0 adc_data_fifo_${i}_rst_slice {
-    DIN_WIDTH 25
+    DIN_WIDTH 26
     DIN_FROM [expr {3*($i-1)+2}]
     DIN_TO [expr {3*($i-1)+2}]
   } {
@@ -264,7 +286,7 @@ for {set i 1} {$i <= $board_count} {incr i} {
 ## Trigger command FIFO
 # Trigger command FIFO resetn
 cell xilinx.com:ip:xlslice:1.0 trigger_cmd_fifo_rst_slice {
-  DIN_WIDTH 25
+  DIN_WIDTH 26
   DIN_FROM 24
   DIN_TO 24
 } {
@@ -320,6 +342,66 @@ cell lcb:user:axi_fifo_bridge:1.0 trigger_cmd_fifo_axi_bridge {
   fifo_full trigger_cmd_fifo/full
 }
 
+## Trigger data FIFO
+# Trigger data FIFO resetn
+cell xilinx.com:ip:xlslice:1.0 trigger_data_fifo_rst_slice {
+  DIN_WIDTH 26
+  DIN_FROM 25
+  DIN_TO 25
+} {
+  din buffer_reset
+}
+cell xilinx.com:ip:proc_sys_reset:5.0 trigger_data_fifo_spi_clk_rst {
+  C_AUX_RESET_HIGH.VALUE_SRC USER
+  C_AUX_RESET_HIGH 0
+} {
+  aux_reset_in trigger_data_fifo_rst_slice/dout
+  slowest_sync_clk spi_clk
+}
+cell xilinx.com:ip:proc_sys_reset:5.0 trigger_data_fifo_aclk_rst {
+  C_AUX_RESET_HIGH.VALUE_SRC USER
+  C_AUX_RESET_HIGH 0
+} {
+  aux_reset_in trigger_data_fifo_rst_slice/dout
+  slowest_sync_clk aclk
+}
+# Trigger data FIFO
+cell lcb:user:fifo_async_count trigger_data_fifo {
+  DATA_WIDTH 32
+  ADDR_WIDTH 10
+} {
+  wr_clk spi_clk
+  wr_rst_n trigger_data_fifo_spi_clk_rst/peripheral_aresetn
+  rd_clk aclk
+  rd_rst_n trigger_data_fifo_aclk_rst/peripheral_aresetn
+  wr_data trigger_data
+  wr_en trigger_data_wr_en
+  full trigger_data_full
+  almost_full trigger_data_almost_full
+}
+# 32-bit trigger data FIFO status word
+cell xilinx.com:ip:xlconcat:2.1 trigger_data_fifo_sts_word {
+  NUM_PORTS 4
+} {
+  In0 trigger_data_fifo/fifo_count_rd_clk
+  In1 sts_word_padding/dout
+  In2 trigger_data_fifo/empty
+  In3 trigger_data_fifo/almost_empty
+}
+# Trigger data FIFO AXI interface
+cell lcb:user:axi_fifo_bridge:1.0 trigger_data_fifo_axi_bridge {
+  AXI_ADDR_WIDTH 32
+  AXI_DATA_WIDTH 32
+  ENABLE_WRITE 0
+} {
+  aclk aclk
+  aresetn aresetn
+  S_AXI board_ch_axi_intercon/M0[expr {$board_count+1}]_AXI
+  fifo_rd_data trigger_data_fifo/rd_data
+  fifo_rd_en trigger_data_fifo/rd_en
+  fifo_empty trigger_data_fifo/empty
+}
+
 ## Status concatenation out
 # 32-bit padding for unused boards
 cell xilinx.com:ip:xlconstant:1.1 empty_sts_word {
@@ -328,7 +410,7 @@ cell xilinx.com:ip:xlconstant:1.1 empty_sts_word {
 } {}
 # Concatenate status words from all FIFOs
 cell xilinx.com:ip:xlconcat:2.1 fifo_sts_concat {
-  NUM_PORTS 25
+  NUM_PORTS 26
 } {
   dout fifo_sts
 }
@@ -344,5 +426,47 @@ for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
   wire fifo_sts_concat/In[expr {3*($i-1)+1}] empty_sts_word/dout
   wire fifo_sts_concat/In[expr {3*($i-1)+2}] empty_sts_word/dout
 }
-# Wire trigger command FIFO status word to the concatenation
+# Wire trigger command and data FIFO status words to the concatenation
 wire fifo_sts_concat/In24 trigger_cmd_fifo_sts_word/dout
+wire fifo_sts_concat/In25 trigger_data_fifo_sts_word/dout
+
+## Overflow and underflow signals
+# Concatenate DAC command FIFO overflow signals
+cell xilinx.com:ip:xlconcat:2.1 dac_cmd_buf_overflow_concat {
+  NUM_PORTS $board_count
+} {
+  dout dac_cmd_buf_overflow
+}
+for {set i 1} {$i <= $board_count} {incr i} {
+  wire dac_cmd_buf_overflow_concat/In[expr {$i-1}] dac_cmd_fifo_${i}_axi_bridge/fifo_overflow
+}
+for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
+  wire dac_cmd_buf_overflow_concat/In[expr {$i-1}] const_0/dout
+}
+# Concatenate ADC command FIFO overflow signals
+cell xilinx.com:ip:xlconcat:2.1 adc_cmd_buf_overflow_concat {
+  NUM_PORTS $board_count
+} {
+  dout adc_cmd_buf_overflow
+}
+for {set i 1} {$i <= $board_count} {incr i} {
+  wire adc_cmd_buf_overflow_concat/In[expr {$i-1}] adc_cmd_fifo_${i}_axi_bridge/fifo_overflow
+}
+for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
+  wire adc_cmd_buf_overflow_concat/In[expr {$i-1}] const_0/dout
+}
+# Concatenate ADC data FIFO underflow signals
+cell xilinx.com:ip:xlconcat:2.1 adc_data_buf_underflow_concat {
+  NUM_PORTS $board_count
+} {
+  dout adc_data_buf_underflow
+}
+for {set i 1} {$i <= $board_count} {incr i} {
+  wire adc_data_buf_underflow_concat/In[expr {$i-1}] adc_data_fifo_${i}_axi_bridge/fifo_underflow
+}
+for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
+  wire adc_data_buf_underflow_concat/In[expr {$i-1}] const_0/dout
+}
+# Wire trigger command/data FIFO overflow and underflow signals
+wire trigger_cmd_buf_overflow trigger_cmd_fifo_axi_bridge/fifo_overflow
+wire trigger_data_buf_underflow trigger_data_fifo_axi_bridge/fifo_underflow

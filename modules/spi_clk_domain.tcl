@@ -35,6 +35,7 @@ create_bd_pin -dir O -from 7 -to 0 thresh_underflow
 create_bd_pin -dir O -from 7 -to 0 thresh_overflow
 # Trigger channel status
 create_bd_pin -dir O bad_trig_cmd
+create_bd_pin -dir O trig_data_buf_overflow
 # DAC channel status
 create_bd_pin -dir O -from 7 -to 0 bad_dac_cmd
 create_bd_pin -dir O -from 7 -to 0 dac_cal_oob
@@ -68,6 +69,12 @@ for {set i 1} {$i <= $board_count} {incr i} {
 create_bd_pin -dir I -from 31 -to 0 trigger_cmd
 create_bd_pin -dir O trigger_cmd_rd_en
 create_bd_pin -dir I trigger_cmd_empty
+# Trigger data channel
+create_bd_pin -dir O -from 31 -to 0 trigger_data
+create_bd_pin -dir O trigger_data_wr_en
+create_bd_pin -dir I trigger_data_full
+create_bd_pin -dir I trigger_data_almost_full
+
 
 # Trigger
 create_bd_pin -dir I trigger_gated
@@ -135,6 +142,7 @@ cell lcb:user:shim_spi_sts_sync:1.0 spi_sts_sync {} {
   thresh_underflow_stable thresh_underflow
   thresh_overflow_stable thresh_overflow
   bad_trig_cmd_stable bad_trig_cmd
+  trig_data_buf_overflow_stable trig_data_buf_overflow
   bad_dac_cmd_stable bad_dac_cmd
   dac_cal_oob_stable dac_cal_oob
   dac_val_oob_stable dac_val_oob
@@ -158,8 +166,13 @@ cell lcb:user:shim_trigger_core:1.0 trigger_core {
   cmd_word_rd_en trigger_cmd_rd_en
   cmd_word trigger_cmd
   cmd_buf_empty trigger_cmd_empty
+  data_word_wr_en trigger_data_wr_en
+  data_word trigger_data
+  data_buf_full trigger_data_full
+  data_buf_almost_full trigger_data_almost_full
   ext_trigger trigger_gated
   bad_cmd spi_sts_sync/bad_trig_cmd
+  data_buf_overflow spi_sts_sync/trig_data_buf_overflow
 } 
 
 ##################################################
