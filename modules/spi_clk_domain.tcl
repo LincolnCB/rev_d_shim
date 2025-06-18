@@ -37,12 +37,14 @@ create_bd_pin -dir O -from 7 -to 0 thresh_overflow
 create_bd_pin -dir O bad_trig_cmd
 create_bd_pin -dir O trig_data_buf_overflow
 # DAC channel status
+create_bd_pin -dir O -from 7 -to 0 dac_boot_fail
 create_bd_pin -dir O -from 7 -to 0 bad_dac_cmd
 create_bd_pin -dir O -from 7 -to 0 dac_cal_oob
 create_bd_pin -dir O -from 7 -to 0 dac_val_oob
 create_bd_pin -dir O -from 7 -to 0 dac_cmd_buf_underflow
 create_bd_pin -dir O -from 7 -to 0 unexp_dac_trig
 # ADC channel status
+create_bd_pin -dir O -from 7 -to 0 adc_boot_fail
 create_bd_pin -dir O -from 7 -to 0 bad_adc_cmd
 create_bd_pin -dir O -from 7 -to 0 adc_cmd_buf_underflow
 create_bd_pin -dir O -from 7 -to 0 adc_data_buf_overflow
@@ -146,11 +148,13 @@ cell lcb:user:shim_spi_sts_sync spi_sts_sync {} {
   thresh_overflow_stable thresh_overflow
   bad_trig_cmd_stable bad_trig_cmd
   trig_data_buf_overflow_stable trig_data_buf_overflow
+  dac_boot_fail_stable dac_boot_fail
   bad_dac_cmd_stable bad_dac_cmd
   dac_cal_oob_stable dac_cal_oob
   dac_val_oob_stable dac_val_oob
   dac_cmd_buf_underflow_stable dac_cmd_buf_underflow
   unexp_dac_trig_stable unexp_dac_trig
+  adc_boot_fail_stable adc_boot_fail
   bad_adc_cmd_stable bad_adc_cmd
   adc_cmd_buf_underflow_stable adc_cmd_buf_underflow
   adc_data_buf_overflow_stable adc_data_buf_overflow
@@ -462,6 +466,19 @@ for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
   wire thresh_overflow_concat/In[expr {$i-1}] const_0/dout
 }
 
+## dac_boot_fail
+cell xilinx.com:ip:xlconcat:2.1 dac_boot_fail_concat {
+  NUM_PORTS 8
+} {
+  dout spi_sts_sync/dac_boot_fail
+}
+for {set i 1} {$i <= $board_count} {incr i} {
+  wire dac_boot_fail_concat/In[expr {$i-1}] dac_ch$i/boot_fail
+}
+for {set i [expr $board_count+1]} {$i <= 8} {
+  wire dac_boot_fail_concat/In[expr {$i-1}] const_0/dout
+}
+
 ## bad_dac_cmd
 cell xilinx.com:ip:xlconcat:2.1 bad_dac_cmd_concat {
   NUM_PORTS 8
@@ -525,6 +542,19 @@ for {set i 1} {$i <= $board_count} {incr i} {
 }
 for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
   wire unexp_dac_trig_concat/In[expr {$i-1}] const_0/dout
+}
+
+## adc_boot_fail
+cell xilinx.com:ip:xlconcat:2.1 adc_boot_fail_concat {
+  NUM_PORTS 8
+} {
+  dout spi_sts_sync/adc_boot_fail
+}
+for {set i 1} {$i <= $board_count} {incr i} {
+  wire adc_boot_fail_concat/In[expr {$i-1}] adc_ch$i/boot_fail
+}
+for {set i [expr $board_count+1]} {$i <= 8} {
+  wire adc_boot_fail_concat/In[expr {$i-1}] const_0/dout
 }
 
 ## bad_adc_cmd

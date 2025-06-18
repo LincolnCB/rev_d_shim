@@ -9,6 +9,7 @@ create_bd_pin -dir I -type reset resetn
 # System status
 create_bd_pin -dir O setup_done
 # ADC status
+create_bd_pin -dir O boot_fail
 create_bd_pin -dir O bad_cmd
 create_bd_pin -dir O cmd_buf_underflow
 create_bd_pin -dir O data_buf_overflow
@@ -65,6 +66,7 @@ cell lcb:user:shim_ads816x_adc_ctrl adc_spi {} {
   data_buf_full adc_data_full_blocked/Res
   trigger trigger
   setup_done setup_done
+  boot_fail boot_fail
   bad_cmd bad_cmd
   cmd_buf_underflow cmd_buf_underflow
   data_buf_overflow data_buf_overflow

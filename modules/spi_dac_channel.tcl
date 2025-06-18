@@ -18,6 +18,7 @@ create_bd_pin -dir O over_thresh
 create_bd_pin -dir O thresh_overflow
 create_bd_pin -dir O thresh_underflow
 # DAC SPI controller status
+create_bd_pin -dir O boot_fail
 create_bd_pin -dir O bad_cmd
 create_bd_pin -dir O cal_oob
 create_bd_pin -dir O dac_val_oob
@@ -70,6 +71,7 @@ cell lcb:user:shim_ad5676_dac_ctrl dac_spi {
   waiting_for_trig waiting_for_trig
   cmd_buf_underflow cmd_buf_underflow
   unexp_trig unexp_trig
+  boot_fail boot_fail
   bad_cmd bad_cmd
   cal_oob cal_oob
   dac_val_oob dac_val_oob

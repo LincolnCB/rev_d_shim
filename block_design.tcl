@@ -153,11 +153,13 @@ module spi_clk_domain spi_clk_domain {
   thresh_overflow hw_manager/thresh_overflow
   bad_trig_cmd hw_manager/bad_trig_cmd
   trig_data_buf_overflow hw_manager/trig_data_buf_overflow
+  dac_boot_fail hw_manager/dac_boot_fail
   bad_dac_cmd hw_manager/bad_dac_cmd
   dac_cal_oob hw_manager/dac_cal_oob
   dac_val_oob hw_manager/dac_val_oob
   dac_cmd_buf_underflow hw_manager/dac_cmd_buf_underflow
   unexp_dac_trig hw_manager/unexp_dac_trig
+  adc_boot_fail hw_manager/adc_boot_fail
   bad_adc_cmd hw_manager/bad_adc_cmd
   adc_cmd_buf_underflow hw_manager/adc_cmd_buf_underflow
   adc_data_buf_overflow hw_manager/adc_data_buf_overflow
