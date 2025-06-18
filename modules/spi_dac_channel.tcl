@@ -29,6 +29,9 @@ create_bd_pin -dir I -from 31 -to 0 dac_cmd
 create_bd_pin -dir O dac_cmd_rd_en
 create_bd_pin -dir I dac_cmd_empty
 
+# Block command buffer until HW Manager is ready
+create_bd_pin -dir I block_buffers
+
 # Trigger
 create_bd_pin -dir I trigger
 create_bd_pin -dir O waiting_for_trig
@@ -45,7 +48,14 @@ create_bd_pin -dir I miso_sck
 ##################################################
 
 ### DAC SPI Controller
-
+## Block the command buffer if needed (OR block_buffers with cmd_buf_empty)
+cell xilinx.com:ip:util_vector_logic dac_cmd_empty_blocked {
+  C_SIZE 1
+  C_OPERATION or
+} {
+  Op1 dac_cmd_empty
+  Op2 block_buffers
+}
 ## DAC SPI core
 cell lcb:user:shim_ad5676_dac_ctrl dac_spi {
   ABS_CAL_MAX 4096
@@ -54,7 +64,7 @@ cell lcb:user:shim_ad5676_dac_ctrl dac_spi {
   resetn resetn
   cmd_word_rd_en dac_cmd_rd_en
   cmd_word dac_cmd
-  cmd_buf_empty dac_cmd_empty
+  cmd_buf_empty dac_cmd_empty_blocked/Res
   trigger trigger
   ldac_shared ldac_shared
   waiting_for_trig waiting_for_trig

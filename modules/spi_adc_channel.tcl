@@ -22,6 +22,9 @@ create_bd_pin -dir O -from 31 -to 0 adc_data
 create_bd_pin -dir O adc_data_wr_en
 create_bd_pin -dir I adc_data_full
 
+# Block command and data buffers until HW Manager is ready
+create_bd_pin -dir I block_buffers
+
 # Trigger
 create_bd_pin -dir I trigger
 create_bd_pin -dir O waiting_for_trig
@@ -35,17 +38,31 @@ create_bd_pin -dir I miso
 ##################################################
 
 ### ADC SPI Controller
-
+## Block the command and data buffers if needed (OR block_buffers_stable with cmd_buf_empty and data_buf_full)
+cell xilinx.com:ip:util_vector_logic adc_cmd_empty_blocked {
+  C_SIZE 1
+  C_OPERATION or
+} {
+  Op1 adc_cmd_empty
+  Op2 spi_cfg_sync/block_buffers_stable
+}
+cell xilinx.com:ip:util_vector_logic adc_data_full_blocked {
+  C_SIZE 1
+  C_OPERATION or
+} {
+  Op1 adc_data_full
+  Op2 block_buffers
+}
 ## ADC SPI core
 cell lcb:user:shim_ads816x_adc_ctrl adc_spi {} {
   clk spi_clk
   resetn resetn
   cmd_word_rd_en adc_cmd_rd_en
   cmd_word adc_cmd
-  cmd_buf_empty adc_cmd_empty
+  cmd_buf_empty adc_cmd_empty_blocked/Res
   data_word_wr_en adc_data_wr_en
   data_word adc_data
-  data_buf_full adc_data_full
+  data_buf_full adc_data_full_blocked/Res
   trigger trigger
   setup_done setup_done
   bad_cmd bad_cmd

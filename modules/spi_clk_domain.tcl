@@ -75,9 +75,11 @@ create_bd_pin -dir O trig_data_wr_en
 create_bd_pin -dir I trig_data_full
 create_bd_pin -dir I trig_data_almost_full
 
+# External trigger
+create_bd_pin -dir I ext_trig
 
-# Trigger
-create_bd_pin -dir I trig_gated
+# Block buffers on the SPI side (until HW Manager is ready)
+create_bd_pin -dir I block_buffers
 
 # SPI interface signals (out)
 create_bd_pin -dir O ldac
@@ -120,6 +122,7 @@ cell lcb:user:shim_spi_cfg_sync spi_cfg_sync {} {
   integ_window integ_window
   integ_en integ_en
   spi_en spi_en
+  block_buffers block_buffers
 }
 ## SPI system reset
 # Create proc_sys_reset for SPI-system-wide reset
@@ -157,7 +160,22 @@ cell lcb:user:shim_spi_sts_sync spi_sts_sync {} {
 ##################################################
 
 ### Trigger core
-
+## Block the command and data buffers if needed (OR block_buffers_stable with cmd_buf_empty and data_buf_full)
+cell xilinx.com:ip:util_vector_logic trig_cmd_empty_blocked {
+  C_SIZE 1
+  C_OPERATION or
+} {
+  Op1 trig_cmd_empty
+  Op2 spi_cfg_sync/block_buffers_stable
+}
+cell xilinx.com:ip:util_vector_logic trig_data_full_blocked {
+  C_SIZE 1
+  C_OPERATION or
+} {
+  Op1 trig_data_full
+  Op2 spi_cfg_sync/block_buffers_stable
+}
+## Trigger core
 cell lcb:user:shim_trigger_core trig_core {
   TRIGGER_LOCKOUT_DEFAULT 5000
 } {
@@ -165,12 +183,12 @@ cell lcb:user:shim_trigger_core trig_core {
   resetn spi_rst_core/peripheral_aresetn
   cmd_word_rd_en trig_cmd_rd_en
   cmd_word trig_cmd
-  cmd_buf_empty trig_cmd_empty
+  cmd_buf_empty trig_cmd_empty_blocked/Res
   data_word_wr_en trig_data_wr_en
   data_word trig_data
-  data_buf_full trig_data_full
+  data_buf_full trig_data_full_blocked/Res
   data_buf_almost_full trig_data_almost_full
-  ext_trig trig_gated
+  ext_trig ext_trig
   bad_cmd spi_sts_sync/bad_trig_cmd
   data_buf_overflow spi_sts_sync/trig_data_buf_overflow
 } 
@@ -189,6 +207,7 @@ for {set i 1} {$i <= $board_count} {incr i} {
     dac_cmd dac_ch${i}_cmd
     dac_cmd_rd_en dac_ch${i}_cmd_rd_en
     dac_cmd_empty dac_ch${i}_cmd_empty
+    block_buffers spi_cfg_sync/block_buffers_stable
     trigger trig_core/trig_out
   }
   ## ADC Channel
@@ -201,6 +220,7 @@ for {set i 1} {$i <= $board_count} {incr i} {
     adc_data adc_ch${i}_data
     adc_data_wr_en adc_ch${i}_data_wr_en
     adc_data_full adc_ch${i}_data_full
+    block_buffers spi_cfg_sync/block_buffers_stable
     trigger trig_core/trig_out
   }
 }

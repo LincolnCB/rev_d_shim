@@ -162,15 +162,8 @@ module spi_clk_domain spi_clk_domain {
   adc_cmd_buf_underflow hw_manager/adc_cmd_buf_underflow
   adc_data_buf_overflow hw_manager/adc_data_buf_overflow
   unexp_adc_trig hw_manager/unexp_adc_trig
-}
-## Trigger enable AND gate
-cell xilinx.com:ip:util_vector_logic trig_en_and {
-  C_SIZE 1
-  C_OPERATION and
-} {
-  Op1 hw_manager/trig_en
-  Op2 Trigger_In
-  Res spi_clk_domain/trig_gated
+  ext_trig Trigger_In
+  block_buffers hw_manager/block_buffers
 }
 
 ##################################################
