@@ -7,7 +7,102 @@ if {$board_count < 1 || $board_count > 8} {
   exit 1
 }
 
-##################################################
+###############################################################################
+#
+#   Single-ended ports
+#
+###############################################################################
+
+
+#------------------------------------------------------------
+# Inputs
+#------------------------------------------------------------
+
+# (10Mhz_In)
+create_bd_port -dir I -type clk -freq_hz 10000000 Scanner_10Mhz_In
+# (Shutdown_Sense)
+create_bd_port -dir I -type data Shutdown_Sense
+# (Trigger_In)
+create_bd_port -dir I Trigger_In
+# (Shutdown_Button)
+create_bd_port -dir I Shutdown_Button
+
+
+#------------------------------------------------------------
+# Outputs
+#------------------------------------------------------------
+
+# (Shutdown_Sense_Sel0-2)
+create_bd_port -dir O -from 2 -to 0 -type data Shutdown_Sense_Sel
+# (~Shutdown_Force)
+create_bd_port -dir O n_Shutdown_Force
+# (~Shutdown_Reset)
+create_bd_port -dir O n_Shutdown_Reset
+
+
+
+###############################################################################
+#
+#   Differential ports
+#
+###############################################################################
+
+
+#------------------------------------------------------------
+# DAC
+#------------------------------------------------------------
+
+# (LDAC+)
+create_bd_port -dir O -from 0 -to 0 -type data LDAC_p
+# (LDAC-)
+create_bd_port -dir O -from 0 -to 0 -type data LDAC_n
+# (~DAC_CS+)
+create_bd_port -dir O -from 7 -to 0 -type data n_DAC_CS_p
+# (~DAC_CS-)
+create_bd_port -dir O -from 7 -to 0 -type data n_DAC_CS_n
+# (DAC_MOSI+)
+create_bd_port -dir O -from 7 -to 0 -type data DAC_MOSI_p
+# (DAC_MOSI-)
+create_bd_port -dir O -from 7 -to 0 -type data DAC_MOSI_n
+# (DAC_MISO+)
+create_bd_port -dir I -from 7 -to 0 -type data DAC_MISO_p
+# (DAC_MISO-)
+create_bd_port -dir I -from 7 -to 0 -type data DAC_MISO_n
+
+
+#------------------------------------------------------------
+# ADC
+#------------------------------------------------------------
+
+# (~ADC_CS+)
+create_bd_port -dir O -from 7 -to 0 -type data n_ADC_CS_p
+# (~ADC_CS-)
+create_bd_port -dir O -from 7 -to 0 -type data n_ADC_CS_n
+# (ADC_MOSI+)
+create_bd_port -dir O -from 7 -to 0 -type data ADC_MOSI_p
+# (ADC_MOSI-)
+create_bd_port -dir O -from 7 -to 0 -type data ADC_MOSI_n
+# (ADC_MISO+)
+create_bd_port -dir I -from 7 -to 0 -type data ADC_MISO_p
+# (ADC_MISO-)
+create_bd_port -dir I -from 7 -to 0 -type data ADC_MISO_n
+
+
+#------------------------------------------------------------
+# Clocks
+#------------------------------------------------------------
+
+# (SCKO+)
+create_bd_port -dir I -from 7 -to 0 MISO_SCK_p
+# (SCKO-)
+create_bd_port -dir I -from 7 -to 0 MISO_SCK_n
+# (~SCKI+)
+create_bd_port -dir O -from 0 -to 0 n_MOSI_SCK_p
+# (~SCKI-)
+create_bd_port -dir O -from 0 -to 0 n_MOSI_SCK_n
+
+
+###############################################################################
 
 ### Create processing system
 # Enable M_AXI_GP0 and S_AXI_ACP
@@ -56,7 +151,7 @@ cell xilinx.com:ip:smartconnect:1.0 ps_periph_axi_intercon {
   aresetn ps_rst/peripheral_aresetn
 }
 
-##################################################
+###############################################################################
 
 ### Configuration register
 ## 32-bit offsets
@@ -77,7 +172,7 @@ cell lcb:user:shim_axi_prestart_cfg axi_prestart_cfg {
 addr 0x40000000 128 axi_prestart_cfg/S_AXI ps/M_AXI_GP0
   
 
-##################################################
+###############################################################################
 
 ### Hardware manager
 cell lcb:user:shim_hw_manager hw_manager {
@@ -112,7 +207,7 @@ cell lcb:user:shim_shutdown_sense shutdown_sense {
   shutdown_sense_sel Shutdown_Sense_Sel
 }
 
-##################################################
+###############################################################################
 
 ### SPI clock control
 # MMCM (handles down to 10 MHz input)
@@ -136,7 +231,7 @@ cell xilinx.com:ip:clk_wiz:6.0 spi_clk {
 }
 addr 0x40200000 2048 spi_clk/s_axi_lite ps/M_AXI_GP0
 
-##################################################
+###############################################################################
 
 ### SPI clock domain
 module spi_clk_domain spi_clk_domain {
@@ -168,7 +263,7 @@ module spi_clk_domain spi_clk_domain {
   block_buffers hw_manager/block_buffers
 }
 
-##################################################
+###############################################################################
 
 ### DAC/ADC Command and Data FIFOs Module
 module axi_spi_interface axi_spi_interface {
@@ -218,7 +313,7 @@ wire axi_spi_interface/adc_data_buf_underflow hw_manager/adc_data_buf_underflow
 wire axi_spi_interface/trig_cmd_buf_overflow hw_manager/trig_cmd_buf_overflow
 wire axi_spi_interface/trig_data_buf_underflow hw_manager/trig_data_buf_underflow
 
-##################################################
+###############################################################################
 
 ### Status register
 cell pavel-demin:user:axi_sts_register status_reg {
@@ -253,7 +348,7 @@ cell xilinx.com:ip:xlconcat:2.1 sts_concat {
   dout status_reg/sts_data
 }
 
-##################################################
+###############################################################################
 
 ### Create I/O buffers for differential signals
 
@@ -334,4 +429,5 @@ cell lcb:user:differential_out_buffer n_mosi_sck_obuf {
   diff_out_p n_MOSI_SCK_p
   diff_out_n n_MOSI_SCK_n
 }
-##################################################
+
+###############################################################################
