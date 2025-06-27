@@ -1,1 +1,0 @@
-# AXI-Connected Trigger Core
