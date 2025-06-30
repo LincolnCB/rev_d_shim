@@ -1,3 +1,7 @@
+***TODO OUT OF DATE -- IN PROGRESS***
+
+---
+
 # Hardware
 - [ ] Hardware completed in [[Verilog]]
 - [ ] Hardware completed in [[RHDL]]
