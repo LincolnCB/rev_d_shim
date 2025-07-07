@@ -45,7 +45,7 @@ cell xilinx.com:ip:util_vector_logic adc_cmd_empty_blocked {
   C_OPERATION or
 } {
   Op1 adc_cmd_empty
-  Op2 spi_cfg_sync/block_buffers_stable
+  Op2 block_buffers
 }
 cell xilinx.com:ip:util_vector_logic adc_data_full_blocked {
   C_SIZE 1

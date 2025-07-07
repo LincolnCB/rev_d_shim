@@ -475,7 +475,7 @@ cell xilinx.com:ip:xlconcat:2.1 dac_boot_fail_concat {
 for {set i 1} {$i <= $board_count} {incr i} {
   wire dac_boot_fail_concat/In[expr {$i-1}] dac_ch$i/boot_fail
 }
-for {set i [expr $board_count+1]} {$i <= 8} {
+for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
   wire dac_boot_fail_concat/In[expr {$i-1}] const_0/dout
 }
 
@@ -553,7 +553,7 @@ cell xilinx.com:ip:xlconcat:2.1 adc_boot_fail_concat {
 for {set i 1} {$i <= $board_count} {incr i} {
   wire adc_boot_fail_concat/In[expr {$i-1}] adc_ch$i/boot_fail
 }
-for {set i [expr $board_count+1]} {$i <= 8} {
+for {set i [expr $board_count+1]} {$i <= 8} {incr i} {
   wire adc_boot_fail_concat/In[expr {$i-1}] const_0/dout
 }
 

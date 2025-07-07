@@ -1,4 +1,4 @@
-## Variably define the channel count (MUST BE 8 OR BELOW)
+## Variably define the channel count (MUST BE 1 TO 8 INCLUSIVE)
 set board_count 2
 
 # If the board count is not 8, then error out
