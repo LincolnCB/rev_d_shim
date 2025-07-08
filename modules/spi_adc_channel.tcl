@@ -54,6 +54,11 @@ cell xilinx.com:ip:util_vector_logic adc_data_full_blocked {
   Op1 adc_data_full
   Op2 block_buffers
 }
+## MISO clock-domain synchronous reset
+cell xilinx.com:ip:proc_sys_reset:5.0 miso_rst {} {
+  ext_reset_in resetn
+  slowest_sync_clk miso_sck
+}
 ## ADC SPI core
 cell lcb:user:shim_ads816x_adc_ctrl adc_spi {} {
   clk spi_clk
@@ -75,5 +80,6 @@ cell lcb:user:shim_ads816x_adc_ctrl adc_spi {} {
   n_cs n_cs
   mosi mosi
   miso_sck miso_sck
+  miso_resetn miso_rst/peripheral_aresetn
   miso miso
 }

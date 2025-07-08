@@ -57,6 +57,11 @@ cell xilinx.com:ip:util_vector_logic dac_cmd_empty_blocked {
   Op1 dac_cmd_empty
   Op2 block_buffers
 }
+## MISO clock-domain synchronous reset
+cell xilinx.com:ip:proc_sys_reset:5.0 miso_rst {} {
+  ext_reset_in resetn
+  slowest_sync_clk miso_sck
+}
 ## DAC SPI core
 cell lcb:user:shim_ad5676_dac_ctrl dac_spi {
   ABS_CAL_MAX 4096
@@ -79,6 +84,7 @@ cell lcb:user:shim_ad5676_dac_ctrl dac_spi {
   mosi mosi
   miso miso
   miso_sck miso_sck
+  miso_resetn miso_rst/peripheral_aresetn
   ldac ldac
 }
 
