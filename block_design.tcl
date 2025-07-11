@@ -298,9 +298,9 @@ wire axi_spi_interface/trig_data_almost_full spi_clk_domain/trig_data_almost_ful
 ## Address assignment
 # DAC and ADC FIFOs
 for {set i 0} {$i < $board_count} {incr i} {
-  addr 0x800{$i}0000 128 axi_spi_interface/dac_cmd_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
-  addr 0x800{$i}1000 128 axi_spi_interface/adc_cmd_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
-  addr 0x800{$i}2000 128 axi_spi_interface/adc_data_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
+  addr 0x800${i}0000 128 axi_spi_interface/dac_cmd_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
+  addr 0x800${i}1000 128 axi_spi_interface/adc_cmd_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
+  addr 0x800${i}2000 128 axi_spi_interface/adc_data_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
 }
 # Trigger command and data FIFOs
 addr 0x80100000 128 axi_spi_interface/trig_cmd_fifo_axi_bridge/S_AXI ps/M_AXI_GP1

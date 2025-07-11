@@ -98,7 +98,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     NUM_MI 3
   } {
     aclk aclk
-    S00_AXI board_ch_axi_intercon/M0{$i}_AXI
+    S00_AXI board_ch_axi_intercon/M0${i}_AXI
     aresetn aresetn
   }
   
@@ -438,10 +438,10 @@ cell xilinx.com:ip:xlconcat:2.1 dac_cmd_buf_overflow_concat {
   dout dac_cmd_buf_overflow
 }
 for {set i 0} {$i < $board_count} {incr i} {
-  wire dac_cmd_buf_overflow_concat/In{$i} dac_cmd_fifo_${i}_axi_bridge/fifo_overflow
+  wire dac_cmd_buf_overflow_concat/In${i} dac_cmd_fifo_${i}_axi_bridge/fifo_overflow
 }
 for {set i $board_count} {$i < 8} {incr i} {
-  wire dac_cmd_buf_overflow_concat/In{$i} const_0/dout
+  wire dac_cmd_buf_overflow_concat/In${i} const_0/dout
 }
 # Concatenate ADC command FIFO overflow signals
 cell xilinx.com:ip:xlconcat:2.1 adc_cmd_buf_overflow_concat {
@@ -450,10 +450,10 @@ cell xilinx.com:ip:xlconcat:2.1 adc_cmd_buf_overflow_concat {
   dout adc_cmd_buf_overflow
 }
 for {set i 0} {$i < $board_count} {incr i} {
-  wire adc_cmd_buf_overflow_concat/In{$i} adc_cmd_fifo_${i}_axi_bridge/fifo_overflow
+  wire adc_cmd_buf_overflow_concat/In${i} adc_cmd_fifo_${i}_axi_bridge/fifo_overflow
 }
 for {set i $board_count} {$i < 8} {incr i} {
-  wire adc_cmd_buf_overflow_concat/In{$i} const_0/dout
+  wire adc_cmd_buf_overflow_concat/In${i} const_0/dout
 }
 # Concatenate ADC data FIFO underflow signals
 cell xilinx.com:ip:xlconcat:2.1 adc_data_buf_underflow_concat {
@@ -462,10 +462,10 @@ cell xilinx.com:ip:xlconcat:2.1 adc_data_buf_underflow_concat {
   dout adc_data_buf_underflow
 }
 for {set i 0} {$i < $board_count} {incr i} {
-  wire adc_data_buf_underflow_concat/In{$i} adc_data_fifo_${i}_axi_bridge/fifo_underflow
+  wire adc_data_buf_underflow_concat/In${i} adc_data_fifo_${i}_axi_bridge/fifo_underflow
 }
 for {set i $board_count} {$i < 8} {incr i} {
-  wire adc_data_buf_underflow_concat/In{$i} const_0/dout
+  wire adc_data_buf_underflow_concat/In${i} const_0/dout
 }
 # Wire trigger command/data FIFO overflow and underflow signals
 wire trig_cmd_buf_overflow trig_cmd_fifo_axi_bridge/fifo_overflow
