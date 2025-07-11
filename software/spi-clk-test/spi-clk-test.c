@@ -38,7 +38,7 @@ int main()
   printf("Test program for Pavel Demin's AXI hub\n");
   printf("Setup:\n");
 
-  int fd, i; // File descriptor, loop counter
+  int fd; // File descriptor
   volatile void *cfg; // CFG register in AXI hub (set to 32 bits wide)
   volatile void *sts; // STS register in AXI hub (set to 32 bits wide)
   volatile void *spi_clk; // SPI_CLK interface in AXI hub (set to 32 bits wide)
@@ -99,7 +99,7 @@ int main()
   // DAC and ADC FIFO status arrays
   volatile uint64_t *dac_fifo_status[8];
   volatile uint64_t *adc_fifo_status[8];
-  for (i = 0; i < 8; i++) {
+  for (int i = 0; i < 8; i++) {
     dac_fifo_status[i] = (volatile uint64_t *)(sts + (8 + i * 16));
     adc_fifo_status[i] = (volatile uint64_t *)(sts + (16 + i * 16));
   }
