@@ -159,8 +159,8 @@ cell xilinx.com:ip:smartconnect:1.0 ps_periph_axi_intercon {
 # +1 Integrator window (unsigned, 32b cap)
 # +2 Integrator enable (1b cap)
 # +3 Buffer reset (25b)
-# +4 Hardware enable (1b cap)
-cell lcb:user:shim_axi_prestart_cfg axi_prestart_cfg {
+# +4 System enable (1b cap)
+cell lcb:user:shim_axi_sys_ctrl axi_sys_ctrl {
   INTEGRATOR_THRESHOLD_AVERAGE_DEFAULT 16384
   INTEGRATOR_WINDOW_DEFAULT 5000000
   INTEG_EN_DEFAULT 1
@@ -169,7 +169,7 @@ cell lcb:user:shim_axi_prestart_cfg axi_prestart_cfg {
   aresetn ps_rst/peripheral_aresetn
   S_AXI ps_periph_axi_intercon/M00_AXI
 }
-addr 0x40000000 128 axi_prestart_cfg/S_AXI ps/M_AXI_GP0
+addr 0x40000000 128 axi_sys_ctrl/S_AXI ps/M_AXI_GP0
   
 
 ###############################################################################
@@ -183,14 +183,14 @@ cell lcb:user:shim_hw_manager hw_manager {
 } {
   clk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
-  sys_en axi_prestart_cfg/sys_en
+  sys_en axi_sys_ctrl/sys_en
   ext_shutdown Shutdown_Button
-  integ_thresh_avg_oob axi_prestart_cfg/integ_thresh_avg_oob
-  integ_window_oob axi_prestart_cfg/integ_window_oob
-  integ_en_oob axi_prestart_cfg/integ_en_oob
-  sys_en_oob axi_prestart_cfg/sys_en_oob
-  lock_viol axi_prestart_cfg/lock_viol
-  unlock_cfg axi_prestart_cfg/unlock
+  integ_thresh_avg_oob axi_sys_ctrl/integ_thresh_avg_oob
+  integ_window_oob axi_sys_ctrl/integ_window_oob
+  integ_en_oob axi_sys_ctrl/integ_en_oob
+  sys_en_oob axi_sys_ctrl/sys_en_oob
+  lock_viol axi_sys_ctrl/lock_viol
+  unlock_cfg axi_sys_ctrl/unlock
   n_shutdown_force n_Shutdown_Force
   n_shutdown_rst n_Shutdown_Reset
 }
@@ -238,9 +238,9 @@ module spi_clk_domain spi_clk_domain {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
   spi_clk spi_clk/clk_out1
-  integ_thresh_avg axi_prestart_cfg/integ_thresh_avg
-  integ_window axi_prestart_cfg/integ_window
-  integ_en axi_prestart_cfg/integ_en
+  integ_thresh_avg axi_sys_ctrl/integ_thresh_avg
+  integ_window axi_sys_ctrl/integ_window
+  integ_en axi_sys_ctrl/integ_en
   spi_en hw_manager/spi_en
   spi_off hw_manager/spi_off
   over_thresh hw_manager/over_thresh
@@ -269,7 +269,7 @@ module spi_clk_domain spi_clk_domain {
 module axi_spi_interface axi_spi_interface {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
-  buffer_reset axi_prestart_cfg/buffer_reset
+  buffer_reset axi_sys_ctrl/buffer_reset
   spi_clk spi_clk/clk_out1
   S_AXI ps/M_AXI_GP1
 }
