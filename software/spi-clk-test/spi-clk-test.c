@@ -10,8 +10,6 @@
 
 //////////////////// Mapped Memory Definitions ////////////////////
 
-#define CMA_ALLOC _IOWR('Z', 0, uint32_t)
-
 #define AXI_BASE        (uint32_t)           0x40000000
 #define AXI_CFG         (uint32_t) AXI_BASE + 0x0000000
 #define AXI_STS         (uint32_t) AXI_BASE + 0x0100000

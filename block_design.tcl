@@ -275,7 +275,7 @@ module axi_spi_interface axi_spi_interface {
 }
 ## Wire channel pins for the module
 # DAC and ADC FIFOs
-for {set i 1} {$i <= $board_count} {incr i} {
+for {set i 0} {$i < $board_count} {incr i} {
   wire axi_spi_interface/dac_ch${i}_cmd spi_clk_domain/dac_ch${i}_cmd
   wire axi_spi_interface/dac_ch${i}_cmd_rd_en spi_clk_domain/dac_ch${i}_cmd_rd_en
   wire axi_spi_interface/dac_ch${i}_cmd_empty spi_clk_domain/dac_ch${i}_cmd_empty
@@ -297,14 +297,14 @@ wire axi_spi_interface/trig_data_full spi_clk_domain/trig_data_full
 wire axi_spi_interface/trig_data_almost_full spi_clk_domain/trig_data_almost_full
 ## Address assignment
 # DAC and ADC FIFOs
-for {set i 1} {$i <= $board_count} {incr i} {
-  addr 0x800[expr {$i-1}]0000 128 axi_spi_interface/dac_cmd_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
-  addr 0x800[expr {$i-1}]1000 128 axi_spi_interface/adc_cmd_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
-  addr 0x800[expr {$i-1}]2000 128 axi_spi_interface/adc_data_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
+for {set i 0} {$i < $board_count} {incr i} {
+  addr 0x800{$i}0000 128 axi_spi_interface/dac_cmd_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
+  addr 0x800{$i}1000 128 axi_spi_interface/adc_cmd_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
+  addr 0x800{$i}2000 128 axi_spi_interface/adc_data_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
 }
 # Trigger command and data FIFOs
-addr 0x800[expr {$board_count}]0000 128 axi_spi_interface/trig_cmd_fifo_axi_bridge/S_AXI ps/M_AXI_GP1
-addr 0x800[expr {$board_count}]1000 128 axi_spi_interface/trig_data_fifo_axi_bridge/S_AXI ps/M_AXI_GP1
+addr 0x80100000 128 axi_spi_interface/trig_cmd_fifo_axi_bridge/S_AXI ps/M_AXI_GP1
+addr 0x80101000 128 axi_spi_interface/trig_data_fifo_axi_bridge/S_AXI ps/M_AXI_GP1
 
 ## AXI-domain over/underflow detection
 wire axi_spi_interface/dac_cmd_buf_overflow hw_manager/dac_cmd_buf_overflow
@@ -338,7 +338,7 @@ cell xilinx.com:ip:xlconstant:1.1 pad_160 {
   CONST_WIDTH 160
 } {}
 # Status register concatenation
-# Concatenate: hw_manager/status_word, pad_32, then for each i=1..8: dac_cmd_fifo_$i/fifo_sts_word, adc_cmd_fifo_$i/fifo_sts_word, adc_data_fifo_$i/fifo_sts_word, then pad_448
+# Concatenate: hw_manager/status_word, pad_32, then for each i=1..8: dac_cmd_fifo_${i}/fifo_sts_word, adc_cmd_fifo_${i}/fifo_sts_word, adc_data_fifo_${i}/fifo_sts_word, then pad_448
 cell xilinx.com:ip:xlconcat:2.1 sts_concat {
   NUM_PORTS 3
 } {
