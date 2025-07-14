@@ -195,6 +195,14 @@ cell lcb:user:shim_hw_manager hw_manager {
   n_shutdown_rst n_Shutdown_Reset
 }
 
+## IRQ interrupt concat (necessary for the IRQ to work properly)
+cell xilinx.com:ip:xlconcat:2.1 irq_concat {
+  NUM_PORTS 1
+} {
+  In0 hw_manager/ps_interrupt
+  dout ps/IRQ_F2P
+}
+
 ## Shutdown sense
 ## Shutdown sense
 cell lcb:user:shim_shutdown_sense shutdown_sense {
