@@ -359,83 +359,34 @@ cell xilinx.com:ip:xlconcat:2.1 sts_concat {
 ###############################################################################
 
 ### Create I/O buffers for differential signals
-
-## DAC
-# (LDAC)
-cell lcb:user:differential_out_buffer ldac_obuf {
-  DIFF_BUFFER_WIDTH 1
-} {
-  d_in spi_clk_domain/ldac
-  diff_out_p LDAC_p
-  diff_out_n LDAC_n
-}
-# (~DAC_CS)
-cell lcb:user:differential_out_buffer n_dac_cs_obuf {
-  DIFF_BUFFER_WIDTH 8
-} {
-  d_in spi_clk_domain/n_dac_cs
-  diff_out_p n_DAC_CS_p
-  diff_out_n n_DAC_CS_n
-}
-# (DAC_MOSI)
-cell lcb:user:differential_out_buffer dac_mosi_obuf {
-  DIFF_BUFFER_WIDTH 8
-} {
-  d_in spi_clk_domain/dac_mosi
-  diff_out_p DAC_MOSI_p
-  diff_out_n DAC_MOSI_n
-}
-# (DAC_MISO)
-cell lcb:user:differential_in_buffer dac_miso_ibuf {
-  DIFF_BUFFER_WIDTH 8
-} {
-  diff_in_p DAC_MISO_p
-  diff_in_n DAC_MISO_n
-  d_out spi_clk_domain/dac_miso
-}
-
-## ADC
-# (~ADC_CS)
-cell lcb:user:differential_out_buffer n_adc_cs_obuf {
-  DIFF_BUFFER_WIDTH 8
-} {
-  d_in spi_clk_domain/n_adc_cs
-  diff_out_p n_ADC_CS_p
-  diff_out_n n_ADC_CS_n
-}
-# (ADC_MOSI)
-cell lcb:user:differential_out_buffer adc_mosi_obuf {
-  DIFF_BUFFER_WIDTH 8
-} {
-  d_in spi_clk_domain/adc_mosi
-  diff_out_p ADC_MOSI_p
-  diff_out_n ADC_MOSI_n
-}
-# (ADC_MISO)
-cell lcb:user:differential_in_buffer adc_miso_ibuf {
-  DIFF_BUFFER_WIDTH 8
-} {
-  diff_in_p ADC_MISO_p
-  diff_in_n ADC_MISO_n
-  d_out spi_clk_domain/adc_miso
-}
-
-## Clocks
-# (MISO_SCK)
-cell lcb:user:differential_in_buffer miso_sck_ibuf {
-  DIFF_BUFFER_WIDTH 8
-} {
-  diff_in_p MISO_SCK_p
-  diff_in_n MISO_SCK_n
-  d_out spi_clk_domain/miso_sck
-}
-# (~MOSI_SCK)
-cell lcb:user:differential_out_buffer n_mosi_sck_obuf {
-  DIFF_BUFFER_WIDTH 1
-} {
-  d_in spi_clk/clk_out1
-  diff_out_p n_MOSI_SCK_p
-  diff_out_n n_MOSI_SCK_n
+module io_buffers io_buffers {
+  ldac spi_clk_domain/ldac
+  n_dac_cs spi_clk_domain/n_dac_cs
+  dac_mosi spi_clk_domain/dac_mosi
+  dac_miso spi_clk_domain/dac_miso
+  n_adc_cs spi_clk_domain/n_adc_cs
+  adc_mosi spi_clk_domain/adc_mosi
+  adc_miso spi_clk_domain/adc_miso
+  miso_sck spi_clk_domain/miso_sck
+  n_mosi_sck spi_clk/clk_out1
+  ldac_p LDAC_p
+  ldac_n LDAC_n
+  n_dac_cs_p n_DAC_CS_p
+  n_dac_cs_n n_DAC_CS_n
+  dac_mosi_p DAC_MOSI_p
+  dac_mosi_n DAC_MOSI_n
+  dac_miso_p DAC_MISO_p
+  dac_miso_n DAC_MISO_n
+  n_adc_cs_p n_ADC_CS_p
+  n_adc_cs_n n_ADC_CS_n
+  adc_mosi_p ADC_MOSI_p
+  adc_mosi_n ADC_MOSI_n
+  adc_miso_p ADC_MISO_p
+  adc_miso_n ADC_MISO_n
+  miso_sck_p MISO_SCK_p
+  miso_sck_n MISO_SCK_n
+  n_mosi_sck_p n_MOSI_SCK_p
+  n_mosi_sck_n n_MOSI_SCK_n
 }
 
 ###############################################################################
