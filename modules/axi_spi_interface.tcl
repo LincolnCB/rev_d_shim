@@ -24,6 +24,7 @@ create_bd_intf_pin -mode slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_AXI
 
 # Status concatenated out
 create_bd_pin -dir O -from 831 -to 0 fifo_sts
+create_bd_pin -dir O -from 31 -to 0 fifo_ps_side_unavailable
 
 # DAC/ADC command and data channels
 for {set i 0} {$i < $board_count} {incr i} {
@@ -429,6 +430,32 @@ for {set i $board_count} {$i < 8} {incr i} {
 # Wire trigger command and data FIFO status words to the concatenation
 wire fifo_sts_concat/In24 trig_cmd_fifo_sts_word/dout
 wire fifo_sts_concat/In25 trig_data_fifo_sts_word/dout
+
+## FIFO status for PS side availability concatenation
+cell xilinx.com:ip:xlconcat:2.1 fifo_ps_side_unavailabile_concat {
+  NUM_PORTS 32
+} {
+  dout fifo_ps_side_unavailable
+}
+# Wire "unavailabile" to the FIFO full signal for PS-to-PL FIFOs and the FIFO empty signal for PL-to-PS FIFOs
+for {set i 0} {$i < $board_count} {incr i} {
+  wire fifo_ps_side_available_concat/In[expr {3 * $i + 0}] dac_cmd_fifo_${i}/full
+  wire fifo_ps_side_available_concat/In[expr {3 * $i + 1}] adc_cmd_fifo_${i}/full
+  wire fifo_ps_side_available_concat/In[expr {3 * $i + 2}] adc_data_fifo_${i}/empty
+}
+# Wire unused board status words to the concatenation
+for {set i $board_count} {$i < 8} {incr i} {
+  wire fifo_ps_side_available_concat/In[expr {3 * $i + 0}] const_1/dout
+  wire fifo_ps_side_available_concat/In[expr {3 * $i + 1}] const_1/dout
+  wire fifo_ps_side_available_concat/In[expr {3 * $i + 2}] const_1/dout
+}
+# Wire trigger command and data FIFO status words to the concatenation
+wire fifo_ps_side_available_concat/In24 trig_cmd_fifo/full
+wire fifo_ps_side_available_concat/In25 trig_data_fifo/empty
+# Connect a constant 1 pad to the 6 unused bits
+for {set i 0} {$i < 6} {incr i} {
+  wire fifo_ps_side_available_concat/In[expr {26 + $i}] const_1/dout
+}
 
 ## Overflow and underflow signals
 # Concatenate DAC command FIFO overflow signals

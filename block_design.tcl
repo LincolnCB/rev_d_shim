@@ -144,7 +144,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 ps_rst {} {
 ### AXI Smart Connect
 cell xilinx.com:ip:smartconnect:1.0 ps_periph_axi_intercon {
   NUM_SI 1
-  NUM_MI 3
+  NUM_MI 4
 } {
   aclk ps/FCLK_CLK0
   S00_AXI /ps/M_AXI_GP0
@@ -195,15 +195,6 @@ cell lcb:user:shim_hw_manager hw_manager {
   n_shutdown_rst n_Shutdown_Reset
 }
 
-## IRQ interrupt concat (necessary for the IRQ to work properly)
-cell xilinx.com:ip:xlconcat:2.1 irq_concat {
-  NUM_PORTS 1
-} {
-  In0 hw_manager/ps_interrupt
-  dout ps/IRQ_F2P
-}
-
-## Shutdown sense
 ## Shutdown sense
 cell lcb:user:shim_shutdown_sense shutdown_sense {
   CLK_FREQ_HZ 100000000
@@ -233,7 +224,7 @@ cell xilinx.com:ip:clk_wiz:6.0 spi_clk {
 } {
   s_axi_aclk ps/FCLK_CLK0
   s_axi_aresetn ps_rst/peripheral_aresetn
-  s_axi_lite ps_periph_axi_intercon/M02_AXI
+  s_axi_lite ps_periph_axi_intercon/M03_AXI
   clk_in1 Scanner_10Mhz_In
   power_down hw_manager/spi_clk_power_n
 }
@@ -328,8 +319,8 @@ cell pavel-demin:user:axi_sts_register status_reg {
   STS_DATA_WIDTH 1024
 } {
   aclk ps/FCLK_CLK0
-  S_AXI ps_periph_axi_intercon/M01_AXI
   aresetn ps_rst/peripheral_aresetn
+  S_AXI ps_periph_axi_intercon/M01_AXI
 }
 addr 0x40100000 128 status_reg/S_AXI ps/M_AXI_GP0
 ## Concatenation
@@ -354,6 +345,26 @@ cell xilinx.com:ip:xlconcat:2.1 sts_concat {
   In1 axi_spi_interface/fifo_sts
   In2 pad_160/dout
   dout status_reg/sts_data
+}
+
+### Alert status register (tracking FIFO unavailability)
+cell lcb:user:axi_sts_alert_reg fifo_unavailable_reg {
+  STS_DATA_WIDTH 32
+} {
+  aclk ps/FCLK_CLK0
+  aresetn ps_rst/peripheral_aresetn
+  S_AXI ps_periph_axi_intercon/M02_AXI
+  sts_data axi_spi_interface/fifo_ps_side_unavailable
+}
+addr 0x40110000 128 status_reg/S_AXI ps/M_AXI_GP0
+
+## IRQ interrupt concat
+cell xilinx.com:ip:xlconcat:2.1 irq_concat {
+  NUM_PORTS 2
+} {
+  In0 hw_manager/ps_interrupt
+  In1 fifo_unavailable_reg/alert
+  dout ps/IRQ_F2P
 }
 
 ###############################################################################
