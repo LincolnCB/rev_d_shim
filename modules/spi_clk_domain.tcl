@@ -118,8 +118,10 @@ cell xilinx.com:ip:proc_sys_reset:5.0 sync_rst_core {
 }
 ## SPI system configuration synchronization
 cell lcb:user:shim_spi_cfg_sync spi_cfg_sync {} {
+  aclk aclk
+  aresetn aresetn
   spi_clk spi_clk
-  sync_resetn sync_rst_core/peripheral_aresetn
+  spi_resetn sync_rst_core/peripheral_aresetn
   integ_thresh_avg integ_thresh_avg
   integ_window integ_window
   integ_en integ_en
@@ -132,7 +134,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 spi_rst_core {
   C_AUX_RESET_HIGH.VALUE_SRC USER
   C_AUX_RESET_HIGH 0
 } {
-  aux_reset_in spi_cfg_sync/spi_en_stable
+  aux_reset_in spi_cfg_sync/spi_en_sync
   slowest_sync_clk spi_clk
 }
 
@@ -142,42 +144,44 @@ cell xilinx.com:ip:proc_sys_reset:5.0 spi_rst_core {
 cell lcb:user:shim_spi_sts_sync spi_sts_sync {} {
   aclk aclk
   aresetn aresetn
-  spi_off_stable spi_off
-  over_thresh_stable over_thresh
-  thresh_underflow_stable thresh_underflow
-  thresh_overflow_stable thresh_overflow
-  bad_trig_cmd_stable bad_trig_cmd
-  trig_data_buf_overflow_stable trig_data_buf_overflow
-  dac_boot_fail_stable dac_boot_fail
-  bad_dac_cmd_stable bad_dac_cmd
-  dac_cal_oob_stable dac_cal_oob
-  dac_val_oob_stable dac_val_oob
-  dac_cmd_buf_underflow_stable dac_cmd_buf_underflow
-  unexp_dac_trig_stable unexp_dac_trig
-  adc_boot_fail_stable adc_boot_fail
-  bad_adc_cmd_stable bad_adc_cmd
-  adc_cmd_buf_underflow_stable adc_cmd_buf_underflow
-  adc_data_buf_overflow_stable adc_data_buf_overflow
-  unexp_adc_trig_stable unexp_adc_trig
+  spi_clk spi_clk
+  spi_resetn spi_rst_core/peripheral_aresetn
+  spi_off_sync spi_off
+  over_thresh_sync over_thresh
+  thresh_underflow_sync thresh_underflow
+  thresh_overflow_sync thresh_overflow
+  bad_trig_cmd_sync bad_trig_cmd
+  trig_data_buf_overflow_sync trig_data_buf_overflow
+  dac_boot_fail_sync dac_boot_fail
+  bad_dac_cmd_sync bad_dac_cmd
+  dac_cal_oob_sync dac_cal_oob
+  dac_val_oob_sync dac_val_oob
+  dac_cmd_buf_underflow_sync dac_cmd_buf_underflow
+  unexp_dac_trig_sync unexp_dac_trig
+  adc_boot_fail_sync adc_boot_fail
+  bad_adc_cmd_sync bad_adc_cmd
+  adc_cmd_buf_underflow_sync adc_cmd_buf_underflow
+  adc_data_buf_overflow_sync adc_data_buf_overflow
+  unexp_adc_trig_sync unexp_adc_trig
 }
 
 ##################################################
 
 ### Trigger core
-## Block the command and data buffers if needed (OR block_buffers_stable with cmd_buf_empty and data_buf_full)
+## Block the command and data buffers if needed (OR block_buffers_sync with cmd_buf_empty and data_buf_full)
 cell xilinx.com:ip:util_vector_logic trig_cmd_empty_blocked {
   C_SIZE 1
   C_OPERATION or
 } {
   Op1 trig_cmd_empty
-  Op2 spi_cfg_sync/block_buffers_stable
+  Op2 spi_cfg_sync/block_buffers_sync
 }
 cell xilinx.com:ip:util_vector_logic trig_data_full_blocked {
   C_SIZE 1
   C_OPERATION or
 } {
   Op1 trig_data_full
-  Op2 spi_cfg_sync/block_buffers_stable
+  Op2 spi_cfg_sync/block_buffers_sync
 }
 ## Trigger core
 cell lcb:user:shim_trigger_core trig_core {
@@ -205,13 +209,13 @@ for {set i 0} {$i < $board_count} {incr i} {
   module spi_dac_channel dac_ch$i {
     spi_clk spi_clk
     resetn spi_rst_core/peripheral_aresetn
-    integ_window spi_cfg_sync/integ_window_stable
-    integ_thresh_avg spi_cfg_sync/integ_thresh_avg_stable
-    integ_en spi_cfg_sync/integ_en_stable
+    integ_window spi_cfg_sync/integ_window_sync
+    integ_thresh_avg spi_cfg_sync/integ_thresh_avg_sync
+    integ_en spi_cfg_sync/integ_en_sync
     dac_cmd dac_ch${i}_cmd
     dac_cmd_rd_en dac_ch${i}_cmd_rd_en
     dac_cmd_empty dac_ch${i}_cmd_empty
-    block_buffers spi_cfg_sync/block_buffers_stable
+    block_buffers spi_cfg_sync/block_buffers_sync
     trigger trig_core/trig_out
   }
   ## ADC Channel
@@ -224,7 +228,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     adc_data adc_ch${i}_data
     adc_data_wr_en adc_ch${i}_data_wr_en
     adc_data_full adc_ch${i}_data_full
-    block_buffers spi_cfg_sync/block_buffers_stable
+    block_buffers spi_cfg_sync/block_buffers_sync
     trigger trig_core/trig_out
   }
 }
