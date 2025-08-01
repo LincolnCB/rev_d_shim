@@ -196,9 +196,7 @@ cell lcb:user:shim_hw_manager hw_manager {
 }
 
 ## Shutdown sense
-cell lcb:user:shim_shutdown_sense shutdown_sense {
-  CLK_FREQ_HZ 100000000
-} {
+cell lcb:user:shim_shutdown_sense shutdown_sense {} {
   clk ps/FCLK_CLK0
   shutdown_sense_en hw_manager/shutdown_sense_en
   shutdown_sense_pin Shutdown_Sense
@@ -356,7 +354,7 @@ cell lcb:user:axi_sts_alert_reg fifo_unavailable_reg {
   S_AXI ps_periph_axi_intercon/M02_AXI
   sts_data axi_spi_interface/fifo_ps_side_unavailable
 }
-addr 0x40110000 128 status_reg/S_AXI ps/M_AXI_GP0
+addr 0x40110000 128 fifo_unavailable_reg/S_AXI ps/M_AXI_GP0
 
 ## IRQ interrupt concat
 cell xilinx.com:ip:xlconcat:2.1 irq_concat {

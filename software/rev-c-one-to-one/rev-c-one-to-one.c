@@ -14,8 +14,8 @@
 // Addresses are defined in the hardware design Tcl file
 
 // System control and configuration register
-#define SYS_CTRL_BASE (uint32_t) 0x40000000
-#define SYS_CTRL_WORDCOUNT (uint32_t) 5 // Size in 32-bit words
+#define SYS_CTRL_BASE                       (uint32_t) 0x40000000
+#define SYS_CTRL_WORDCOUNT                  (uint32_t) 5 // Size in 32-bit words
 // 32-bit offsets within the system control and configuration register 
 #define INTEGRATOR_THRESHOLD_AVERAGE_OFFSET (uint32_t) 0
 #define INTEGRATOR_WINDOW_OFFSET            (uint32_t) 1
@@ -24,16 +24,16 @@
 #define SYSTEM_ENABLE_OFFSET                (uint32_t) 4
 
 // SPI clock control
-#define SPI_CLK_BASE    (uint32_t) 0x40200000
-#define SPI_CLK_WORDCOUNT    (uint32_t) 2048 * 4 // Size in 32-bit words. 2048 bytes * 4 bytes per word
+#define SPI_CLK_BASE          (uint32_t) 0x40200000
+#define SPI_CLK_WORDCOUNT     (uint32_t) 2048 * 4 // Size in 32-bit words. 2048 bytes * 4 bytes per word
 // 32-bit offsets within the SPI_CLK interface
-#define SPI_CLK_RESET_OFFSET   (uint32_t) 0x0 // Reset register
-#define SPI_CLK_STATUS_OFFSET  (uint32_t) 0x4 // Status register
-#define SPI_CLK_CFG_0_OFFSET   (uint32_t) 0x200 // Clock configuration register 0
-#define SPI_CLK_CFG_1_OFFSET   (uint32_t) 0x208 // Clock configuration register 1
-#define SPI_CLK_PHASE_OFFSET   (uint32_t) 0x20C // Clock phase register
-#define SPI_CLK_DUTY_OFFSET    (uint32_t) 0x210 // Clock duty cycle register
-#define SPI_CLK_ENABLE_OFFSET  (uint32_t) 0x25C // Clock enable register
+#define SPI_CLK_RESET_OFFSET  (uint32_t) 0x0 // Reset register
+#define SPI_CLK_STATUS_OFFSET (uint32_t) 0x4 // Status register
+#define SPI_CLK_CFG_0_OFFSET  (uint32_t) 0x200 // Clock configuration register 0
+#define SPI_CLK_CFG_1_OFFSET  (uint32_t) 0x208 // Clock configuration register 1
+#define SPI_CLK_PHASE_OFFSET  (uint32_t) 0x20C // Clock phase register
+#define SPI_CLK_DUTY_OFFSET   (uint32_t) 0x210 // Clock duty cycle register
+#define SPI_CLK_ENABLE_OFFSET (uint32_t) 0x25C // Clock enable register
 
 // DAC and ADC FIFOs
 #define DAC_CMD_FIFO(board)   (0x80000000 + (board) * 0x10000)
@@ -44,7 +44,7 @@
 #define TRIG_DATA_FIFO (uint32_t) 0x80101000
 
 // Status register
-#define SYS_STS (uint32_t) 0x40100000
+#define SYS_STS           (uint32_t) 0x40100000
 #define SYS_STS_WORDCOUNT (uint32_t) 1 + (3 * 8) + 2 // Size in 32-bit words
 // 32-bit offsets within the status register
 #define HW_STS_CODE_OFFSET          (uint32_t) 0 // Hardware status code
@@ -55,6 +55,10 @@
 // Trigger FIFOs
 #define TRIG_CMD_FIFO_STS_OFFSET    (uint32_t) (3 * 8) + 1 // Trigger command FIFO status
 #define TRIG_DATA_FIFO_STS_OFFSET   (uint32_t) (3 * 8) + 2 // Trigger data FIFO status
+
+// FIFO unavialable register
+#define FIFO_UNAVAILABLE           (uint32_t) 0x40110000
+#define FIFO_UNAVAILABLE_WORDCOUNT (uint32_t) 1 // Size in 32-bit words
 
 //////////////////// Function Prototypes ////////////////////
 
@@ -75,14 +79,15 @@ int main()
   volatile uint32_t *sys_ctrl; // System control and configuration register
   volatile uint32_t *spi_clk;  // SPI clock control interface
   volatile uint32_t *sys_sts;  // System status register
+  volatile uint32_t *fifo_unavailable_sts; // FIFO unavailable status register
 
   // Arrays of pointers to DAC and ADC FIFOs
-  volatile uint32_t *dac_cmd_fifo[8]; // DAC command FIFOs
-  volatile uint32_t *adc_cmd_fifo[8]; // ADC command FIFOs
+  volatile uint32_t *dac_cmd_fifo[8];  // DAC command FIFOs
+  volatile uint32_t *adc_cmd_fifo[8];  // ADC command FIFOs
   volatile uint32_t *adc_data_fifo[8]; // ADC data FIFOs
 
   // Trigger FIFOs
-  volatile uint32_t *trig_cmd_fifo; // Trigger command FIFO
+  volatile uint32_t *trig_cmd_fifo;  // Trigger command FIFO
   volatile uint32_t *trig_data_fifo; // Trigger data FIFO
 
   printf("System page size: %d\n", sysconf(_SC_PAGESIZE));
@@ -107,6 +112,9 @@ int main()
 
   sys_sts = map_32bit_memory(SYS_STS, SYS_STS_WORDCOUNT, fd);
   printf("System status register mapped to 0x%" PRIx32 "\n", SYS_STS);
+
+  fifo_unavailable_sts = map_32bit_memory(FIFO_UNAVAILABLE, FIFO_UNAVAILABLE_WORDCOUNT, fd);
+  printf("FIFO unavailable status register mapped to 0x%" PRIx32 "\n", FIFO_UNAVAILABLE);
 
   // DAC and ADC FIFOs
   for (int i = 0; i < 8; i++) {

@@ -11,7 +11,19 @@
  CONFIG_SUBSYSTEM_SERIAL_FSBL_IP_NAME="ps7_uart_1"
  CONFIG_SUBSYSTEM_SERIAL_IP_NAME="ps7_uart_1"
  
-@@ -203,24 +203,22 @@
+@@ -126,9 +126,8 @@
+ #
+ # Kernel Bootargs
+ #
+-CONFIG_SUBSYSTEM_BOOTARGS_AUTO=y
+-CONFIG_SUBSYSTEM_BOOTARGS_EARLYPRINTK=y
+-CONFIG_SUBSYSTEM_EXTRA_BOOTARGS=""
++# CONFIG_SUBSYSTEM_BOOTARGS_AUTO is not set
++CONFIG_SUBSYSTEM_USER_CMDLINE="console=ttyPS0,921600 earlycon root=/dev/mmcblk0p2 ro rootwait uio_pdrv_genirq.of_id=\"generic-uio\""
+ CONFIG_SUBSYSTEM_DEVICETREE_COMPILER_FLAGS="-@"
+ # CONFIG_SUBSYSTEM_DTB_OVERLAY is not set
+ # CONFIG_SUBSYSTEM_REMOVE_PL_DTB is not set
+@@ -203,24 +202,22 @@
  # Image Packaging Configuration
  #
  # CONFIG_SUBSYSTEM_ROOTFS_INITRAMFS is not set
@@ -43,9 +55,8 @@
  CONFIG_YOCTO_MACHINE_NAME="zynq-generic"
  CONFIG_YOCTO_INCLUDE_MACHINE_NAME=""
  CONFIG_YOCTO_ADD_OVERRIDES=""
-@@ -269,4 +267,4 @@
+@@ -269,4 +266,3 @@
  # User Layers
  #
  CONFIG_USER_LAYER_0=""
 -CONFIG_SUBSYSTEM_BOOTARGS_GENERATED="console=ttyPS0,115200 earlycon root=/dev/ram0 rw"
-+CONFIG_SUBSYSTEM_BOOTARGS_GENERATED="console=ttyPS0,921600 earlycon root=/dev/mmcblk0p2 ro rootwait"

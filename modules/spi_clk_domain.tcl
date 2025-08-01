@@ -97,10 +97,10 @@ create_bd_pin -dir I -from 7 -to 0 adc_miso
 
 ## 0 and 1 constants to fill bits for unused boards
 cell xilinx.com:ip:xlconstant:1.1 const_0 {
-  WIDTH 8
+  CONST_VAL 0
 } {}
 cell xilinx.com:ip:xlconstant:1.1 const_1 {
-  WIDTH 8
+  CONST_VAL 1
 } {}
 
 ##################################################
