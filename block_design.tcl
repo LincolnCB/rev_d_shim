@@ -101,12 +101,20 @@ create_bd_port -dir O -from 0 -to 0 n_MOSI_SCK_p
 # (~SCKI-)
 create_bd_port -dir O -from 0 -to 0 n_MOSI_SCK_n
 
+###############################################################################
+
+### 0 and 1 constants to fill bits for unused boards
+cell xilinx.com:ip:xlconstant:1.1 const_0 {
+  CONST_VAL 0
+} {}
+cell xilinx.com:ip:xlconstant:1.1 const_1 {
+  CONST_VAL 1
+} {}
 
 ###############################################################################
 
 ### Create processing system
-# Enable M_AXI_GP0 and S_AXI_ACP
-# Tie AxUSER pins to 1 for ACP port (to enable coherency)
+# Enable M_AXI_GP0 and M_AXI_GP1
 # Enable UART1 on the correct MIO pins
 # UART1 baud rate 921600
 # Pullup for UART1 RX
@@ -196,9 +204,21 @@ cell lcb:user:shim_hw_manager hw_manager {
 }
 
 ## Shutdown sense
+# Set which shutdown sense channels are connected
+cell xilinx.com:ip:xlconcat:2.1 shutdown_sense_connected {
+  NUM_PORTS 8
+} {}
+for {set i 0} {$i < $board_count} {incr i} {
+  connect shutdown_sense_connected/In${i} const_1
+}
+for {set i $board_count} {$i < 8} {incr i} {
+  connect shutdown_sense_connected/In${i} const_0
+}
+# Shutdown sense module
 cell lcb:user:shim_shutdown_sense shutdown_sense {} {
   clk ps/FCLK_CLK0
   shutdown_sense_en hw_manager/shutdown_sense_en
+  shutdown_sense_connected shutdown_sense_connected/dout
   shutdown_sense_pin Shutdown_Sense
   shutdown_sense hw_manager/shutdown_sense
   shutdown_sense_sel Shutdown_Sense_Sel
