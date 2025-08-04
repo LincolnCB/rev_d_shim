@@ -10,13 +10,13 @@
 #include <unistd.h>
 
 // Include hardware control modules
-#include "include/sys_ctrl.h"
-#include "include/adc_ctrl.h"
-#include "include/dac_ctrl.h"
-#include "include/spi_clk_ctrl.h"
-#include "include/sys_sts.h"
-#include "include/buf_sts.h"
-#include "include/trigger_ctrl.h"
+#include "sys_ctrl.h"
+#include "adc_ctrl.h"
+#include "dac_ctrl.h"
+#include "spi_clk_ctrl.h"
+#include "sys_sts.h"
+#include "buf_sts.h"
+#include "trigger_ctrl.h"
 
 //////////////////// Main ////////////////////
 int main()
@@ -33,8 +33,6 @@ int main()
   struct dac_ctrl_array_t dac_ctrl;        // DAC command FIFOs (all boards)
   struct adc_ctrl_array_t adc_ctrl;        // ADC command and data FIFOs (all boards)
   struct trigger_ctrl_t trigger_ctrl;      // Trigger command and data FIFOs
-
-  printf("System page size: %d\n", sysconf(_SC_PAGESIZE));
 
   // Initialize hardware control structures
   printf("Initializing hardware control modules...\n");

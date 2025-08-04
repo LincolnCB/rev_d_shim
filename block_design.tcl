@@ -7,6 +7,15 @@ if {$board_count < 1 || $board_count > 8} {
   exit 1
 }
 
+## Variably choose whether to use an external clock
+set use_ext_clk 1
+
+# If the external clock is not 0 or 1, then error out
+if {$use_ext_clk != 0 && $use_ext_clk != 1} {
+  puts "Error: use_ext_clk must be 0 or 1."
+  exit 1
+}
+
 ###############################################################################
 #
 #   Single-ended ports
@@ -120,7 +129,8 @@ cell xilinx.com:ip:xlconstant:1.1 const_1 {
 # Pullup for UART1 RX
 # Enable I2C0 on the correct MIO pins
 # Set FCLK0 to 100 MHz
-# Turn off FCLK1-3 and reset1-3
+# Set FCLK1 to 10 MHz
+# Turn off FCLK2-3 and reset1-3
 init_ps ps {
   PCW_USE_M_AXI_GP0 1
   PCW_USE_M_AXI_GP1 1
@@ -132,7 +142,7 @@ init_ps ps {
   PCW_I2C0_PERIPHERAL_ENABLE 1
   PCW_I2C0_I2C0_IO {MIO 38 .. 39}
   PCW_FPGA0_PERIPHERAL_FREQMHZ 100
-  PCW_EN_CLK1_PORT 0
+  PCW_FPGA1_PERIPHERAL_FREQMHZ 10
   PCW_EN_CLK2_PORT 0
   PCW_EN_CLK3_PORT 0
   PCW_EN_RST1_PORT 0
@@ -239,10 +249,19 @@ cell xilinx.com:ip:clk_wiz:6.0 spi_clk {
   s_axi_aclk ps/FCLK_CLK0
   s_axi_aresetn ps_rst/peripheral_aresetn
   s_axi_lite sys_cfg_axi_intercon/M03_AXI
-  clk_in1 Scanner_10Mhz_In
   power_down hw_manager/spi_clk_power_n
 }
 addr 0x40200000 2048 spi_clk/s_axi_lite ps/M_AXI_GP0
+
+## SPI clock input
+# If use_ext_clk is 1, then use the external clock input
+# otherwise use the 10MHz FCLK_CLK1 
+if {$use_ext_clk} {
+  wire spi_clk/clk_in1 Scanner_10Mhz_In
+} else {
+  wire spi_clk/clk_in1 ps/FCLK_CLK1
+}
+  
 
 ###############################################################################
 
