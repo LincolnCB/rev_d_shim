@@ -31,5 +31,10 @@ struct sys_ctrl_t {
 
 // Function to create a system control structure
 struct sys_ctrl_t create_sys_ctrl(bool verbose);
+// Function to turn the system on
+void sys_ctrl_turn_on(struct sys_ctrl_t *sys_ctrl, bool verbose);
+// Function to turn the system off
+void sys_ctrl_turn_off(struct sys_ctrl_t *sys_ctrl, bool verbose);
+
 
 #endif // SYS_CTRL_H

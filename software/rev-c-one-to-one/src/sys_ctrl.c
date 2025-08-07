@@ -23,3 +23,19 @@ struct sys_ctrl_t create_sys_ctrl(bool verbose) {
   
   return sys_ctrl;
 }
+
+// Function to turn the system on
+void sys_ctrl_turn_on(struct sys_ctrl_t *sys_ctrl, bool verbose) {
+  if (verbose) {
+    printf("Turning on the system...\n");
+  }
+  *(sys_ctrl->system_enable) = 1; // Set the system enable register to 1
+}
+
+// Function to turn the system off
+void sys_ctrl_turn_off(struct sys_ctrl_t *sys_ctrl, bool verbose) {
+  if (verbose) {
+    printf("Turning off the system...\n");
+  }
+  *(sys_ctrl->system_enable) = 0; // Set the system enable register to 0
+}
