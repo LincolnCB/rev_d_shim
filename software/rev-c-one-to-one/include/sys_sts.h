@@ -17,6 +17,8 @@
 // Trigger FIFOs
 #define TRIG_CMD_FIFO_STS_OFFSET    (uint32_t) (3 * 8) + 1 // Trigger command FIFO status
 #define TRIG_DATA_FIFO_STS_OFFSET   (uint32_t) (3 * 8) + 2 // Trigger data FIFO status
+// Debug registers
+#define DEBUG_REG_OFFSET(index) (3 * 8 + 3 + index) // Debug register offset
 
 // Macro for extracting the 4-bit state
 #define HW_STS_STATE(hw_status) ((hw_status) & 0xF)
@@ -33,7 +35,8 @@
 #define S_POWER_ON_AMP_BRD    (uint32_t) 5
 #define S_AMP_POWER_WAIT      (uint32_t) 6
 #define S_RUNNING             (uint32_t) 7
-#define S_HALTED              (uint32_t) 8
+#define S_HALTING             (uint32_t) 8
+#define S_HALTED              (uint32_t) 9
 
 // Status codes
 // Status codes (matches hardware manager core status codes)
@@ -81,6 +84,7 @@ struct sys_sts_t {
   volatile uint32_t *adc_data_fifo_sts[8];   // ADC data FIFO status for 8 boards
   volatile uint32_t *trig_cmd_fifo_sts;      // Trigger command FIFO status
   volatile uint32_t *trig_data_fifo_sts;     // Trigger data FIFO status
+  volatile uint32_t *debug[1];               // Debug registers
 };
 
 // Structure initialization function
@@ -89,5 +93,7 @@ struct sys_sts_t create_sys_sts(bool verbose);
 uint32_t sys_sts_get_hw_status(struct sys_sts_t *sys_sts, bool verbose);
 // Interpret and print hardware status
 void print_hw_status(uint32_t hw_status, bool force_print_all);
+// Print debug registers
+void print_debug_registers(struct sys_sts_t *sys_sts);
 
 #endif // SYS_STS_H

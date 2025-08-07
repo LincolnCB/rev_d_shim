@@ -28,6 +28,9 @@ struct sys_sts_t create_sys_sts(bool verbose) {
   // Initialize trigger FIFO status pointers
   sys_sts.trig_cmd_fifo_sts = sys_sts_ptr + TRIG_CMD_FIFO_STS_OFFSET;
   sys_sts.trig_data_fifo_sts = sys_sts_ptr + TRIG_DATA_FIFO_STS_OFFSET;
+
+  // Initialize debug registers
+  sys_sts.debug[0] = sys_sts_ptr + DEBUG_REG_OFFSET(0); // Assuming only one debug register for now
   
   return sys_sts;
 }
@@ -66,6 +69,10 @@ void print_hw_status(uint32_t hw_status, bool force_print_all) {
       break;
     case S_RUNNING:
       printf("State: Running\n");
+      break;
+    case S_HALTING:
+      printf("State: Halting\n");
+      print_status = true;
       break;
     case S_HALTED:
       printf("State: Halted\n");
@@ -200,3 +207,16 @@ void print_hw_status(uint32_t hw_status, bool force_print_all) {
     printf("Board Number: %u\n", HW_STS_BOARD(hw_status));
   }
 }
+
+// Print debug registers
+void print_debug_registers(struct sys_sts_t *sys_sts) {
+  for (int i = 0; i < 1; i++) { // Assuming only one debug register for now
+    uint32_t value = *(sys_sts->debug[i]);
+    printf("Debug register %d: 0b", i);
+    for (int bit = 31; bit >= 0; bit--) {
+      printf("%u", (value >> bit) & 1);
+    }
+    printf("\n");
+  }
+}
+

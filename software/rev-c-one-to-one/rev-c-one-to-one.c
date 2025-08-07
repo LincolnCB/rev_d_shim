@@ -95,6 +95,7 @@ int main(int argc, char *argv[])
       printf("  on - Turn the system on\n");
       printf("  off - Turn the system off\n");
       printf("  sts - Show hardware manager status\n");
+      printf("  dbg - Show debug registers\n");
       printf("  exit - Exit the program\n");
     } else if (strcmp(command, "verbose") == 0) {
       verbose = !verbose;
@@ -108,6 +109,9 @@ int main(int argc, char *argv[])
     } else if (strcmp(command, "sts") == 0) {
       printf("Hardware status:\n");
       print_hw_status(sys_sts_get_hw_status(&sys_sts, verbose), verbose);
+    } else if (strcmp(command, "dbg") == 0) {
+      printf("Debug registers:\n");
+      print_debug_registers(&sys_sts);
     } else if (strcmp(command, "exit") == 0) {
       printf("Exiting program.\n");
       break;

@@ -379,7 +379,8 @@ addr 0x40100000 128 status_reg/S_AXI ps/M_AXI_GP0
 # (127+96*(n-1)) : (96+96*(n-1)) -- 32b ADC ch(n) data FIFO status word    (n=1..8)
 #            831 : 800           -- 32b Trigger command FIFO status word
 #            863 : 832           -- 32b Trigger data FIFO status word
-#           1023 : 864           -- 160b reserved bits (5x32b)
+#            895 : 864           -- 32b Debug 1 (see below)
+#           1023 : 896           -- 128b reserved bits (4x32b)
 cell xilinx.com:ip:xlconcat:2.1 sts_concat {
   NUM_PORTS 7
 } {
@@ -387,12 +388,28 @@ cell xilinx.com:ip:xlconcat:2.1 sts_concat {
   In1 axi_spi_interface/fifo_sts
   dout status_reg/sts_data
 }
+# Debug 1 tracks the following:
+# 0: SPI clock locked
+# 1: `spi_off` signal
+cell xilinx.com:ip:xlconcat:2.1 debug_1 {
+  NUM_PORTS 3
+} {
+  In0 spi_clk/locked
+  In1 hw_manager/spi_off
+  dout sts_concat/In2
+}
+cell xilinx.com:ip:xlconstant:1.1 pad_30 {
+  CONST_VAL 0
+  CONST_WIDTH 30
+} {
+  dout debug_1/In2
+}
 # Pad reserved bits
 cell xilinx.com:ip:xlconstant:1.1 pad_32 {
   CONST_VAL 0
   CONST_WIDTH 32
 } {}
-for {set i 2} {$i < 7} {incr i} {
+for {set i 3} {$i < 7} {incr i} {
   wire sts_concat/In${i} pad_32/dout
 }
 
