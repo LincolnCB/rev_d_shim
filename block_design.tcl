@@ -379,21 +379,21 @@ addr 0x40100000 128 status_reg/S_AXI ps/M_AXI_GP0
 # (127+96*(n-1)) : (96+96*(n-1)) -- 32b ADC ch(n) data FIFO status word    (n=1..8)
 #            831 : 800           -- 32b Trigger command FIFO status word
 #            863 : 832           -- 32b Trigger data FIFO status word
-#           1023 : 864           -- 160b reserved bits
-## Pad reserved bits
-cell xilinx.com:ip:xlconstant:1.1 pad_160 {
-  CONST_VAL 0
-  CONST_WIDTH 160
-} {}
-# Status register concatenation
-# Concatenate: hw_manager/status_word, pad_32, then for each i=1..8: dac_cmd_fifo_${i}/fifo_sts_word, adc_cmd_fifo_${i}/fifo_sts_word, adc_data_fifo_${i}/fifo_sts_word, then pad_448
+#           1023 : 864           -- 160b reserved bits (5x32b)
 cell xilinx.com:ip:xlconcat:2.1 sts_concat {
-  NUM_PORTS 3
+  NUM_PORTS 7
 } {
   In0 hw_manager/status_word
   In1 axi_spi_interface/fifo_sts
-  In2 pad_160/dout
   dout status_reg/sts_data
+}
+# Pad reserved bits
+cell xilinx.com:ip:xlconstant:1.1 pad_32 {
+  CONST_VAL 0
+  CONST_WIDTH 32
+} {}
+for {set i 2} {$i < 7} {incr i} {
+  wire sts_concat/In${i} pad_32/dout
 }
 
 ### Alert status register (tracking FIFO unavailability)

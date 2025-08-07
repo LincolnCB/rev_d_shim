@@ -73,11 +73,13 @@ int main(int argc, char *argv[])
 
   char command[256];
   while (true) {
+    printf("\n");
     printf("Command> ");
     if (fgets(command, sizeof(command), stdin) == NULL) {
       perror("Error reading command");
       continue;
     }
+    printf("\n");
 
     // Remove trailing newline character
     size_t len = strlen(command);
@@ -92,7 +94,7 @@ int main(int argc, char *argv[])
       printf("  verbose - Toggle verbose mode\n");
       printf("  on - Turn the system on\n");
       printf("  off - Turn the system off\n");
-      printf("  hw_status - Show hardware manager status\n");
+      printf("  sts - Show hardware manager status\n");
       printf("  exit - Exit the program\n");
     } else if (strcmp(command, "verbose") == 0) {
       verbose = !verbose;
@@ -103,7 +105,7 @@ int main(int argc, char *argv[])
     } else if (strcmp(command, "off") == 0) {
       sys_ctrl_turn_off(&sys_ctrl, verbose);
       printf("System turned off.\n");
-    } else if (strcmp(command, "hw_status") == 0) {
+    } else if (strcmp(command, "sts") == 0) {
       printf("Hardware status:\n");
       print_hw_status(sys_sts_get_hw_status(&sys_sts, verbose), verbose);
     } else if (strcmp(command, "exit") == 0) {
