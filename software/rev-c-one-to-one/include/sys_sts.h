@@ -40,8 +40,8 @@
 // 25 bits wide, see README.md for details
 #define STS_OK                       (uint32_t) 0x0001 // System is operating normally.
 #define STS_PS_SHUTDOWN              (uint32_t) 0x0002 // Processing system shutdown.
-#define STS_SPI_START_TIMEOUT        (uint32_t) 0x0100 // SPI start timeout.
-#define STS_SPI_RESET_TIMEOUT        (uint32_t) 0x0101 // SPI initialization timeout.
+#define STS_SPI_RESET_TIMEOUT        (uint32_t) 0x0100 // SPI initialization timeout.
+#define STS_SPI_START_TIMEOUT        (uint32_t) 0x0101 // SPI start timeout.
 #define STS_INTEG_THRESH_AVG_OOB     (uint32_t) 0x0200 // Integrator threshold average out of bounds.
 #define STS_INTEG_WINDOW_OOB         (uint32_t) 0x0201 // Integrator window out of bounds.
 #define STS_INTEG_EN_OOB             (uint32_t) 0x0202 // Integrator enable register out of bounds.
