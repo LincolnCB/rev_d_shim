@@ -32,7 +32,7 @@ baud rate of 115.2kbps, we get a net file xfer rate of around
 On picocom, for rz, we type rz at the Petalinux prompt, then Ctrl-a
 Ctrl-s (s for send) and enter the file name when asked.
 
-On picocom again, fqor sz, we type sz <name of file to send from
+On picocom again, for sz, we type sz <name of file to send from
 Petalinux>, then Ctrl-a Ctrl-r (r for receive). It asks for file name
 again. Just press Enter. If you enter a file name at that point, sz
 locks up for a while then terminates without success.
