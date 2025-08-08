@@ -238,7 +238,6 @@ if {$use_ext_clk} {
   # Safe clock startup prevents clock output when not locked
   cell xilinx.com:ip:clk_wiz:6.0 spi_clk {
     PRIMITIVE MMCM
-    USE_POWER_DOWN true
     USE_DYN_RECONFIG true
     USE_SAFE_CLOCK_STARTUP true
     PRIM_IN_FREQ 10
@@ -250,14 +249,12 @@ if {$use_ext_clk} {
     s_axi_aresetn ps_rst/peripheral_aresetn
     s_axi_lite sys_cfg_axi_intercon/M03_AXI
     clk_in1 Scanner_10Mhz_In
-    power_down hw_manager/spi_clk_power_n
   }
 } else {
   # Use FCLK_CLK0 as the clock input
   # (Vivado gives 99999893 Hz as the actual generated frequency)
   cell xilinx.com:ip:clk_wiz:6.0 spi_clk {
     PRIMITIVE MMCM
-    USE_POWER_DOWN true
     USE_DYN_RECONFIG true
     USE_SAFE_CLOCK_STARTUP true
     PRIM_IN_FREQ 99.999893
@@ -269,7 +266,6 @@ if {$use_ext_clk} {
     s_axi_aresetn ps_rst/peripheral_aresetn
     s_axi_lite sys_cfg_axi_intercon/M03_AXI
     clk_in1 ps/FCLK_CLK0
-    power_down hw_manager/spi_clk_power_n
   }
 }
 addr 0x40200000 2048 spi_clk/s_axi_lite ps/M_AXI_GP0
@@ -435,6 +431,13 @@ cell xilinx.com:ip:xlconcat:2.1 irq_concat {
 
 ###############################################################################
 
+### Gate the SPI clock output
+cell lcb:user:clk_gate spi_clk_gate {} {
+  clk spi_clk/clk_out1
+  en hw_manager/spi_clk_gate
+}
+  
+
 ### Create I/O buffers for differential signals
 module io_buffers io_buffers {
   ldac spi_clk_domain/ldac
@@ -445,7 +448,7 @@ module io_buffers io_buffers {
   adc_mosi spi_clk_domain/adc_mosi
   adc_miso spi_clk_domain/adc_miso
   miso_sck spi_clk_domain/miso_sck
-  n_mosi_sck spi_clk/clk_out1
+  n_mosi_sck spi_clk_gate/clk_gated
   ldac_p LDAC_p
   ldac_n LDAC_n
   n_dac_cs_p n_DAC_CS_p
