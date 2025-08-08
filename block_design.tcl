@@ -172,12 +172,13 @@ cell xilinx.com:ip:smartconnect:1.0 sys_cfg_axi_intercon {
 ###############################################################################
 
 ### Configuration register
-## 32-bit offsets
-# +0 Integrator threshold average (unsigned, 16b cap)
-# +1 Integrator window (unsigned, 32b cap)
-# +2 Integrator enable (1b cap)
-# +3 Buffer reset (25b)
-# +4 System enable (1b cap)
+## 32-bit offsets (see shim_axi_sys_ctrl.v)
+# +0 System enable (1b cap)
+# +1 Buffer reset (26b)
+# +2 Integrator threshold average (unsigned, 15b, min 1, max 32767)
+# +3 Integrator window (unsigned, 32b, min 2048)
+# +4 Integrator enable (1b cap)
+# +5 Boot test skip (16b cap)
 cell lcb:user:shim_axi_sys_ctrl axi_sys_ctrl {
   INTEGRATOR_THRESHOLD_AVERAGE_DEFAULT 16384
   INTEGRATOR_WINDOW_DEFAULT 5000000
@@ -198,11 +199,13 @@ cell lcb:user:shim_hw_manager hw_manager {} {
   aresetn ps_rst/peripheral_aresetn
   sys_en axi_sys_ctrl/sys_en
   ext_shutdown Shutdown_Button
+  lock_viol axi_sys_ctrl/lock_viol
+  sys_en_oob axi_sys_ctrl/sys_en_oob
+  buffer_reset_oob axi_sys_ctrl/buffer_reset_oob
   integ_thresh_avg_oob axi_sys_ctrl/integ_thresh_avg_oob
   integ_window_oob axi_sys_ctrl/integ_window_oob
   integ_en_oob axi_sys_ctrl/integ_en_oob
-  sys_en_oob axi_sys_ctrl/sys_en_oob
-  lock_viol axi_sys_ctrl/lock_viol
+  boot_test_skip_oob axi_sys_ctrl/boot_test_skip_oob
   unlock_cfg axi_sys_ctrl/unlock
   n_shutdown_force n_Shutdown_Force
   n_shutdown_rst n_Shutdown_Reset
@@ -282,10 +285,11 @@ module spi_clk_domain spi_clk_domain {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
   spi_clk spi_clk/clk_out1
+  spi_en hw_manager/spi_en
   integ_thresh_avg axi_sys_ctrl/integ_thresh_avg
   integ_window axi_sys_ctrl/integ_window
   integ_en axi_sys_ctrl/integ_en
-  spi_en hw_manager/spi_en
+  boot_test_skip axi_sys_ctrl/boot_test_skip
   spi_off hw_manager/spi_off
   over_thresh hw_manager/over_thresh
   thresh_underflow hw_manager/thresh_underflow

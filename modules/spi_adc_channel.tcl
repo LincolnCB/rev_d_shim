@@ -5,6 +5,9 @@
 create_bd_pin -dir I -type clock spi_clk
 create_bd_pin -dir I -type reset resetn
 
+# Config parameters
+create_bd_pin -dir I boot_test_skip
+
 ## Status signals
 # System status
 create_bd_pin -dir O setup_done
@@ -63,6 +66,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 miso_rst {} {
 cell lcb:user:shim_ads816x_adc_ctrl adc_spi {} {
   clk spi_clk
   resetn resetn
+  boot_test_skip boot_test_skip
   cmd_word_rd_en adc_cmd_rd_en
   cmd_word adc_cmd
   cmd_buf_empty adc_cmd_empty_blocked/Res

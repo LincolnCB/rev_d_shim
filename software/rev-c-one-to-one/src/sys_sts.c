@@ -45,9 +45,10 @@ uint32_t sys_sts_get_hw_status(struct sys_sts_t *sys_sts, bool verbose) {
 }
 
 // Interpret and print hardware status
-void print_hw_status(uint32_t hw_status, bool force_print_all) {
-  bool print_status = force_print_all;
-  bool print_board_number = force_print_all;
+void print_hw_status(uint32_t hw_status, bool verbose) {
+  bool print_status = verbose;
+  bool print_board_number = verbose;
+  if (verbose) printf("Raw hardware state code: 0x%" PRIx32 "\n", HW_STS_STATE(hw_status));
   switch (HW_STS_STATE(hw_status)) {
     case S_IDLE:
       printf("State: Idle\n");
@@ -82,6 +83,7 @@ void print_hw_status(uint32_t hw_status, bool force_print_all) {
       printf("State: Unknown (0x%" PRIx32 ")\n", HW_STS_STATE(hw_status));
       break;
   }
+  if (verbose) printf("Raw hardware status code: 0x%" PRIx32 "\n", HW_STS_CODE(hw_status));
   if (print_status) {
     switch (HW_STS_CODE(hw_status)) {
       case STS_OK:

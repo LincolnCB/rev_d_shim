@@ -21,10 +21,11 @@ create_bd_pin -dir I -type reset aresetn
 create_bd_pin -dir I -type clock spi_clk
 
 # Configuration signals (need synchronization)
+create_bd_pin -dir I spi_en
 create_bd_pin -dir I -from 14 -to 0 integ_thresh_avg
 create_bd_pin -dir I -from 31 -to 0 integ_window
 create_bd_pin -dir I integ_en
-create_bd_pin -dir I spi_en
+create_bd_pin -dir I -from 15 -to 0 boot_test_skip
 
 ## Status signals (need synchronization)
 # SPI system status
@@ -122,11 +123,12 @@ cell lcb:user:shim_spi_cfg_sync spi_cfg_sync {} {
   aresetn aresetn
   spi_clk spi_clk
   spi_resetn sync_rst_core/peripheral_aresetn
+  spi_en spi_en
+  block_buffers block_buffers
   integ_thresh_avg integ_thresh_avg
   integ_window integ_window
   integ_en integ_en
-  spi_en spi_en
-  block_buffers block_buffers
+  boot_test_skip boot_test_skip
 }
 ## SPI system reset
 # Create proc_sys_reset for SPI-system-wide reset
@@ -230,6 +232,26 @@ for {set i 0} {$i < $board_count} {incr i} {
     trigger trig_core/trig_out
   }
 }
+# Boot test skip signals
+for {set i 0} {$i < $board_count} {incr i} {
+  cell xilinx.com:ip:xlslice:1.0 dac_ch${i}_boot_test_skip {
+    DIN_WIDTH 16
+    DIN_FROM [expr {2*$i}]
+    DIN_TO [expr {2*$i}]
+  } {
+    din spi_cfg_sync/boot_test_skip_sync
+    dout dac_ch${i}/boot_test_skip
+  }
+  cell xilinx.com:ip:xlslice:1.0 adc_ch${i}_boot_test_skip {
+    DIN_WIDTH 16
+    DIN_FROM [expr {2*$i + 1}]
+    DIN_TO [expr {2*$i + 1}]
+  } {
+    din spi_cfg_sync/boot_test_skip_sync
+    dout adc_ch${i}/boot_test_skip
+  }
+}
+  
 # Waiting for trigger signals
 cell xilinx.com:ip:xlconcat:2.1 dac_waiting_for_trig_concat {
   NUM_PORTS 8

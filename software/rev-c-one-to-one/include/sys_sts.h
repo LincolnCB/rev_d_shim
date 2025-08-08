@@ -92,7 +92,7 @@ struct sys_sts_t create_sys_sts(bool verbose);
 // Get hardware status register value
 uint32_t sys_sts_get_hw_status(struct sys_sts_t *sys_sts, bool verbose);
 // Interpret and print hardware status
-void print_hw_status(uint32_t hw_status, bool force_print_all);
+void print_hw_status(uint32_t hw_status, bool verbose);
 // Print debug registers
 void print_debug_registers(struct sys_sts_t *sys_sts);
 

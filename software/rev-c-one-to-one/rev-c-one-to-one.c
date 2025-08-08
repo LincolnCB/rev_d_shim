@@ -90,6 +90,8 @@ int main(int argc, char *argv[])
     // Process commands
     if (strcmp(command, "help") == 0) {
       printf("Available commands:\n");
+      printf("\n");
+      printf(" -- No arguments --\n");
       printf("  help - Show this help message\n");
       printf("  verbose - Toggle verbose mode\n");
       printf("  on - Turn the system on\n");
@@ -97,6 +99,10 @@ int main(int argc, char *argv[])
       printf("  sts - Show hardware manager status\n");
       printf("  dbg - Show debug registers\n");
       printf("  exit - Exit the program\n");
+      printf("\n");
+      printf(" -- With arguments --\n");
+      printf("  set_boot_test_skip <value> - Set boot test skip register to a 16-bit value\n");
+      printf("                               (prefix binary with \"0b\", octal with \"0\", and hex with \"0x\")\n");
     } else if (strcmp(command, "verbose") == 0) {
       verbose = !verbose;
       printf("Verbose mode is now %s.\n", verbose ? "enabled" : "disabled");
@@ -115,6 +121,23 @@ int main(int argc, char *argv[])
     } else if (strcmp(command, "exit") == 0) {
       printf("Exiting program.\n");
       break;
+    } else if (strncmp(command, "set_boot_test_skip ", 19) == 0) {
+      char *endptr;
+      uint16_t value;
+      // Support "0b" prefix for binary
+      char *arg = command + 19;
+      while (*arg == ' ' || *arg == '\t') arg++; // Skip leading whitespace
+      if (strncmp(arg, "0b", 2) == 0) {
+        value = (uint16_t)strtol(arg + 2, &endptr, 2);
+      } else {
+        value = (uint16_t)strtol(arg, &endptr, 0); // Handles 0x, decimal, octal
+      }
+      if (*endptr != '\0') {
+        fprintf(stderr, "Invalid value for set_boot_test_skip: '%s'\n", command + 19);
+      } else {
+        sys_ctrl_set_boot_test_skip(&sys_ctrl, value, verbose);
+        printf("Boot test skip register set to 0x%" PRIx32 "\n", value);
+      }
     } else {
       printf("Unknown command: '%s'. Type 'help' for available commands.\n", command);
     }
