@@ -432,7 +432,7 @@ cell xilinx.com:ip:xlconcat:2.1 irq_concat {
 ###############################################################################
 
 ### Gate the SPI clock output
-cell lcb:user:clk_gate spi_clk_gate {} {
+cell lcb:user:clock_gate spi_clk_gate {} {
   clk spi_clk/clk_out1
   en hw_manager/spi_clk_gate
 }

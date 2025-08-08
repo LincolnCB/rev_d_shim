@@ -144,8 +144,6 @@ cell xilinx.com:ip:proc_sys_reset:5.0 spi_rst_core {
 cell lcb:user:shim_spi_sts_sync spi_sts_sync {} {
   aclk aclk
   aresetn aresetn
-  spi_clk spi_clk
-  spi_resetn spi_rst_core/peripheral_aresetn
   spi_off_sync spi_off
   over_thresh_sync over_thresh
   thresh_underflow_sync thresh_underflow
