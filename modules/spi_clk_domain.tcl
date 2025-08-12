@@ -44,6 +44,7 @@ create_bd_pin -dir O -from 7 -to 0 bad_dac_cmd
 create_bd_pin -dir O -from 7 -to 0 dac_cal_oob
 create_bd_pin -dir O -from 7 -to 0 dac_val_oob
 create_bd_pin -dir O -from 7 -to 0 dac_cmd_buf_underflow
+create_bd_pin -dir O -from 7 -to 0 dac_data_buf_overflow
 create_bd_pin -dir O -from 7 -to 0 unexp_dac_trig
 # ADC channel status
 create_bd_pin -dir O -from 7 -to 0 adc_boot_fail
@@ -58,6 +59,11 @@ for {set i 0} {$i < $board_count} {incr i} {
   create_bd_pin -dir I -from 31 -to 0 dac_ch${i}_cmd
   create_bd_pin -dir O dac_ch${i}_cmd_rd_en
   create_bd_pin -dir I dac_ch${i}_cmd_empty
+
+  # DAC data channel
+  create_bd_pin -dir O -from 31 -to 0 dac_ch${i}_data
+  create_bd_pin -dir O dac_ch${i}_data_wr_en
+  create_bd_pin -dir I dac_ch${i}_data_full
 
   # ADC command channel
   create_bd_pin -dir I -from 31 -to 0 adc_ch${i}_cmd
@@ -152,6 +158,7 @@ cell lcb:user:shim_spi_sts_sync spi_sts_sync {} {
   dac_cal_oob_sync dac_cal_oob
   dac_val_oob_sync dac_val_oob
   dac_cmd_buf_underflow_sync dac_cmd_buf_underflow
+  dac_data_buf_overflow_sync dac_data_buf_overflow
   unexp_dac_trig_sync unexp_dac_trig
   adc_boot_fail_sync adc_boot_fail
   bad_adc_cmd_sync bad_adc_cmd
@@ -210,6 +217,9 @@ for {set i 0} {$i < $board_count} {incr i} {
     dac_cmd dac_ch${i}_cmd
     dac_cmd_rd_en dac_ch${i}_cmd_rd_en
     dac_cmd_empty dac_ch${i}_cmd_empty
+    dac_data dac_ch${i}_data
+    dac_data_wr_en dac_ch${i}_data_wr_en
+    dac_data_full dac_ch${i}_data_full
     block_buffers spi_cfg_sync/block_buffers_sync
     trigger trig_core/trig_out
   }
@@ -559,6 +569,19 @@ for {set i 0} {$i < $board_count} {incr i} {
 }
 for {set i $board_count} {$i < 8} {incr i} {
   wire dac_cmd_buf_underflow_concat/In${i} const_0/dout
+}
+
+## dac_data_buf_overflow
+cell xilinx.com:ip:xlconcat:2.1 dac_data_buf_overflow_concat {
+  NUM_PORTS 8
+} {
+  dout spi_sts_sync/dac_data_buf_overflow
+}
+for {set i 0} {$i < $board_count} {incr i} {
+  wire dac_data_buf_overflow_concat/In${i} dac_ch${i}/data_buf_overflow
+}
+for {set i $board_count} {$i < 8} {incr i} {
+  wire dac_data_buf_overflow_concat/In${i} const_0/dout
 }
 
 ## unexp_dac_trig

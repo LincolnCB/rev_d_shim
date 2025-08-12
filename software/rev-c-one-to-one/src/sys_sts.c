@@ -21,6 +21,7 @@ struct sys_sts_t create_sys_sts(bool verbose) {
   // Initialize FIFO status pointers for each board
   for (int i = 0; i < 8; i++) {
     sys_sts.dac_cmd_fifo_sts[i] = sys_sts_ptr + DAC_CMD_FIFO_STS_OFFSET(i);
+    sys_sts.dac_data_fifo_sts[i] = sys_sts_ptr + DAC_DATA_FIFO_STS_OFFSET(i);
     sys_sts.adc_cmd_fifo_sts[i] = sys_sts_ptr + ADC_CMD_FIFO_STS_OFFSET(i);
     sys_sts.adc_data_fifo_sts[i] = sys_sts_ptr + ADC_DATA_FIFO_STS_OFFSET(i);
   }
@@ -30,7 +31,9 @@ struct sys_sts_t create_sys_sts(bool verbose) {
   sys_sts.trig_data_fifo_sts = sys_sts_ptr + TRIG_DATA_FIFO_STS_OFFSET;
 
   // Initialize debug registers
-  sys_sts.debug[0] = sys_sts_ptr + DEBUG_REG_OFFSET(0); // Assuming only one debug register for now
+  for (int i = 0; i < DEBUG_REG_COUNT; i++) {
+    sys_sts.debug[i] = sys_sts_ptr + DEBUG_REG_OFFSET(i);
+  }
   
   return sys_sts;
 }
@@ -66,7 +69,7 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
       printf("State: Power On Amplifier Board\n");
       break;
     case S_AMP_POWER_WAIT:
-      printf("State: Waiting for Amplifier Power\n");
+      printf("State: Amplifier Power Wait\n");
       break;
     case S_RUNNING:
       printf("State: Running\n");
@@ -86,17 +89,32 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
   if (verbose) printf("Raw hardware status code: 0x%" PRIx32 "\n", HW_STS_CODE(hw_status));
   if (print_status) {
     switch (HW_STS_CODE(hw_status)) {
+      case STS_EMPTY:
+        printf("Status: Empty\n");
+        break;
       case STS_OK:
         printf("Status: OK\n");
         break;
       case STS_PS_SHUTDOWN:
         printf("Status: Processing system shutdown\n");
         break;
+      case STS_SPI_RESET_TIMEOUT:
+        printf("Status: SPI initialization timeout\n");
+        break;
       case STS_SPI_START_TIMEOUT:
         printf("Status: SPI start timeout\n");
         break;
-      case STS_SPI_RESET_TIMEOUT:
-        printf("Status: SPI initialization timeout\n");
+      case STS_LOCK_VIOL:
+        printf("Status: Configuration lock violation\n");
+        break;
+      case STS_SYS_EN_OOB:
+        printf("Status: System enable register out of bounds\n");
+        break;
+      case STS_CMD_BUFFER_RESET_OOB:
+        printf("Status: Command buffer reset out of bounds\n");
+        break;
+      case STS_DATA_BUFFER_RESET_OOB:
+        printf("Status: Data buffer reset out of bounds\n");
         break;
       case STS_INTEG_THRESH_AVG_OOB:
         printf("Status: Integrator threshold average out of bounds\n");
@@ -107,11 +125,11 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
       case STS_INTEG_EN_OOB:
         printf("Status: Integrator enable register out of bounds\n");
         break;
-      case STS_SYS_EN_OOB:
-        printf("Status: System enable register out of bounds\n");
+      case STS_BOOT_TEST_SKIP_OOB:
+        printf("Status: Boot test skip out of bounds\n");
         break;
-      case STS_LOCK_VIOL:
-        printf("Status: Configuration lock violation\n");
+      case STS_BOOT_TEST_DEBUG_OOB:
+        printf("Status: Boot test debug out of bounds\n");
         break;
       case STS_SHUTDOWN_SENSE:
         printf("Status: Shutdown sense detected\n");
@@ -160,12 +178,20 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
         printf("Status: DAC value out of bounds\n");
         print_board_number = true;
         break;
-      case STS_DAC_BUF_UNDERFLOW:
+      case STS_DAC_CMD_BUF_UNDERFLOW:
         printf("Status: DAC command buffer underflow\n");
         print_board_number = true;
         break;
-      case STS_DAC_BUF_OVERFLOW:
+      case STS_DAC_CMD_BUF_OVERFLOW:
         printf("Status: DAC command buffer overflow\n");
+        print_board_number = true;
+        break;
+      case STS_DAC_DATA_BUF_UNDERFLOW:
+        printf("Status: DAC data buffer underflow\n");
+        print_board_number = true;
+        break;
+      case STS_DAC_DATA_BUF_OVERFLOW:
+        printf("Status: DAC data buffer overflow\n");
         print_board_number = true;
         break;
       case STS_UNEXP_DAC_TRIG:
@@ -212,7 +238,7 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
 
 // Print debug registers
 void print_debug_registers(struct sys_sts_t *sys_sts) {
-  for (int i = 0; i < 1; i++) { // Assuming only one debug register for now
+  for (int i = 0; i < DEBUG_REG_COUNT; i++) { // Assuming only one debug register for now
     uint32_t value = *(sys_sts->debug[i]);
     printf("Debug register %d: 0b", i);
     for (int bit = 31; bit >= 0; bit--) {

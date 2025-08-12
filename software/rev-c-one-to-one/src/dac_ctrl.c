@@ -13,9 +13,9 @@ struct dac_ctrl_t create_dac_ctrl(uint8_t board_id, bool verbose) {
   }
   
   // Map DAC command FIFO
-  dac_ctrl.cmd_fifo = map_32bit_memory(DAC_CMD_FIFO(board_id), DAC_FIFO_WORDCOUNT, "DAC CMD FIFO", verbose);
-  if (dac_ctrl.cmd_fifo == NULL) {
-    fprintf(stderr, "Failed to map DAC command FIFO for board %d.\n", board_id);
+  dac_ctrl.buffer = map_32bit_memory(DAC_CMD_FIFO(board_id), 1, "DAC FIFO", verbose);
+  if (dac_ctrl.buffer == NULL) {
+    fprintf(stderr, "Failed to map DAC FIFO access for board %d.\n", board_id);
     exit(EXIT_FAILURE);
   }
   

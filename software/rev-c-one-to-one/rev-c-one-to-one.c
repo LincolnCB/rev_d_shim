@@ -15,7 +15,6 @@
 #include "dac_ctrl.h"
 #include "spi_clk_ctrl.h"
 #include "sys_sts.h"
-#include "buf_sts.h"
 #include "trigger_ctrl.h"
 
 //////////////////// Main ////////////////////
@@ -29,7 +28,6 @@ int main(int argc, char *argv[])
   struct sys_ctrl_t sys_ctrl;              // System control and configuration
   struct spi_clk_ctrl_t spi_clk_ctrl;      // SPI clock control interface
   struct sys_sts_t sys_sts;                // System status
-  struct buf_sts_t buf_sts;                // FIFO unavailable status
   struct dac_ctrl_array_t dac_ctrl;        // DAC command FIFOs (all boards)
   struct adc_ctrl_array_t adc_ctrl;        // ADC command and data FIFOs (all boards)
   struct trigger_ctrl_t trigger_ctrl;      // Trigger command and data FIFOs
@@ -52,9 +50,6 @@ int main(int argc, char *argv[])
 
   sys_sts = create_sys_sts(verbose);
   printf("System status module initialized\n");
-
-  buf_sts = create_buf_sts(verbose);
-  printf("Buffer status module initialized\n");
 
   // Initialize FIFO modules
   dac_ctrl = create_dac_ctrl_array(verbose);
@@ -103,6 +98,9 @@ int main(int argc, char *argv[])
       printf(" -- With arguments --\n");
       printf("  set_boot_test_skip <value> - Set boot test skip register to a 16-bit value\n");
       printf("                               (prefix binary with \"0b\", octal with \"0\", and hex with \"0x\")\n");
+      printf("  set_boot_test_debug <value> - Set boot test debug register to a 16-bit value\n");
+      printf("                               (prefix binary with \"0b\", octal with \"0\", and hex with \"0x\")\n");
+      printf("\n");
     } else if (strcmp(command, "verbose") == 0) {
       verbose = !verbose;
       printf("Verbose mode is now %s.\n", verbose ? "enabled" : "disabled");
@@ -137,6 +135,23 @@ int main(int argc, char *argv[])
       } else {
         sys_ctrl_set_boot_test_skip(&sys_ctrl, value, verbose);
         printf("Boot test skip register set to 0x%" PRIx32 "\n", value);
+      }
+    } else if (strncmp(command, "set_boot_test_debug ", 20) == 0) {
+      char *endptr;
+      uint16_t value;
+      // Support "0b" prefix for binary
+      char *arg = command + 20;
+      while (*arg == ' ' || *arg == '\t') arg++; // Skip leading whitespace
+      if (strncmp(arg, "0b", 2) == 0) {
+        value = (uint16_t)strtol(arg + 2, &endptr, 2);
+      } else {
+        value = (uint16_t)strtol(arg, &endptr, 0); // Handles 0x, decimal, octal
+      }
+      if (*endptr != '\0') {
+        fprintf(stderr, "Invalid value for set_boot_test_debug: '%s'\n", command + 20);
+      } else {
+        sys_ctrl_set_boot_test_debug(&sys_ctrl, value, verbose);
+        printf("Boot test debug register set to 0x%" PRIx32 "\n", value);
       }
     } else {
       printf("Unknown command: '%s'. Type 'help' for available commands.\n", command);

@@ -10,25 +10,29 @@
 
 // System control and configuration register
 #define SYS_CTRL_BASE                       (uint32_t) 0x40000000
-#define SYS_CTRL_WORDCOUNT                  (uint32_t) 6 // Size in 32-bit words
+#define SYS_CTRL_WORDCOUNT                  (uint32_t) 8 // Size in 32-bit words
 // 32-bit offsets within the system control and configuration register 
 #define SYSTEM_ENABLE_OFFSET                (uint32_t) 0
-#define BUFFER_RESET_OFFSET                 (uint32_t) 1
-#define INTEGRATOR_THRESHOLD_AVERAGE_OFFSET (uint32_t) 2
-#define INTEGRATOR_WINDOW_OFFSET            (uint32_t) 3
-#define INTEGRATOR_ENABLE_OFFSET            (uint32_t) 4
-#define BOOT_TEST_SKIP_OFFSET               (uint32_t) 5
+#define COMMAND_BUFFER_RESET_OFFSET         (uint32_t) 1
+#define DATA_BUFFER_RESET_OFFSET            (uint32_t) 2
+#define INTEGRATOR_THRESHOLD_AVERAGE_OFFSET (uint32_t) 3
+#define INTEGRATOR_WINDOW_OFFSET            (uint32_t) 4
+#define INTEGRATOR_ENABLE_OFFSET            (uint32_t) 5
+#define BOOT_TEST_SKIP_OFFSET               (uint32_t) 6
+#define BOOT_TEST_DEBUG_OFFSET              (uint32_t) 7
 
 //////////////////////////////////////////////////////////////////
 
 // System control structure
 struct sys_ctrl_t {
   volatile uint32_t *system_enable;                // System enable
-  volatile uint32_t *buffer_reset;                 // Buffer reset
+  volatile uint32_t *command_buffer_reset;         // Command buffer reset
+  volatile uint32_t *data_buffer_reset;            // Data buffer reset
   volatile uint32_t *integrator_threshold_average; // Integrator threshold average
   volatile uint32_t *integrator_window;            // Integrator window
   volatile uint32_t *integrator_enable;            // Integrator enable
   volatile uint32_t *boot_test_skip;               // Boot test skip
+  volatile uint32_t *boot_test_debug;              // Boot test debug
 };
 
 // Create a system control structure
@@ -39,5 +43,7 @@ void sys_ctrl_turn_on(struct sys_ctrl_t *sys_ctrl, bool verbose);
 void sys_ctrl_turn_off(struct sys_ctrl_t *sys_ctrl, bool verbose);
 // Set the boot_test_skip register to a 16-bit value
 void sys_ctrl_set_boot_test_skip(struct sys_ctrl_t *sys_ctrl, uint16_t value, bool verbose);
+// Set the boot_test_debug register to a 16-bit value
+void sys_ctrl_set_boot_test_debug(struct sys_ctrl_t *sys_ctrl, uint16_t value, bool verbose);
 
 #endif // SYS_CTRL_H

@@ -162,7 +162,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 ps_rst {} {
 ### AXI Smart Connect
 cell xilinx.com:ip:smartconnect:1.0 sys_cfg_axi_intercon {
   NUM_SI 1
-  NUM_MI 4
+  NUM_MI 3
 } {
   aclk ps/FCLK_CLK0
   S00_AXI ps/M_AXI_GP0
@@ -251,7 +251,7 @@ if {$use_ext_clk} {
   } {
     s_axi_aclk ps/FCLK_CLK0
     s_axi_aresetn ps_rst/peripheral_aresetn
-    s_axi_lite sys_cfg_axi_intercon/M03_AXI
+    s_axi_lite sys_cfg_axi_intercon/M02_AXI
     clk_in1 Scanner_10Mhz_In
   }
 } else {
@@ -268,7 +268,7 @@ if {$use_ext_clk} {
   } {
     s_axi_aclk ps/FCLK_CLK0
     s_axi_aresetn ps_rst/peripheral_aresetn
-    s_axi_lite sys_cfg_axi_intercon/M03_AXI
+    s_axi_lite sys_cfg_axi_intercon/M02_AXI
     clk_in1 ps/FCLK_CLK0
   }
 }
@@ -303,6 +303,7 @@ module spi_clk_domain spi_clk_domain {
   dac_cal_oob hw_manager/dac_cal_oob
   dac_val_oob hw_manager/dac_val_oob
   dac_cmd_buf_underflow hw_manager/dac_cmd_buf_underflow
+  dac_data_buf_overflow hw_manager/dac_data_buf_overflow
   unexp_dac_trig hw_manager/unexp_dac_trig
   adc_boot_fail hw_manager/adc_boot_fail
   bad_adc_cmd hw_manager/bad_adc_cmd
@@ -319,7 +320,8 @@ module spi_clk_domain spi_clk_domain {
 module axi_spi_interface axi_spi_interface {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
-  buffer_reset axi_sys_ctrl/buffer_reset
+  command_buffer_reset axi_sys_ctrl/command_buffer_reset
+  data_buffer_reset axi_sys_ctrl/data_buffer_reset
   spi_clk spi_clk/clk_out1
   S_AXI ps/M_AXI_GP1
 }
@@ -329,6 +331,9 @@ for {set i 0} {$i < $board_count} {incr i} {
   wire axi_spi_interface/dac_ch${i}_cmd spi_clk_domain/dac_ch${i}_cmd
   wire axi_spi_interface/dac_ch${i}_cmd_rd_en spi_clk_domain/dac_ch${i}_cmd_rd_en
   wire axi_spi_interface/dac_ch${i}_cmd_empty spi_clk_domain/dac_ch${i}_cmd_empty
+  wire axi_spi_interface/dac_ch${i}_data spi_clk_domain/dac_ch${i}_data
+  wire axi_spi_interface/dac_ch${i}_data_wr_en spi_clk_domain/dac_ch${i}_data_wr_en
+  wire axi_spi_interface/dac_ch${i}_data_full spi_clk_domain/dac_ch${i}_data_full
   wire axi_spi_interface/adc_ch${i}_cmd spi_clk_domain/adc_ch${i}_cmd
   wire axi_spi_interface/adc_ch${i}_cmd_rd_en spi_clk_domain/adc_ch${i}_cmd_rd_en
   wire axi_spi_interface/adc_ch${i}_cmd_empty spi_clk_domain/adc_ch${i}_cmd_empty
@@ -348,16 +353,15 @@ wire axi_spi_interface/trig_data_almost_full spi_clk_domain/trig_data_almost_ful
 ## Address assignment
 # DAC and ADC FIFOs
 for {set i 0} {$i < $board_count} {incr i} {
-  addr 0x800${i}0000 128 axi_spi_interface/dac_cmd_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
-  addr 0x800${i}1000 128 axi_spi_interface/adc_cmd_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
-  addr 0x800${i}2000 128 axi_spi_interface/adc_data_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
+  addr 0x800${i}0000 128 axi_spi_interface/dac_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
+  addr 0x800${i}1000 128 axi_spi_interface/adc_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
 }
 # Trigger command and data FIFOs
-addr 0x80100000 128 axi_spi_interface/trig_cmd_fifo_axi_bridge/S_AXI ps/M_AXI_GP1
-addr 0x80101000 128 axi_spi_interface/trig_data_fifo_axi_bridge/S_AXI ps/M_AXI_GP1
+addr 0x80100000 128 axi_spi_interface/trig_fifo_axi_bridge/S_AXI ps/M_AXI_GP1
 
 ## AXI-domain over/underflow detection
 wire axi_spi_interface/dac_cmd_buf_overflow hw_manager/dac_cmd_buf_overflow
+wire axi_spi_interface/dac_data_buf_underflow hw_manager/dac_data_buf_underflow
 wire axi_spi_interface/adc_cmd_buf_overflow hw_manager/adc_cmd_buf_overflow
 wire axi_spi_interface/adc_data_buf_underflow hw_manager/adc_data_buf_underflow
 wire axi_spi_interface/trig_cmd_buf_overflow hw_manager/trig_cmd_buf_overflow
@@ -367,27 +371,25 @@ wire axi_spi_interface/trig_data_buf_underflow hw_manager/trig_data_buf_underflo
 
 ### Status register
 cell pavel-demin:user:axi_sts_register status_reg {
-  STS_DATA_WIDTH 1024
+  STS_DATA_WIDTH 2048
 } {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
   S_AXI sys_cfg_axi_intercon/M01_AXI
 }
-addr 0x40100000 128 status_reg/S_AXI ps/M_AXI_GP0
+addr 0x40100000 256 status_reg/S_AXI ps/M_AXI_GP0
 ## Concatenation
-#             31 : 0             -- 32b Hardware status code (31:29 board num, 28:4 status code, 3:0 internal state)
-#  (63+96*(n-1)) : (32+96*(n-1)) -- 32b DAC ch(n) command FIFO status word (n=1..8)
-#  (95+96*(n-1)) : (64+96*(n-1)) -- 32b ADC ch(n) command FIFO status word (n=1..8)
-# (127+96*(n-1)) : (96+96*(n-1)) -- 32b ADC ch(n) data FIFO status word    (n=1..8)
-#            831 : 800           -- 32b Trigger command FIFO status word
-#            863 : 832           -- 32b Trigger data FIFO status word
-#            895 : 864           -- 32b Debug 1 (see below)
-#           1023 : 896           -- 128b reserved bits (4x32b)
+#    31 : 0    --  32b Hardware status code (31:29 board num, 28:4 status code, 3:0 internal state)
+#   575 : 32   -- 544b Command FIFO status (32 bits per buffer, ordered as DAC0, ADC0, ..., DAC7, ADC7, Trigger)
+#  1119 : 576  -- 544b Data FIFO status (32 bits per buffer, ordered as DAC0, ADC0, ..., DAC7, ADC7, Trigger)
+#  1151 : 1120 --  32b Debug 1 (SPI clock locked, spi_off, 28 reserved bits)
+#  2047 : 1152 -- RESERVED (0)
 cell xilinx.com:ip:xlconcat:2.1 sts_concat {
-  NUM_PORTS 7
+  NUM_PORTS 5
 } {
   In0 hw_manager/status_word
-  In1 axi_spi_interface/fifo_sts
+  In1 axi_spi_interface/cmd_fifo_sts
+  In2 axi_spi_interface/data_fifo_sts
   dout status_reg/sts_data
 }
 # Debug 1 tracks the following:
@@ -398,7 +400,7 @@ cell xilinx.com:ip:xlconcat:2.1 debug_1 {
 } {
   In0 spi_clk/locked
   In1 hw_manager/spi_off
-  dout sts_concat/In2
+  dout sts_concat/In3
 }
 cell xilinx.com:ip:xlconstant:1.1 pad_30 {
   CONST_VAL 0
@@ -407,31 +409,18 @@ cell xilinx.com:ip:xlconstant:1.1 pad_30 {
   dout debug_1/In2
 }
 # Pad reserved bits
-cell xilinx.com:ip:xlconstant:1.1 pad_32 {
+cell xilinx.com:ip:xlconstant:1.1 pad_sts_reserved {
   CONST_VAL 0
-  CONST_WIDTH 32
-} {}
-for {set i 3} {$i < 7} {incr i} {
-  wire sts_concat/In${i} pad_32/dout
-}
-
-### Alert status register (tracking FIFO unavailability)
-cell lcb:user:axi_sts_alert_reg fifo_unavailable_reg {
-  STS_DATA_WIDTH 32
+  CONST_WIDTH [expr {32 * (2048 - 1152)}]
 } {
-  aclk ps/FCLK_CLK0
-  aresetn ps_rst/peripheral_aresetn
-  S_AXI sys_cfg_axi_intercon/M02_AXI
-  sts_data axi_spi_interface/fifo_ps_side_unavailable
+  dout sts_concat/In4
 }
-addr 0x40110000 128 fifo_unavailable_reg/S_AXI ps/M_AXI_GP0
 
 ## IRQ interrupt concat
 cell xilinx.com:ip:xlconcat:2.1 irq_concat {
-  NUM_PORTS 2
+  NUM_PORTS 1
 } {
   In0 hw_manager/ps_interrupt
-  In1 fifo_unavailable_reg/alert
   dout ps/IRQ_F2P
 }
 
@@ -449,7 +438,6 @@ cell xilinx.com:ip:util_vector_logic n_spi_clk_gate {
 } {
   Op1 spi_clk_gate/clk_gated
 }
-
 
 ### Create I/O buffers for differential signals
 module io_buffers io_buffers {

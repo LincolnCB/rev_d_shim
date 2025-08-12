@@ -13,16 +13,9 @@ struct adc_ctrl_t create_adc_ctrl(uint8_t board_id, bool verbose) {
   }
   
   // Map ADC command FIFO
-  adc_ctrl.cmd_fifo = map_32bit_memory(ADC_CMD_FIFO(board_id), ADC_FIFO_WORDCOUNT, "ADC CMD FIFO", verbose);
-  if (adc_ctrl.cmd_fifo == NULL) {
-    fprintf(stderr, "Failed to map ADC command FIFO for board %d.\n", board_id);
-    exit(EXIT_FAILURE);
-  }
-  
-  // Map ADC data FIFO
-  adc_ctrl.data_fifo = map_32bit_memory(ADC_DATA_FIFO(board_id), ADC_FIFO_WORDCOUNT, "ADC DATA FIFO", verbose);
-  if (adc_ctrl.data_fifo == NULL) {
-    fprintf(stderr, "Failed to map ADC data FIFO for board %d.\n", board_id);
+  adc_ctrl.buffer = map_32bit_memory(ADC_FIFO(board_id), 1, "ADC FIFO", verbose);
+  if (adc_ctrl.buffer == NULL) {
+    fprintf(stderr, "Failed to map ADC FIFO access for board %d.\n", board_id);
     exit(EXIT_FAILURE);
   }
   
