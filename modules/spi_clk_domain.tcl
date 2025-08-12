@@ -26,6 +26,7 @@ create_bd_pin -dir I -from 14 -to 0 integ_thresh_avg
 create_bd_pin -dir I -from 31 -to 0 integ_window
 create_bd_pin -dir I integ_en
 create_bd_pin -dir I -from 15 -to 0 boot_test_skip
+create_bd_pin -dir I -from 15 -to 0 boot_test_debug
 
 ## Status signals (need synchronization)
 # SPI system status
@@ -110,11 +111,8 @@ cell xilinx.com:ip:xlconstant:1.1 const_1 {
 
 ## SPI clock domain crossing reset (first reset)
 # Create proc_sys_reset for the synchronization reset
-cell xilinx.com:ip:proc_sys_reset:5.0 sync_rst_core {
-  C_AUX_RESET_HIGH.VALUE_SRC USER
-  C_AUX_RESET_HIGH 0
-} {
-  aux_reset_in spi_en
+cell xilinx.com:ip:proc_sys_reset:5.0 sync_rst_core {} {
+  ext_reset_in spi_en
   slowest_sync_clk spi_clk
 }
 ## SPI system configuration synchronization
@@ -129,17 +127,14 @@ cell lcb:user:shim_spi_cfg_sync spi_cfg_sync {} {
   integ_window integ_window
   integ_en integ_en
   boot_test_skip boot_test_skip
+  boot_test_debug boot_test_debug
 }
 ## SPI system reset
 # Create proc_sys_reset for SPI-system-wide reset
-cell xilinx.com:ip:proc_sys_reset:5.0 spi_rst_core {
-  C_AUX_RESET_HIGH.VALUE_SRC USER
-  C_AUX_RESET_HIGH 0
-} {
-  aux_reset_in spi_cfg_sync/spi_en_sync
+cell xilinx.com:ip:proc_sys_reset:5.0 spi_rst_core {} {
+  ext_reset_in spi_cfg_sync/spi_en_sync
   slowest_sync_clk spi_clk
 }
-
 
 
 ## SPI system status synchronization
@@ -249,6 +244,25 @@ for {set i 0} {$i < $board_count} {incr i} {
   } {
     din spi_cfg_sync/boot_test_skip_sync
     dout adc_ch${i}/boot_test_skip
+  }
+}
+# Boot test debug signals
+for {set i 0} {$i < $board_count} {incr i} {
+  cell xilinx.com:ip:xlslice:1.0 dac_ch${i}_boot_test_debug {
+    DIN_WIDTH 16
+    DIN_FROM [expr {2*$i}]
+    DIN_TO [expr {2*$i}]
+  } {
+    din spi_cfg_sync/boot_test_debug_sync
+    dout dac_ch${i}/boot_test_debug
+  }
+  cell xilinx.com:ip:xlslice:1.0 adc_ch${i}_boot_test_debug {
+    DIN_WIDTH 16
+    DIN_FROM [expr {2*$i + 1}]
+    DIN_TO [expr {2*$i + 1}]
+  } {
+    din spi_cfg_sync/boot_test_debug_sync
+    dout adc_ch${i}/boot_test_debug
   }
 }
   

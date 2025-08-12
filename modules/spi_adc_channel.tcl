@@ -7,6 +7,7 @@ create_bd_pin -dir I -type reset resetn
 
 # Config parameters
 create_bd_pin -dir I boot_test_skip
+create_bd_pin -dir I boot_test_debug
 
 ## Status signals
 # System status
@@ -67,6 +68,7 @@ cell lcb:user:shim_ads816x_adc_ctrl adc_spi {} {
   clk spi_clk
   resetn resetn
   boot_test_skip boot_test_skip
+  boot_test_debug boot_test_debug
   cmd_word_rd_en adc_cmd_rd_en
   cmd_word adc_cmd
   cmd_buf_empty adc_cmd_empty_blocked/Res

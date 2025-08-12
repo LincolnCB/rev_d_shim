@@ -206,6 +206,7 @@ cell lcb:user:shim_hw_manager hw_manager {} {
   integ_window_oob axi_sys_ctrl/integ_window_oob
   integ_en_oob axi_sys_ctrl/integ_en_oob
   boot_test_skip_oob axi_sys_ctrl/boot_test_skip_oob
+  boot_test_debug_oob axi_sys_ctrl/boot_test_debug_oob
   unlock_cfg axi_sys_ctrl/unlock
   n_shutdown_force n_Shutdown_Force
   n_shutdown_rst n_Shutdown_Reset
@@ -261,7 +262,7 @@ if {$use_ext_clk} {
     USE_DYN_RECONFIG true
     USE_SAFE_CLOCK_STARTUP true
     PRIM_IN_FREQ 99.999893
-    CLKOUT1_REQUESTED_OUT_FREQ 50.000
+    CLKOUT1_REQUESTED_OUT_FREQ 20.000
     FEEDBACK_SOURCE FDBK_AUTO
     CLKOUT1_DRIVES BUFGCE
   } {
@@ -290,6 +291,7 @@ module spi_clk_domain spi_clk_domain {
   integ_window axi_sys_ctrl/integ_window
   integ_en axi_sys_ctrl/integ_en
   boot_test_skip axi_sys_ctrl/boot_test_skip
+  boot_test_debug axi_sys_ctrl/boot_test_debug
   spi_off hw_manager/spi_off
   over_thresh hw_manager/over_thresh
   thresh_underflow hw_manager/thresh_underflow
@@ -440,7 +442,14 @@ cell lcb:user:clock_gate spi_clk_gate {} {
   clk spi_clk/clk_out1
   en hw_manager/spi_clk_gate
 }
-  
+## Invert the gated clock output
+cell xilinx.com:ip:util_vector_logic n_spi_clk_gate {
+  C_SIZE 1
+  C_OPERATION not
+} {
+  Op1 spi_clk_gate/clk_gated
+}
+
 
 ### Create I/O buffers for differential signals
 module io_buffers io_buffers {
@@ -452,7 +461,7 @@ module io_buffers io_buffers {
   adc_mosi spi_clk_domain/adc_mosi
   adc_miso spi_clk_domain/adc_miso
   miso_sck spi_clk_domain/miso_sck
-  n_mosi_sck spi_clk_gate/clk_gated
+  n_mosi_sck n_spi_clk_gate/Res
   ldac_p LDAC_p
   ldac_n LDAC_n
   n_dac_cs_p n_DAC_CS_p

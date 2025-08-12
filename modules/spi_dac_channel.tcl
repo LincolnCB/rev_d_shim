@@ -10,6 +10,7 @@ create_bd_pin -dir I -from 31 -to 0 integ_window
 create_bd_pin -dir I -from 14 -to 0 integ_thresh_avg
 create_bd_pin -dir I integ_en
 create_bd_pin -dir I boot_test_skip
+create_bd_pin -dir I boot_test_debug
 
 ## Status signals
 # System status
@@ -70,6 +71,7 @@ cell lcb:user:shim_ad5676_dac_ctrl dac_spi {
   clk spi_clk
   resetn resetn
   boot_test_skip boot_test_skip
+  boot_test_debug boot_test_debug
   cmd_word_rd_en dac_cmd_rd_en
   cmd_word dac_cmd
   cmd_buf_empty dac_cmd_empty_blocked/Res
