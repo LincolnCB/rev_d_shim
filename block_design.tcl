@@ -180,8 +180,8 @@ cell xilinx.com:ip:smartconnect:1.0 sys_cfg_axi_intercon {
 # +4 Integrator enable (1b cap)
 # +5 Boot test skip (16b cap)
 cell lcb:user:shim_axi_sys_ctrl axi_sys_ctrl {
-  INTEGRATOR_THRESHOLD_AVERAGE_DEFAULT 16384
-  INTEGRATOR_WINDOW_DEFAULT 5000000
+  INTEG_THRESHOLD_AVERAGE_DEFAULT 16384
+  INTEG_WINDOW_DEFAULT 5000000
   INTEG_EN_DEFAULT 1
 } {
   aclk ps/FCLK_CLK0

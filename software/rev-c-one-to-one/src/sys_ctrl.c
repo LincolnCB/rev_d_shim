@@ -15,14 +15,14 @@ struct sys_ctrl_t create_sys_ctrl(bool verbose) {
   }
 
   // Initialize the system control structure with the mapped memory addresses
-  sys_ctrl.system_enable                = sys_ctrl_ptr + SYSTEM_ENABLE_OFFSET;
-  sys_ctrl.cmd_buf_reset                = sys_ctrl_ptr + CMD_BUF_RESET_OFFSET;
-  sys_ctrl.data_buf_reset               = sys_ctrl_ptr + DATA_BUF_RESET_OFFSET;
-  sys_ctrl.integrator_threshold_average = sys_ctrl_ptr + INTEGRATOR_THRESHOLD_AVERAGE_OFFSET;
-  sys_ctrl.integrator_window            = sys_ctrl_ptr + INTEGRATOR_WINDOW_OFFSET;
-  sys_ctrl.integrator_enable            = sys_ctrl_ptr + INTEGRATOR_ENABLE_OFFSET;
-  sys_ctrl.boot_test_skip               = sys_ctrl_ptr + BOOT_TEST_SKIP_OFFSET;
-  sys_ctrl.boot_test_debug              = sys_ctrl_ptr + BOOT_TEST_DEBUG_OFFSET;
+  sys_ctrl.system_enable           = sys_ctrl_ptr + SYSTEM_ENABLE_OFFSET;
+  sys_ctrl.cmd_buf_reset           = sys_ctrl_ptr + CMD_BUF_RESET_OFFSET;
+  sys_ctrl.data_buf_reset          = sys_ctrl_ptr + DATA_BUF_RESET_OFFSET;
+  sys_ctrl.integ_threshold_average = sys_ctrl_ptr + INTEG_THRESHOLD_AVERAGE_OFFSET;
+  sys_ctrl.integ_window            = sys_ctrl_ptr + INTEG_WINDOW_OFFSET;
+  sys_ctrl.integ_enable            = sys_ctrl_ptr + INTEG_ENABLE_OFFSET;
+  sys_ctrl.boot_test_skip          = sys_ctrl_ptr + BOOT_TEST_SKIP_OFFSET;
+  sys_ctrl.boot_test_debug         = sys_ctrl_ptr + BOOT_TEST_DEBUG_OFFSET;
   
   return sys_ctrl;
 }
