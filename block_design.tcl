@@ -201,7 +201,8 @@ cell lcb:user:shim_hw_manager hw_manager {} {
   ext_shutdown Shutdown_Button
   lock_viol axi_sys_ctrl/lock_viol
   sys_en_oob axi_sys_ctrl/sys_en_oob
-  buffer_reset_oob axi_sys_ctrl/buffer_reset_oob
+  cmd_buf_reset_oob axi_sys_ctrl/cmd_buf_reset_oob
+  data_buf_reset_oob axi_sys_ctrl/data_buf_reset_oob
   integ_thresh_avg_oob axi_sys_ctrl/integ_thresh_avg_oob
   integ_window_oob axi_sys_ctrl/integ_window_oob
   integ_en_oob axi_sys_ctrl/integ_en_oob
@@ -311,7 +312,7 @@ module spi_clk_domain spi_clk_domain {
   adc_data_buf_overflow hw_manager/adc_data_buf_overflow
   unexp_adc_trig hw_manager/unexp_adc_trig
   ext_trig Trigger_In
-  block_buffers hw_manager/block_buffers
+  block_bufs hw_manager/block_bufs
 }
 
 ###############################################################################
@@ -320,8 +321,8 @@ module spi_clk_domain spi_clk_domain {
 module axi_spi_interface axi_spi_interface {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
-  command_buffer_reset axi_sys_ctrl/command_buffer_reset
-  data_buffer_reset axi_sys_ctrl/data_buffer_reset
+  cmd_buf_reset axi_sys_ctrl/cmd_buf_reset
+  data_buf_reset axi_sys_ctrl/data_buf_reset
   spi_clk spi_clk/clk_out1
   S_AXI ps/M_AXI_GP1
 }
@@ -411,7 +412,7 @@ cell xilinx.com:ip:xlconstant:1.1 pad_30 {
 # Pad reserved bits
 cell xilinx.com:ip:xlconstant:1.1 pad_sts_reserved {
   CONST_VAL 0
-  CONST_WIDTH [expr {32 * (2048 - 1152)}]
+  CONST_WIDTH [expr {2048 - 1152}]
 } {
   dout sts_concat/In4
 }
@@ -440,7 +441,7 @@ cell xilinx.com:ip:util_vector_logic n_spi_clk_gate {
 }
 
 ### Create I/O buffers for differential signals
-module io_buffers io_buffers {
+module io_bufs io_bufs {
   ldac spi_clk_domain/ldac
   n_dac_cs spi_clk_domain/n_dac_cs
   dac_mosi spi_clk_domain/dac_mosi

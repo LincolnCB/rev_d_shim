@@ -16,8 +16,8 @@ struct sys_ctrl_t create_sys_ctrl(bool verbose) {
 
   // Initialize the system control structure with the mapped memory addresses
   sys_ctrl.system_enable                = sys_ctrl_ptr + SYSTEM_ENABLE_OFFSET;
-  sys_ctrl.command_buffer_reset         = sys_ctrl_ptr + COMMAND_BUFFER_RESET_OFFSET;
-  sys_ctrl.data_buffer_reset            = sys_ctrl_ptr + DATA_BUFFER_RESET_OFFSET;
+  sys_ctrl.cmd_buf_reset                = sys_ctrl_ptr + CMD_BUF_RESET_OFFSET;
+  sys_ctrl.data_buf_reset               = sys_ctrl_ptr + DATA_BUF_RESET_OFFSET;
   sys_ctrl.integrator_threshold_average = sys_ctrl_ptr + INTEGRATOR_THRESHOLD_AVERAGE_OFFSET;
   sys_ctrl.integrator_window            = sys_ctrl_ptr + INTEGRATOR_WINDOW_OFFSET;
   sys_ctrl.integrator_enable            = sys_ctrl_ptr + INTEGRATOR_ENABLE_OFFSET;
@@ -64,5 +64,37 @@ void sys_ctrl_set_boot_test_debug(struct sys_ctrl_t *sys_ctrl, uint16_t value, b
   *(sys_ctrl->boot_test_debug) = (uint32_t)value;
   if (verbose) {
     printf("boot_test_debug set to 0x%" PRIx32 "\n", *(sys_ctrl->boot_test_debug));
+  }
+}
+
+// Set the command buffer reset register (1 = reset) to a 17-bit mask
+void sys_ctrl_set_cmd_buf_reset(struct sys_ctrl_t *sys_ctrl, uint32_t mask, bool verbose) {
+  if (mask > 0x1FFFF) {
+    fprintf(stderr, "Invalid command buffer reset mask: 0x%" PRIx32 ". Must be a 17-bit value.\n", mask);
+    exit(EXIT_FAILURE);
+  }
+  if (verbose) {
+    printf("Setting cmd_buf_reset to 0x%" PRIx32 "\n", mask);
+  }
+  // Write the 17-bit mask to the cmd_buf_reset register
+  *(sys_ctrl->cmd_buf_reset) = mask & 0x1FFFF; // Mask to 17 bits
+  if (verbose) {
+    printf("cmd_buf_reset set to 0x%" PRIx32 "\n", *(sys_ctrl->cmd_buf_reset));
+  }
+}
+
+// Set the data buffer reset register (1 = reset) to a 17-bit mask
+void sys_ctrl_set_data_buf_reset(struct sys_ctrl_t *sys_ctrl, uint32_t mask, bool verbose) {
+  if (mask > 0x1FFFF) {
+    fprintf(stderr, "Invalid data buffer reset mask: 0x%" PRIx32 ". Must be a 17-bit value.\n", mask);
+    exit(EXIT_FAILURE);
+  }
+  if (verbose) {
+    printf("Setting data_buf_reset to 0x%" PRIx32 "\n", mask);
+  }
+  // Write the 17-bit mask to the data_buf_reset register
+  *(sys_ctrl->data_buf_reset) = mask & 0x1FFFF; // Mask to 17 bits
+  if (verbose) {
+    printf("data_buf_reset set to 0x%" PRIx32 "\n", *(sys_ctrl->data_buf_reset));
   }
 }

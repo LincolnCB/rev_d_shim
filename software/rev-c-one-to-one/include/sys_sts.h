@@ -11,13 +11,13 @@
 // 32-bit offsets within the status register
 #define HW_STS_REG_OFFSET (uint32_t) 0 // Hardware status register
 // Command FIFO status offset for DAC board (in 32-bit words)
-#define DAC_CMD_FIFO_STS_OFFSET_WORD(board)   (1 + (2 * (board)))
+#define DAC_CMD_FIFO_STS_OFFSET(board)   (1 + (2 * (board)))
 // Data FIFO status offset for DAC board (in 32-bit words)
-#define DAC_DATA_FIFO_STS_OFFSET_WORD(board)  (18 + (2 * (board)))
+#define DAC_DATA_FIFO_STS_OFFSET(board)  (18 + (2 * (board)))
 // Command FIFO status offset for ADC board (in 32-bit words)
-#define ADC_CMD_FIFO_STS_OFFSET_WORD(board)   (1 + (2 * (board) + 1))
+#define ADC_CMD_FIFO_STS_OFFSET(board)   (1 + (2 * (board) + 1))
 // Data FIFO status offset for ADC board (in 32-bit words)
-#define ADC_DATA_FIFO_STS_OFFSET_WORD(board)  (18 + (2 * (board) + 1))
+#define ADC_DATA_FIFO_STS_OFFSET(board)  (18 + (2 * (board) + 1))
 #define TRIG_CMD_FIFO_STS_OFFSET    (uint32_t) 17 // Trigger command FIFO status
 #define TRIG_DATA_FIFO_STS_OFFSET   (uint32_t) 34 // Trigger data FIFO status
 // Debug registers
@@ -53,8 +53,8 @@
 // Pre-start configuration values
 #define STS_LOCK_VIOL                (uint32_t) 0x0200 // Configuration lock violation.
 #define STS_SYS_EN_OOB               (uint32_t) 0x0201 // System enable register out of bounds.
-#define STS_CMD_BUFFER_RESET_OOB     (uint32_t) 0x0202 // Command buffer reset out of bounds.
-#define STS_DATA_BUFFER_RESET_OOB    (uint32_t) 0x0203 // Data buffer reset out of bounds.
+#define STS_CMD_BUF_RESET_OOB        (uint32_t) 0x0202 // Command buffer reset out of bounds.
+#define STS_DATA_BUF_RESET_OOB       (uint32_t) 0x0203 // Data buffer reset out of bounds.
 #define STS_INTEG_THRESH_AVG_OOB     (uint32_t) 0x0204 // Integrator threshold average out of bounds.
 #define STS_INTEG_WINDOW_OOB         (uint32_t) 0x0205 // Integrator window out of bounds.
 #define STS_INTEG_EN_OOB             (uint32_t) 0x0206 // Integrator enable register out of bounds.
@@ -91,6 +91,14 @@
 #define STS_ADC_DATA_BUF_OVERFLOW    (uint32_t) 0x0705 // ADC data buffer overflow.
 #define STS_UNEXP_ADC_TRIG           (uint32_t) 0x0706 // Unexpected ADC trigger.
 
+// FIFO status interpretation macros
+#define FIFO_STS_WORD_COUNT(sts)   ((sts) & 0xFFFFFFF)   // Number of words in FIFO
+#define FIFO_STS_FULL(sts)         (((sts) >> 28) & 0x1) // FIFO full flag
+#define FIFO_STS_ALMOST_FULL(sts)  (((sts) >> 29) & 0x1) // FIFO almost full flag
+#define FIFO_STS_EMPTY(sts)        (((sts) >> 30) & 0x1) // FIFO empty flag
+#define FIFO_STS_ALMOST_EMPTY(sts) (((sts) >> 31) & 0x1) // FIFO almost empty flag
+
+
 //////////////////////////////////////////////////////////////////
 
 // System status structure
@@ -107,11 +115,31 @@ struct sys_sts_t {
 
 // Structure initialization function
 struct sys_sts_t create_sys_sts(bool verbose);
+
 // Get hardware status register value
 uint32_t sys_sts_get_hw_status(struct sys_sts_t *sys_sts, bool verbose);
 // Interpret and print hardware status
 void print_hw_status(uint32_t hw_status, bool verbose);
+
 // Print debug registers
 void print_debug_registers(struct sys_sts_t *sys_sts);
+
+// Get FIFO status from a status pointer
+uint32_t get_fifo_status(volatile uint32_t *fifo_sts_ptr, const char *fifo_name, bool verbose);
+// Get DAC command FIFO status for a specific board
+uint32_t sys_sts_get_dac_cmd_fifo_status(struct sys_sts_t *sys_sts, uint8_t board, bool verbose);
+// Get DAC data FIFO status for a specific board
+uint32_t sys_sts_get_dac_data_fifo_status(struct sys_sts_t *sys_sts, uint8_t board, bool verbose);
+// Get ADC command FIFO status for a specific board
+uint32_t sys_sts_get_adc_cmd_fifo_status(struct sys_sts_t *sys_sts, uint8_t board, bool verbose);
+// Get ADC data FIFO status for a specific board
+uint32_t sys_sts_get_adc_data_fifo_status(struct sys_sts_t *sys_sts, uint8_t board, bool verbose);
+// Get trigger command FIFO status
+uint32_t sys_sts_get_trig_cmd_fifo_status(struct sys_sts_t *sys_sts, bool verbose);
+// Get trigger data FIFO status
+uint32_t sys_sts_get_trig_data_fifo_status(struct sys_sts_t *sys_sts, bool verbose);
+
+// Print FIFO status details
+void print_fifo_status(uint32_t fifo_status, const char *fifo_name);
 
 #endif // SYS_STS_H

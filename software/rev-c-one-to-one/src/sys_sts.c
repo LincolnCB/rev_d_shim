@@ -110,10 +110,10 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
       case STS_SYS_EN_OOB:
         printf("Status: System enable register out of bounds\n");
         break;
-      case STS_CMD_BUFFER_RESET_OOB:
+      case STS_CMD_BUF_RESET_OOB:
         printf("Status: Command buffer reset out of bounds\n");
         break;
-      case STS_DATA_BUFFER_RESET_OOB:
+      case STS_DATA_BUF_RESET_OOB:
         printf("Status: Data buffer reset out of bounds\n");
         break;
       case STS_INTEG_THRESH_AVG_OOB:
@@ -246,5 +246,70 @@ void print_debug_registers(struct sys_sts_t *sys_sts) {
     }
     printf("\n");
   }
+}
+
+// Get FIFO status from a status pointer
+uint32_t get_fifo_status(volatile uint32_t *fifo_sts_ptr, const char *fifo_name, bool verbose) {
+  if (verbose) {
+    printf("Reading %s FIFO status register...\n", fifo_name);
+    printf("%s FIFO status raw: 0x%" PRIx32 "\n", fifo_name, *fifo_sts_ptr);
+  }
+  return *fifo_sts_ptr;
+}
+
+// Get DAC command FIFO status for a specific board
+uint32_t sys_sts_get_dac_cmd_fifo_status(struct sys_sts_t *sys_sts, uint8_t board, bool verbose) {
+  if (board >= 8) {
+    fprintf(stderr, "Invalid board number %u for DAC command FIFO status. Must be 0-7.\n", board);
+    exit(EXIT_FAILURE);
+  }
+  return get_fifo_status(sys_sts->dac_cmd_fifo_sts[board], "DAC Command", verbose);
+}
+
+// Get DAC data FIFO status for a specific board
+uint32_t sys_sts_get_dac_data_fifo_status(struct sys_sts_t *sys_sts, uint8_t board, bool verbose) {
+  if (board >= 8) {
+    fprintf(stderr, "Invalid board number %u for DAC data FIFO status. Must be 0-7.\n", board);
+    exit(EXIT_FAILURE);
+  }
+  return get_fifo_status(sys_sts->dac_data_fifo_sts[board], "DAC Data", verbose);
+}
+
+// Get ADC command FIFO status for a specific board
+uint32_t sys_sts_get_adc_cmd_fifo_status(struct sys_sts_t *sys_sts, uint8_t board, bool verbose) {
+  if (board >= 8) {
+    fprintf(stderr, "Invalid board number %u for ADC command FIFO status. Must be 0-7.\n", board);
+    exit(EXIT_FAILURE);
+  }
+  return get_fifo_status(sys_sts->adc_cmd_fifo_sts[board], "ADC Command", verbose);
+}
+
+// Get ADC data FIFO status for a specific board
+uint32_t sys_sts_get_adc_data_fifo_status(struct sys_sts_t *sys_sts, uint8_t board, bool verbose) {
+  if (board >= 8) {
+    fprintf(stderr, "Invalid board number %u for ADC data FIFO status. Must be 0-7.\n", board);
+    exit(EXIT_FAILURE);
+  }
+  return get_fifo_status(sys_sts->adc_data_fifo_sts[board], "ADC Data", verbose);
+}
+
+// Get trigger command FIFO status
+uint32_t sys_sts_get_trig_cmd_fifo_status(struct sys_sts_t *sys_sts, bool verbose) {
+  return get_fifo_status(sys_sts->trig_cmd_fifo_sts, "Trigger Command", verbose);
+}
+
+// Get trigger data FIFO status
+uint32_t sys_sts_get_trig_data_fifo_status(struct sys_sts_t *sys_sts, bool verbose) {
+  return get_fifo_status(sys_sts->trig_data_fifo_sts, "Trigger Data", verbose);
+}
+
+// Print FIFO status details
+void print_fifo_status(uint32_t fifo_status, const char *fifo_name) {
+  printf("%s FIFO Status:\n", fifo_name);
+  printf("  Word Count: %u\n", FIFO_STS_WORD_COUNT(fifo_status));
+  printf("  Full: %s\n", FIFO_STS_FULL(fifo_status) ? "Yes" : "No");
+  printf("  Almost Full: %s\n", FIFO_STS_ALMOST_FULL(fifo_status) ? "Yes" : "No");
+  printf("  Empty: %s\n", FIFO_STS_EMPTY(fifo_status) ? "Yes" : "No");
+  printf("  Almost Empty: %s\n", FIFO_STS_ALMOST_EMPTY(fifo_status) ? "Yes" : "No");
 }
 

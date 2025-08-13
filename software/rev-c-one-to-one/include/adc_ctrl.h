@@ -14,19 +14,15 @@
 
 //////////////////////////////////////////////////////////////////
 
-// ADC control structure for a single board
+// ADC control structure
 struct adc_ctrl_t {
-  volatile uint32_t *buffer;  // ADC FIFO (command and data)
-  uint8_t board_id;           // Board identifier (0-7)
-};
-
-// ADC control structure for all boards
-struct adc_ctrl_array_t {
-  struct adc_ctrl_t boards[8];  // Array of ADC control structures for 8 boards
+  volatile uint32_t *buffer[8];  // ADC FIFO (command and data)
 };
 
 // Function declarations
-struct adc_ctrl_t create_adc_ctrl(uint8_t board_id, bool verbose);
-struct adc_ctrl_array_t create_adc_ctrl_array(bool verbose);
+// Create ADC control structure
+struct adc_ctrl_t create_adc_ctrl(bool verbose);
+// Read ADC value from a specific board
+uint32_t adc_read(struct adc_ctrl_t *adc_ctrl, uint8_t board);
 
 #endif // ADC_CTRL_H

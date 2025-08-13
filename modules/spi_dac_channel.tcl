@@ -37,7 +37,7 @@ create_bd_pin -dir O dac_data_wr_en
 create_bd_pin -dir I dac_data_full
 
 # Block command buffer until HW Manager is ready
-create_bd_pin -dir I block_buffers
+create_bd_pin -dir I block_bufs
 
 # Trigger
 create_bd_pin -dir I trigger
@@ -55,20 +55,20 @@ create_bd_pin -dir I miso_sck
 ##################################################
 
 ### DAC SPI Controller
-## Block the command buffer if needed (OR block_buffers with cmd_buf_empty)
+## Block the command buffer if needed (OR block_bufs with cmd_buf_empty)
 cell xilinx.com:ip:util_vector_logic dac_cmd_empty_blocked {
   C_SIZE 1
   C_OPERATION or
 } {
   Op1 dac_cmd_empty
-  Op2 block_buffers
+  Op2 block_bufs
 }
 cell xilinx.com:ip:util_vector_logic dac_data_full_blocked {
   C_SIZE 1
   C_OPERATION or
 } {
   Op1 dac_data_full
-  Op2 block_buffers
+  Op2 block_bufs
 }
 ## MISO clock-domain synchronous reset
 cell xilinx.com:ip:proc_sys_reset:5.0 miso_rst {} {

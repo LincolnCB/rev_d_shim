@@ -14,19 +14,15 @@
 
 //////////////////////////////////////////////////////////////////
 
-// DAC control structure for a single board
+// DAC control structure
 struct dac_ctrl_t {
-  volatile uint32_t *buffer; // DAC FIFO (command and data)
-  uint8_t board_id;          // Board identifier (0-7)
-};
-
-// DAC control structure for all boards
-struct dac_ctrl_array_t {
-  struct dac_ctrl_t boards[8]; // Array of DAC control structures for 8 boards
+  volatile uint32_t *buffer[8];  // DAC FIFO (command and data)
 };
 
 // Function declarations
-struct dac_ctrl_t create_dac_ctrl(uint8_t board_id, bool verbose);
-struct dac_ctrl_array_t create_dac_ctrl_array(bool verbose);
+// Create DAC control structure
+struct dac_ctrl_t create_dac_ctrl(bool verbose);
+// Read DAC value from a specific board
+uint32_t dac_read(struct dac_ctrl_t *dac_ctrl, uint8_t board);
 
 #endif // DAC_CTRL_H

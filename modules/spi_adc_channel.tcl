@@ -28,7 +28,7 @@ create_bd_pin -dir O adc_data_wr_en
 create_bd_pin -dir I adc_data_full
 
 # Block command and data buffers until HW Manager is ready
-create_bd_pin -dir I block_buffers
+create_bd_pin -dir I block_bufs
 
 # Trigger
 create_bd_pin -dir I trigger
@@ -43,20 +43,20 @@ create_bd_pin -dir I miso
 ##################################################
 
 ### ADC SPI Controller
-## Block the command and data buffers if needed (OR block_buffers_stable with cmd_buf_empty and data_buf_full)
+## Block the command and data buffers if needed (OR block_bufs_stable with cmd_buf_empty and data_buf_full)
 cell xilinx.com:ip:util_vector_logic adc_cmd_empty_blocked {
   C_SIZE 1
   C_OPERATION or
 } {
   Op1 adc_cmd_empty
-  Op2 block_buffers
+  Op2 block_bufs
 }
 cell xilinx.com:ip:util_vector_logic adc_data_full_blocked {
   C_SIZE 1
   C_OPERATION or
 } {
   Op1 adc_data_full
-  Op2 block_buffers
+  Op2 block_bufs
 }
 ## MISO clock-domain synchronous reset
 cell xilinx.com:ip:proc_sys_reset:5.0 miso_rst {} {

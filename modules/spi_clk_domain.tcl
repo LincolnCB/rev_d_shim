@@ -89,7 +89,7 @@ create_bd_pin -dir I trig_data_almost_full
 create_bd_pin -dir I ext_trig
 
 # Block buffers on the SPI side (until HW Manager is ready)
-create_bd_pin -dir I block_buffers
+create_bd_pin -dir I block_bufs
 
 # SPI interface signals (out)
 create_bd_pin -dir O ldac
@@ -128,7 +128,7 @@ cell lcb:user:shim_spi_cfg_sync spi_cfg_sync {} {
   spi_clk spi_clk
   spi_resetn sync_rst_core/peripheral_aresetn
   spi_en spi_en
-  block_buffers block_buffers
+  block_bufs block_bufs
   integ_thresh_avg integ_thresh_avg
   integ_window integ_window
   integ_en integ_en
@@ -170,20 +170,20 @@ cell lcb:user:shim_spi_sts_sync spi_sts_sync {} {
 ##################################################
 
 ### Trigger core
-## Block the command and data buffers if needed (OR block_buffers_sync with cmd_buf_empty and data_buf_full)
+## Block the command and data buffers if needed (OR block_bufs_sync with cmd_buf_empty and data_buf_full)
 cell xilinx.com:ip:util_vector_logic trig_cmd_empty_blocked {
   C_SIZE 1
   C_OPERATION or
 } {
   Op1 trig_cmd_empty
-  Op2 spi_cfg_sync/block_buffers_sync
+  Op2 spi_cfg_sync/block_bufs_sync
 }
 cell xilinx.com:ip:util_vector_logic trig_data_full_blocked {
   C_SIZE 1
   C_OPERATION or
 } {
   Op1 trig_data_full
-  Op2 spi_cfg_sync/block_buffers_sync
+  Op2 spi_cfg_sync/block_bufs_sync
 }
 ## Trigger core
 cell lcb:user:shim_trigger_core trig_core {
@@ -220,7 +220,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     dac_data dac_ch${i}_data
     dac_data_wr_en dac_ch${i}_data_wr_en
     dac_data_full dac_ch${i}_data_full
-    block_buffers spi_cfg_sync/block_buffers_sync
+    block_bufs spi_cfg_sync/block_bufs_sync
     trigger trig_core/trig_out
   }
   ## ADC Channel
@@ -233,7 +233,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     adc_data adc_ch${i}_data
     adc_data_wr_en adc_ch${i}_data_wr_en
     adc_data_full adc_ch${i}_data_full
-    block_buffers spi_cfg_sync/block_buffers_sync
+    block_bufs spi_cfg_sync/block_bufs_sync
     trigger trig_core/trig_out
   }
 }

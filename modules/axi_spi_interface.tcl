@@ -16,8 +16,8 @@ if {$board_count < 1 || $board_count > 8} {
 # System signals
 create_bd_pin -dir I -type clock aclk
 create_bd_pin -dir I -type reset aresetn
-create_bd_pin -dir I -from 16 -to 0 command_buffer_reset
-create_bd_pin -dir I -from 16 -to 0 data_buffer_reset
+create_bd_pin -dir I -from 16 -to 0 cmd_buf_reset
+create_bd_pin -dir I -from 16 -to 0 data_buf_reset
 create_bd_pin -dir I -type clock spi_clk
 
 # AXI interface
@@ -116,7 +116,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     DIN_FROM [expr {2 * $i + 0}]
     DIN_TO [expr {2 * $i + 0}]
   } {
-    din command_buffer_reset
+    din cmd_buf_reset
   }
   cell xilinx.com:ip:proc_sys_reset:5.0 dac_cmd_fifo_${i}_spi_clk_rst {} {
     ext_reset_in dac_cmd_fifo_${i}_rst_slice/dout
@@ -158,7 +158,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     DIN_FROM [expr {2 * $i + 0}]
     DIN_TO [expr {2 * $i + 0}]
   } {
-    din data_buffer_reset
+    din data_buf_reset
   }
   cell xilinx.com:ip:proc_sys_reset:5.0 dac_data_fifo_${i}_spi_clk_rst {} {
     ext_reset_in dac_data_fifo_${i}_rst_slice/dout
@@ -180,7 +180,6 @@ for {set i 0} {$i < $board_count} {incr i} {
     wr_data dac_ch${i}_data
     wr_en dac_ch${i}_data_wr_en
     full dac_ch${i}_data_full
-    almost_full dac_ch${i}_data_almost_full
   }
   # 32-bit DAC data FIFO status word
   cell xilinx.com:ip:xlconcat:2.1 dac_data_fifo_${i}_sts_word {
@@ -218,7 +217,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     DIN_FROM [expr {2 * $i + 1}]
     DIN_TO [expr {2 * $i + 1}]
   } {
-    din command_buffer_reset
+    din cmd_buf_reset
   }
   cell xilinx.com:ip:proc_sys_reset:5.0 adc_cmd_fifo_${i}_spi_clk_rst {} {
     ext_reset_in adc_cmd_fifo_${i}_rst_slice/dout
@@ -260,7 +259,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     DIN_FROM [expr {2 * $i + 1}]
     DIN_TO [expr {2 * $i + 1}]
   } {
-    din data_buffer_reset
+    din data_buf_reset
   }
   cell xilinx.com:ip:proc_sys_reset:5.0 adc_data_fifo_${i}_spi_clk_rst {} {
     ext_reset_in adc_data_fifo_${i}_rst_slice/dout
@@ -282,7 +281,6 @@ for {set i 0} {$i < $board_count} {incr i} {
     wr_data adc_ch${i}_data
     wr_en adc_ch${i}_data_wr_en
     full adc_ch${i}_data_full
-    almost_full adc_ch${i}_data_almost_full
   }
   # 32-bit ADC data FIFO status word
   cell xilinx.com:ip:xlconcat:2.1 adc_data_fifo_${i}_sts_word {
@@ -320,7 +318,7 @@ cell xilinx.com:ip:xlslice:1.0 trig_cmd_fifo_rst_slice {
   DIN_FROM 16
   DIN_TO 16
 } {
-  din command_buffer_reset
+  din cmd_buf_reset
 }
 cell xilinx.com:ip:proc_sys_reset:5.0 trig_cmd_fifo_spi_clk_rst {} {
   ext_reset_in trig_cmd_fifo_rst_slice/dout
@@ -362,7 +360,7 @@ cell xilinx.com:ip:xlslice:1.0 trig_data_fifo_rst_slice {
   DIN_FROM 16
   DIN_TO 16
 } {
-  din data_buffer_reset
+  din data_buf_reset
 }
 cell xilinx.com:ip:proc_sys_reset:5.0 trig_data_fifo_spi_clk_rst {} {
   ext_reset_in trig_data_fifo_rst_slice/dout
