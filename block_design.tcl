@@ -207,7 +207,7 @@ cell lcb:user:shim_hw_manager hw_manager {} {
   integ_window_oob axi_sys_ctrl/integ_window_oob
   integ_en_oob axi_sys_ctrl/integ_en_oob
   boot_test_skip_oob axi_sys_ctrl/boot_test_skip_oob
-  boot_test_debug_oob axi_sys_ctrl/boot_test_debug_oob
+  debug_oob axi_sys_ctrl/debug_oob
   unlock_cfg axi_sys_ctrl/unlock
   n_shutdown_force n_Shutdown_Force
   n_shutdown_rst n_Shutdown_Reset
@@ -292,7 +292,7 @@ module spi_clk_domain spi_clk_domain {
   integ_window axi_sys_ctrl/integ_window
   integ_en axi_sys_ctrl/integ_en
   boot_test_skip axi_sys_ctrl/boot_test_skip
-  boot_test_debug axi_sys_ctrl/boot_test_debug
+  debug axi_sys_ctrl/debug
   spi_off hw_manager/spi_off
   over_thresh hw_manager/over_thresh
   thresh_underflow hw_manager/thresh_underflow

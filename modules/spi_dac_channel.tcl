@@ -10,7 +10,7 @@ create_bd_pin -dir I -from 31 -to 0 integ_window
 create_bd_pin -dir I -from 14 -to 0 integ_thresh_avg
 create_bd_pin -dir I integ_en
 create_bd_pin -dir I boot_test_skip
-create_bd_pin -dir I boot_test_debug
+create_bd_pin -dir I debug
 
 ## Status signals
 # System status
@@ -55,7 +55,7 @@ create_bd_pin -dir I miso_sck
 ##################################################
 
 ### DAC SPI Controller
-## Block the command buffer if needed (OR block_bufs with cmd_buf_empty)
+## Block the command buffer if needed (cmd_buf_empty OR block_bufs)
 cell xilinx.com:ip:util_vector_logic dac_cmd_empty_blocked {
   C_SIZE 1
   C_OPERATION or
@@ -63,12 +63,26 @@ cell xilinx.com:ip:util_vector_logic dac_cmd_empty_blocked {
   Op1 dac_cmd_empty
   Op2 block_bufs
 }
+## Block the data buffer if needed (data_buf_full OR (block_bufs AND NOT debug))
+cell xilinx.com:ip:util_vector_logic n_debug {
+  C_SIZE 1
+  C_OPERATION not
+} {
+  Op1 debug
+}
+cell xilinx.com:ip:util_vector_logic block_bufs_and_not_debug {
+  C_SIZE 1
+  C_OPERATION and
+} {
+  Op1 block_bufs
+  Op2 n_debug/Res
+}
 cell xilinx.com:ip:util_vector_logic dac_data_full_blocked {
   C_SIZE 1
   C_OPERATION or
 } {
   Op1 dac_data_full
-  Op2 block_bufs
+  Op2 block_bufs_and_not_debug/Res
 }
 ## MISO clock-domain synchronous reset
 cell xilinx.com:ip:proc_sys_reset:5.0 miso_rst {} {
@@ -82,7 +96,7 @@ cell lcb:user:shim_ad5676_dac_ctrl dac_spi {
   clk spi_clk
   resetn resetn
   boot_test_skip boot_test_skip
-  boot_test_debug boot_test_debug
+  debug debug
   cmd_word_rd_en dac_cmd_rd_en
   cmd_word dac_cmd
   cmd_buf_empty dac_cmd_empty_blocked/Res

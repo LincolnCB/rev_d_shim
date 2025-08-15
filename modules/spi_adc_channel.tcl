@@ -7,7 +7,7 @@ create_bd_pin -dir I -type reset resetn
 
 # Config parameters
 create_bd_pin -dir I boot_test_skip
-create_bd_pin -dir I boot_test_debug
+create_bd_pin -dir I debug
 
 ## Status signals
 # System status
@@ -43,7 +43,7 @@ create_bd_pin -dir I miso
 ##################################################
 
 ### ADC SPI Controller
-## Block the command and data buffers if needed (OR block_bufs_stable with cmd_buf_empty and data_buf_full)
+## Block the command buffer if needed (cmd_buf_empty OR block_bufs)
 cell xilinx.com:ip:util_vector_logic adc_cmd_empty_blocked {
   C_SIZE 1
   C_OPERATION or
@@ -51,12 +51,26 @@ cell xilinx.com:ip:util_vector_logic adc_cmd_empty_blocked {
   Op1 adc_cmd_empty
   Op2 block_bufs
 }
+## Block the data buffer if needed (adc_data_full OR (block_bufs AND NOT debug))
+cell xilinx.com:ip:util_vector_logic n_debug {
+  C_SIZE 1
+  C_OPERATION not
+} {
+  Op1 debug
+}
+cell xilinx.com:ip:util_vector_logic block_bufs_and_not_debug {
+  C_SIZE 1
+  C_OPERATION and
+} {
+  Op1 block_bufs
+  Op2 n_debug/Res
+}
 cell xilinx.com:ip:util_vector_logic adc_data_full_blocked {
   C_SIZE 1
   C_OPERATION or
 } {
   Op1 adc_data_full
-  Op2 block_bufs
+  Op2 block_bufs_and_not_debug/Res
 }
 ## MISO clock-domain synchronous reset
 cell xilinx.com:ip:proc_sys_reset:5.0 miso_rst {} {
@@ -68,7 +82,7 @@ cell lcb:user:shim_ads816x_adc_ctrl adc_spi {} {
   clk spi_clk
   resetn resetn
   boot_test_skip boot_test_skip
-  boot_test_debug boot_test_debug
+  debug debug
   cmd_word_rd_en adc_cmd_rd_en
   cmd_word adc_cmd
   cmd_buf_empty adc_cmd_empty_blocked/Res

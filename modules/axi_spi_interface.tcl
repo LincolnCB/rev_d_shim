@@ -92,7 +92,7 @@ cell xilinx.com:ip:smartconnect:1.0 board_ch_axi_intercon {
 # Status word padding for making 32-bit status words
 cell xilinx.com:ip:xlconstant:1.1 sts_word_padding {
   CONST_VAL 0
-  CONST_WIDTH 17
+  CONST_WIDTH 16
 } {}
 
 ## FIFO declarations
@@ -118,12 +118,18 @@ for {set i 0} {$i < $board_count} {incr i} {
   } {
     din cmd_buf_reset
   }
+  cell xilinx.com:ip:util_vector_logic n_dac_cmd_fifo_${i}_rst {
+    C_SIZE 1
+    C_OPERATION not
+  } {
+    Op1 dac_cmd_fifo_${i}_rst_slice/dout
+  }
   cell xilinx.com:ip:proc_sys_reset:5.0 dac_cmd_fifo_${i}_spi_clk_rst {} {
-    ext_reset_in dac_cmd_fifo_${i}_rst_slice/dout
+    ext_reset_in n_dac_cmd_fifo_${i}_rst/Res
     slowest_sync_clk spi_clk
   }
   cell xilinx.com:ip:proc_sys_reset:5.0 dac_cmd_fifo_${i}_aclk_rst {} {
-    ext_reset_in dac_cmd_fifo_${i}_rst_slice/dout
+    ext_reset_in n_dac_cmd_fifo_${i}_rst/Res
     slowest_sync_clk aclk
   }
   # DAC command FIFO
@@ -141,7 +147,7 @@ for {set i 0} {$i < $board_count} {incr i} {
   }
   # 32-bit DAC command FIFO status word
   cell xilinx.com:ip:xlconcat:2.1 dac_cmd_fifo_${i}_sts_word {
-    NUM_PORTS 6
+    NUM_PORTS 7
   } {
     In0 dac_cmd_fifo_${i}/fifo_count_wr_clk
     In1 sts_word_padding/dout
@@ -149,6 +155,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     In3 dac_cmd_fifo_${i}/almost_full
     In4 dac_cmd_fifo_${i}/empty
     In5 dac_cmd_fifo_${i}/almost_empty
+    In6 const_1/dout
   }
 
   ## DAC data FIFO
@@ -160,12 +167,18 @@ for {set i 0} {$i < $board_count} {incr i} {
   } {
     din data_buf_reset
   }
+  cell xilinx.com:ip:util_vector_logic n_dac_data_fifo_${i}_rst {
+    C_SIZE 1
+    C_OPERATION not
+  } {
+    Op1 dac_data_fifo_${i}_rst_slice/dout
+  }
   cell xilinx.com:ip:proc_sys_reset:5.0 dac_data_fifo_${i}_spi_clk_rst {} {
-    ext_reset_in dac_data_fifo_${i}_rst_slice/dout
+    ext_reset_in n_dac_data_fifo_${i}_rst/Res
     slowest_sync_clk spi_clk
   }
   cell xilinx.com:ip:proc_sys_reset:5.0 dac_data_fifo_${i}_aclk_rst {} {
-    ext_reset_in dac_data_fifo_${i}_rst_slice/dout
+    ext_reset_in n_dac_data_fifo_${i}_rst/Res
     slowest_sync_clk aclk
   }
   # DAC data FIFO
@@ -183,7 +196,7 @@ for {set i 0} {$i < $board_count} {incr i} {
   }
   # 32-bit DAC data FIFO status word
   cell xilinx.com:ip:xlconcat:2.1 dac_data_fifo_${i}_sts_word {
-    NUM_PORTS 6
+    NUM_PORTS 7
   } {
     In0 dac_data_fifo_${i}/fifo_count_rd_clk
     In1 sts_word_padding/dout
@@ -191,6 +204,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     In3 dac_data_fifo_${i}/almost_full
     In4 dac_data_fifo_${i}/empty
     In5 dac_data_fifo_${i}/almost_empty
+    In6 const_1/dout
   }
 
   ## DAC FIFO AXI interface
@@ -219,12 +233,18 @@ for {set i 0} {$i < $board_count} {incr i} {
   } {
     din cmd_buf_reset
   }
+  cell xilinx.com:ip:util_vector_logic n_adc_cmd_fifo_${i}_rst {
+    C_SIZE 1
+    C_OPERATION not
+  } {
+    Op1 adc_cmd_fifo_${i}_rst_slice/dout
+  }
   cell xilinx.com:ip:proc_sys_reset:5.0 adc_cmd_fifo_${i}_spi_clk_rst {} {
-    ext_reset_in adc_cmd_fifo_${i}_rst_slice/dout
+    ext_reset_in n_adc_cmd_fifo_${i}_rst/Res
     slowest_sync_clk spi_clk
   }
   cell xilinx.com:ip:proc_sys_reset:5.0 adc_cmd_fifo_${i}_aclk_rst {} {
-    ext_reset_in adc_cmd_fifo_${i}_rst_slice/dout
+    ext_reset_in n_adc_cmd_fifo_${i}_rst/Res
     slowest_sync_clk aclk
   }
   # ADC command FIFO
@@ -242,7 +262,7 @@ for {set i 0} {$i < $board_count} {incr i} {
   }
   # 32-bit ADC command FIFO status word
   cell xilinx.com:ip:xlconcat:2.1 adc_cmd_fifo_${i}_sts_word {
-    NUM_PORTS 6
+    NUM_PORTS 7
   } {
     In0 adc_cmd_fifo_${i}/fifo_count_wr_clk
     In1 sts_word_padding/dout
@@ -250,6 +270,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     In3 adc_cmd_fifo_${i}/almost_full
     In4 adc_cmd_fifo_${i}/empty
     In5 adc_cmd_fifo_${i}/almost_empty
+    In6 const_1/dout
   }
 
   ## ADC data FIFO
@@ -261,12 +282,18 @@ for {set i 0} {$i < $board_count} {incr i} {
   } {
     din data_buf_reset
   }
+  cell xilinx.com:ip:util_vector_logic n_adc_data_fifo_${i}_rst {
+    C_SIZE 1
+    C_OPERATION not
+  } {
+    Op1 adc_data_fifo_${i}_rst_slice/dout
+  }
   cell xilinx.com:ip:proc_sys_reset:5.0 adc_data_fifo_${i}_spi_clk_rst {} {
-    ext_reset_in adc_data_fifo_${i}_rst_slice/dout
+    ext_reset_in n_adc_data_fifo_${i}_rst/Res
     slowest_sync_clk spi_clk
   }
   cell xilinx.com:ip:proc_sys_reset:5.0 adc_data_fifo_${i}_aclk_rst {} {
-    ext_reset_in adc_data_fifo_${i}_rst_slice/dout
+    ext_reset_in n_adc_data_fifo_${i}_rst/Res
     slowest_sync_clk aclk
   }
   # ADC data FIFO
@@ -284,7 +311,7 @@ for {set i 0} {$i < $board_count} {incr i} {
   }
   # 32-bit ADC data FIFO status word
   cell xilinx.com:ip:xlconcat:2.1 adc_data_fifo_${i}_sts_word {
-    NUM_PORTS 6
+    NUM_PORTS 7
   } {
     In0 adc_data_fifo_${i}/fifo_count_rd_clk
     In1 sts_word_padding/dout
@@ -292,6 +319,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     In3 adc_data_fifo_${i}/almost_full
     In4 adc_data_fifo_${i}/empty
     In5 adc_data_fifo_${i}/almost_empty
+    In6 const_1/dout
   }
 
   ## ADC FIFO AXI interface
@@ -320,12 +348,18 @@ cell xilinx.com:ip:xlslice:1.0 trig_cmd_fifo_rst_slice {
 } {
   din cmd_buf_reset
 }
+cell xilinx.com:ip:util_vector_logic n_trig_cmd_fifo_rst {
+  C_SIZE 1
+  C_OPERATION not
+} {
+  Op1 trig_cmd_fifo_rst_slice/dout
+}
 cell xilinx.com:ip:proc_sys_reset:5.0 trig_cmd_fifo_spi_clk_rst {} {
-  ext_reset_in trig_cmd_fifo_rst_slice/dout
+  ext_reset_in n_trig_cmd_fifo_rst/Res
   slowest_sync_clk spi_clk
 }
 cell xilinx.com:ip:proc_sys_reset:5.0 trig_cmd_fifo_aclk_rst {} {
-  ext_reset_in trig_cmd_fifo_rst_slice/dout
+  ext_reset_in n_trig_cmd_fifo_rst/Res
   slowest_sync_clk aclk
 }
 # Trigger command FIFO
@@ -343,7 +377,7 @@ cell lcb:user:fifo_async trig_cmd_fifo {
 }
 # 32-bit trigger command FIFO status word
 cell xilinx.com:ip:xlconcat:2.1 trig_cmd_fifo_sts_word {
-  NUM_PORTS 6
+  NUM_PORTS 7
 } {
   In0 trig_cmd_fifo/fifo_count_wr_clk
   In1 sts_word_padding/dout
@@ -351,6 +385,7 @@ cell xilinx.com:ip:xlconcat:2.1 trig_cmd_fifo_sts_word {
   In3 trig_cmd_fifo/almost_full
   In4 trig_cmd_fifo/empty
   In5 trig_cmd_fifo/almost_empty
+  In6 const_1/dout
 }
 
 ## Trigger data FIFO
@@ -362,12 +397,18 @@ cell xilinx.com:ip:xlslice:1.0 trig_data_fifo_rst_slice {
 } {
   din data_buf_reset
 }
+cell xilinx.com:ip:util_vector_logic n_trig_data_fifo_rst {
+  C_SIZE 1
+  C_OPERATION not
+} {
+  Op1 trig_data_fifo_rst_slice/dout
+}
 cell xilinx.com:ip:proc_sys_reset:5.0 trig_data_fifo_spi_clk_rst {} {
-  ext_reset_in trig_data_fifo_rst_slice/dout
+  ext_reset_in n_trig_data_fifo_rst/Res
   slowest_sync_clk spi_clk
 }
 cell xilinx.com:ip:proc_sys_reset:5.0 trig_data_fifo_aclk_rst {} {
-  ext_reset_in trig_data_fifo_rst_slice/dout
+  ext_reset_in n_trig_data_fifo_rst/Res
   slowest_sync_clk aclk
 }
 # Trigger data FIFO
@@ -386,7 +427,7 @@ cell lcb:user:fifo_async trig_data_fifo {
 }
 # 32-bit trigger data FIFO status word
 cell xilinx.com:ip:xlconcat:2.1 trig_data_fifo_sts_word {
-  NUM_PORTS 6
+  NUM_PORTS 7
 } {
   In0 trig_data_fifo/fifo_count_rd_clk
   In1 sts_word_padding/dout
@@ -394,6 +435,7 @@ cell xilinx.com:ip:xlconcat:2.1 trig_data_fifo_sts_word {
   In3 trig_data_fifo/almost_full
   In4 trig_data_fifo/empty
   In5 trig_data_fifo/almost_empty
+  In6 const_1/dout
 }
 
 ## Trigger FIFO AXI interface

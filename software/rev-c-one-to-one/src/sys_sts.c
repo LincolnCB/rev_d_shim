@@ -128,8 +128,8 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
       case STS_BOOT_TEST_SKIP_OOB:
         printf("Status: Boot test skip out of bounds\n");
         break;
-      case STS_BOOT_TEST_DEBUG_OOB:
-        printf("Status: Boot test debug out of bounds\n");
+      case STS_DEBUG_OOB:
+        printf("Status: Debug out of bounds\n");
         break;
       case STS_SHUTDOWN_SENSE:
         printf("Status: Shutdown sense detected\n");
@@ -306,6 +306,7 @@ uint32_t sys_sts_get_trig_data_fifo_status(struct sys_sts_t *sys_sts, bool verbo
 // Print FIFO status details
 void print_fifo_status(uint32_t fifo_status, const char *fifo_name) {
   printf("%s FIFO Status:\n", fifo_name);
+  printf("  Present: %s\n", FIFO_PRESENT(fifo_status) ? "Yes" : "No");
   printf("  Word Count: %u\n", FIFO_STS_WORD_COUNT(fifo_status));
   printf("  Full: %s\n", FIFO_STS_FULL(fifo_status) ? "Yes" : "No");
   printf("  Almost Full: %s\n", FIFO_STS_ALMOST_FULL(fifo_status) ? "Yes" : "No");

@@ -26,7 +26,7 @@ create_bd_pin -dir I -from 14 -to 0 integ_thresh_avg
 create_bd_pin -dir I -from 31 -to 0 integ_window
 create_bd_pin -dir I integ_en
 create_bd_pin -dir I -from 15 -to 0 boot_test_skip
-create_bd_pin -dir I -from 15 -to 0 boot_test_debug
+create_bd_pin -dir I -from 15 -to 0 debug
 
 ## Status signals (need synchronization)
 # SPI system status
@@ -133,7 +133,7 @@ cell lcb:user:shim_spi_cfg_sync spi_cfg_sync {} {
   integ_window integ_window
   integ_en integ_en
   boot_test_skip boot_test_skip
-  boot_test_debug boot_test_debug
+  debug debug
 }
 ## SPI system reset
 # Create proc_sys_reset for SPI-system-wide reset
@@ -256,23 +256,23 @@ for {set i 0} {$i < $board_count} {incr i} {
     dout adc_ch${i}/boot_test_skip
   }
 }
-# Boot test debug signals
+# Debug signals
 for {set i 0} {$i < $board_count} {incr i} {
-  cell xilinx.com:ip:xlslice:1.0 dac_ch${i}_boot_test_debug {
+  cell xilinx.com:ip:xlslice:1.0 dac_ch${i}_debug {
     DIN_WIDTH 16
     DIN_FROM [expr {2*$i}]
     DIN_TO [expr {2*$i}]
   } {
-    din spi_cfg_sync/boot_test_debug_sync
-    dout dac_ch${i}/boot_test_debug
+    din spi_cfg_sync/debug_sync
+    dout dac_ch${i}/debug
   }
-  cell xilinx.com:ip:xlslice:1.0 adc_ch${i}_boot_test_debug {
+  cell xilinx.com:ip:xlslice:1.0 adc_ch${i}_debug {
     DIN_WIDTH 16
     DIN_FROM [expr {2*$i + 1}]
     DIN_TO [expr {2*$i + 1}]
   } {
-    din spi_cfg_sync/boot_test_debug_sync
-    dout adc_ch${i}/boot_test_debug
+    din spi_cfg_sync/debug_sync
+    dout adc_ch${i}/debug
   }
 }
   

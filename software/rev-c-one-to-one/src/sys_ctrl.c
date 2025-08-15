@@ -22,7 +22,7 @@ struct sys_ctrl_t create_sys_ctrl(bool verbose) {
   sys_ctrl.integ_window            = sys_ctrl_ptr + INTEG_WINDOW_OFFSET;
   sys_ctrl.integ_enable            = sys_ctrl_ptr + INTEG_ENABLE_OFFSET;
   sys_ctrl.boot_test_skip          = sys_ctrl_ptr + BOOT_TEST_SKIP_OFFSET;
-  sys_ctrl.boot_test_debug         = sys_ctrl_ptr + BOOT_TEST_DEBUG_OFFSET;
+  sys_ctrl.debug                   = sys_ctrl_ptr + DEBUG_OFFSET;
   
   return sys_ctrl;
 }
@@ -55,15 +55,15 @@ void sys_ctrl_set_boot_test_skip(struct sys_ctrl_t *sys_ctrl, uint16_t value, bo
   }
 }
 
-// Set the boot_test_debug register to a 16-bit value
-void sys_ctrl_set_boot_test_debug(struct sys_ctrl_t *sys_ctrl, uint16_t value, bool verbose) {
+// Set the debug register to a 16-bit value
+void sys_ctrl_set_debug(struct sys_ctrl_t *sys_ctrl, uint16_t value, bool verbose) {
   if (verbose) {
-    printf("Setting boot_test_debug to 0x%" PRIx32 "\n", value);
+    printf("Setting debug to 0x%" PRIx32 "\n", value);
   }
-  // Write the 16-bit value to the boot_test_debug register
-  *(sys_ctrl->boot_test_debug) = (uint32_t)value;
+  // Write the 16-bit value to the debug register
+  *(sys_ctrl->debug) = (uint32_t)value;
   if (verbose) {
-    printf("boot_test_debug set to 0x%" PRIx32 "\n", *(sys_ctrl->boot_test_debug));
+    printf("debug set to 0x%" PRIx32 "\n", *(sys_ctrl->debug));
   }
 }
 

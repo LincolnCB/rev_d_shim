@@ -59,7 +59,7 @@
 #define STS_INTEG_WINDOW_OOB         (uint32_t) 0x0205 // Integrator window out of bounds.
 #define STS_INTEG_EN_OOB             (uint32_t) 0x0206 // Integrator enable register out of bounds.
 #define STS_BOOT_TEST_SKIP_OOB       (uint32_t) 0x0207 // Boot test skip out of bounds.
-#define STS_BOOT_TEST_DEBUG_OOB      (uint32_t) 0x0208 // Boot test debug out of bounds.
+#define STS_DEBUG_OOB                (uint32_t) 0x0208 // Debug out of bounds.
 // Shutdown sense
 #define STS_SHUTDOWN_SENSE           (uint32_t) 0x0300 // Shutdown sense detected.
 #define STS_EXT_SHUTDOWN             (uint32_t) 0x0301 // External shutdown triggered.
@@ -92,11 +92,12 @@
 #define STS_UNEXP_ADC_TRIG           (uint32_t) 0x0706 // Unexpected ADC trigger.
 
 // FIFO status interpretation macros
-#define FIFO_STS_WORD_COUNT(sts)   ((sts) & 0xFFFFFFF)   // Number of words in FIFO
-#define FIFO_STS_FULL(sts)         (((sts) >> 28) & 0x1) // FIFO full flag
-#define FIFO_STS_ALMOST_FULL(sts)  (((sts) >> 29) & 0x1) // FIFO almost full flag
-#define FIFO_STS_EMPTY(sts)        (((sts) >> 30) & 0x1) // FIFO empty flag
-#define FIFO_STS_ALMOST_EMPTY(sts) (((sts) >> 31) & 0x1) // FIFO almost empty flag
+#define FIFO_STS_WORD_COUNT(sts)   ((sts) & 0x7FFFFFF)   // Number of words in FIFO
+#define FIFO_STS_FULL(sts)         (((sts) >> 27) & 0x1) // FIFO full flag
+#define FIFO_STS_ALMOST_FULL(sts)  (((sts) >> 28) & 0x1) // FIFO almost full flag
+#define FIFO_STS_EMPTY(sts)        (((sts) >> 29) & 0x1) // FIFO empty flag
+#define FIFO_STS_ALMOST_EMPTY(sts) (((sts) >> 30) & 0x1) // FIFO almost empty flag
+#define FIFO_PRESENT(sts)          (((sts) >> 31) & 0x1) // FIFO present flag
 
 
 //////////////////////////////////////////////////////////////////
