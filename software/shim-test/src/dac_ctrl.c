@@ -23,7 +23,7 @@ struct dac_ctrl_t create_dac_ctrl(bool verbose) {
 uint32_t dac_read(struct dac_ctrl_t *dac_ctrl, uint8_t board) {
   if (board > 7) {
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
-    exit(EXIT_FAILURE);
+    return 0; // Return 0 for invalid board
   }
 
   return *(dac_ctrl->buffer[board]);
@@ -100,11 +100,11 @@ void dac_print_state(uint8_t state_code) {
 void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool trig, bool cont, bool ldac, uint32_t delay) {
   if (board > 7) {
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
-    exit(EXIT_FAILURE);
+    return;
   }
   if (delay > 0x0FFFFFFF) {
     fprintf(stderr, "Invalid delay value: %u. Must be 0 to 268435455.\n", delay);
-    exit(EXIT_FAILURE);
+    return;
   }
   uint32_t cmd_word = (DAC_CMD_NO_OP << 30) |
                      ((trig ? 1 : 0) << DAC_CMD_TRIG_BIT) |
@@ -118,11 +118,11 @@ void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool trig, bool co
 void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[8], bool trig, bool cont, bool ldac, uint32_t delay) {
   if (board > 7) {
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
-    exit(EXIT_FAILURE);
+    return;
   }
   if (delay > 0x0FFFFFFF) {
     fprintf(stderr, "Invalid delay value: %u. Must be 0 to 268435455.\n", delay);
-    exit(EXIT_FAILURE);
+    return;
   }
   
   uint32_t cmd_word = (DAC_CMD_DAC_WR << 30) |
@@ -146,11 +146,11 @@ void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[
 void dac_cmd_set_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel, int16_t cal) {
   if (board > 7) {
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
-    exit(EXIT_FAILURE);
+    return;
   }
   if (channel > 7) {
     fprintf(stderr, "Invalid channel: %d. Must be 0-7.\n", channel);
-    exit(EXIT_FAILURE);
+    return;
   }
 
   uint32_t cmd_word = (DAC_CMD_SET_CAL << 30) |
@@ -163,7 +163,7 @@ void dac_cmd_set_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel
 void dac_cmd_cancel(struct dac_ctrl_t *dac_ctrl, uint8_t board) {
   if (board > 7) {
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
-    exit(EXIT_FAILURE);
+    return;
   }
 
   uint32_t cmd_word = (DAC_CMD_CANCEL << 30);

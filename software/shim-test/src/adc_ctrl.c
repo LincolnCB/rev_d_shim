@@ -23,7 +23,7 @@ struct adc_ctrl_t create_adc_ctrl(bool verbose) {
 uint32_t adc_read(struct adc_ctrl_t *adc_ctrl, uint8_t board) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
-    exit(EXIT_FAILURE);
+    return 0; // Return 0 for invalid board
   }
 
   return *(adc_ctrl->buffer[board]);
@@ -100,11 +100,11 @@ void adc_print_state(uint8_t state_code) {
 void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t delay) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
-    exit(EXIT_FAILURE);
+    return;
   }
   if (delay > 0x0FFFFFFF) {
     fprintf(stderr, "Invalid delay value: %u. Must be 0 to 268435455.\n", delay);
-    exit(EXIT_FAILURE);
+    return;
   }
   uint32_t cmd_word = (ADC_CMD_NO_OP << 30) |
                      ((trig ? 1 : 0) << ADC_CMD_TRIG_BIT) |
@@ -117,11 +117,11 @@ void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool co
 void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t delay) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
-    exit(EXIT_FAILURE);
+    return;
   }
   if (delay > 0x0FFFFFFF) {
     fprintf(stderr, "Invalid delay value: %u. Must be 0 to 268435455.\n", delay);
-    exit(EXIT_FAILURE);
+    return;
   }
   uint32_t cmd_word = (ADC_CMD_ADC_RD << 30) |
                      ((trig ? 1 : 0) << ADC_CMD_TRIG_BIT) |
@@ -134,13 +134,13 @@ void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool 
 void adc_cmd_set_ord(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t channel_order[8]) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
-    exit(EXIT_FAILURE);
+    return;
   }
   // Validate channel order values (duplicates are okay, just must be 0-7)
   for (int i = 0; i < 8; i++) {
     if (channel_order[i] > 7) {
       fprintf(stderr, "Invalid channel index in order: %d. Must be 0-7.\n", channel_order[i]);
-      exit(EXIT_FAILURE);
+      return;
     }
   }
 
@@ -160,7 +160,7 @@ void adc_cmd_set_ord(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t channel
 void adc_cmd_cancel(struct adc_ctrl_t *adc_ctrl, uint8_t board) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
-    exit(EXIT_FAILURE);
+    return;
   }
   
   uint32_t cmd_word = (ADC_CMD_CANCEL << 30);
