@@ -42,6 +42,12 @@
 #define DAC_DBG_N_CS_TIMER        3
 #define DAC_DBG_SPI_BIT           4
 
+// DAC signed to offset conversion
+#define DAC_OFFSET_TO_SIGNED(val) \
+  (((val) == 0xFFFF) ? 0 : ((int16_t)((val) - 32767)))
+#define DAC_SIGNED_TO_OFFSET(val) \
+  (((val) < -32767 || (val) > 32767) ? 32767 : ((uint16_t)((val) + 32767)))
+
 //////////////////////////////////////////////////////////////////
 
 // DAC control structure
@@ -58,5 +64,11 @@ uint32_t dac_read(struct dac_ctrl_t *dac_ctrl, uint8_t board);
 void dac_print_debug(uint32_t dac_value);
 // Interpret and print the DAC state
 void dac_print_state(uint8_t state_code);
+
+// DAC command word functions
+void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool trig, bool cont, bool ldac, uint32_t delay);
+void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[8], bool trig, bool cont, bool ldac, uint32_t delay);
+void dac_cmd_set_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel, int16_t offset);
+void dac_cmd_cancel(struct dac_ctrl_t *dac_ctrl, uint8_t board);
 
 #endif // DAC_CTRL_H
