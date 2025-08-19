@@ -27,43 +27,61 @@
  */
 static command_entry_t command_table[] = {
   // Basic system commands (no arguments)
-  {"help", cmd_help, {"help", 0, 0, {-1}, "Show this help message"}},
-  {"verbose", cmd_verbose, {"verbose", 0, 0, {-1}, "Toggle verbose mode"}},
-  {"on", cmd_on, {"on", 0, 0, {-1}, "Turn the system on"}},
-  {"off", cmd_off, {"off", 0, 0, {-1}, "Turn the system off"}},
-  {"sts", cmd_sts, {"sts", 0, 0, {-1}, "Show hardware manager status"}},
-  {"dbg", cmd_dbg, {"dbg", 0, 0, {-1}, "Show debug registers"}},
-  {"exit", cmd_exit, {"exit", 0, 0, {-1}, "Exit the program"}},
+  {"help", cmd_help, {0, 0, {-1}, "Show this help message"}},
+  {"verbose", cmd_verbose, {0, 0, {-1}, "Toggle verbose mode"}},
+  {"on", cmd_on, {0, 0, {-1}, "Turn the system on"}},
+  {"off", cmd_off, {0, 0, {-1}, "Turn the system off"}},
+  {"sts", cmd_sts, {0, 0, {-1}, "Show hardware manager status"}},
+  {"dbg", cmd_dbg, {0, 0, {-1}, "Show debug registers"}},
+  {"exit", cmd_exit, {0, 0, {-1}, "Exit the program"}},
   
   // Configuration commands (require 1 value argument)
-  {"set_boot_test_skip", cmd_set_boot_test_skip, {"set_boot_test_skip", 1, 1, {-1}, "Set boot test skip register to a 16-bit value"}},
-  {"set_debug", cmd_set_debug, {"set_debug", 1, 1, {-1}, "Set debug register to a 16-bit value"}},
-  {"set_cmd_buf_reset", cmd_set_cmd_buf_reset, {"set_cmd_buf_reset", 1, 1, {-1}, "Set command buffer reset register to a 17-bit value"}},
-  {"set_data_buf_reset", cmd_set_data_buf_reset, {"set_data_buf_reset", 1, 1, {-1}, "Set data buffer reset register to a 17-bit value"}},
+  {"set_boot_test_skip", cmd_set_boot_test_skip, {1, 1, {-1}, "Set boot test skip register to a 16-bit value"}},
+  {"set_debug", cmd_set_debug, {1, 1, {-1}, "Set debug register to a 16-bit value"}},
+  {"set_cmd_buf_reset", cmd_set_cmd_buf_reset, {1, 1, {-1}, "Set command buffer reset register to a 17-bit value"}},
+  {"set_data_buf_reset", cmd_set_data_buf_reset, {1, 1, {-1}, "Set data buffer reset register to a 17-bit value"}},
   
   // FIFO status commands (require 1 board number argument)
-  {"dac_cmd_fifo_sts", cmd_dac_cmd_fifo_sts, {"dac_cmd_fifo_sts", 1, 1, {-1}, "Show DAC command FIFO status for specified board (0-7)"}},
-  {"dac_data_fifo_sts", cmd_dac_data_fifo_sts, {"dac_data_fifo_sts", 1, 1, {-1}, "Show DAC data FIFO status for specified board (0-7)"}},
-  {"adc_cmd_fifo_sts", cmd_adc_cmd_fifo_sts, {"adc_cmd_fifo_sts", 1, 1, {-1}, "Show ADC command FIFO status for specified board (0-7)"}},
-  {"adc_data_fifo_sts", cmd_adc_data_fifo_sts, {"adc_data_fifo_sts", 1, 1, {-1}, "Show ADC data FIFO status for specified board (0-7)"}},
+  {"dac_cmd_fifo_sts", cmd_dac_cmd_fifo_sts, {1, 1, {-1}, "Show DAC command FIFO status for specified board (0-7)"}},
+  {"dac_data_fifo_sts", cmd_dac_data_fifo_sts, {1, 1, {-1}, "Show DAC data FIFO status for specified board (0-7)"}},
+  {"adc_cmd_fifo_sts", cmd_adc_cmd_fifo_sts, {1, 1, {-1}, "Show ADC command FIFO status for specified board (0-7)"}},
+  {"adc_data_fifo_sts", cmd_adc_data_fifo_sts, {1, 1, {-1}, "Show ADC data FIFO status for specified board (0-7)"}},
   
   // Trigger FIFO status commands (no arguments - triggers are global)
-  {"trig_cmd_fifo_sts", cmd_trig_cmd_fifo_sts, {"trig_cmd_fifo_sts", 0, 0, {-1}, "Show trigger command FIFO status"}},
-  {"trig_data_fifo_sts", cmd_trig_data_fifo_sts, {"trig_data_fifo_sts", 0, 0, {-1}, "Show trigger data FIFO status"}},
+  {"trig_cmd_fifo_sts", cmd_trig_cmd_fifo_sts, {0, 0, {-1}, "Show trigger command FIFO status"}},
+  {"trig_data_fifo_sts", cmd_trig_data_fifo_sts, {0, 0, {-1}, "Show trigger data FIFO status"}},
   
   // Data reading commands (require board number for DAC/ADC, support --all flag)
-  {"read_dac_data", cmd_read_dac_data, {"read_dac_data", 1, 1, {FLAG_ALL, -1}, "Read raw DAC data sample(s) from specified board (0-7)"}},
-  {"read_adc_data", cmd_read_adc_data, {"read_adc_data", 1, 1, {FLAG_ALL, -1}, "Read raw ADC data sample(s) from specified board (0-7)"}},
+  {"read_dac_data", cmd_read_dac_data, {1, 1, {FLAG_ALL, -1}, "Read raw DAC data sample(s) from specified board (0-7)"}},
+  {"read_adc_data", cmd_read_adc_data, {1, 1, {FLAG_ALL, -1}, "Read raw ADC data sample(s) from specified board (0-7)"}},
   
   // Trigger data reading commands (no arguments - triggers are global, support --all flag)
-  {"read_trig_data", cmd_read_trig_data, {"read_trig_data", 0, 0, {FLAG_ALL, -1}, "Read trigger data sample(s)"}},
+  {"read_trig_data", cmd_read_trig_data, {0, 0, {FLAG_ALL, -1}, "Read trigger data sample(s)"}},
   
   // Debug reading commands (require board number, support --all flag)
-  {"read_dac_dbg", cmd_read_dac_dbg, {"read_dac_dbg", 1, 1, {FLAG_ALL, -1}, "Read and print debug information for DAC data from specified board (0-7)"}},
-  {"read_adc_dbg", cmd_read_adc_dbg, {"read_adc_dbg", 1, 1, {FLAG_ALL, -1}, "Read and print debug information for ADC data from specified board (0-7)"}},
+  {"read_dac_dbg", cmd_read_dac_dbg, {1, 1, {FLAG_ALL, -1}, "Read and print debug information for DAC data from specified board (0-7)"}},
+  {"read_adc_dbg", cmd_read_adc_dbg, {1, 1, {FLAG_ALL, -1}, "Read and print debug information for ADC data from specified board (0-7)"}},
+  
+  // Trigger command functions (no arguments)
+  {"trig_sync_ch", cmd_trig_sync_ch, {0, 0, {-1}, "Send trigger synchronize channels command"}},
+  {"trig_force_trig", cmd_trig_force_trig, {0, 0, {-1}, "Send trigger force trigger command"}},
+  {"trig_cancel", cmd_trig_cancel, {0, 0, {-1}, "Send trigger cancel command"}},
+  
+  // Trigger command functions (require 1 value argument with range validation)
+  {"trig_set_lockout", cmd_trig_set_lockout, {1, 1, {-1}, "Send trigger set lockout command with cycles (1 - 0x1FFFFFFF)"}},
+  {"trig_delay", cmd_trig_delay, {1, 1, {-1}, "Send trigger delay command with cycles (0 - 0x1FFFFFFF)"}},
+  {"trig_expect_ext", cmd_trig_expect_ext, {1, 1, {-1}, "Send trigger expect external command with count (0 - 0x1FFFFFFF)"}},
+  
+  // DAC and ADC command functions (require board, trig_mode, value arguments)
+  {"dac_noop", cmd_dac_noop, {3, 3, {FLAG_CONTINUE, -1}, "Send DAC no-op command: <board> <\"trig\"|\"delay\"> <value> [--continue]"}},
+  {"adc_noop", cmd_adc_noop, {3, 3, {FLAG_CONTINUE, -1}, "Send ADC no-op command: <board> <\"trig\"|\"delay\"> <value> [--continue]"}},
+  
+  // DAC and ADC cancel command functions (require board number)
+  {"dac_cancel", cmd_dac_cancel, {1, 1, {-1}, "Send DAC cancel command to specified board (0-7)"}},
+  {"adc_cancel", cmd_adc_cancel, {1, 1, {-1}, "Send ADC cancel command to specified board (0-7)"}},
   
   // Sentinel entry - marks end of table (must be last)
-  {NULL, NULL, {NULL, 0, 0, {-1}, NULL}}
+  {NULL, NULL, {0, 0, {-1}, NULL}}
 };
 
 // Utility function implementations
@@ -109,6 +127,10 @@ int parse_command_line(const char* line, const char** args, int* arg_count, comm
     if (strcmp(token, "--all") == 0) {
       if (*flag_count < MAX_FLAGS) {
         flags[(*flag_count)++] = FLAG_ALL;
+      }
+    } else if (strcmp(token, "--continue") == 0) {
+      if (*flag_count < MAX_FLAGS) {
+        flags[(*flag_count)++] = FLAG_CONTINUE;
       }
     } else {
       args[(*arg_count)++] = token;
@@ -208,14 +230,19 @@ void print_help(void) {
       
       // Add optional flags
       bool has_all_flag = false;
+      bool has_continue_flag = false;
       for (int j = 0; j < MAX_FLAGS && command_table[i].info.valid_flags[j] != -1; j++) {
         if (command_table[i].info.valid_flags[j] == FLAG_ALL) {
           has_all_flag = true;
-          break;
+        } else if (command_table[i].info.valid_flags[j] == FLAG_CONTINUE) {
+          has_continue_flag = true;
         }
       }
       if (has_all_flag) {
         strcat(arg_str, " [--all]");
+      }
+      if (has_continue_flag) {
+        strcat(arg_str, " [--continue]");
       }
       
       printf("  %s%-*s - %s\n", 
@@ -582,5 +609,192 @@ int cmd_read_adc_dbg(const char** args, int arg_count, const command_flag_t* fla
     printf("Reading one debug sample from ADC FIFO for board %d...\n", board);
     adc_print_debug(data);
   }
+  return 0;
+}
+
+// Trigger command implementations
+int cmd_trig_sync_ch(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  trigger_cmd_sync_ch(ctx->trigger_ctrl);
+  printf("Trigger synchronize channels command sent.\n");
+  return 0;
+}
+
+int cmd_trig_force_trig(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  trigger_cmd_force_trig(ctx->trigger_ctrl);
+  printf("Trigger force trigger command sent.\n");
+  return 0;
+}
+
+int cmd_trig_cancel(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  trigger_cmd_cancel(ctx->trigger_ctrl);
+  printf("Trigger cancel command sent.\n");
+  return 0;
+}
+
+int cmd_trig_set_lockout(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  char* endptr;
+  uint32_t cycles = parse_value(args[0], &endptr);
+  if (*endptr != '\0') {
+    fprintf(stderr, "Invalid value for trig_set_lockout: '%s'\n", args[0]);
+    return -1;
+  }
+  
+  if (cycles < 1 || cycles > 0x1FFFFFFF) {
+    fprintf(stderr, "Lockout cycles out of range: %u (valid range: 1 - %u)\n", cycles, 0x1FFFFFFF);
+    return -1;
+  }
+  
+  trigger_cmd_set_lockout(ctx->trigger_ctrl, cycles);
+  printf("Trigger set lockout command sent with %u cycles.\n", cycles);
+  return 0;
+}
+
+int cmd_trig_delay(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  char* endptr;
+  uint32_t cycles = parse_value(args[0], &endptr);
+  if (*endptr != '\0') {
+    fprintf(stderr, "Invalid value for trig_delay: '%s'\n", args[0]);
+    return -1;
+  }
+  
+  if (cycles > 0x1FFFFFFF) {
+    fprintf(stderr, "Delay cycles out of range: %u (valid range: 0 - %u)\n", cycles, 0x1FFFFFFF);
+    return -1;
+  }
+  
+  trigger_cmd_delay(ctx->trigger_ctrl, cycles);
+  printf("Trigger delay command sent with %u cycles.\n", cycles);
+  return 0;
+}
+
+int cmd_trig_expect_ext(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  char* endptr;
+  uint32_t count = parse_value(args[0], &endptr);
+  if (*endptr != '\0') {
+    fprintf(stderr, "Invalid value for trig_expect_ext: '%s'\n", args[0]);
+    return -1;
+  }
+  
+  if (count > 0x1FFFFFFF) {
+    fprintf(stderr, "External trigger count out of range: %u (valid range: 0 - %u)\n", count, 0x1FFFFFFF);
+    return -1;
+  }
+  
+  trigger_cmd_expect_ext(ctx->trigger_ctrl, count);
+  printf("Trigger expect external command sent with count %u.\n", count);
+  return 0;
+}
+
+// DAC and ADC no-op command implementations
+int cmd_dac_noop(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  // Parse board number
+  int board = parse_board_number(args[0]);
+  if (board < 0) {
+    fprintf(stderr, "Invalid board number for dac_noop: '%s'. Must be 0-7.\n", args[0]);
+    return -1;
+  }
+  
+  // Parse trigger mode
+  bool trig;
+  if (strcmp(args[1], "trig") == 0) {
+    trig = true;
+  } else if (strcmp(args[1], "delay") == 0) {
+    trig = false;
+  } else {
+    fprintf(stderr, "Invalid trigger mode for dac_noop: '%s'. Must be 'trig' or 'delay'.\n", args[1]);
+    return -1;
+  }
+  
+  // Parse value
+  char* endptr;
+  uint32_t value = parse_value(args[2], &endptr);
+  if (*endptr != '\0') {
+    fprintf(stderr, "Invalid value for dac_noop: '%s'\n", args[2]);
+    return -1;
+  }
+  
+  if (value > 0x0FFFFFFF) {
+    fprintf(stderr, "Value out of range: %u (valid range: 0 - %u)\n", value, 0x0FFFFFFF);
+    return -1;
+  }
+  
+  // Check for continue flag
+  bool cont = has_flag(flags, flag_count, FLAG_CONTINUE);
+  
+  // Execute DAC no-op command
+  dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, trig, cont, false, value);
+  printf("DAC no-op command sent to board %d with %s mode, value %u%s.\n", 
+         board, trig ? "trigger" : "delay", value, cont ? ", continuous" : "");
+  return 0;
+}
+
+int cmd_adc_noop(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  // Parse board number
+  int board = parse_board_number(args[0]);
+  if (board < 0) {
+    fprintf(stderr, "Invalid board number for adc_noop: '%s'. Must be 0-7.\n", args[0]);
+    return -1;
+  }
+  
+  // Parse trigger mode
+  bool trig;
+  if (strcmp(args[1], "trig") == 0) {
+    trig = true;
+  } else if (strcmp(args[1], "delay") == 0) {
+    trig = false;
+  } else {
+    fprintf(stderr, "Invalid trigger mode for adc_noop: '%s'. Must be 'trig' or 'delay'.\n", args[1]);
+    return -1;
+  }
+  
+  // Parse value
+  char* endptr;
+  uint32_t value = parse_value(args[2], &endptr);
+  if (*endptr != '\0') {
+    fprintf(stderr, "Invalid value for adc_noop: '%s'\n", args[2]);
+    return -1;
+  }
+  
+  if (value > 0x0FFFFFFF) {
+    fprintf(stderr, "Value out of range: %u (valid range: 0 - %u)\n", value, 0x0FFFFFFF);
+    return -1;
+  }
+  
+  // Check for continue flag
+  bool cont = has_flag(flags, flag_count, FLAG_CONTINUE);
+  
+  // Execute ADC no-op command
+  adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, trig, cont, value);
+  printf("ADC no-op command sent to board %d with %s mode, value %u%s.\n", 
+         board, trig ? "trigger" : "delay", value, cont ? ", continuous" : "");
+  return 0;
+}
+
+// DAC and ADC cancel command implementations
+int cmd_dac_cancel(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  // Parse board number
+  int board = parse_board_number(args[0]);
+  if (board < 0) {
+    fprintf(stderr, "Invalid board number for dac_cancel: '%s'. Must be 0-7.\n", args[0]);
+    return -1;
+  }
+  
+  // Execute DAC cancel command
+  dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board);
+  printf("DAC cancel command sent to board %d.\n", board);
+  return 0;
+}
+
+int cmd_adc_cancel(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  // Parse board number
+  int board = parse_board_number(args[0]);
+  if (board < 0) {
+    fprintf(stderr, "Invalid board number for adc_cancel: '%s'. Must be 0-7.\n", args[0]);
+    return -1;
+  }
+  
+  // Execute ADC cancel command
+  adc_cmd_cancel(ctx->adc_ctrl, (uint8_t)board);
+  printf("ADC cancel command sent to board %d.\n", board);
   return 0;
 }
