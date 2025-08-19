@@ -33,6 +33,7 @@ static command_entry_t command_table[] = {
   {"off", cmd_off, {0, 0, {-1}, "Turn the system off"}},
   {"sts", cmd_sts, {0, 0, {-1}, "Show hardware manager status"}},
   {"dbg", cmd_dbg, {0, 0, {-1}, "Show debug registers"}},
+  {"hard_reset", cmd_hard_reset, {0, 0, {-1}, "Perform hard reset: turn the system off, set cmd/data buffer resets to 0x1FFFF, then to 0"}},
   {"exit", cmd_exit, {0, 0, {-1}, "Exit the program"}},
   
   // Configuration commands (require 1 value argument)
@@ -329,6 +330,33 @@ int cmd_sts(const char** args, int arg_count, const command_flag_t* flags, int f
 int cmd_dbg(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   printf("Debug registers:\n");
   print_debug_registers(ctx->sys_sts);
+  return 0;
+}
+
+int cmd_hard_reset(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  printf("Performing hard reset sequence...\n");
+  
+  // Step 1: Turn the system off
+  printf("Turning system off...\n");
+  sys_ctrl_turn_off(ctx->sys_ctrl, *(ctx->verbose));
+  
+  // Step 2: Set command buffer reset to 0x1FFFF
+  printf("Setting command buffer reset to 0x1FFFF...\n");
+  sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
+  
+  // Step 3: Set data buffer reset to 0x1FFFF
+  printf("Setting data buffer reset to 0x1FFFF...\n");
+  sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
+  
+  // Step 4: Set command buffer reset back to 0
+  printf("Setting command buffer reset to 0...\n");
+  sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
+  
+  // Step 5: Set data buffer reset back to 0
+  printf("Setting data buffer reset to 0...\n");
+  sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
+  
+  printf("Hard reset sequence completed.\n");
   return 0;
 }
 

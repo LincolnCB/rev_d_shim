@@ -307,10 +307,14 @@ uint32_t sys_sts_get_trig_data_fifo_status(struct sys_sts_t *sys_sts, bool verbo
 void print_fifo_status(uint32_t fifo_status, const char *fifo_name) {
   printf("%s FIFO Status:\n", fifo_name);
   printf("  Present: %s\n", FIFO_PRESENT(fifo_status) ? "Yes" : "No");
-  printf("  Word Count: %u\n", FIFO_STS_WORD_COUNT(fifo_status));
-  printf("  Full: %s\n", FIFO_STS_FULL(fifo_status) ? "Yes" : "No");
-  printf("  Almost Full: %s\n", FIFO_STS_ALMOST_FULL(fifo_status) ? "Yes" : "No");
-  printf("  Empty: %s\n", FIFO_STS_EMPTY(fifo_status) ? "Yes" : "No");
-  printf("  Almost Empty: %s\n", FIFO_STS_ALMOST_EMPTY(fifo_status) ? "Yes" : "No");
+  
+  // Only print detailed status if FIFO is present
+  if (FIFO_PRESENT(fifo_status)) {
+    printf("  Word Count: %u\n", FIFO_STS_WORD_COUNT(fifo_status));
+    printf("  Full: %s\n", FIFO_STS_FULL(fifo_status) ? "Yes" : "No");
+    printf("  Almost Full: %s\n", FIFO_STS_ALMOST_FULL(fifo_status) ? "Yes" : "No");
+    printf("  Empty: %s\n", FIFO_STS_EMPTY(fifo_status) ? "Yes" : "No");
+    printf("  Almost Empty: %s\n", FIFO_STS_ALMOST_EMPTY(fifo_status) ? "Yes" : "No");
+  }
 }
 

@@ -69,6 +69,7 @@ int cmd_on(const char** args, int arg_count, const command_flag_t* flags, int fl
 int cmd_off(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);                 // Turn the system off
 int cmd_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);                 // Show hardware manager status
 int cmd_dbg(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);                 // Show debug registers
+int cmd_hard_reset(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);          // Perform hard reset sequence
 int cmd_exit(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);                // Exit the program
 
 // Configuration commands (require 1 value argument)
