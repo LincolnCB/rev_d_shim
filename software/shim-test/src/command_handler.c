@@ -51,9 +51,12 @@ static command_entry_t command_table[] = {
   {"trig_cmd_fifo_sts", cmd_trig_cmd_fifo_sts, {"trig_cmd_fifo_sts", 0, 0, {-1}, "Show trigger command FIFO status"}},
   {"trig_data_fifo_sts", cmd_trig_data_fifo_sts, {"trig_data_fifo_sts", 0, 0, {-1}, "Show trigger data FIFO status"}},
   
-  // Data reading commands (require board number, no optional flags)
-  {"read_dac_data", cmd_read_dac_data, {"read_dac_data", 1, 1, {-1}, "Read one raw DAC data sample from specified board (0-7)"}},
-  {"read_adc_data", cmd_read_adc_data, {"read_adc_data", 1, 1, {-1}, "Read one raw ADC data sample from specified board (0-7)"}},
+  // Data reading commands (require board number for DAC/ADC, support --all flag)
+  {"read_dac_data", cmd_read_dac_data, {"read_dac_data", 1, 1, {FLAG_ALL, -1}, "Read raw DAC data sample(s) from specified board (0-7)"}},
+  {"read_adc_data", cmd_read_adc_data, {"read_adc_data", 1, 1, {FLAG_ALL, -1}, "Read raw ADC data sample(s) from specified board (0-7)"}},
+  
+  // Trigger data reading commands (no arguments - triggers are global, support --all flag)
+  {"read_trig_data", cmd_read_trig_data, {"read_trig_data", 0, 0, {FLAG_ALL, -1}, "Read trigger data sample(s)"}},
   
   // Debug reading commands (require board number, support --all flag)
   {"read_dac_dbg", cmd_read_dac_dbg, {"read_dac_dbg", 1, 1, {FLAG_ALL, -1}, "Read and print debug information for DAC data from specified board (0-7)"}},
@@ -195,7 +198,8 @@ void print_help(void) {
         if (strstr(command_table[i].name, "set_") == command_table[i].name) {
           strcat(arg_str, " <value>");
         } else if (strstr(command_table[i].name, "_fifo_sts") != NULL || 
-                   strstr(command_table[i].name, "read_") == command_table[i].name) {
+                   (strstr(command_table[i].name, "read_") == command_table[i].name && 
+                    strstr(command_table[i].name, "trig") == NULL)) {
           strcat(arg_str, " <board>");
         } else {
           strcat(arg_str, " <arg>");
@@ -224,14 +228,15 @@ void print_help(void) {
       if (strstr(command_table[i].name, "set_") == command_table[i].name) {
         printf("%-24s   (prefix binary with \"0b\", octal with \"0\", and hex with \"0x\")\n", "");
       } else if (strstr(command_table[i].name, "_fifo_sts") != NULL || 
-                 strstr(command_table[i].name, "read_") == command_table[i].name) {
+                 (strstr(command_table[i].name, "read_") == command_table[i].name && 
+                  strstr(command_table[i].name, "trig") == NULL)) {
         if (strstr(command_table[i].name, "board") || strstr(command_table[i].name, "dac") || 
             strstr(command_table[i].name, "adc")) {
           printf("%-24s   Board number must be 0-7\n", "");
         }
       }
       if (has_all_flag) {
-        printf("%-24s   Use --all to read all debug information currently in the FIFO\n", "");
+        printf("%-24s   Use --all to read all data currently in the FIFO\n", "");
       }
     }
   }
@@ -252,6 +257,14 @@ static void print_data_words(uint32_t data) {
     printf("%u", (word2 >> bit) & 1);
   }
   printf("\n");
+}
+
+// Helper function for printing 64-bit trigger data
+static void print_trigger_data(uint64_t data) {
+  uint32_t low_word = data & 0xFFFFFFFF;
+  uint32_t high_word = (data >> 32) & 0xFFFFFFFF;
+  printf("  Low 32 bits:  0x%08" PRIx32 " (%" PRIu32 ")\n", low_word, low_word);
+  printf("  High 32 bits: 0x%08" PRIx32 " (%" PRIu32 ")\n", high_word, high_word);
 }
 
 // Command handler implementations
@@ -417,9 +430,23 @@ int cmd_read_dac_data(const char** args, int arg_count, const command_flag_t* fl
     return -1;
   }
   
-  uint32_t data = dac_read(ctx->dac_ctrl, (uint8_t)board);
-  printf("Read DAC data from board %d: 0x%" PRIx32 "\n", board, data);
-  print_data_words(data);
+  bool read_all = has_flag(flags, flag_count, FLAG_ALL);
+  
+  if (read_all) {
+    printf("Reading all data from DAC FIFO for board %d...\n", board);
+    int count = 0;
+    while (!FIFO_STS_EMPTY(sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
+      uint32_t data = dac_read(ctx->dac_ctrl, (uint8_t)board);
+      printf("Sample %d - DAC data from board %d: 0x%" PRIx32 "\n", ++count, board, data);
+      print_data_words(data);
+      printf("\n");
+    }
+    printf("Read %d samples total.\n", count);
+  } else {
+    uint32_t data = dac_read(ctx->dac_ctrl, (uint8_t)board);
+    printf("Read DAC data from board %d: 0x%" PRIx32 "\n", board, data);
+    print_data_words(data);
+  }
   return 0;
 }
 
@@ -440,9 +467,55 @@ int cmd_read_adc_data(const char** args, int arg_count, const command_flag_t* fl
     return -1;
   }
   
-  uint32_t data = adc_read(ctx->adc_ctrl, (uint8_t)board);
-  printf("Read ADC data from board %d: 0x%" PRIx32 "\n", board, data);
-  print_data_words(data);
+  bool read_all = has_flag(flags, flag_count, FLAG_ALL);
+  
+  if (read_all) {
+    printf("Reading all data from ADC FIFO for board %d...\n", board);
+    int count = 0;
+    while (!FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
+      uint32_t data = adc_read(ctx->adc_ctrl, (uint8_t)board);
+      printf("Sample %d - ADC data from board %d: 0x%" PRIx32 "\n", ++count, board, data);
+      print_data_words(data);
+      printf("\n");
+    }
+    printf("Read %d samples total.\n", count);
+  } else {
+    uint32_t data = adc_read(ctx->adc_ctrl, (uint8_t)board);
+    printf("Read ADC data from board %d: 0x%" PRIx32 "\n", board, data);
+    print_data_words(data);
+  }
+  return 0;
+}
+
+int cmd_read_trig_data(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  uint32_t fifo_status = sys_sts_get_trig_data_fifo_status(ctx->sys_sts, *(ctx->verbose));
+  if (FIFO_PRESENT(fifo_status) == 0) {
+    printf("Trigger data FIFO is not present. Cannot read data.\n");
+    return -1;
+  }
+
+  if (FIFO_STS_WORD_COUNT(fifo_status) < 2) {
+    printf("Trigger data FIFO does not have enough words (need at least 2). Cannot read data.\n");
+    return -1;
+  }
+
+  bool read_all = has_flag(flags, flag_count, FLAG_ALL);
+
+  if (read_all) {
+    printf("Reading all data from trigger FIFO...\n");
+    int count = 0;
+    while (FIFO_STS_WORD_COUNT(sys_sts_get_trig_data_fifo_status(ctx->sys_sts, *(ctx->verbose))) >= 2) {
+      uint64_t data = trigger_read(ctx->trigger_ctrl);
+      printf("Sample %d - Trigger data: 0x%016" PRIx64 "\n", ++count, data);
+      print_trigger_data(data);
+      printf("\n");
+    }
+    printf("Read %d samples total.\n", count);
+  } else {
+    uint64_t data = trigger_read(ctx->trigger_ctrl);
+    printf("Read trigger data: 0x%016" PRIx64 "\n", data);
+    print_trigger_data(data);
+  }
   return 0;
 }
 
