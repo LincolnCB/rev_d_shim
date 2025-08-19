@@ -123,7 +123,7 @@ int parse_command_line(const char* line, const char** args, int* arg_count, comm
   *flag_count = 0;
   
   char* token = strtok(buffer, " \t");
-  while (token != NULL && *arg_count < MAX_ARGS) {
+  while (token != NULL) {  // Removed the MAX_ARGS constraint to process all tokens
     if (strcmp(token, "--all") == 0) {
       if (*flag_count < MAX_FLAGS) {
         flags[(*flag_count)++] = FLAG_ALL;
@@ -133,7 +133,9 @@ int parse_command_line(const char* line, const char** args, int* arg_count, comm
         flags[(*flag_count)++] = FLAG_CONTINUE;
       }
     } else {
-      args[(*arg_count)++] = token;
+      if (*arg_count < MAX_ARGS) {  // Only limit argument count, not total token processing
+        args[(*arg_count)++] = token;
+      }
     }
     token = strtok(NULL, " \t");
   }

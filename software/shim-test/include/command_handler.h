@@ -11,8 +11,8 @@
 #include "trigger_ctrl.h"
 
 // Command processing structures and types
-#define MAX_ARGS 3
-#define MAX_FLAGS 3
+#define MAX_ARGS 10  // Increased to accommodate command + arguments + flags
+#define MAX_FLAGS 5
 
 typedef enum {
   FLAG_ALL,
