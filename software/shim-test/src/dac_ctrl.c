@@ -97,31 +97,31 @@ void dac_print_state(uint8_t state_code) {
 }
 
 // DAC command word functions
-void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool trig, bool cont, bool ldac, uint32_t delay) {
+void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool trig, bool cont, bool ldac, uint32_t value) {
   if (board > 7) {
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
     return;
   }
-  if (delay > 0x0FFFFFFF) {
-    fprintf(stderr, "Invalid delay value: %u. Must be 0 to 268435455.\n", delay);
+  if (value > 0x0FFFFFFF) {
+    fprintf(stderr, "Invalid command value: %u. Must be 0 to 268435455.\n", value);
     return;
   }
   uint32_t cmd_word = (DAC_CMD_NO_OP << 30) |
                      ((trig ? 1 : 0) << DAC_CMD_TRIG_BIT) |
                      ((cont ? 1 : 0) << DAC_CMD_CONT_BIT) |
                      ((ldac ? 1 : 0) << DAC_CMD_LDAC_BIT) |
-                     (delay & 0x0FFFFFFF);
+                     (value & 0x0FFFFFFF);
   
   *(dac_ctrl->buffer[board]) = cmd_word;
 }
 
-void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[8], bool trig, bool cont, bool ldac, uint32_t delay) {
+void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[8], bool trig, bool cont, bool ldac, uint32_t value) {
   if (board > 7) {
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
     return;
   }
-  if (delay > 0x0FFFFFFF) {
-    fprintf(stderr, "Invalid delay value: %u. Must be 0 to 268435455.\n", delay);
+  if (value > 0x0FFFFFFF) {
+    fprintf(stderr, "Invalid command value: %u. Must be 0 to 268435455.\n", value);
     return;
   }
   
@@ -129,7 +129,7 @@ void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[
                      ((trig ? 1 : 0) << DAC_CMD_TRIG_BIT) |
                      ((cont ? 1 : 0) << DAC_CMD_CONT_BIT) |
                      ((ldac ? 1 : 0) << DAC_CMD_LDAC_BIT) |
-                     (delay & 0x0FFFFFFF);
+                     (value & 0x0FFFFFFF);
   
   *(dac_ctrl->buffer[board]) = cmd_word;
 
