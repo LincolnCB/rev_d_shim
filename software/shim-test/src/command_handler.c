@@ -42,6 +42,10 @@ static command_entry_t command_table[] = {
   {"set_cmd_buf_reset", cmd_set_cmd_buf_reset, {1, 1, {-1}, "Set command buffer reset register to a 17-bit value"}},
   {"set_data_buf_reset", cmd_set_data_buf_reset, {1, 1, {-1}, "Set data buffer reset register to a 17-bit value"}},
   
+  // SPI polarity commands (no arguments)
+  {"invert_mosi_clk", cmd_invert_mosi_clk, {0, 0, {-1}, "Invert MOSI SCK polarity register"}},
+  {"invert_miso_clk", cmd_invert_miso_clk, {0, 0, {-1}, "Invert MISO SCK polarity register"}},
+  
   // FIFO status commands (require 1 board number argument)
   {"dac_cmd_fifo_sts", cmd_dac_cmd_fifo_sts, {1, 1, {-1}, "Show DAC command FIFO status for specified board (0-7)"}},
   {"dac_data_fifo_sts", cmd_dac_data_fifo_sts, {1, 1, {-1}, "Show DAC data FIFO status for specified board (0-7)"}},
@@ -411,6 +415,18 @@ int cmd_set_data_buf_reset(const char** args, int arg_count, const command_flag_
   }
   sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, value, *(ctx->verbose));
   printf("Data buffer reset register set to 0x%" PRIx32 "\n", value);
+  return 0;
+}
+
+int cmd_invert_mosi_clk(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  sys_ctrl_invert_mosi_sck(ctx->sys_ctrl, *(ctx->verbose));
+  printf("MOSI SCK polarity inverted.\n");
+  return 0;
+}
+
+int cmd_invert_miso_clk(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  sys_ctrl_invert_miso_sck(ctx->sys_ctrl, *(ctx->verbose));
+  printf("MISO SCK polarity inverted.\n");
   return 0;
 }
 

@@ -78,6 +78,10 @@ int cmd_set_debug(const char** args, int arg_count, const command_flag_t* flags,
 int cmd_set_cmd_buf_reset(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);   // Set command buffer reset register
 int cmd_set_data_buf_reset(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);  // Set data buffer reset register
 
+// SPI polarity commands (no arguments)
+int cmd_invert_mosi_clk(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);     // Invert MOSI SCK polarity
+int cmd_invert_miso_clk(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);     // Invert MISO SCK polarity
+
 // FIFO status commands (require 1 board number argument)
 int cmd_dac_cmd_fifo_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);    // Show DAC command FIFO status
 int cmd_dac_data_fifo_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);   // Show DAC data FIFO status

@@ -23,6 +23,8 @@ struct sys_ctrl_t create_sys_ctrl(bool verbose) {
   sys_ctrl.integ_enable            = sys_ctrl_ptr + INTEG_ENABLE_OFFSET;
   sys_ctrl.boot_test_skip          = sys_ctrl_ptr + BOOT_TEST_SKIP_OFFSET;
   sys_ctrl.debug                   = sys_ctrl_ptr + DEBUG_OFFSET;
+  sys_ctrl.mosi_sck_pol            = sys_ctrl_ptr + MOSI_SCK_POL_OFFSET;
+  sys_ctrl.miso_sck_pol            = sys_ctrl_ptr + MISO_SCK_POL_OFFSET;
   
   return sys_ctrl;
 }
@@ -96,5 +98,37 @@ void sys_ctrl_set_data_buf_reset(struct sys_ctrl_t *sys_ctrl, uint32_t mask, boo
   *(sys_ctrl->data_buf_reset) = mask & 0x1FFFF; // Mask to 17 bits
   if (verbose) {
     printf("data_buf_reset set to 0x%" PRIx32 "\n", *(sys_ctrl->data_buf_reset));
+  }
+}
+
+// Invert the MOSI SCK polarity register
+void sys_ctrl_invert_mosi_sck(struct sys_ctrl_t *sys_ctrl, bool verbose) {
+  uint32_t current_value = *(sys_ctrl->mosi_sck_pol);
+  uint32_t new_value = current_value ^ 0x1; // Invert the last bit
+  
+  if (verbose) {
+    printf("Inverting MOSI SCK polarity from 0x%" PRIx32 " to 0x%" PRIx32 "\n", current_value, new_value);
+  }
+  
+  *(sys_ctrl->mosi_sck_pol) = new_value;
+  
+  if (verbose) {
+    printf("MOSI SCK polarity set to 0x%" PRIx32 "\n", *(sys_ctrl->mosi_sck_pol));
+  }
+}
+
+// Invert the MISO SCK polarity register
+void sys_ctrl_invert_miso_sck(struct sys_ctrl_t *sys_ctrl, bool verbose) {
+  uint32_t current_value = *(sys_ctrl->miso_sck_pol);
+  uint32_t new_value = current_value ^ 0x1; // Invert the last bit
+  
+  if (verbose) {
+    printf("Inverting MISO SCK polarity from 0x%" PRIx32 " to 0x%" PRIx32 "\n", current_value, new_value);
+  }
+  
+  *(sys_ctrl->miso_sck_pol) = new_value;
+  
+  if (verbose) {
+    printf("MISO SCK polarity set to 0x%" PRIx32 "\n", *(sys_ctrl->miso_sck_pol));
   }
 }

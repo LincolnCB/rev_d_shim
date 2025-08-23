@@ -435,12 +435,27 @@ cell lcb:user:clock_gate spi_mosi_sck_gate {} {
 cell lcb:user:clock_gate spi_miso_sck_gate {} {
   en hw_manager/spi_clk_gate
 }
-## Invert the gated miso clock
-cell xilinx.com:ip:util_vector_logic n_spi_miso_sck_gate {
+## Potentially invert the clocks based on register settings
+cell xilinx.com:ip:util_vector_logic mosi_sck_pol {
   C_SIZE 1
-  C_OPERATION not
+  C_OPERATION xor
 } {
-  Op1 spi_miso_sck_gate/clk_gated
+  Op1 spi_mosi_sck_gate/clk_gated
+  Op2 axi_sys_ctrl/mosi_sck_pol
+}
+# Extend the MISO SCK polarity to 8 bits of the same value
+cell xilinx.com:ip:xlconcat:2.1 miso_sck_ext {
+  NUM_PORTS 8
+} {}
+for {set i 0} {$i < 8} {incr i} {
+  wire miso_sck_ext/In${i} spi_miso_sck_gate/clk_gated
+}
+cell xilinx.com:ip:util_vector_logic miso_sck_pol {
+  C_SIZE 8
+  C_OPERATION xor
+} {
+  Op1 miso_sck_ext/dout
+  Op2 axi_sys_ctrl/miso_sck_pol
   Res spi_clk_domain/miso_sck
 }
 
@@ -454,7 +469,7 @@ module io_bufs io_bufs {
   adc_mosi spi_clk_domain/adc_mosi
   adc_miso spi_clk_domain/adc_miso
   miso_sck spi_miso_sck_gate/clk
-  n_mosi_sck spi_mosi_sck_gate/clk_gated
+  n_mosi_sck mosi_sck_pol/Res
   ldac_p LDAC_p
   ldac_n LDAC_n
   n_dac_cs_p n_DAC_CS_p
