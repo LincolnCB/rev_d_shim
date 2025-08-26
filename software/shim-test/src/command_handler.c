@@ -2,6 +2,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
+#include <unistd.h>
+#include <pwd.h>
+#include <sys/types.h>
+#include <errno.h>
 #include "command_handler.h"
 
 /**
@@ -87,6 +91,15 @@ static command_entry_t command_table[] = {
   
   // DAC write command functions (require board, 8 channel values, trigger mode, and value)
   {"write_dac_update", cmd_write_dac_update, {11, 11, {FLAG_CONTINUE, -1}, "Send DAC write update command: <board> <ch0> <ch1> <ch2> <ch3> <ch4> <ch5> <ch6> <ch7> <\"trig\"|\"delay\"> <value> [--continue]"}},
+  
+  // ADC channel order command functions (require board and 8 channel order values)
+  {"adc_set_ord", cmd_adc_set_ord, {9, 9, {-1}, "Set ADC channel order: <board> <ord0> <ord1> <ord2> <ord3> <ord4> <ord5> <ord6> <ord7> (each order value must be 0-7)"}},
+  
+  // ADC simple read command functions (require board and loop count)
+  {"adc_simple_read", cmd_adc_simple_read, {2, 2, {-1}, "Perform simple ADC reads: <board> <loop_count> (reads ADC with delay mode, value 200)"}},
+  
+  // ADC file output command functions (require board and file path, support --all flag)
+  {"read_adc_to_file", cmd_read_adc_to_file, {2, 2, {FLAG_ALL, -1}, "Read ADC data to file: <board> <file_path> [--all] (converts to signed values, writes one per line)"}},
   
   // Sentinel entry - marks end of table (must be last)
   {NULL, NULL, {0, 0, {-1}, NULL}}
@@ -968,5 +981,175 @@ int cmd_write_dac_update(const char** args, int arg_count, const command_flag_t*
   printf("Channel values: [%d, %d, %d, %d, %d, %d, %d, %d]\n",
          ch_vals[0], ch_vals[1], ch_vals[2], ch_vals[3], 
          ch_vals[4], ch_vals[5], ch_vals[6], ch_vals[7]);
+  return 0;
+}
+
+int cmd_adc_set_ord(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  // Parse board number
+  int board = parse_board_number(args[0]);
+  if (board < 0) {
+    fprintf(stderr, "Invalid board number for adc_set_ord: '%s'. Must be 0-7.\n", args[0]);
+    return -1;
+  }
+  
+  // Parse 8 channel order values (must be 0-7)
+  uint8_t channel_order[8];
+  for (int i = 0; i < 8; i++) {
+    char* endptr;
+    long val = strtol(args[i + 1], &endptr, 0);
+    if (*endptr != '\0') {
+      fprintf(stderr, "Invalid channel order value for adc_set_ord at position %d: '%s'. Must be a number.\n", i, args[i + 1]);
+      return -1;
+    }
+    if (val < 0 || val > 7) {
+      fprintf(stderr, "Invalid channel order value for adc_set_ord at position %d: %ld. Must be 0-7.\n", i, val);
+      return -1;
+    }
+    channel_order[i] = (uint8_t)val;
+  }
+  
+  // Execute ADC set order command
+  adc_cmd_set_ord(ctx->adc_ctrl, (uint8_t)board, channel_order);
+  printf("ADC channel order set for board %d: [%d, %d, %d, %d, %d, %d, %d, %d]\n", 
+         board, channel_order[0], channel_order[1], channel_order[2], channel_order[3],
+         channel_order[4], channel_order[5], channel_order[6], channel_order[7]);
+  return 0;
+}
+
+int cmd_adc_simple_read(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  // Parse board number
+  int board = parse_board_number(args[0]);
+  if (board < 0) {
+    fprintf(stderr, "Invalid board number for adc_simple_read: '%s'. Must be 0-7.\n", args[0]);
+    return -1;
+  }
+  
+  // Parse loop count
+  char* endptr;
+  long loop_count = strtol(args[1], &endptr, 0);
+  if (*endptr != '\0') {
+    fprintf(stderr, "Invalid loop count for adc_simple_read: '%s'. Must be a number.\n", args[1]);
+    return -1;
+  }
+  if (loop_count < 1) {
+    fprintf(stderr, "Invalid loop count for adc_simple_read: %ld. Must be at least 1.\n", loop_count);
+    return -1;
+  }
+  
+  printf("Performing %ld simple ADC reads on board %d (delay mode, value 200)...\n", loop_count, board);
+  
+  // Execute ADC read commands in loop
+  for (long i = 0; i < loop_count; i++) {
+    adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, 200);
+    if (*(ctx->verbose)) {
+      printf("ADC read command %ld sent to board %d\n", i + 1, board);
+    }
+  }
+  
+  printf("Completed %ld ADC read commands on board %d.\n", loop_count, board);
+  return 0;
+}
+
+int cmd_read_adc_to_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  // Parse board number
+  int board = parse_board_number(args[0]);
+  if (board < 0) {
+    fprintf(stderr, "Invalid board number for read_adc_to_file: '%s'. Must be 0-7.\n", args[0]);
+    return -1;
+  }
+  
+  // Check FIFO presence and status
+  if (FIFO_PRESENT(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))) == 0) {
+    printf("ADC data FIFO for board %d is not present. Cannot read data.\n", board);
+    return -1;
+  }
+  
+  if (FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
+    printf("ADC data FIFO for board %d is empty. Cannot read data.\n", board);
+    return -1;
+  }
+  
+  // Expand file path relative to home directory
+  const char* rel_path = args[1];
+  char full_path[1024];
+  if (rel_path[0] == '~' && rel_path[1] == '/') {
+    // Handle ~/path
+    const char* home_dir = getenv("HOME");
+    if (home_dir == NULL) {
+      struct passwd *pw = getpwuid(getuid());
+      home_dir = pw->pw_dir;
+    }
+    snprintf(full_path, sizeof(full_path), "%s/%s", home_dir, rel_path + 2);
+  } else if (rel_path[0] == '~' && rel_path[1] == '\0') {
+    // Handle just ~
+    const char* home_dir = getenv("HOME");
+    if (home_dir == NULL) {
+      struct passwd *pw = getpwuid(getuid());
+      home_dir = pw->pw_dir;
+    }
+    strcpy(full_path, home_dir);
+  } else {
+    // Handle relative path (not starting with ~)
+    const char* home_dir = getenv("HOME");
+    if (home_dir == NULL) {
+      struct passwd *pw = getpwuid(getuid());
+      home_dir = pw->pw_dir;
+    }
+    snprintf(full_path, sizeof(full_path), "%s/%s", home_dir, rel_path);
+  }
+  
+  // Open file for append (create if doesn't exist)
+  FILE* file = fopen(full_path, "a");
+  if (file == NULL) {
+    fprintf(stderr, "Failed to open file '%s' for writing: %s\n", full_path, strerror(errno));
+    return -1;
+  }
+  
+  bool read_all = has_flag(flags, flag_count, FLAG_ALL);
+  int samples_written = 0;
+  
+  if (read_all) {
+    printf("Reading all ADC data from board %d and writing to file '%s'...\n", board, full_path);
+    while (!FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
+      uint32_t data = adc_read(ctx->adc_ctrl, (uint8_t)board);
+      
+      // Split 32-bit data into two 16-bit values
+      uint16_t lower_16 = data & 0xFFFF;
+      uint16_t upper_16 = (data >> 16) & 0xFFFF;
+      
+      // Convert from offset to signed
+      int16_t signed_lower = ADC_OFFSET_TO_SIGNED(lower_16);
+      int16_t signed_upper = ADC_OFFSET_TO_SIGNED(upper_16);
+      
+      // Write to file (one value per line)
+      fprintf(file, "%d\n", signed_lower);
+      fprintf(file, "%d\n", signed_upper);
+      
+      samples_written++;
+      if (*(ctx->verbose)) {
+        printf("Sample %d written: %d, %d\n", samples_written, signed_lower, signed_upper);
+      }
+    }
+    printf("Wrote %d samples (%d values) to file '%s'.\n", samples_written, samples_written * 2, full_path);
+  } else {
+    printf("Reading one ADC sample from board %d and writing to file '%s'...\n", board, full_path);
+    uint32_t data = adc_read(ctx->adc_ctrl, (uint8_t)board);
+    
+    // Split 32-bit data into two 16-bit values
+    uint16_t lower_16 = data & 0xFFFF;
+    uint16_t upper_16 = (data >> 16) & 0xFFFF;
+    
+    // Convert from offset to signed
+    int16_t signed_lower = ADC_OFFSET_TO_SIGNED(lower_16);
+    int16_t signed_upper = ADC_OFFSET_TO_SIGNED(upper_16);
+    
+    // Write to file (one value per line)
+    fprintf(file, "%d\n", signed_lower);
+    fprintf(file, "%d\n", signed_upper);
+    
+    printf("Wrote 1 sample (2 values: %d, %d) to file '%s'.\n", signed_lower, signed_upper, full_path);
+  }
+  
+  fclose(file);
   return 0;
 }

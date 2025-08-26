@@ -41,6 +41,12 @@
 #define ADC_DBG_N_CS_TIMER        3
 #define ADC_DBG_SPI_BIT           4
 
+// ADC signed to offset conversion
+#define ADC_OFFSET_TO_SIGNED(val) \
+  (((val) == 0xFFFF) ? 0 : ((int16_t)((val) - 32767)))
+#define ADC_SIGNED_TO_OFFSET(val) \
+  (((val) < -32767 || (val) > 32767) ? 32767 : ((uint16_t)((val) + 32767)))
+
 
 //////////////////////////////////////////////////////////////////
 

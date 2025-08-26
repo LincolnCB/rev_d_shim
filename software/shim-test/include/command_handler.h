@@ -124,5 +124,14 @@ int cmd_adc_cancel(const char** args, int arg_count, const command_flag_t* flags
 // DAC write command functions (require board, 8 channel values, trigger mode, and value)
 int cmd_write_dac_update(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);     // Send DAC write update command with 8 channel values
 
+// ADC channel order command functions (require board and 8 channel order values)
+int cmd_adc_set_ord(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);           // Set ADC channel order for specified board
+
+// ADC simple read command functions (require board and loop count)
+int cmd_adc_simple_read(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);        // Perform simple ADC reads with specified board and loop count
+
+// ADC file output command functions (require board and file path, support --all flag)
+int cmd_read_adc_to_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);        // Read ADC data and write to file with conversion
+
 
 #endif // COMMAND_HANDLER_H

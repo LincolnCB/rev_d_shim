@@ -94,6 +94,11 @@ cell xilinx.com:ip:xlconstant:1.1 sts_word_padding {
   CONST_VAL 0
   CONST_WIDTH 16
 } {}
+# Status word padding for making 32-bit status words
+cell xilinx.com:ip:xlconstant:1.1 adc_data_sts_word_padding {
+  CONST_VAL 0
+  CONST_WIDTH 15
+} {}
 
 ## FIFO declarations
 # Each FIFO has a 32-bit data width and 10-bit address width
@@ -299,7 +304,7 @@ for {set i 0} {$i < $board_count} {incr i} {
   # ADC data FIFO
   cell lcb:user:fifo_async adc_data_fifo_$i {
     DATA_WIDTH 32
-    ADDR_WIDTH 10
+    ADDR_WIDTH 11
   } {
     wr_clk spi_clk
     wr_rst_n adc_data_fifo_${i}_spi_clk_rst/peripheral_aresetn
@@ -314,7 +319,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     NUM_PORTS 7
   } {
     In0 adc_data_fifo_${i}/fifo_count_rd_clk
-    In1 sts_word_padding/dout
+    In1 adc_data_sts_word_padding/dout
     In2 adc_data_fifo_${i}/full
     In3 adc_data_fifo_${i}/almost_full
     In4 adc_data_fifo_${i}/empty
