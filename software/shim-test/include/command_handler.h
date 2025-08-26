@@ -11,7 +11,7 @@
 #include "trigger_ctrl.h"
 
 // Command processing structures and types
-#define MAX_ARGS 10  // Increased to accommodate command + arguments + flags
+#define MAX_ARGS 16  // Increased to accommodate command + arguments + flags
 #define MAX_FLAGS 5
 
 typedef enum {
@@ -120,6 +120,9 @@ int cmd_adc_noop(const char** args, int arg_count, const command_flag_t* flags, 
 // DAC and ADC cancel command functions (require board number)
 int cmd_dac_cancel(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);           // Send DAC cancel command to specified board
 int cmd_adc_cancel(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);           // Send ADC cancel command to specified board
+
+// DAC write command functions (require board, 8 channel values, trigger mode, and value)
+int cmd_write_dac_update(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);     // Send DAC write update command with 8 channel values
 
 
 #endif // COMMAND_HANDLER_H

@@ -307,11 +307,14 @@ module spi_clk_domain spi_clk_domain {
   dac_cmd_buf_underflow hw_manager/dac_cmd_buf_underflow
   dac_data_buf_overflow hw_manager/dac_data_buf_overflow
   unexp_dac_trig hw_manager/unexp_dac_trig
+  ldac_misalign hw_manager/ldac_misalign
+  dac_delay_too_short hw_manager/dac_delay_too_short
   adc_boot_fail hw_manager/adc_boot_fail
   bad_adc_cmd hw_manager/bad_adc_cmd
   adc_cmd_buf_underflow hw_manager/adc_cmd_buf_underflow
   adc_data_buf_overflow hw_manager/adc_data_buf_overflow
   unexp_adc_trig hw_manager/unexp_adc_trig
+  adc_delay_too_short hw_manager/adc_delay_too_short
   ext_trig Trigger_In
   block_bufs hw_manager/block_bufs
 }

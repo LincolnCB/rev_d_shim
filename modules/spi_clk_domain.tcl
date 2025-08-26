@@ -46,12 +46,15 @@ create_bd_pin -dir O -from 7 -to 0 dac_val_oob
 create_bd_pin -dir O -from 7 -to 0 dac_cmd_buf_underflow
 create_bd_pin -dir O -from 7 -to 0 dac_data_buf_overflow
 create_bd_pin -dir O -from 7 -to 0 unexp_dac_trig
+create_bd_pin -dir O -from 7 -to 0 ldac_misalign
+create_bd_pin -dir O -from 7 -to 0 dac_delay_too_short
 # ADC channel status
 create_bd_pin -dir O -from 7 -to 0 adc_boot_fail
 create_bd_pin -dir O -from 7 -to 0 bad_adc_cmd
 create_bd_pin -dir O -from 7 -to 0 adc_cmd_buf_underflow
 create_bd_pin -dir O -from 7 -to 0 adc_data_buf_overflow
 create_bd_pin -dir O -from 7 -to 0 unexp_adc_trig
+create_bd_pin -dir O -from 7 -to 0 adc_delay_too_short
 
 # Commands and data
 for {set i 0} {$i < $board_count} {incr i} {
@@ -160,6 +163,8 @@ cell lcb:user:shim_spi_sts_sync spi_sts_sync {} {
   dac_cmd_buf_underflow_sync dac_cmd_buf_underflow
   dac_data_buf_overflow_sync dac_data_buf_overflow
   unexp_dac_trig_sync unexp_dac_trig
+  ldac_misalign_sync ldac_misalign
+  dac_delay_too_short_sync dac_delay_too_short
   adc_boot_fail_sync adc_boot_fail
   bad_adc_cmd_sync bad_adc_cmd
   adc_cmd_buf_underflow_sync adc_cmd_buf_underflow
@@ -597,6 +602,32 @@ for {set i $board_count} {$i < 8} {incr i} {
   wire unexp_dac_trig_concat/In${i} const_0/dout
 }
 
+## ldac_misalign
+cell xilinx.com:ip:xlconcat:2.1 ldac_misalign_concat {
+  NUM_PORTS 8
+} {
+  dout spi_sts_sync/ldac_misalign
+}
+for {set i 0} {$i < $board_count} {incr i} {
+  wire ldac_misalign_concat/In${i} dac_ch${i}/ldac_misalign
+}
+for {set i $board_count} {$i < 8} {incr i} {
+  wire ldac_misalign_concat/In${i} const_0/dout
+}
+
+## dac_delay_too_short
+cell xilinx.com:ip:xlconcat:2.1 dac_delay_too_short_concat {
+  NUM_PORTS 8
+} {
+  dout spi_sts_sync/dac_delay_too_short
+}
+for {set i 0} {$i < $board_count} {incr i} {
+  wire dac_delay_too_short_concat/In${i} dac_ch${i}/delay_too_short
+}
+for {set i $board_count} {$i < 8} {incr i} {
+  wire dac_delay_too_short_concat/In${i} const_0/dout
+}
+
 ## adc_boot_fail
 cell xilinx.com:ip:xlconcat:2.1 adc_boot_fail_concat {
   NUM_PORTS 8
@@ -660,4 +691,17 @@ for {set i 0} {$i < $board_count} {incr i} {
 }
 for {set i $board_count} {$i < 8} {incr i} {
   wire unexp_adc_trig_concat/In${i} const_0/dout
+}
+
+## adc_delay_too_short
+cell xilinx.com:ip:xlconcat:2.1 adc_delay_too_short_concat {
+  NUM_PORTS 8
+} {
+  dout spi_sts_sync/adc_delay_too_short
+}
+for {set i 0} {$i < $board_count} {incr i} {
+  wire adc_delay_too_short_concat/In${i} adc_ch${i}/delay_too_short
+}
+for {set i $board_count} {$i < 8} {incr i} {
+  wire adc_delay_too_short_concat/In${i} const_0/dout
 }

@@ -82,6 +82,8 @@
 #define STS_DAC_DATA_BUF_UNDERFLOW   (uint32_t) 0x0606 // DAC data buffer underflow.
 #define STS_DAC_DATA_BUF_OVERFLOW    (uint32_t) 0x0607 // DAC data buffer overflow.
 #define STS_UNEXP_DAC_TRIG           (uint32_t) 0x0608 // Unexpected DAC trigger.
+#define STS_LDAC_MISALIGN            (uint32_t) 0x0609 // LDAC misalignment error.
+#define STS_DAC_DELAY_TOO_SHORT      (uint32_t) 0x060A // DAC delay too short.
 // ADC buffers and commands
 #define STS_ADC_BOOT_FAIL            (uint32_t) 0x0700 // ADC boot failure.
 #define STS_BAD_ADC_CMD              (uint32_t) 0x0701 // Bad ADC command.
@@ -90,6 +92,7 @@
 #define STS_ADC_DATA_BUF_UNDERFLOW   (uint32_t) 0x0704 // ADC data buffer underflow.
 #define STS_ADC_DATA_BUF_OVERFLOW    (uint32_t) 0x0705 // ADC data buffer overflow.
 #define STS_UNEXP_ADC_TRIG           (uint32_t) 0x0706 // Unexpected ADC trigger.
+#define STS_ADC_DELAY_TOO_SHORT      (uint32_t) 0x0707 // ADC delay too short.
 
 // FIFO status interpretation macros
 #define FIFO_STS_WORD_COUNT(sts)   ((sts) & 0x7FFFFFF)   // Number of words in FIFO

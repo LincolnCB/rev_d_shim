@@ -85,6 +85,9 @@ static command_entry_t command_table[] = {
   {"dac_cancel", cmd_dac_cancel, {1, 1, {-1}, "Send DAC cancel command to specified board (0-7)"}},
   {"adc_cancel", cmd_adc_cancel, {1, 1, {-1}, "Send ADC cancel command to specified board (0-7)"}},
   
+  // DAC write command functions (require board, 8 channel values, trigger mode, and value)
+  {"write_dac_update", cmd_write_dac_update, {11, 11, {FLAG_CONTINUE, -1}, "Send DAC write update command: <board> <ch0> <ch1> <ch2> <ch3> <ch4> <ch5> <ch6> <ch7> <\"trig\"|\"delay\"> <value> [--continue]"}},
+  
   // Sentinel entry - marks end of table (must be last)
   {NULL, NULL, {0, 0, {-1}, NULL}}
 };
@@ -842,5 +845,66 @@ int cmd_adc_cancel(const char** args, int arg_count, const command_flag_t* flags
   // Execute ADC cancel command
   adc_cmd_cancel(ctx->adc_ctrl, (uint8_t)board);
   printf("ADC cancel command sent to board %d.\n", board);
+  return 0;
+}
+
+int cmd_write_dac_update(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  // Parse board number
+  int board = parse_board_number(args[0]);
+  if (board < 0) {
+    fprintf(stderr, "Invalid board number for write_dac_update: '%s'. Must be 0-7.\n", args[0]);
+    return -1;
+  }
+  
+  // Parse 8 channel values (16-bit signed integers)
+  int16_t ch_vals[8];
+  for (int i = 0; i < 8; i++) {
+    char* endptr;
+    long val = strtol(args[i + 1], &endptr, 0);
+    if (*endptr != '\0') {
+      fprintf(stderr, "Invalid channel %d value for write_dac_update: '%s'\n", i, args[i + 1]);
+      return -1;
+    }
+    if (val < -32767 || val > 32767) {
+      fprintf(stderr, "Channel %d value out of range: %ld (valid range: -32767 to 32767)\n", i, val);
+      return -1;
+    }
+    ch_vals[i] = (int16_t)val;
+  }
+  
+  // Parse trigger mode (argument 9: args[9])
+  bool trig;
+  if (strcmp(args[9], "trig") == 0) {
+    trig = true;
+  } else if (strcmp(args[9], "delay") == 0) {
+    trig = false;
+  } else {
+    fprintf(stderr, "Invalid trigger mode for write_dac_update: '%s'. Must be 'trig' or 'delay'.\n", args[9]);
+    return -1;
+  }
+  
+  // Parse value (argument 10: args[10])
+  char* endptr;
+  uint32_t value = parse_value(args[10], &endptr);
+  if (*endptr != '\0') {
+    fprintf(stderr, "Invalid value for write_dac_update: '%s'\n", args[10]);
+    return -1;
+  }
+  
+  if (value > 0x0FFFFFFF) {
+    fprintf(stderr, "Value out of range: %u (valid range: 0 - %u)\n", value, 0x0FFFFFFF);
+    return -1;
+  }
+  
+  // Check for continue flag
+  bool cont = has_flag(flags, flag_count, FLAG_CONTINUE);
+  
+  // Execute DAC write update command with ldac = true
+  dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, trig, cont, true, value);
+  printf("DAC write update command sent to board %d with %s mode, value %u%s.\n", 
+         board, trig ? "trigger" : "delay", value, cont ? ", continuous" : "");
+  printf("Channel values: [%d, %d, %d, %d, %d, %d, %d, %d]\n",
+         ch_vals[0], ch_vals[1], ch_vals[2], ch_vals[3], 
+         ch_vals[4], ch_vals[5], ch_vals[6], ch_vals[7]);
   return 0;
 }

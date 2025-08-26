@@ -198,6 +198,14 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
         printf("Status: Unexpected DAC trigger\n");
         print_board_number = true;
         break;
+      case STS_LDAC_MISALIGN:
+        printf("Status: LDAC misalignment error\n");
+        print_board_number = true;
+        break;
+      case STS_DAC_DELAY_TOO_SHORT:
+        printf("Status: DAC delay too short\n");
+        print_board_number = true;
+        break;
       case STS_ADC_BOOT_FAIL:
         printf("Status: ADC boot failure\n");
         print_board_number = true;
@@ -224,6 +232,10 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
         break;
       case STS_UNEXP_ADC_TRIG:
         printf("Status: Unexpected ADC trigger\n");
+        print_board_number = true;
+        break;
+      case STS_ADC_DELAY_TOO_SHORT:
+        printf("Status: ADC delay too short\n");
         print_board_number = true;
         break;
       default:

@@ -18,6 +18,7 @@ create_bd_pin -dir O bad_cmd
 create_bd_pin -dir O cmd_buf_underflow
 create_bd_pin -dir O data_buf_overflow
 create_bd_pin -dir O unexp_trig
+create_bd_pin -dir O delay_too_short
 
 # Commands and data
 create_bd_pin -dir I -from 31 -to 0 adc_cmd
@@ -96,6 +97,7 @@ cell lcb:user:shim_ads816x_adc_ctrl adc_spi {} {
   cmd_buf_underflow cmd_buf_underflow
   data_buf_overflow data_buf_overflow
   unexp_trig unexp_trig
+  delay_too_short delay_too_short
   waiting_for_trig waiting_for_trig
   n_cs n_cs
   mosi mosi

@@ -27,6 +27,8 @@ create_bd_pin -dir O dac_val_oob
 create_bd_pin -dir O cmd_buf_underflow
 create_bd_pin -dir O data_buf_overflow
 create_bd_pin -dir O unexp_trig
+create_bd_pin -dir O ldac_misalign
+create_bd_pin -dir O delay_too_short
 
 # Commands and data
 create_bd_pin -dir I -from 31 -to 0 dac_cmd
@@ -109,6 +111,8 @@ cell lcb:user:shim_ad5676_dac_ctrl dac_spi {
   cmd_buf_underflow cmd_buf_underflow
   data_buf_overflow data_buf_overflow
   unexp_trig unexp_trig
+  ldac_misalign ldac_misalign
+  delay_too_short delay_too_short
   boot_fail boot_fail
   bad_cmd bad_cmd
   cal_oob cal_oob
