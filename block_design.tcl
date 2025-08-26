@@ -33,8 +33,8 @@ create_bd_port -dir I -type clk -freq_hz 10000000 Scanner_10Mhz_In
 create_bd_port -dir I -type data Shutdown_Sense
 # (Trigger_In)
 create_bd_port -dir I Trigger_In
-# (Shutdown_Button)
-create_bd_port -dir I Shutdown_Button
+# (Manual_Enable)
+create_bd_port -dir I Manual_Enable
 
 
 #------------------------------------------------------------
@@ -183,6 +183,7 @@ cell lcb:user:shim_axi_sys_ctrl axi_sys_ctrl {
   INTEG_THRESHOLD_AVERAGE_DEFAULT 16384
   INTEG_WINDOW_DEFAULT 5000000
   INTEG_EN_DEFAULT 1
+  MISO_SCK_POL_DEFAULT 1
 } {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
@@ -198,7 +199,7 @@ cell lcb:user:shim_hw_manager hw_manager {} {
   clk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
   sys_en axi_sys_ctrl/sys_en
-  ext_shutdown Shutdown_Button
+  ext_en Manual_Enable
   lock_viol axi_sys_ctrl/lock_viol
   sys_en_oob axi_sys_ctrl/sys_en_oob
   cmd_buf_reset_oob axi_sys_ctrl/cmd_buf_reset_oob

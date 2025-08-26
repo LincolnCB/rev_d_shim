@@ -27,11 +27,11 @@ set_property IOSTANDARD   LVCMOS25  [get_ports Shutdown_Sense]
 set_property PACKAGE_PIN  J15       [get_ports Shutdown_Sense]
 set_property PULLTYPE     PULLDOWN  [get_ports Shutdown_Sense]
 
-# External Shutdown Button (Shutdown_Button)
-# Pin: Shutdown_Button JA1.25 F20
-set_property IOSTANDARD   LVCMOS25  [get_ports Shutdown_Button]
-set_property PACKAGE_PIN  F20       [get_ports Shutdown_Button]
-set_property PULLTYPE     PULLDOWN  [get_ports Shutdown_Button]
+# External Manual Enable (Manual_Enable)
+# Pin: Manual_Enable JA1.25 F20
+set_property IOSTANDARD   LVCMOS25  [get_ports Manual_Enable]
+set_property PACKAGE_PIN  F20       [get_ports Manual_Enable]
+set_property PULLTYPE     PULLDOWN  [get_ports Manual_Enable]
 
 
 #------------------------------------------------------------
