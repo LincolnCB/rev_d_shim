@@ -68,8 +68,8 @@ static command_entry_t command_table[] = {
   {"read_adc_dbg", cmd_read_adc_dbg, {1, 1, {FLAG_ALL, -1}, "Read and print debug information for ADC data from specified board (0-7)"}},
   
   // Trigger command functions (no arguments)
-  {"trig_sync_ch", cmd_trig_sync_ch, {0, 0, {-1}, "Send trigger synchronize channels command"}},
-  {"trig_force_trig", cmd_trig_force_trig, {0, 0, {-1}, "Send trigger force trigger command"}},
+  {"sync_ch", cmd_trig_sync_ch, {0, 0, {-1}, "Send trigger synchronize channels command"}},
+  {"force_trig", cmd_trig_force_trig, {0, 0, {-1}, "Send trigger force trigger command"}},
   {"trig_cancel", cmd_trig_cancel, {0, 0, {-1}, "Send trigger cancel command"}},
   
   // Trigger command functions (require 1 value argument with range validation)
@@ -205,6 +205,59 @@ int execute_command(const char* line, command_context_t* ctx) {
   return cmd->handler(&args[1], actual_args, flags, flag_count, ctx);
 }
 
+// Helper function to print text with line wrapping at 100 characters
+static void print_wrapped_line(const char* prefix, const char* text, const char* continuation_indent) {
+  char line[512];
+  snprintf(line, sizeof(line), "%s%s", prefix, text);
+  
+  if (strlen(line) <= 100) {
+    printf("%s\n", line);
+    return;
+  }
+  
+  // Find the best place to break the line (before character 100)
+  int break_pos = 100;
+  for (int i = 99; i >= 50; i--) {
+    if (line[i] == ' ') {
+      break_pos = i;
+      break;
+    }
+  }
+  
+  // Print first part
+  char first_part[512];
+  strncpy(first_part, line, break_pos);
+  first_part[break_pos] = '\0';
+  printf("%s\n", first_part);
+  
+  // Print remaining part with continuation indent
+  const char* remaining = line + break_pos + 1; // Skip the space
+  while (strlen(remaining) > 0) {
+    char continuation_line[512];
+    snprintf(continuation_line, sizeof(continuation_line), "%s%s", continuation_indent, remaining);
+    
+    if (strlen(continuation_line) <= 100) {
+      printf("%s\n", continuation_line);
+      break;
+    } else {
+      // Find next break point
+      int next_break = 100 - strlen(continuation_indent);
+      for (int i = next_break - 1; i >= 20; i--) {
+        if (remaining[i] == ' ') {
+          next_break = i;
+          break;
+        }
+      }
+      
+      char next_part[512];
+      strncpy(next_part, remaining, next_break);
+      next_part[next_break] = '\0';
+      printf("%s%s\n", continuation_indent, next_part);
+      remaining = remaining + next_break + 1; // Skip the space
+    }
+  }
+}
+
 void print_help(void) {
   printf("Available commands:\n");
   printf("\n");
@@ -213,7 +266,9 @@ void print_help(void) {
   printf(" -- No arguments --\n");
   for (int i = 0; command_table[i].name != NULL; i++) {
     if (command_table[i].info.min_args == 0 && command_table[i].info.max_args == 0) {
-      printf("  %-20s - %s\n", command_table[i].name, command_table[i].info.description);
+      char prefix[64];
+      snprintf(prefix, sizeof(prefix), "  %-20s - ", command_table[i].name);
+      print_wrapped_line(prefix, command_table[i].info.description, "                         ");
     }
   }
   printf("\n");
@@ -255,25 +310,32 @@ void print_help(void) {
         strcat(arg_str, " [--continue]");
       }
       
-      printf("  %s%-*s - %s\n", 
-             command_table[i].name, 
-             (int)(20 - strlen(command_table[i].name)), 
-             arg_str, 
-             command_table[i].info.description);
+      // Create the full command line prefix
+      char prefix[512];
+      snprintf(prefix, sizeof(prefix), "  %s%-*s - ", 
+               command_table[i].name, 
+               (int)(20 - strlen(command_table[i].name)), 
+               arg_str);
+      
+      print_wrapped_line(prefix, command_table[i].info.description, "                         ");
       
       // Add special notes for certain commands
       if (strstr(command_table[i].name, "set_") == command_table[i].name) {
-        printf("%-24s   (prefix binary with \"0b\", octal with \"0\", and hex with \"0x\")\n", "");
+        print_wrapped_line("                         ", 
+                          "(prefix binary with \"0b\", octal with \"0\", and hex with \"0x\")",
+                          "                         ");
       } else if (strstr(command_table[i].name, "_fifo_sts") != NULL || 
                  (strstr(command_table[i].name, "read_") == command_table[i].name && 
                   strstr(command_table[i].name, "trig") == NULL)) {
         if (strstr(command_table[i].name, "board") || strstr(command_table[i].name, "dac") || 
             strstr(command_table[i].name, "adc")) {
-          printf("%-24s   Board number must be 0-7\n", "");
+          print_wrapped_line("                         ", "Board number must be 0-7", "                         ");
         }
       }
       if (has_all_flag) {
-        printf("%-24s   Use --all to read all data currently in the FIFO\n", "");
+        print_wrapped_line("                         ", 
+                          "Use --all to read all data currently in the FIFO", 
+                          "                         ");
       }
     }
   }
