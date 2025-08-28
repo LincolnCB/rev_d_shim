@@ -99,10 +99,10 @@ cell lcb:user:shim_ad5676_dac_ctrl dac_spi {
   resetn resetn
   boot_test_skip boot_test_skip
   debug debug
-  cmd_word_rd_en dac_cmd_rd_en
-  cmd_word dac_cmd
+  cmd_buf_rd_en dac_cmd_rd_en
+  cmd_buf_word dac_cmd
   cmd_buf_empty dac_cmd_empty_blocked/Res
-  data_word_wr_en dac_data_wr_en
+  data_buf_wr_en dac_data_wr_en
   data_word dac_data
   data_buf_full dac_data_full_blocked/Res
   trigger trigger

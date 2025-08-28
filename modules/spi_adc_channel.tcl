@@ -84,10 +84,10 @@ cell lcb:user:shim_ads816x_adc_ctrl adc_spi {} {
   resetn resetn
   boot_test_skip boot_test_skip
   debug debug
-  cmd_word_rd_en adc_cmd_rd_en
-  cmd_word adc_cmd
+  cmd_buf_rd_en adc_cmd_rd_en
+  cmd_buf_word adc_cmd
   cmd_buf_empty adc_cmd_empty_blocked/Res
-  data_word_wr_en adc_data_wr_en
+  data_buf_wr_en adc_data_wr_en
   data_word adc_data
   data_buf_full adc_data_full_blocked/Res
   trigger trigger
