@@ -106,10 +106,10 @@ void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool co
     fprintf(stderr, "Invalid command value: %u. Must be 0 to 268435455.\n", value);
     return;
   }
-  uint32_t cmd_word = (ADC_CMD_NO_OP << 30) |
-                     ((trig ? 1 : 0) << ADC_CMD_TRIG_BIT) |
-                     ((cont ? 1 : 0) << ADC_CMD_CONT_BIT) |
-                     (value & 0x0FFFFFFF);
+  uint32_t cmd_word = (ADC_CMD_NO_OP  << ADC_CMD_CMD_LSB ) |
+                      ((trig ? 1 : 0) << ADC_CMD_TRIG_BIT) |
+                      ((cont ? 1 : 0) << ADC_CMD_CONT_BIT) |
+                      (value & 0x0FFFFFFF);
   
   *(adc_ctrl->buffer[board]) = cmd_word;
 }

@@ -106,11 +106,11 @@ void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool trig, bool co
     fprintf(stderr, "Invalid command value: %u. Must be 0 to 268435455.\n", value);
     return;
   }
-  uint32_t cmd_word = (DAC_CMD_NO_OP << 30) |
-                     ((trig ? 1 : 0) << DAC_CMD_TRIG_BIT) |
-                     ((cont ? 1 : 0) << DAC_CMD_CONT_BIT) |
-                     ((ldac ? 1 : 0) << DAC_CMD_LDAC_BIT) |
-                     (value & 0x0FFFFFFF);
+  uint32_t cmd_word = (DAC_CMD_NO_OP  << DAC_CMD_CMD_LSB ) |
+                      ((ldac ? 1 : 0) << DAC_CMD_LDAC_BIT) |
+                      ((trig ? 1 : 0) << DAC_CMD_TRIG_BIT) |
+                      ((cont ? 1 : 0) << DAC_CMD_CONT_BIT) |
+                      (value & 0x0FFFFFFF);
   
   *(dac_ctrl->buffer[board]) = cmd_word;
 }

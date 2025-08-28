@@ -12,15 +12,17 @@
 #define ADC_CMD_FIFO_WORDCOUNT  (uint32_t) 1024 // Size in 32-bit words
 #define ADC_DATA_FIFO_WORDCOUNT  (uint32_t) 1024 // Size in 32-bit words
 
-// ADC command codes (2 MSB of command word)
+// ADC command codes (3 MSB of command word)
 #define ADC_CMD_NO_OP    0x0
-#define ADC_CMD_ADC_RD   0x1
-#define ADC_CMD_SET_ORD  0x2
-#define ADC_CMD_CANCEL   0x3
+#define ADC_CMD_LOOP     0x1
+#define ADC_CMD_ADC_RD   0x2
+#define ADC_CMD_SET_ORD  0x4
+#define ADC_CMD_CANCEL   0x7
 
 // ADC command bits
-#define ADC_CMD_TRIG_BIT 29
-#define ADC_CMD_CONT_BIT 28
+#define ADC_CMD_CMD_LSB  29
+#define ADC_CMD_TRIG_BIT 28
+#define ADC_CMD_CONT_BIT 27
 
 // ADC state codes
 #define ADC_STATE_RESET      0

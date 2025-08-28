@@ -19,9 +19,10 @@
 #define DAC_CMD_CANCEL   0x3
 
 // DAC command bits
-#define DAC_CMD_TRIG_BIT 29
-#define DAC_CMD_CONT_BIT 28
-#define DAC_CMD_LDAC_BIT 27
+#define DAC_CMD_CMD_LSB  30
+#define DAC_CMD_LDAC_BIT 29
+#define DAC_CMD_TRIG_BIT 28
+#define DAC_CMD_CONT_BIT 27
 
 // DAC state codes
 #define DAC_STATE_RESET      0
