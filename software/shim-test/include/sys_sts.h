@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <pthread.h>
 
 //////////////////// System Status Definitions ////////////////////
 // Status register
@@ -145,5 +146,8 @@ uint32_t sys_sts_get_trig_data_fifo_status(struct sys_sts_t *sys_sts, bool verbo
 
 // Print FIFO status details
 void print_fifo_status(uint32_t fifo_status, const char *fifo_name);
+
+// Hardware manager interrupt monitoring
+int sys_sts_start_hw_manager_irq_monitor(struct sys_sts_t *sys_sts, bool verbose);
 
 #endif // SYS_STS_H

@@ -1,6 +1,9 @@
 #include <stdio.h> // For printf and perror functions
 #include <stdlib.h> // For exit function and NULL definition etc.
 #include <inttypes.h> // For PRIx32 format specifier
+#include <unistd.h> // For read, write, close functions
+#include <fcntl.h> // For open function
+#include <pthread.h> // For pthread functions
 #include "sys_sts.h"
 #include "map_memory.h"
 
@@ -328,5 +331,107 @@ void print_fifo_status(uint32_t fifo_status, const char *fifo_name) {
     printf("  Empty: %s\n", FIFO_STS_EMPTY(fifo_status) ? "Yes" : "No");
     printf("  Almost Empty: %s\n", FIFO_STS_ALMOST_EMPTY(fifo_status) ? "Yes" : "No");
   }
+}
+
+// Structure to pass data to the interrupt monitoring thread
+struct hw_manager_irq_data {
+  struct sys_sts_t *sys_sts;
+  bool verbose;
+};
+
+// Thread function to monitor hardware manager interrupt
+static void *hw_manager_irq_thread_func(void *arg) {
+  struct hw_manager_irq_data *irq_data = (struct hw_manager_irq_data *)arg;
+  const char *uio_path = "/dev/uio0"; // Hardware manager interrupt is uio0
+  int fd;
+  uint32_t irq_count;
+  uint32_t clear_value = 1;
+
+  if (irq_data->verbose) {
+    printf("Hardware manager interrupt monitor thread started\n");
+  }
+
+  // Open the UIO device for hardware manager interrupt
+  fd = open(uio_path, O_RDWR);
+  if (fd < 0) {
+    perror("Failed to open hardware manager UIO device (/dev/uio0)");
+    pthread_exit(NULL);
+  }
+
+  if (irq_data->verbose) {
+    printf("Opened UIO device: %s\n", uio_path);
+  }
+
+  // Clear any pending interrupt at startup
+  if (write(fd, &clear_value, sizeof(clear_value)) < 0) {
+    perror("Failed to clear initial interrupt");
+  } else if (irq_data->verbose) {
+    printf("Cleared initial interrupt state\n");
+  }
+
+  // Wait for interrupt
+  if (irq_data->verbose) {
+    printf("Waiting for hardware manager interrupt...\n");
+  }
+
+  if (read(fd, &irq_count, sizeof(irq_count)) == sizeof(irq_count)) {
+    printf("\nHardware manager interrupt received! (count: %u)\n", irq_count);
+    
+    // Get and print the hardware status
+    uint32_t hw_status = sys_sts_get_hw_status(irq_data->sys_sts, irq_data->verbose);
+    print_hw_status(hw_status, irq_data->verbose);
+    
+    // Clear the interrupt
+    if (write(fd, &clear_value, sizeof(clear_value)) < 0) {
+      perror("Failed to clear interrupt after handling");
+    } else if (irq_data->verbose) {
+      printf("Interrupt cleared successfully\n");
+    }
+  } else {
+    perror("Failed to read from UIO device");
+  }
+
+  close(fd);
+  
+  if (irq_data->verbose) {
+    printf("Hardware manager interrupt monitor thread exiting\n");
+  }
+  
+  pthread_exit(NULL);
+}
+
+// Start hardware manager interrupt monitoring thread
+int sys_sts_start_hw_manager_irq_monitor(struct sys_sts_t *sys_sts, bool verbose) {
+  static struct hw_manager_irq_data irq_data;
+  static pthread_t irq_thread;
+  int result;
+
+  // Setup thread data
+  irq_data.sys_sts = sys_sts;
+  irq_data.verbose = verbose;
+
+  if (verbose) {
+    printf("Starting hardware manager interrupt monitoring thread...\n");
+  }
+
+  // Create the interrupt monitoring thread
+  result = pthread_create(&irq_thread, NULL, hw_manager_irq_thread_func, &irq_data);
+  if (result != 0) {
+    fprintf(stderr, "Failed to create hardware manager interrupt thread: %d\n", result);
+    return -1;
+  }
+
+  // Detach the thread so it can clean up automatically when it exits
+  result = pthread_detach(irq_thread);
+  if (result != 0) {
+    fprintf(stderr, "Failed to detach hardware manager interrupt thread: %d\n", result);
+    return -1;
+  }
+
+  if (verbose) {
+    printf("Hardware manager interrupt monitoring thread started successfully\n");
+  }
+
+  return 0;
 }
 
