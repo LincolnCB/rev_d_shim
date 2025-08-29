@@ -369,26 +369,43 @@ static void *hw_manager_irq_thread_func(void *arg) {
     printf("Cleared initial interrupt state\n");
   }
 
-  // Wait for interrupt
-  if (irq_data->verbose) {
-    printf("Waiting for hardware manager interrupt...\n");
-  }
-
-  if (read(fd, &irq_count, sizeof(irq_count)) == sizeof(irq_count)) {
-    printf("\nHardware manager interrupt received! (count: %u)\n", irq_count);
-    
-    // Get and print the hardware status
-    uint32_t hw_status = sys_sts_get_hw_status(irq_data->sys_sts, irq_data->verbose);
-    print_hw_status(hw_status, irq_data->verbose);
-    
-    // Clear the interrupt
-    if (write(fd, &clear_value, sizeof(clear_value)) < 0) {
-      perror("Failed to clear interrupt after handling");
-    } else if (irq_data->verbose) {
-      printf("Interrupt cleared successfully\n");
+  // Continuous monitoring loop
+  while (1) {
+    // Wait for interrupt
+    if (irq_data->verbose) {
+      printf("Waiting for hardware manager interrupt...\n");
     }
-  } else {
-    perror("Failed to read from UIO device");
+
+    if (read(fd, &irq_count, sizeof(irq_count)) == sizeof(irq_count)) {
+      printf("\nHardware manager interrupt received! (count: %u)\n", irq_count);
+      
+      // Get and print the hardware status
+      uint32_t hw_status = sys_sts_get_hw_status(irq_data->sys_sts, irq_data->verbose);
+      print_hw_status(hw_status, irq_data->verbose);
+      
+      // Clear the interrupt
+      if (write(fd, &clear_value, sizeof(clear_value)) < 0) {
+        perror("Failed to clear interrupt after handling");
+      } else if (irq_data->verbose) {
+        printf("Interrupt cleared successfully\n");
+      }
+      
+      // Check if hardware status is "running" - if not, exit the monitoring loop
+      if (HW_STS_STATE(hw_status) != S_RUNNING) {
+        if (irq_data->verbose) {
+          printf("Hardware is no longer running - exiting interrupt monitor\n");
+        }
+        break;
+      }
+      
+      // If still running, continue monitoring for next interrupt
+      if (irq_data->verbose) {
+        printf("Hardware still running - continuing interrupt monitoring\n");
+      }
+    } else {
+      perror("Failed to read from UIO device");
+      break; // Exit on read error
+    }
   }
 
   close(fd);

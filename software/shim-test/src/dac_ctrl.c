@@ -97,7 +97,7 @@ void dac_print_state(uint8_t state_code) {
 }
 
 // DAC command word functions
-void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool trig, bool cont, bool ldac, uint32_t value) {
+void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool trig, bool cont, bool ldac, uint32_t value, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
     return;
@@ -112,10 +112,13 @@ void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool trig, bool co
                       ((cont ? 1 : 0) << DAC_CMD_CONT_BIT) |
                       (value & 0x0FFFFFFF);
   
+  if (verbose) {
+    printf("DAC[%d] NO_OP command word: 0x%08X\n", board, cmd_word);
+  }
   *(dac_ctrl->buffer[board]) = cmd_word;
 }
 
-void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[8], bool trig, bool cont, bool ldac, uint32_t value) {
+void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[8], bool trig, bool cont, bool ldac, uint32_t value, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
     return;
@@ -125,12 +128,15 @@ void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[
     return;
   }
   
-  uint32_t cmd_word = (DAC_CMD_DAC_WR << 30) |
-                     ((trig ? 1 : 0) << DAC_CMD_TRIG_BIT) |
-                     ((cont ? 1 : 0) << DAC_CMD_CONT_BIT) |
-                     ((ldac ? 1 : 0) << DAC_CMD_LDAC_BIT) |
-                     (value & 0x0FFFFFFF);
+  uint32_t cmd_word = (DAC_CMD_DAC_WR << DAC_CMD_CMD_LSB ) |
+                      ((trig ? 1 : 0) << DAC_CMD_TRIG_BIT) |
+                      ((cont ? 1 : 0) << DAC_CMD_CONT_BIT) |
+                      ((ldac ? 1 : 0) << DAC_CMD_LDAC_BIT) |
+                      (value & 0x0FFFFFFF);
   
+  if (verbose) {
+    printf("DAC[%d] DAC_WR command word: 0x%08X\n", board, cmd_word);
+  }
   *(dac_ctrl->buffer[board]) = cmd_word;
 
   // Write channel values
@@ -139,11 +145,15 @@ void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[
     uint16_t val0 = DAC_SIGNED_TO_OFFSET(ch_vals[i]);
     uint16_t val1 = DAC_SIGNED_TO_OFFSET(ch_vals[i + 1]);
     uint32_t word = ((uint32_t)val1 << 16) | val0;
+    if (verbose) {
+      printf("DAC[%d] Channel data word %d: 0x%08X (ch%d=0x%04X, ch%d=0x%04X)\n", 
+             board, i/2, word, i, val0, i+1, val1);
+    }
     *(dac_ctrl->buffer[board]) = word;
   }
 }
 
-void dac_cmd_set_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel, int16_t cal) {
+void dac_cmd_set_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel, int16_t cal, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
     return;
@@ -153,19 +163,26 @@ void dac_cmd_set_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel
     return;
   }
 
-  uint32_t cmd_word = (DAC_CMD_SET_CAL << 30) |
+  uint32_t cmd_word = (DAC_CMD_SET_CAL << DAC_CMD_CMD_LSB) |
                       (channel << 16) | // Channel index
                       ((uint16_t)cal & 0xFFFF);
 
+  if (verbose) {
+    printf("DAC[%d] SET_CAL command word: 0x%08X (channel %d, cal=0x%04X)\n", 
+           board, cmd_word, channel, (uint16_t)cal & 0xFFFF);
+  }
   *(dac_ctrl->buffer[board]) = cmd_word;
 }
 
-void dac_cmd_cancel(struct dac_ctrl_t *dac_ctrl, uint8_t board) {
+void dac_cmd_cancel(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
     return;
   }
 
-  uint32_t cmd_word = (DAC_CMD_CANCEL << 30);
+  uint32_t cmd_word = (DAC_CMD_CANCEL << DAC_CMD_CMD_LSB);
+  if (verbose) {
+    printf("DAC[%d] CANCEL command word: 0x%08X\n", board, cmd_word);
+  }
   *(dac_ctrl->buffer[board]) = cmd_word;
 }

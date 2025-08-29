@@ -67,9 +67,9 @@ void dac_print_debug(uint32_t dac_value);
 void dac_print_state(uint8_t state_code);
 
 // DAC command word functions
-void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool trig, bool cont, bool ldac, uint32_t value);
-void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[8], bool trig, bool cont, bool ldac, uint32_t value);
-void dac_cmd_set_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel, int16_t offset);
-void dac_cmd_cancel(struct dac_ctrl_t *dac_ctrl, uint8_t board);
+void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool trig, bool cont, bool ldac, uint32_t value, bool verbose);
+void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[8], bool trig, bool cont, bool ldac, uint32_t value, bool verbose);
+void dac_cmd_set_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel, int16_t offset, bool verbose);
+void dac_cmd_cancel(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool verbose);
 
 #endif // DAC_CTRL_H

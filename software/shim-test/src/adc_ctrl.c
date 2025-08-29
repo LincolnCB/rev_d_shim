@@ -97,7 +97,7 @@ void adc_print_state(uint8_t state_code) {
 }
 
 // ADC command word functions
-void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t value) {
+void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t value, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
     return;
@@ -111,10 +111,13 @@ void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool co
                       ((cont ? 1 : 0) << ADC_CMD_CONT_BIT) |
                       (value & 0x0FFFFFFF);
   
+  if (verbose) {
+    printf("ADC[%d] NO_OP command word: 0x%08X\n", board, cmd_word);
+  }
   *(adc_ctrl->buffer[board]) = cmd_word;
 }
 
-void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t value) {
+void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t value, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
     return;
@@ -123,15 +126,16 @@ void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool 
     fprintf(stderr, "Invalid command value: %u. Must be 0 to 268435455.\n", value);
     return;
   }
-  uint32_t cmd_word = (ADC_CMD_ADC_RD << 30) |
-                     ((trig ? 1 : 0) << ADC_CMD_TRIG_BIT) |
-                     ((cont ? 1 : 0) << ADC_CMD_CONT_BIT) |
-                     (value & 0x0FFFFFFF);
+  uint32_t cmd_word = (ADC_CMD_ADC_RD << ADC_CMD_CMD_LSB ) |
+                      ((trig ? 1 : 0) << ADC_CMD_TRIG_BIT) |
+                      ((cont ? 1 : 0) << ADC_CMD_CONT_BIT) |
+                      (value & 0x0FFFFFFF);
   
+  if (verbose) {
+    printf("ADC[%d] ADC_RD command word: 0x%08X\n", board, cmd_word);
+  }
   *(adc_ctrl->buffer[board]) = cmd_word;
-}
-
-void adc_cmd_set_ord(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t channel_order[8]) {
+}void adc_cmd_set_ord(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t channel_order[8], bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
     return;
@@ -144,26 +148,34 @@ void adc_cmd_set_ord(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t channel
     }
   }
 
-  uint32_t cmd_word = (ADC_CMD_SET_ORD << 30) |
-                      ((channel_order[7] & 0x7) << 21) |
-                      ((channel_order[6] & 0x7) << 18) |
-                      ((channel_order[5] & 0x7) << 15) |
-                      ((channel_order[4] & 0x7) << 12) |
-                      ((channel_order[3] & 0x7) << 9)  |
-                      ((channel_order[2] & 0x7) << 6)  |
-                      ((channel_order[1] & 0x7) << 3)  |
-                      ((channel_order[0] & 0x7) << 0);
+  uint32_t cmd_word = (ADC_CMD_SET_ORD << ADC_CMD_CMD_LSB) |
+                      ((channel_order[7] & 0x7) << 21    ) |
+                      ((channel_order[6] & 0x7) << 18    ) |
+                      ((channel_order[5] & 0x7) << 15    ) |
+                      ((channel_order[4] & 0x7) << 12    ) |
+                      ((channel_order[3] & 0x7) <<  9    ) |
+                      ((channel_order[2] & 0x7) <<  6    ) |
+                      ((channel_order[1] & 0x7) <<  3    ) |
+                      ((channel_order[0] & 0x7) <<  0    );
 
+  if (verbose) {
+    printf("ADC[%d] SET_ORD command word: 0x%08X (order: [%d,%d,%d,%d,%d,%d,%d,%d])\n", 
+           board, cmd_word, channel_order[0], channel_order[1], channel_order[2], channel_order[3],
+           channel_order[4], channel_order[5], channel_order[6], channel_order[7]);
+  }
   *(adc_ctrl->buffer[board]) = cmd_word;
 }
 
-void adc_cmd_cancel(struct adc_ctrl_t *adc_ctrl, uint8_t board) {
+void adc_cmd_cancel(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
     return;
   }
   
-  uint32_t cmd_word = (ADC_CMD_CANCEL << 30);
+  uint32_t cmd_word = (ADC_CMD_CANCEL << ADC_CMD_CMD_LSB);
   
+  if (verbose) {
+    printf("ADC[%d] CANCEL command word: 0x%08X\n", board, cmd_word);
+  }
   *(adc_ctrl->buffer[board]) = cmd_word;
 }

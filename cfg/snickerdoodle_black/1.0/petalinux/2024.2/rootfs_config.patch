@@ -25,6 +25,15 @@
  # CONFIG_lrzsz-dbg is not set
  # CONFIG_lrzsz-dev is not set
  
+@@ -2192,7 +2192,7 @@
+ #
+ # gcc-runtime 
+ #
+-# CONFIG_libstdcPLUSPLUS is not set
++CONFIG_libstdcPLUSPLUS=y
+ # CONFIG_libstdcPLUSPLUS-dev is not set
+ 
+ #
 @@ -3775,7 +3775,7 @@
  #
  # PetaLinux RootFS Settings

@@ -392,6 +392,11 @@ int cmd_verbose(const char** args, int arg_count, const command_flag_t* flags, i
 }
 
 int cmd_on(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  // Start hardware manager interrupt monitoring before turning on the system
+  if (sys_sts_start_hw_manager_irq_monitor(ctx->sys_sts, *(ctx->verbose)) != 0) {
+    fprintf(stderr, "Warning: Failed to start hardware manager interrupt monitoring\n");
+  }
+  
   sys_ctrl_turn_on(ctx->sys_ctrl, *(ctx->verbose));
   printf("System turned on.\n");
   return 0;
@@ -846,7 +851,7 @@ int cmd_dac_noop(const char** args, int arg_count, const command_flag_t* flags, 
   bool cont = has_flag(flags, flag_count, FLAG_CONTINUE);
   
   // Execute DAC no-op command
-  dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, trig, cont, false, value);
+  dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, trig, cont, false, value, *(ctx->verbose));
   printf("DAC no-op command sent to board %d with %s mode, value %u%s.\n", 
          board, trig ? "trigger" : "delay", value, cont ? ", continuous" : "");
   return 0;
@@ -888,7 +893,7 @@ int cmd_adc_noop(const char** args, int arg_count, const command_flag_t* flags, 
   bool cont = has_flag(flags, flag_count, FLAG_CONTINUE);
   
   // Execute ADC no-op command
-  adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, trig, cont, value);
+  adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, trig, cont, value, *(ctx->verbose));
   printf("ADC no-op command sent to board %d with %s mode, value %u%s.\n", 
          board, trig ? "trigger" : "delay", value, cont ? ", continuous" : "");
   return 0;
@@ -904,7 +909,7 @@ int cmd_dac_cancel(const char** args, int arg_count, const command_flag_t* flags
   }
   
   // Execute DAC cancel command
-  dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board);
+  dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, *(ctx->verbose));
   printf("DAC cancel command sent to board %d.\n", board);
   return 0;
 }
@@ -918,7 +923,7 @@ int cmd_adc_cancel(const char** args, int arg_count, const command_flag_t* flags
   }
   
   // Execute ADC cancel command
-  adc_cmd_cancel(ctx->adc_ctrl, (uint8_t)board);
+  adc_cmd_cancel(ctx->adc_ctrl, (uint8_t)board, *(ctx->verbose));
   printf("ADC cancel command sent to board %d.\n", board);
   return 0;
 }
@@ -975,7 +980,7 @@ int cmd_write_dac_update(const char** args, int arg_count, const command_flag_t*
   bool cont = has_flag(flags, flag_count, FLAG_CONTINUE);
   
   // Execute DAC write update command with ldac = true
-  dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, trig, cont, true, value);
+  dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, trig, cont, true, value, *(ctx->verbose));
   printf("DAC write update command sent to board %d with %s mode, value %u%s.\n", 
          board, trig ? "trigger" : "delay", value, cont ? ", continuous" : "");
   printf("Channel values: [%d, %d, %d, %d, %d, %d, %d, %d]\n",
@@ -1009,7 +1014,7 @@ int cmd_adc_set_ord(const char** args, int arg_count, const command_flag_t* flag
   }
   
   // Execute ADC set order command
-  adc_cmd_set_ord(ctx->adc_ctrl, (uint8_t)board, channel_order);
+  adc_cmd_set_ord(ctx->adc_ctrl, (uint8_t)board, channel_order, *(ctx->verbose));
   printf("ADC channel order set for board %d: [%d, %d, %d, %d, %d, %d, %d, %d]\n", 
          board, channel_order[0], channel_order[1], channel_order[2], channel_order[3],
          channel_order[4], channel_order[5], channel_order[6], channel_order[7]);
@@ -1040,7 +1045,7 @@ int cmd_adc_simple_read(const char** args, int arg_count, const command_flag_t* 
   
   // Execute ADC read commands in loop
   for (long i = 0; i < loop_count; i++) {
-    adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, 200);
+    adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, 200, *(ctx->verbose));
     if (*(ctx->verbose)) {
       printf("ADC read command %ld sent to board %d\n", i + 1, board);
     }
@@ -1069,33 +1074,23 @@ int cmd_read_adc_to_file(const char** args, int arg_count, const command_flag_t*
     return -1;
   }
   
-  // Expand file path relative to home directory
+  // Expand file path relative to /home/shim/ directory
   const char* rel_path = args[1];
   char full_path[1024];
+  const char* shim_home_dir = "/home/shim";
+  
   if (rel_path[0] == '~' && rel_path[1] == '/') {
-    // Handle ~/path
-    const char* home_dir = getenv("HOME");
-    if (home_dir == NULL) {
-      struct passwd *pw = getpwuid(getuid());
-      home_dir = pw->pw_dir;
-    }
-    snprintf(full_path, sizeof(full_path), "%s/%s", home_dir, rel_path + 2);
+    // Handle ~/path - use /home/shim/ as base
+    snprintf(full_path, sizeof(full_path), "%s/%s", shim_home_dir, rel_path + 2);
   } else if (rel_path[0] == '~' && rel_path[1] == '\0') {
-    // Handle just ~
-    const char* home_dir = getenv("HOME");
-    if (home_dir == NULL) {
-      struct passwd *pw = getpwuid(getuid());
-      home_dir = pw->pw_dir;
-    }
-    strcpy(full_path, home_dir);
+    // Handle just ~ - use /home/shim/
+    strcpy(full_path, shim_home_dir);
+  } else if (rel_path[0] == '/') {
+    // Handle absolute path - use as is
+    strcpy(full_path, rel_path);
   } else {
-    // Handle relative path (not starting with ~)
-    const char* home_dir = getenv("HOME");
-    if (home_dir == NULL) {
-      struct passwd *pw = getpwuid(getuid());
-      home_dir = pw->pw_dir;
-    }
-    snprintf(full_path, sizeof(full_path), "%s/%s", home_dir, rel_path);
+    // Handle relative path (not starting with ~) - relative to /home/shim/
+    snprintf(full_path, sizeof(full_path), "%s/%s", shim_home_dir, rel_path);
   }
   
   // Open file for append (create if doesn't exist)
