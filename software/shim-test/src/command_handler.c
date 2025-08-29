@@ -6,6 +6,7 @@
 #include <pwd.h>
 #include <sys/types.h>
 #include <errno.h>
+#include <pthread.h>
 #include "command_handler.h"
 
 /**
@@ -97,9 +98,19 @@ static command_entry_t command_table[] = {
   
   // ADC simple read command functions (require board and loop count)
   {"adc_simple_read", cmd_adc_simple_read, {2, 2, {-1}, "Perform simple ADC reads: <board> <loop_count> (reads ADC with delay mode, value 200)"}},
+  {"adc_read", cmd_adc_read, {2, 2, {-1}, "Perform ADC read using loop command: <board> <loop_count> (sends loop_next command then single read command)"}},
   
   // ADC file output command functions (require board and file path, support --all flag)
   {"read_adc_to_file", cmd_read_adc_to_file, {2, 2, {FLAG_ALL, -1}, "Read ADC data to file: <board> <file_path> [--all] (converts to signed values, writes one per line)"}},
+  
+  // ADC streaming command functions (require board and file path)
+  {"stream_adc_to_file", cmd_stream_adc_to_file, {2, 2, {-1}, "Start ADC streaming to file: <board> <file_path> (reads 4 words at a time, 8 samples)"}},
+  {"stop_adc_stream", cmd_stop_adc_stream, {1, 1, {-1}, "Stop ADC streaming for specified board (0-7)"}},
+  
+  // Command logging and playback functions (require file path)
+  {"log_commands", cmd_log_commands, {1, 1, {-1}, "Start logging commands to file: <file_path>"}},
+  {"stop_log", cmd_stop_log, {0, 0, {-1}, "Stop logging commands"}},
+  {"load_commands", cmd_load_commands, {1, 1, {-1}, "Load and execute commands from file: <file_path> (0.25s delay between commands)"}},
   
   // Sentinel entry - marks end of table (must be last)
   {NULL, NULL, {0, 0, {-1}, NULL}}
@@ -212,6 +223,15 @@ int execute_command(const char* line, command_context_t* ctx) {
       printf("Invalid flag for command '%s'.\n", cmd->name);
       return -1;
     }
+  }
+  
+  // Log command if logging is enabled (but don't log the logging commands themselves)
+  if (ctx->logging_enabled && ctx->log_file != NULL && 
+      strcmp(args[0], "log_commands") != 0 && 
+      strcmp(args[0], "stop_log") != 0 && 
+      strcmp(args[0], "load_commands") != 0) {
+    fprintf(ctx->log_file, "%s\n", line);
+    fflush(ctx->log_file);
   }
   
   // Execute command
@@ -1055,6 +1075,42 @@ int cmd_adc_simple_read(const char** args, int arg_count, const command_flag_t* 
   return 0;
 }
 
+int cmd_adc_read(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  // Parse board number
+  int board = parse_board_number(args[0]);
+  if (board < 0) {
+    fprintf(stderr, "Invalid board number for adc_read: '%s'. Must be 0-7.\n", args[0]);
+    return -1;
+  }
+  
+  // Parse loop count
+  char* endptr;
+  long loop_count = strtol(args[1], &endptr, 0);
+  if (*endptr != '\0') {
+    fprintf(stderr, "Invalid loop count for adc_read: '%s'. Must be a number.\n", args[1]);
+    return -1;
+  }
+  if (loop_count < 1) {
+    fprintf(stderr, "Invalid loop count for adc_read: %ld. Must be at least 1.\n", loop_count);
+    return -1;
+  }
+  if (loop_count > 0x3FFFFFF) {
+    fprintf(stderr, "Loop count too large for adc_read: %ld. Must be 0 to 67108863 (26-bit value).\n", loop_count);
+    return -1;
+  }
+  
+  printf("Performing ADC read on board %d using loop command (loop count: %ld, delay mode, value 200)...\n", board, loop_count);
+  
+  // Send loop_next command with the loop count
+  adc_cmd_loop_next(ctx->adc_ctrl, (uint8_t)board, (uint32_t)loop_count, *(ctx->verbose));
+  
+  // Send single ADC read command
+  adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, 200, *(ctx->verbose));
+  
+  printf("ADC read commands sent to board %d: loop_next(%ld) + adc_rd(delay, 200).\n", board, loop_count);
+  return 0;
+}
+
 int cmd_read_adc_to_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   // Parse board number
   int board = parse_board_number(args[0]);
@@ -1146,5 +1202,307 @@ int cmd_read_adc_to_file(const char** args, int arg_count, const command_flag_t*
   }
   
   fclose(file);
+  return 0;
+}
+
+// Structure to pass data to the streaming thread
+typedef struct {
+  command_context_t* ctx;
+  uint8_t board;
+  char file_path[1024];
+  volatile bool* should_stop;
+} adc_stream_data_t;
+
+// Thread function for ADC streaming
+void* adc_stream_thread(void* arg) {
+  adc_stream_data_t* stream_data = (adc_stream_data_t*)arg;
+  command_context_t* ctx = stream_data->ctx;
+  uint8_t board = stream_data->board;
+  const char* file_path = stream_data->file_path;
+  volatile bool* should_stop = stream_data->should_stop;
+  
+  // Open file for append (create if doesn't exist)
+  FILE* file = fopen(file_path, "a");
+  if (file == NULL) {
+    fprintf(stderr, "ADC Stream Thread[%d]: Failed to open file '%s' for writing: %s\n", 
+            board, file_path, strerror(errno));
+    ctx->adc_stream_running[board] = false;
+    free(stream_data);
+    return NULL;
+  }
+  
+  printf("ADC Stream Thread[%d]: Started streaming to file '%s'\n", board, file_path);
+  
+  int total_samples = 0;
+  
+  while (!(*should_stop)) {
+    // Check FIFO status
+    uint32_t fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, board, false);
+    
+    if (FIFO_PRESENT(fifo_status) == 0) {
+      fprintf(stderr, "ADC Stream Thread[%d]: FIFO not present, stopping stream\n", board);
+      break;
+    }
+    
+    uint32_t word_count = FIFO_STS_WORD_COUNT(fifo_status);
+    
+    // Read in multiples of 4 words (8 samples)
+    if (word_count >= 4) {
+      uint32_t words_to_read = (word_count / 4) * 4;  // Highest multiple of 4
+      
+      for (uint32_t i = 0; i < words_to_read; i++) {
+        uint32_t data = adc_read(ctx->adc_ctrl, board);
+        
+        // Split 32-bit data into two 16-bit values
+        uint16_t lower_16 = data & 0xFFFF;
+        uint16_t upper_16 = (data >> 16) & 0xFFFF;
+        
+        // Convert from offset to signed
+        int16_t signed_lower = ADC_OFFSET_TO_SIGNED(lower_16);
+        int16_t signed_upper = ADC_OFFSET_TO_SIGNED(upper_16);
+        
+        // Write to file (one value per line)
+        fprintf(file, "%d\n", signed_lower);
+        fprintf(file, "%d\n", signed_upper);
+        
+        total_samples++;
+      }
+      
+      // Flush the file to ensure data is written
+      fflush(file);
+      
+      if (*(ctx->verbose)) {
+        printf("ADC Stream Thread[%d]: Read %u words (%u samples), total: %d\n", 
+               board, words_to_read, words_to_read * 2, total_samples * 2);
+      }
+    } else {
+      // Sleep for 100us if not enough data
+      usleep(100);
+    }
+  }
+  
+  printf("ADC Stream Thread[%d]: Stopping stream, wrote %d samples (%d values) to file '%s'\n", 
+         board, total_samples, total_samples * 2, file_path);
+  
+  fclose(file);
+  ctx->adc_stream_running[board] = false;
+  free(stream_data);
+  return NULL;
+}
+
+int cmd_stream_adc_to_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  // Parse board number
+  int board = parse_board_number(args[0]);
+  if (board < 0) {
+    fprintf(stderr, "Invalid board number for stream_adc_to_file: '%s'. Must be 0-7.\n", args[0]);
+    return -1;
+  }
+  
+  // Check if stream is already running
+  if (ctx->adc_stream_running[board]) {
+    printf("ADC stream for board %d is already running.\n", board);
+    return -1;
+  }
+  
+  // Check FIFO presence
+  if (FIFO_PRESENT(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))) == 0) {
+    printf("ADC data FIFO for board %d is not present. Cannot start streaming.\n", board);
+    return -1;
+  }
+  
+  // Expand file path relative to /home/shim/ directory
+  const char* rel_path = args[1];
+  char full_path[1024];
+  const char* shim_home_dir = "/home/shim";
+  
+  if (rel_path[0] == '~' && rel_path[1] == '/') {
+    // Handle ~/path - use /home/shim/ as base
+    snprintf(full_path, sizeof(full_path), "%s/%s", shim_home_dir, rel_path + 2);
+  } else if (rel_path[0] == '~' && rel_path[1] == '\0') {
+    // Handle just ~ - use /home/shim/
+    strcpy(full_path, shim_home_dir);
+  } else if (rel_path[0] == '/') {
+    // Handle absolute path - use as is
+    strcpy(full_path, rel_path);
+  } else {
+    // Handle relative path (not starting with ~) - relative to /home/shim/
+    snprintf(full_path, sizeof(full_path), "%s/%s", shim_home_dir, rel_path);
+  }
+  
+  // Allocate thread data structure
+  adc_stream_data_t* stream_data = malloc(sizeof(adc_stream_data_t));
+  if (stream_data == NULL) {
+    fprintf(stderr, "Failed to allocate memory for stream data\n");
+    return -1;
+  }
+  
+  stream_data->ctx = ctx;
+  stream_data->board = (uint8_t)board;
+  strcpy(stream_data->file_path, full_path);
+  stream_data->should_stop = &(ctx->adc_stream_stop[board]);
+  
+  // Initialize stop flag and mark stream as running
+  ctx->adc_stream_stop[board] = false;
+  ctx->adc_stream_running[board] = true;
+  
+  // Create the streaming thread
+  if (pthread_create(&(ctx->adc_stream_threads[board]), NULL, adc_stream_thread, stream_data) != 0) {
+    fprintf(stderr, "Failed to create ADC streaming thread for board %d: %s\n", board, strerror(errno));
+    ctx->adc_stream_running[board] = false;
+    free(stream_data);
+    return -1;
+  }
+  
+  printf("Started ADC streaming for board %d to file '%s'\n", board, full_path);
+  return 0;
+}
+
+int cmd_stop_adc_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  // Parse board number
+  int board = parse_board_number(args[0]);
+  if (board < 0) {
+    fprintf(stderr, "Invalid board number for stop_adc_stream: '%s'. Must be 0-7.\n", args[0]);
+    return -1;
+  }
+  
+  // Check if stream is running
+  if (!ctx->adc_stream_running[board]) {
+    printf("ADC stream for board %d is not running.\n", board);
+    return -1;
+  }
+  
+  printf("Stopping ADC streaming for board %d...\n", board);
+  
+  // Signal the thread to stop
+  ctx->adc_stream_stop[board] = true;
+  
+  // Wait for the thread to finish
+  if (pthread_join(ctx->adc_stream_threads[board], NULL) != 0) {
+    fprintf(stderr, "Failed to join ADC streaming thread for board %d: %s\n", board, strerror(errno));
+    return -1;
+  }
+  
+  printf("ADC streaming for board %d has been stopped.\n", board);
+  return 0;
+}
+
+// Command logging and playback functions
+int cmd_log_commands(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  // Stop current logging if active
+  if (ctx->logging_enabled && ctx->log_file != NULL) {
+    fclose(ctx->log_file);
+    ctx->log_file = NULL;
+    ctx->logging_enabled = false;
+    printf("Previous log file closed.\n");
+  }
+  
+  // Expand file path relative to /home/shim/ directory
+  const char* rel_path = args[0];
+  char full_path[1024];
+  const char* shim_home_dir = "/home/shim";
+  
+  if (rel_path[0] == '~' && rel_path[1] == '/') {
+    snprintf(full_path, sizeof(full_path), "%s/%s", shim_home_dir, rel_path + 2);
+  } else if (rel_path[0] == '~' && rel_path[1] == '\0') {
+    strcpy(full_path, shim_home_dir);
+  } else if (rel_path[0] == '/') {
+    strcpy(full_path, rel_path);
+  } else {
+    snprintf(full_path, sizeof(full_path), "%s/%s", shim_home_dir, rel_path);
+  }
+  
+  // Open file for writing (create if doesn't exist, truncate if exists)
+  ctx->log_file = fopen(full_path, "w");
+  if (ctx->log_file == NULL) {
+    fprintf(stderr, "Failed to open log file '%s' for writing: %s\n", full_path, strerror(errno));
+    return -1;
+  }
+  
+  ctx->logging_enabled = true;
+  printf("Started logging commands to file '%s'\n", full_path);
+  return 0;
+}
+
+int cmd_stop_log(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  if (!ctx->logging_enabled || ctx->log_file == NULL) {
+    printf("Command logging is not currently active.\n");
+    return 0;
+  }
+  
+  fclose(ctx->log_file);
+  ctx->log_file = NULL;
+  ctx->logging_enabled = false;
+  printf("Command logging stopped.\n");
+  return 0;
+}
+
+int cmd_load_commands(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  // Expand file path relative to /home/shim/ directory
+  const char* rel_path = args[0];
+  char full_path[1024];
+  const char* shim_home_dir = "/home/shim";
+  
+  if (rel_path[0] == '~' && rel_path[1] == '/') {
+    snprintf(full_path, sizeof(full_path), "%s/%s", shim_home_dir, rel_path + 2);
+  } else if (rel_path[0] == '~' && rel_path[1] == '\0') {
+    strcpy(full_path, shim_home_dir);
+  } else if (rel_path[0] == '/') {
+    strcpy(full_path, rel_path);
+  } else {
+    snprintf(full_path, sizeof(full_path), "%s/%s", shim_home_dir, rel_path);
+  }
+  
+  // Open file for reading
+  FILE* file = fopen(full_path, "r");
+  if (file == NULL) {
+    fprintf(stderr, "Failed to open command file '%s' for reading: %s\n", full_path, strerror(errno));
+    return -1;
+  }
+  
+  printf("Loading and executing commands from file '%s'...\n", full_path);
+  
+  char line[256];
+  int line_number = 0;
+  int commands_executed = 0;
+  
+  while (fgets(line, sizeof(line), file) != NULL) {
+    line_number++;
+    
+    // Remove newline character
+    size_t len = strlen(line);
+    if (len > 0 && line[len - 1] == '\n') {
+      line[len - 1] = '\0';
+    }
+    
+    // Skip empty lines and lines starting with # (comments)
+    if (strlen(line) == 0 || line[0] == '#') {
+      continue;
+    }
+    
+    printf("Executing line %d: %s\n", line_number, line);
+    
+    // Execute the command
+    int result = execute_command(line, ctx);
+    if (result != 0) {
+      printf("Invalid command at line %d: '%s'\n", line_number, line);
+      printf("Performing hard reset and exiting...\n");
+      fclose(file);
+      
+      // Perform hard reset
+      cmd_hard_reset(NULL, 0, NULL, 0, ctx);
+      
+      // Exit
+      *(ctx->should_exit) = true;
+      return -1;
+    }
+    
+    commands_executed++;
+    
+    // 0.25 second delay between commands
+    usleep(250000);
+  }
+  
+  fclose(file);
+  printf("Successfully executed %d commands from file '%s'.\n", commands_executed, full_path);
   return 0;
 }

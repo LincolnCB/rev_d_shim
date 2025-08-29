@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <pthread.h>
 #include "sys_ctrl.h"
 #include "adc_ctrl.h"
 #include "dac_ctrl.h"
@@ -37,6 +38,11 @@ typedef struct command_context {
   struct trigger_ctrl_t* trigger_ctrl;
   bool* verbose;
   bool* should_exit;
+  pthread_t adc_stream_threads[8];      // Thread handles for ADC streaming
+  bool adc_stream_running[8];           // Status of each ADC stream thread
+  volatile bool adc_stream_stop[8];     // Stop signals for each ADC stream thread
+  FILE* log_file;                       // File handle for command logging
+  bool logging_enabled;                 // Whether command logging is active
 } command_context_t;
 
 typedef int (*command_handler_t)(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
@@ -129,9 +135,19 @@ int cmd_adc_set_ord(const char** args, int arg_count, const command_flag_t* flag
 
 // ADC simple read command functions (require board and loop count)
 int cmd_adc_simple_read(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);        // Perform simple ADC reads with specified board and loop count
+int cmd_adc_read(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);               // Perform ADC read using loop command
 
 // ADC file output command functions (require board and file path, support --all flag)
 int cmd_read_adc_to_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);        // Read ADC data and write to file with conversion
+
+// ADC streaming command functions (require board and file path)
+int cmd_stream_adc_to_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);       // Start ADC streaming to file
+int cmd_stop_adc_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);          // Stop ADC streaming for specified board
+
+// Command logging and playback functions (require file path)
+int cmd_log_commands(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);             // Start logging commands to file
+int cmd_stop_log(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);                // Stop logging commands
+int cmd_load_commands(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);            // Load and execute commands from file
 
 
 #endif // COMMAND_HANDLER_H

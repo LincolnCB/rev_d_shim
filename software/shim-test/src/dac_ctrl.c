@@ -102,15 +102,15 @@ void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool trig, bool co
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
     return;
   }
-  if (value > 0x0FFFFFFF) {
-    fprintf(stderr, "Invalid command value: %u. Must be 0 to 268435455.\n", value);
+  if (value > 0x3FFFFFF) {
+    fprintf(stderr, "Invalid command value: %u. Must be 0 to 67108863 (26-bit value).\n", value);
     return;
   }
   uint32_t cmd_word = (DAC_CMD_NO_OP  << DAC_CMD_CMD_LSB ) |
                       ((ldac ? 1 : 0) << DAC_CMD_LDAC_BIT) |
                       ((trig ? 1 : 0) << DAC_CMD_TRIG_BIT) |
                       ((cont ? 1 : 0) << DAC_CMD_CONT_BIT) |
-                      (value & 0x0FFFFFFF);
+                      (value & 0x3FFFFFF);
   
   if (verbose) {
     printf("DAC[%d] NO_OP command word: 0x%08X\n", board, cmd_word);
@@ -123,8 +123,8 @@ void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
     return;
   }
-  if (value > 0x0FFFFFFF) {
-    fprintf(stderr, "Invalid command value: %u. Must be 0 to 268435455.\n", value);
+  if (value > 0x3FFFFFF) {
+    fprintf(stderr, "Invalid command value: %u. Must be 0 to 67108863 (26-bit value).\n", value);
     return;
   }
   
@@ -132,7 +132,7 @@ void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[
                       ((trig ? 1 : 0) << DAC_CMD_TRIG_BIT) |
                       ((cont ? 1 : 0) << DAC_CMD_CONT_BIT) |
                       ((ldac ? 1 : 0) << DAC_CMD_LDAC_BIT) |
-                      (value & 0x0FFFFFFF);
+                      (value & 0x3FFFFFF);
   
   if (verbose) {
     printf("DAC[%d] DAC_WR command word: 0x%08X\n", board, cmd_word);

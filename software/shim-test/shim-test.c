@@ -80,7 +80,12 @@ int main(int argc, char *argv[])
     .adc_ctrl = &adc_ctrl,
     .trigger_ctrl = &trigger_ctrl,
     .verbose = &verbose,
-    .should_exit = &should_exit
+    .should_exit = &should_exit,
+    .adc_stream_threads = {0},    // Initialize thread handles to 0
+    .adc_stream_running = {false}, // Initialize all streams as not running
+    .adc_stream_stop = {false},    // Initialize all stop flags as false
+    .log_file = NULL,              // Initialize log file as NULL
+    .logging_enabled = false       // Initialize logging as disabled
   };
 
   char command[256];
@@ -110,6 +115,29 @@ int main(int argc, char *argv[])
 
   //////////////////// Cleanup ////////////////////
   printf("Cleaning up and exiting...\n");
+  
+  // Stop all running ADC streaming threads
+  printf("Stopping all ADC streams...\n");
+  for (int i = 0; i < 8; i++) {
+    if (cmd_ctx.adc_stream_running[i]) {
+      printf("Stopping ADC stream for board %d...\n", i);
+      cmd_ctx.adc_stream_stop[i] = true;
+      if (pthread_join(cmd_ctx.adc_stream_threads[i], NULL) != 0) {
+        fprintf(stderr, "Failed to join ADC streaming thread for board %d\n", i);
+      } else {
+        printf("ADC stream for board %d stopped.\n", i);
+      }
+    }
+  }
+  
+  // Close log file if logging is active
+  if (cmd_ctx.logging_enabled && cmd_ctx.log_file != NULL) {
+    printf("Closing command log file...\n");
+    fclose(cmd_ctx.log_file);
+    cmd_ctx.log_file = NULL;
+    cmd_ctx.logging_enabled = false;
+  }
+  
   sys_ctrl_turn_off(&sys_ctrl, verbose);
   printf("System turned off.\n");
 
