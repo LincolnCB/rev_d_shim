@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <pwd.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <errno.h>
 #include <pthread.h>
 #include "command_handler.h"
@@ -143,6 +144,54 @@ int has_flag(const command_flag_t* flags, int flag_count, command_flag_t target_
     }
   }
   return 0;
+}
+
+// Helper function to clean and expand file paths
+void clean_and_expand_path(const char* input_path, char* full_path, size_t full_path_size) {
+  const char* rel_path = input_path;
+  const char* shim_home_dir = "/home/shim";
+  
+  // Remove leading and trailing quotation marks
+  char cleaned_path[1024];
+  strncpy(cleaned_path, rel_path, sizeof(cleaned_path) - 1);
+  cleaned_path[sizeof(cleaned_path) - 1] = '\0';
+  
+  // Remove leading quotes
+  if (cleaned_path[0] == '"' || cleaned_path[0] == '\'') {
+    memmove(cleaned_path, cleaned_path + 1, strlen(cleaned_path));
+  }
+  
+  // Remove trailing quotes
+  size_t len = strlen(cleaned_path);
+  if (len > 0 && (cleaned_path[len - 1] == '"' || cleaned_path[len - 1] == '\'')) {
+    cleaned_path[len - 1] = '\0';
+  }
+  
+  // Expand path
+  if (cleaned_path[0] == '~' && cleaned_path[1] == '/') {
+    snprintf(full_path, full_path_size, "%s/%s", shim_home_dir, cleaned_path + 2);
+  } else if (cleaned_path[0] == '~' && cleaned_path[1] == '\0') {
+    strncpy(full_path, shim_home_dir, full_path_size - 1);
+    full_path[full_path_size - 1] = '\0';
+  } else if (cleaned_path[0] == '/') {
+    strncpy(full_path, cleaned_path, full_path_size - 1);
+    full_path[full_path_size - 1] = '\0';
+  } else {
+    snprintf(full_path, full_path_size, "%s/%s", shim_home_dir, cleaned_path);
+  }
+}
+
+// Helper function to set file permissions for group read/write access
+void set_file_permissions(const char* file_path, bool verbose) {
+  // Set permissions to 666 (owner: rw, group: rw, others: rw)
+  if (chmod(file_path, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH) != 0) {
+    if (verbose) {
+      fprintf(stderr, "Warning: Could not set permissions for file '%s': %s\n", 
+              file_path, strerror(errno));
+    }
+  } else if (verbose) {
+    printf("Set file permissions to 666 for '%s'\n", file_path);
+  }
 }
 
 // Command parsing function
@@ -1130,24 +1179,9 @@ int cmd_read_adc_to_file(const char** args, int arg_count, const command_flag_t*
     return -1;
   }
   
-  // Expand file path relative to /home/shim/ directory
-  const char* rel_path = args[1];
+  // Clean and expand file path
   char full_path[1024];
-  const char* shim_home_dir = "/home/shim";
-  
-  if (rel_path[0] == '~' && rel_path[1] == '/') {
-    // Handle ~/path - use /home/shim/ as base
-    snprintf(full_path, sizeof(full_path), "%s/%s", shim_home_dir, rel_path + 2);
-  } else if (rel_path[0] == '~' && rel_path[1] == '\0') {
-    // Handle just ~ - use /home/shim/
-    strcpy(full_path, shim_home_dir);
-  } else if (rel_path[0] == '/') {
-    // Handle absolute path - use as is
-    strcpy(full_path, rel_path);
-  } else {
-    // Handle relative path (not starting with ~) - relative to /home/shim/
-    snprintf(full_path, sizeof(full_path), "%s/%s", shim_home_dir, rel_path);
-  }
+  clean_and_expand_path(args[1], full_path, sizeof(full_path));
   
   // Open file for append (create if doesn't exist)
   FILE* file = fopen(full_path, "a");
@@ -1155,6 +1189,9 @@ int cmd_read_adc_to_file(const char** args, int arg_count, const command_flag_t*
     fprintf(stderr, "Failed to open file '%s' for writing: %s\n", full_path, strerror(errno));
     return -1;
   }
+  
+  // Set file permissions for group access
+  set_file_permissions(full_path, *(ctx->verbose));
   
   bool read_all = has_flag(flags, flag_count, FLAG_ALL);
   int samples_written = 0;
@@ -1230,6 +1267,9 @@ void* adc_stream_thread(void* arg) {
     free(stream_data);
     return NULL;
   }
+  
+  // Set file permissions for group access
+  set_file_permissions(file_path, false); // Don't show verbose messages in thread
   
   printf("ADC Stream Thread[%d]: Started streaming to file '%s'\n", board, file_path);
   
@@ -1310,24 +1350,9 @@ int cmd_stream_adc_to_file(const char** args, int arg_count, const command_flag_
     return -1;
   }
   
-  // Expand file path relative to /home/shim/ directory
-  const char* rel_path = args[1];
+  // Clean and expand file path
   char full_path[1024];
-  const char* shim_home_dir = "/home/shim";
-  
-  if (rel_path[0] == '~' && rel_path[1] == '/') {
-    // Handle ~/path - use /home/shim/ as base
-    snprintf(full_path, sizeof(full_path), "%s/%s", shim_home_dir, rel_path + 2);
-  } else if (rel_path[0] == '~' && rel_path[1] == '\0') {
-    // Handle just ~ - use /home/shim/
-    strcpy(full_path, shim_home_dir);
-  } else if (rel_path[0] == '/') {
-    // Handle absolute path - use as is
-    strcpy(full_path, rel_path);
-  } else {
-    // Handle relative path (not starting with ~) - relative to /home/shim/
-    snprintf(full_path, sizeof(full_path), "%s/%s", shim_home_dir, rel_path);
-  }
+  clean_and_expand_path(args[1], full_path, sizeof(full_path));
   
   // Allocate thread data structure
   adc_stream_data_t* stream_data = malloc(sizeof(adc_stream_data_t));
@@ -1396,20 +1421,9 @@ int cmd_log_commands(const char** args, int arg_count, const command_flag_t* fla
     printf("Previous log file closed.\n");
   }
   
-  // Expand file path relative to /home/shim/ directory
-  const char* rel_path = args[0];
+  // Clean and expand file path
   char full_path[1024];
-  const char* shim_home_dir = "/home/shim";
-  
-  if (rel_path[0] == '~' && rel_path[1] == '/') {
-    snprintf(full_path, sizeof(full_path), "%s/%s", shim_home_dir, rel_path + 2);
-  } else if (rel_path[0] == '~' && rel_path[1] == '\0') {
-    strcpy(full_path, shim_home_dir);
-  } else if (rel_path[0] == '/') {
-    strcpy(full_path, rel_path);
-  } else {
-    snprintf(full_path, sizeof(full_path), "%s/%s", shim_home_dir, rel_path);
-  }
+  clean_and_expand_path(args[0], full_path, sizeof(full_path));
   
   // Open file for writing (create if doesn't exist, truncate if exists)
   ctx->log_file = fopen(full_path, "w");
@@ -1417,6 +1431,9 @@ int cmd_log_commands(const char** args, int arg_count, const command_flag_t* fla
     fprintf(stderr, "Failed to open log file '%s' for writing: %s\n", full_path, strerror(errno));
     return -1;
   }
+  
+  // Set file permissions for group access
+  set_file_permissions(full_path, *(ctx->verbose));
   
   ctx->logging_enabled = true;
   printf("Started logging commands to file '%s'\n", full_path);
@@ -1437,20 +1454,9 @@ int cmd_stop_log(const char** args, int arg_count, const command_flag_t* flags, 
 }
 
 int cmd_load_commands(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  // Expand file path relative to /home/shim/ directory
-  const char* rel_path = args[0];
+  // Clean and expand file path
   char full_path[1024];
-  const char* shim_home_dir = "/home/shim";
-  
-  if (rel_path[0] == '~' && rel_path[1] == '/') {
-    snprintf(full_path, sizeof(full_path), "%s/%s", shim_home_dir, rel_path + 2);
-  } else if (rel_path[0] == '~' && rel_path[1] == '\0') {
-    strcpy(full_path, shim_home_dir);
-  } else if (rel_path[0] == '/') {
-    strcpy(full_path, rel_path);
-  } else {
-    snprintf(full_path, sizeof(full_path), "%s/%s", shim_home_dir, rel_path);
-  }
+  clean_and_expand_path(args[0], full_path, sizeof(full_path));
   
   // Open file for reading
   FILE* file = fopen(full_path, "r");
