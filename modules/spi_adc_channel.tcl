@@ -6,6 +6,7 @@ create_bd_pin -dir I -type clock spi_clk
 create_bd_pin -dir I -type reset resetn
 
 # Config parameters
+create_bd_pin -dir I -from 8 -to 0 adc_n_cs_high_time
 create_bd_pin -dir I boot_test_skip
 create_bd_pin -dir I debug
 
@@ -84,6 +85,7 @@ cell lcb:user:shim_ads816x_adc_ctrl adc_spi {} {
   resetn resetn
   boot_test_skip boot_test_skip
   debug debug
+  n_cs_high_time adc_n_cs_high_time
   cmd_buf_rd_en adc_cmd_rd_en
   cmd_buf_word adc_cmd
   cmd_buf_empty adc_cmd_empty_blocked/Res

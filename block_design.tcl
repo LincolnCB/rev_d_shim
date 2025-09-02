@@ -16,6 +16,15 @@ if {$use_ext_clk != 0 && $use_ext_clk != 1} {
   exit 1
 }
 
+## Variably define the default SPI clock frequency (MHz)
+set spi_clk_freq_mhz 20.000
+
+# If the default SPI clock frequency is not between 1 and 50 MHz, then error out
+if {$spi_clk_freq_mhz < 1.0 || $spi_clk_freq_mhz > 50.0} {
+  puts "Error: spi_clk_freq_mhz must be between 1.0 and 50.0."
+  exit 1
+}
+
 ###############################################################################
 #
 #   Single-ended ports
@@ -183,6 +192,7 @@ cell lcb:user:shim_axi_sys_ctrl axi_sys_ctrl {
   INTEG_THRESHOLD_AVERAGE_DEFAULT 16384
   INTEG_WINDOW_DEFAULT 5000000
   INTEG_EN_DEFAULT 1
+  MOSI_SCK_POL_DEFAULT 0
   MISO_SCK_POL_DEFAULT 1
 } {
   aclk ps/FCLK_CLK0
@@ -200,7 +210,6 @@ cell lcb:user:shim_hw_manager hw_manager {} {
   aresetn ps_rst/peripheral_aresetn
   sys_en axi_sys_ctrl/sys_en
   ext_en Manual_Enable
-  lock_viol axi_sys_ctrl/lock_viol
   sys_en_oob axi_sys_ctrl/sys_en_oob
   cmd_buf_reset_oob axi_sys_ctrl/cmd_buf_reset_oob
   data_buf_reset_oob axi_sys_ctrl/data_buf_reset_oob
@@ -209,6 +218,8 @@ cell lcb:user:shim_hw_manager hw_manager {} {
   integ_en_oob axi_sys_ctrl/integ_en_oob
   boot_test_skip_oob axi_sys_ctrl/boot_test_skip_oob
   debug_oob axi_sys_ctrl/debug_oob
+  mosi_sck_pol_oob axi_sys_ctrl/mosi_sck_pol_oob
+  miso_sck_pol_oob axi_sys_ctrl/miso_sck_pol_oob
   unlock_cfg axi_sys_ctrl/unlock
   n_shutdown_force n_Shutdown_Force
   n_shutdown_rst n_Shutdown_Reset
@@ -247,7 +258,7 @@ if {$use_ext_clk} {
     USE_DYN_RECONFIG true
     USE_SAFE_CLOCK_STARTUP true
     PRIM_IN_FREQ 10
-    CLKOUT1_REQUESTED_OUT_FREQ 50.000
+    CLKOUT1_REQUESTED_OUT_FREQ ${spi_clk_freq_mhz}
     FEEDBACK_SOURCE FDBK_AUTO
     CLKOUT1_DRIVES BUFGCE
   } {
@@ -264,7 +275,7 @@ if {$use_ext_clk} {
     USE_DYN_RECONFIG true
     USE_SAFE_CLOCK_STARTUP true
     PRIM_IN_FREQ 99.999893
-    CLKOUT1_REQUESTED_OUT_FREQ 20.000
+    CLKOUT1_REQUESTED_OUT_FREQ ${spi_clk_freq_mhz}
     FEEDBACK_SOURCE FDBK_AUTO
     CLKOUT1_DRIVES BUFGCE
   } {
@@ -275,13 +286,64 @@ if {$use_ext_clk} {
   }
 }
 addr 0x40200000 2048 spi_clk/s_axi_lite ps/M_AXI_GP0
-
-## SPI clock input
-# If use_ext_clk is 1, then use the external clock input
-# otherwise use the 10MHz FCLK_CLK1 
   
 
 ###############################################################################
+
+### Calculate timing from SPI clock frequency
+## Constant block for SPI clock frequency in Hz
+cell xilinx.com:ip:xlconstant:1.1 spi_clk_freq_hz_const {
+  CONST_VAL [expr {int($spi_clk_freq_mhz * 1000000 + 0.5)}]
+  CONST_WIDTH 32
+} {}
+## Negate unlock_cfg to get calc signal
+cell xilinx.com:ip:util_vector_logic n_unlock_cfg {
+  C_SIZE 1
+  C_OPERATION not
+} {
+  Op1 axi_sys_ctrl/unlock
+}
+## Timing calculation cores
+cell lcb:user:shim_ad5676_dac_timing_calc dac_timing_calc {} {
+  clk spi_clk/clk_out1
+  resetn ps_rst/peripheral_aresetn
+  spi_clk_freq_hz spi_clk_freq_hz_const/dout
+  calc n_unlock_cfg/Res
+}
+cell lcb:user:shim_ads816x_adc_timing_calc adc_timing_calc {
+  ADS_MODEL_ID 8
+} {
+  clk spi_clk/clk_out1
+  resetn ps_rst/peripheral_aresetn
+  spi_clk_freq_hz spi_clk_freq_hz_const/dout
+  calc n_unlock_cfg/Res
+}
+## OR the done signals together
+cell xilinx.com:ip:util_vector_logic calc_n_cs_done_or {
+  C_SIZE 1
+  C_OPERATION or
+} {
+  Op1 dac_timing_calc/done
+  Op2 adc_timing_calc/done
+  Res hw_manager/calc_n_cs_done
+}
+## OR the lock violation signals together with axi_sys_ctrl/lock_viol as well (two OR stages)
+cell xilinx.com:ip:util_vector_logic calc_n_cs_lock_viol_or {
+  C_SIZE 1
+  C_OPERATION or
+} {
+  Op1 dac_timing_calc/lock_viol
+  Op2 adc_timing_calc/lock_viol
+}
+cell xilinx.com:ip:util_vector_logic lock_viol_or {
+  C_SIZE 1
+  C_OPERATION or
+} {
+  Op1 calc_n_cs_lock_viol_or/Res
+  Op2 axi_sys_ctrl/lock_viol
+  Res hw_manager/lock_viol
+}
+  
 
 ### SPI clock domain
 module spi_clk_domain spi_clk_domain {
@@ -292,6 +354,8 @@ module spi_clk_domain spi_clk_domain {
   integ_thresh_avg axi_sys_ctrl/integ_thresh_avg
   integ_window axi_sys_ctrl/integ_window
   integ_en axi_sys_ctrl/integ_en
+  dac_n_cs_high_time dac_timing_calc/n_cs_high_time
+  adc_n_cs_high_time adc_timing_calc/n_cs_high_time
   boot_test_skip axi_sys_ctrl/boot_test_skip
   debug axi_sys_ctrl/debug
   spi_off hw_manager/spi_off
