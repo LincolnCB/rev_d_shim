@@ -97,9 +97,9 @@ static command_entry_t command_table[] = {
   // ADC channel order command functions (require board and 8 channel order values)
   {"adc_set_ord", cmd_adc_set_ord, {9, 9, {-1}, "Set ADC channel order: <board> <ord0> <ord1> <ord2> <ord3> <ord4> <ord5> <ord6> <ord7> (each order value must be 0-7)"}},
   
-  // ADC simple read command functions (require board and loop count)
-  {"adc_simple_read", cmd_adc_simple_read, {2, 2, {-1}, "Perform simple ADC reads: <board> <loop_count> (reads ADC with delay mode, value 200)"}},
-  {"adc_read", cmd_adc_read, {2, 2, {-1}, "Perform ADC read using loop command: <board> <loop_count> (sends loop_next command then single read command)"}},
+  // ADC simple read command functions (require board, loop count, and delay cycles)
+  {"adc_simple_read", cmd_adc_simple_read, {3, 3, {-1}, "Perform simple ADC reads: <board> <loop_count> <delay_cycles> (reads ADC with delay mode)"}},
+  {"adc_read", cmd_adc_read, {3, 3, {-1}, "Perform ADC read using loop command: <board> <loop_count> <delay_cycles> (sends loop_next command then single read command)"}},
   
   // ADC file output command functions (require board and file path, support --all flag)
   {"read_adc_to_file", cmd_read_adc_to_file, {2, 2, {FLAG_ALL, -1}, "Read ADC data to file: <board> <file_path> [--all] (converts to signed values, writes one per line)"}},
@@ -107,6 +107,10 @@ static command_entry_t command_table[] = {
   // ADC streaming command functions (require board and file path)
   {"stream_adc_to_file", cmd_stream_adc_to_file, {2, 2, {-1}, "Start ADC streaming to file: <board> <file_path> (reads 4 words at a time, 8 samples)"}},
   {"stop_adc_stream", cmd_stop_adc_stream, {1, 1, {-1}, "Stop ADC streaming for specified board (0-7)"}},
+  
+  // DAC streaming command functions (require board and file path)
+  {"stream_dac_from_file", cmd_stream_dac_from_file, {2, 2, {-1}, "Start DAC streaming from waveform file: <board> <file_path> (D/T prefix with optional 8 ch values)"}},
+  {"stop_dac_stream", cmd_stop_dac_stream, {1, 1, {-1}, "Stop DAC streaming for specified board (0-7)"}},
   
   // Command logging and playback functions (require file path)
   {"log_commands", cmd_log_commands, {1, 1, {-1}, "Start logging commands to file: <file_path>"}},
@@ -892,6 +896,12 @@ int cmd_dac_noop(const char** args, int arg_count, const command_flag_t* flags, 
     return -1;
   }
   
+  // Check if DAC stream is running for this board
+  if (ctx->dac_stream_running[board]) {
+    fprintf(stderr, "Cannot send DAC no-op command to board %d: DAC stream is currently running. Stop the stream first.\n", board);
+    return -1;
+  }
+  
   // Parse trigger mode
   bool trig;
   if (strcmp(args[1], "trig") == 0) {
@@ -977,6 +987,12 @@ int cmd_dac_cancel(const char** args, int arg_count, const command_flag_t* flags
     return -1;
   }
   
+  // Check if DAC stream is running for this board
+  if (ctx->dac_stream_running[board]) {
+    fprintf(stderr, "Cannot send DAC cancel command to board %d: DAC stream is currently running. Stop the stream first.\n", board);
+    return -1;
+  }
+  
   // Execute DAC cancel command
   dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, *(ctx->verbose));
   printf("DAC cancel command sent to board %d.\n", board);
@@ -1002,6 +1018,12 @@ int cmd_write_dac_update(const char** args, int arg_count, const command_flag_t*
   int board = parse_board_number(args[0]);
   if (board < 0) {
     fprintf(stderr, "Invalid board number for write_dac_update: '%s'. Must be 0-7.\n", args[0]);
+    return -1;
+  }
+  
+  // Check if DAC stream is running for this board
+  if (ctx->dac_stream_running[board]) {
+    fprintf(stderr, "Cannot send DAC write update command to board %d: DAC stream is currently running. Stop the stream first.\n", board);
     return -1;
   }
   
@@ -1110,11 +1132,26 @@ int cmd_adc_simple_read(const char** args, int arg_count, const command_flag_t* 
     return -1;
   }
   
-  printf("Performing %ld simple ADC reads on board %d (delay mode, value 200)...\n", loop_count, board);
+  // Parse delay cycles
+  long delay_cycles = strtol(args[2], &endptr, 0);
+  if (*endptr != '\0') {
+    fprintf(stderr, "Invalid delay cycles for adc_simple_read: '%s'. Must be a number.\n", args[2]);
+    return -1;
+  }
+  if (delay_cycles < 0) {
+    fprintf(stderr, "Invalid delay cycles for adc_simple_read: %ld. Must be non-negative.\n", delay_cycles);
+    return -1;
+  }
+  if (delay_cycles > 0x1FFFFFFF) {
+    fprintf(stderr, "Delay cycles too large for adc_simple_read: %ld. Must be 0 to 536870911 (29-bit value).\n", delay_cycles);
+    return -1;
+  }
+  
+  printf("Performing %ld simple ADC reads on board %d (delay mode, value %ld)...\n", loop_count, board, delay_cycles);
   
   // Execute ADC read commands in loop
   for (long i = 0; i < loop_count; i++) {
-    adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, 200, *(ctx->verbose));
+    adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, (uint32_t)delay_cycles, *(ctx->verbose));
     if (*(ctx->verbose)) {
       printf("ADC read command %ld sent to board %d\n", i + 1, board);
     }
@@ -1148,15 +1185,30 @@ int cmd_adc_read(const char** args, int arg_count, const command_flag_t* flags, 
     return -1;
   }
   
-  printf("Performing ADC read on board %d using loop command (loop count: %ld, delay mode, value 200)...\n", board, loop_count);
+  // Parse delay cycles
+  long delay_cycles = strtol(args[2], &endptr, 0);
+  if (*endptr != '\0') {
+    fprintf(stderr, "Invalid delay cycles for adc_read: '%s'. Must be a number.\n", args[2]);
+    return -1;
+  }
+  if (delay_cycles < 0) {
+    fprintf(stderr, "Invalid delay cycles for adc_read: %ld. Must be non-negative.\n", delay_cycles);
+    return -1;
+  }
+  if (delay_cycles > 0x1FFFFFFF) {
+    fprintf(stderr, "Delay cycles too large for adc_read: %ld. Must be 0 to 536870911 (29-bit value).\n", delay_cycles);
+    return -1;
+  }
+  
+  printf("Performing ADC read on board %d using loop command (loop count: %ld, delay mode, value %ld)...\n", board, loop_count, delay_cycles);
   
   // Send loop_next command with the loop count
   adc_cmd_loop_next(ctx->adc_ctrl, (uint8_t)board, (uint32_t)loop_count, *(ctx->verbose));
   
   // Send single ADC read command
-  adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, 200, *(ctx->verbose));
+  adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, (uint32_t)delay_cycles, *(ctx->verbose));
   
-  printf("ADC read commands sent to board %d: loop_next(%ld) + adc_rd(delay, 200).\n", board, loop_count);
+  printf("ADC read commands sent to board %d: loop_next(%ld) + adc_rd(delay, %ld).\n", board, loop_count, delay_cycles);
   return 0;
 }
 
@@ -1510,5 +1562,317 @@ int cmd_load_commands(const char** args, int arg_count, const command_flag_t* fl
   
   fclose(file);
   printf("Successfully executed %d commands from file '%s'.\n", commands_executed, full_path);
+  return 0;
+}
+
+// Structure to hold a parsed waveform command
+typedef struct {
+  bool is_trigger;     // true for T, false for D
+  uint32_t value;      // command value
+  bool has_ch_vals;    // whether channel values are present
+  int16_t ch_vals[8];  // channel values (if present)
+  bool cont;           // continue flag
+} waveform_command_t;
+
+// Structure to pass data to the DAC streaming thread
+typedef struct {
+  command_context_t* ctx;
+  uint8_t board;
+  char file_path[1024];
+  volatile bool* should_stop;
+  waveform_command_t* commands;
+  int command_count;
+} dac_stream_data_t;
+
+// Function to validate and parse a waveform file
+static int parse_waveform_file(const char* file_path, waveform_command_t** commands, int* command_count) {
+  FILE* file = fopen(file_path, "r");
+  if (file == NULL) {
+    fprintf(stderr, "Failed to open waveform file '%s': %s\n", file_path, strerror(errno));
+    return -1;
+  }
+  
+  // First pass: count lines and validate format
+  char line[512];
+  int line_num = 0;
+  int valid_lines = 0;
+  
+  while (fgets(line, sizeof(line), file)) {
+    line_num++;
+    
+    // Skip empty lines and comments
+    char* trimmed = line;
+    while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
+    if (*trimmed == '\n' || *trimmed == '\r' || *trimmed == '\0' || *trimmed == '#') {
+      continue;
+    }
+    
+    // Check if line starts with D or T
+    if (*trimmed != 'D' && *trimmed != 'T') {
+      fprintf(stderr, "Invalid line %d: must start with 'D' or 'T'\n", line_num);
+      fclose(file);
+      return -1;
+    }
+    
+    // Parse the line to validate format
+    char mode;
+    uint32_t value;
+    int16_t ch_vals[8];
+    int parsed = sscanf(trimmed, "%c %u %hd %hd %hd %hd %hd %hd %hd %hd", 
+                       &mode, &value, &ch_vals[0], &ch_vals[1], &ch_vals[2], &ch_vals[3],
+                       &ch_vals[4], &ch_vals[5], &ch_vals[6], &ch_vals[7]);
+    
+    if (parsed < 2) {
+      fprintf(stderr, "Invalid line %d: must have at least mode and value\n", line_num);
+      fclose(file);
+      return -1;
+    }
+    
+    if (parsed != 2 && parsed != 10) {
+      fprintf(stderr, "Invalid line %d: must have either 2 fields (mode, value) or 10 fields (mode, value, 8 channels)\n", line_num);
+      fclose(file);
+      return -1;
+    }
+    
+    // Validate value range
+    if (value > 0x3FFFFFF) {
+      fprintf(stderr, "Invalid line %d: value %u out of range (max 67108863)\n", line_num, value);
+      fclose(file);
+      return -1;
+    }
+    
+    // Validate channel values if present
+    if (parsed == 10) {
+      for (int i = 0; i < 8; i++) {
+        if (ch_vals[i] < -32767 || ch_vals[i] > 32767) {
+          fprintf(stderr, "Invalid line %d: channel %d value %d out of range (-32767 to 32767)\n", 
+                 line_num, i, ch_vals[i]);
+          fclose(file);
+          return -1;
+        }
+      }
+    }
+    
+    valid_lines++;
+  }
+  
+  if (valid_lines == 0) {
+    fprintf(stderr, "No valid commands found in waveform file\n");
+    fclose(file);
+    return -1;
+  }
+  
+  // Allocate memory for commands
+  *commands = malloc(valid_lines * sizeof(waveform_command_t));
+  if (*commands == NULL) {
+    fprintf(stderr, "Failed to allocate memory for waveform commands\n");
+    fclose(file);
+    return -1;
+  }
+  
+  // Second pass: parse and store commands
+  rewind(file);
+  line_num = 0;
+  int cmd_index = 0;
+  
+  while (fgets(line, sizeof(line), file)) {
+    line_num++;
+    
+    // Skip empty lines and comments
+    char* trimmed = line;
+    while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
+    if (*trimmed == '\n' || *trimmed == '\r' || *trimmed == '\0' || *trimmed == '#') {
+      continue;
+    }
+    
+    waveform_command_t* cmd = &(*commands)[cmd_index];
+    
+    char mode;
+    uint32_t value;
+    int16_t ch_vals[8];
+    int parsed = sscanf(trimmed, "%c %u %hd %hd %hd %hd %hd %hd %hd %hd", 
+                       &mode, &value, &ch_vals[0], &ch_vals[1], &ch_vals[2], &ch_vals[3],
+                       &ch_vals[4], &ch_vals[5], &ch_vals[6], &ch_vals[7]);
+    
+    cmd->is_trigger = (mode == 'T');
+    cmd->value = value;
+    cmd->has_ch_vals = (parsed == 10);
+    cmd->cont = (cmd_index < valid_lines - 1); // true for all except last command
+    
+    if (cmd->has_ch_vals) {
+      for (int i = 0; i < 8; i++) {
+        cmd->ch_vals[i] = ch_vals[i];
+      }
+    }
+    
+    cmd_index++;
+  }
+  
+  fclose(file);
+  *command_count = valid_lines;
+  return 0;
+}
+
+// Thread function for DAC streaming
+void* dac_stream_thread(void* arg) {
+  dac_stream_data_t* stream_data = (dac_stream_data_t*)arg;
+  command_context_t* ctx = stream_data->ctx;
+  uint8_t board = stream_data->board;
+  const char* file_path = stream_data->file_path;
+  volatile bool* should_stop = stream_data->should_stop;
+  waveform_command_t* commands = stream_data->commands;
+  int command_count = stream_data->command_count;
+  
+  printf("DAC Stream Thread[%d]: Started streaming from file '%s' (%d commands)\n", 
+         board, file_path, command_count);
+  
+  int commands_sent = 0;
+  int cmd_index = 0;
+  
+  while (!(*should_stop) && cmd_index < command_count) {
+    // Check DAC command FIFO status
+    uint32_t fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, board, false);
+    
+    if (FIFO_PRESENT(fifo_status) == 0) {
+      fprintf(stderr, "DAC Stream Thread[%d]: FIFO not present, stopping stream\n", board);
+      break;
+    }
+    
+    uint32_t words_used = FIFO_STS_WORD_COUNT(fifo_status);
+    uint32_t words_available = DAC_CMD_FIFO_WORDCOUNT - (words_used + 1);
+    
+    // Check if we have space for the next command
+    waveform_command_t* cmd = &commands[cmd_index];
+    uint32_t words_needed = cmd->has_ch_vals ? 5 : 1; // dac_wr needs 5 words, noop needs 1
+    
+    if (words_available >= words_needed) {
+      // Send the command
+      if (cmd->has_ch_vals) {
+        dac_cmd_dac_wr(ctx->dac_ctrl, board, cmd->ch_vals, cmd->is_trigger, cmd->cont, true, cmd->value, false);
+      } else {
+        dac_cmd_noop(ctx->dac_ctrl, board, cmd->is_trigger, cmd->cont, false, cmd->value, false);
+      }
+      
+      commands_sent++;
+      cmd_index++;
+      
+      if (*(ctx->verbose)) {
+        printf("DAC Stream Thread[%d]: Sent command %d/%d (%s, value=%u, %s)\n", 
+               board, commands_sent, command_count, 
+               cmd->is_trigger ? "trigger" : "delay", cmd->value,
+               cmd->has_ch_vals ? "with ch_vals" : "noop");
+      }
+    } else {
+      // Not enough space, sleep and try again
+      usleep(100);
+    }
+  }
+  
+  if (*should_stop) {
+    printf("DAC Stream Thread[%d]: Stopping stream (user requested), sent %d/%d commands\n", 
+           board, commands_sent, command_count);
+  } else {
+    printf("DAC Stream Thread[%d]: Stream completed, sent %d commands from file '%s'\n", 
+           board, commands_sent, file_path);
+  }
+  
+  ctx->dac_stream_running[board] = false;
+  free(stream_data->commands);
+  free(stream_data);
+  return NULL;
+}
+
+int cmd_stream_dac_from_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  // Parse board number
+  int board = parse_board_number(args[0]);
+  if (board < 0) {
+    fprintf(stderr, "Invalid board number for stream_dac_from_file: '%s'. Must be 0-7.\n", args[0]);
+    return -1;
+  }
+  
+  // Check if stream is already running
+  if (ctx->dac_stream_running[board]) {
+    printf("DAC stream for board %d is already running.\n", board);
+    return -1;
+  }
+  
+  // Check DAC command FIFO presence
+  if (FIFO_PRESENT(sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))) == 0) {
+    printf("DAC command FIFO for board %d is not present. Cannot start streaming.\n", board);
+    return -1;
+  }
+  
+  // Clean and expand file path
+  char full_path[1024];
+  clean_and_expand_path(args[1], full_path, sizeof(full_path));
+  
+  // Parse and validate the waveform file
+  waveform_command_t* commands = NULL;
+  int command_count = 0;
+  
+  if (parse_waveform_file(full_path, &commands, &command_count) != 0) {
+    return -1; // Error already printed by parse_waveform_file
+  }
+  
+  printf("Parsed %d commands from waveform file '%s'\n", command_count, full_path);
+  
+  // Allocate thread data structure
+  dac_stream_data_t* stream_data = malloc(sizeof(dac_stream_data_t));
+  if (stream_data == NULL) {
+    fprintf(stderr, "Failed to allocate memory for stream data\n");
+    free(commands);
+    return -1;
+  }
+  
+  stream_data->ctx = ctx;
+  stream_data->board = (uint8_t)board;
+  strcpy(stream_data->file_path, full_path);
+  stream_data->should_stop = &(ctx->dac_stream_stop[board]);
+  stream_data->commands = commands;
+  stream_data->command_count = command_count;
+  
+  // Initialize stop flag and mark stream as running
+  ctx->dac_stream_stop[board] = false;
+  ctx->dac_stream_running[board] = true;
+  
+  // Create the streaming thread
+  if (pthread_create(&(ctx->dac_stream_threads[board]), NULL, dac_stream_thread, stream_data) != 0) {
+    fprintf(stderr, "Failed to create DAC streaming thread for board %d: %s\n", board, strerror(errno));
+    ctx->dac_stream_running[board] = false;
+    free(commands);
+    free(stream_data);
+    return -1;
+  }
+  
+  printf("Started DAC streaming for board %d from file '%s'\n", board, full_path);
+  return 0;
+}
+
+int cmd_stop_dac_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  // Parse board number
+  int board = parse_board_number(args[0]);
+  if (board < 0) {
+    fprintf(stderr, "Invalid board number for stop_dac_stream: '%s'. Must be 0-7.\n", args[0]);
+    return -1;
+  }
+  
+  // Check if stream is running
+  if (!ctx->dac_stream_running[board]) {
+    printf("DAC stream for board %d is not running.\n", board);
+    return -1;
+  }
+  
+  printf("Stopping DAC streaming for board %d...\n", board);
+  
+  // Signal the thread to stop
+  ctx->dac_stream_stop[board] = true;
+  
+  // Wait for the thread to finish
+  if (pthread_join(ctx->dac_stream_threads[board], NULL) != 0) {
+    fprintf(stderr, "Failed to join DAC streaming thread for board %d: %s\n", board, strerror(errno));
+    return -1;
+  }
+  
+  printf("DAC streaming for board %d has been stopped.\n", board);
   return 0;
 }

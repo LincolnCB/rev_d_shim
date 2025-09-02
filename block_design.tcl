@@ -1,5 +1,5 @@
 ## Variably define the channel count (MUST BE 1 TO 8 INCLUSIVE)
-set board_count 1
+set board_count 3
 
 # If the board count is not 8, then error out
 if {$board_count < 1 || $board_count > 8} {
@@ -24,6 +24,17 @@ if {$spi_clk_freq_mhz < 1.0 || $spi_clk_freq_mhz > 50.0} {
   puts "Error: spi_clk_freq_mhz must be between 1.0 and 50.0."
   exit 1
 }
+
+## Variably define the FIFO address widths (10 to 17 inclusive)
+# This sets the depth of the FIFOs as 2^ADDR_WIDTH
+# Larger FIFOs use more FPGA resources, but allow for longer bursts and more buffering.
+# This can hit the cap fast!
+set dac_cmd_fifo_addr_width 11
+set dac_data_fifo_addr_width 10
+set adc_cmd_fifo_addr_width 10
+set adc_data_fifo_addr_width 11
+set trig_cmd_fifo_addr_width 10
+set trig_data_fifo_addr_width 10
 
 ###############################################################################
 #

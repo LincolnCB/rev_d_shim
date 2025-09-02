@@ -9,6 +9,25 @@ if {$board_count < 1 || $board_count > 8} {
   exit 1
 }
 
+# Get the DAC/ADC/trigger command/data FIFO address widths from the calling context
+set dac_cmd_fifo_addr_width [module_get_upvar dac_cmd_fifo_addr_width]
+set dac_data_fifo_addr_width [module_get_upvar dac_data_fifo_addr_width]
+set adc_cmd_fifo_addr_width [module_get_upvar adc_cmd_fifo_addr_width]
+set adc_data_fifo_addr_width [module_get_upvar adc_data_fifo_addr_width]
+set trig_cmd_fifo_addr_width [module_get_upvar trig_cmd_fifo_addr_width]
+set trig_data_fifo_addr_width [module_get_upvar trig_data_fifo_addr_width]
+
+# Make sure they are all between 10 and 17
+if {$dac_cmd_fifo_addr_width < 10 || $dac_cmd_fifo_addr_width > 17 ||
+    $dac_data_fifo_addr_width < 10 || $dac_data_fifo_addr_width > 17 ||
+    $adc_cmd_fifo_addr_width < 10 || $adc_cmd_fifo_addr_width > 17 ||
+    $adc_data_fifo_addr_width < 10 || $adc_data_fifo_addr_width > 17 ||
+    $trig_cmd_fifo_addr_width < 10 || $trig_cmd_fifo_addr_width > 17 ||
+    $trig_data_fifo_addr_width < 10 || $trig_data_fifo_addr_width > 17} {
+  puts "Error: FIFO address widths must be between 10 and 17."
+  exit 1
+}
+
 ##################################################
 
 ### Ports
@@ -90,15 +109,31 @@ cell xilinx.com:ip:smartconnect:1.0 board_ch_axi_intercon {
   aresetn aresetn
 }
 # Status word padding for making 32-bit status words
-cell xilinx.com:ip:xlconstant:1.1 sts_word_padding {
+cell xilinx.com:ip:xlconstant:1.1 dac_cmd_sts_word_padding {
   CONST_VAL 0
-  CONST_WIDTH 16
+  CONST_WIDTH [expr {32 - (5 + $dac_cmd_fifo_addr_width)}]
 } {}
-# Status word padding for making 32-bit status words
+cell xilinx.com:ip:xlconstant:1.1 dac_data_sts_word_padding {
+  CONST_VAL 0
+  CONST_WIDTH [expr {32 - (5 + $dac_data_fifo_addr_width)}]
+} {}
+cell xilinx.com:ip:xlconstant:1.1 adc_cmd_sts_word_padding {
+  CONST_VAL 0
+  CONST_WIDTH [expr {32 - (5 + $adc_cmd_fifo_addr_width)}]
+} {}
 cell xilinx.com:ip:xlconstant:1.1 adc_data_sts_word_padding {
   CONST_VAL 0
-  CONST_WIDTH 15
+  CONST_WIDTH [expr {32 - (5 + $adc_data_fifo_addr_width)}]
 } {}
+cell xilinx.com:ip:xlconstant:1.1 trig_cmd_sts_word_padding {
+  CONST_VAL 0
+  CONST_WIDTH [expr {32 - (5 + $trig_cmd_fifo_addr_width)}]
+} {}
+cell xilinx.com:ip:xlconstant:1.1 trig_data_sts_word_padding {
+  CONST_VAL 0
+  CONST_WIDTH [expr {32 - (5 + $trig_data_fifo_addr_width)}]
+} {}
+
 
 ## FIFO declarations
 # Each FIFO has a 32-bit data width and 10-bit address width
@@ -140,7 +175,7 @@ for {set i 0} {$i < $board_count} {incr i} {
   # DAC command FIFO
   cell lcb:user:fifo_async dac_cmd_fifo_$i {
     DATA_WIDTH 32
-    ADDR_WIDTH 10
+    ADDR_WIDTH $dac_cmd_fifo_addr_width
   } {
     wr_clk aclk
     wr_rst_n dac_cmd_fifo_${i}_aclk_rst/peripheral_aresetn
@@ -155,7 +190,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     NUM_PORTS 7
   } {
     In0 dac_cmd_fifo_${i}/fifo_count_wr_clk
-    In1 sts_word_padding/dout
+    In1 dac_cmd_sts_word_padding/dout
     In2 dac_cmd_fifo_${i}/full
     In3 dac_cmd_fifo_${i}/almost_full
     In4 dac_cmd_fifo_${i}/empty
@@ -189,7 +224,7 @@ for {set i 0} {$i < $board_count} {incr i} {
   # DAC data FIFO
   cell lcb:user:fifo_async dac_data_fifo_$i {
     DATA_WIDTH 32
-    ADDR_WIDTH 10
+    ADDR_WIDTH $dac_data_fifo_addr_width
   } {
     wr_clk spi_clk
     wr_rst_n dac_data_fifo_${i}_spi_clk_rst/peripheral_aresetn
@@ -204,7 +239,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     NUM_PORTS 7
   } {
     In0 dac_data_fifo_${i}/fifo_count_rd_clk
-    In1 sts_word_padding/dout
+    In1 dac_data_sts_word_padding/dout
     In2 dac_data_fifo_${i}/full
     In3 dac_data_fifo_${i}/almost_full
     In4 dac_data_fifo_${i}/empty
@@ -255,7 +290,7 @@ for {set i 0} {$i < $board_count} {incr i} {
   # ADC command FIFO
   cell lcb:user:fifo_async adc_cmd_fifo_$i {
     DATA_WIDTH 32
-    ADDR_WIDTH 10
+    ADDR_WIDTH $adc_cmd_fifo_addr_width
   } {
     wr_clk aclk
     wr_rst_n adc_cmd_fifo_${i}_aclk_rst/peripheral_aresetn
@@ -270,7 +305,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     NUM_PORTS 7
   } {
     In0 adc_cmd_fifo_${i}/fifo_count_wr_clk
-    In1 sts_word_padding/dout
+    In1 adc_cmd_sts_word_padding/dout
     In2 adc_cmd_fifo_${i}/full
     In3 adc_cmd_fifo_${i}/almost_full
     In4 adc_cmd_fifo_${i}/empty
@@ -304,7 +339,7 @@ for {set i 0} {$i < $board_count} {incr i} {
   # ADC data FIFO
   cell lcb:user:fifo_async adc_data_fifo_$i {
     DATA_WIDTH 32
-    ADDR_WIDTH 11
+    ADDR_WIDTH $adc_data_fifo_addr_width
   } {
     wr_clk spi_clk
     wr_rst_n adc_data_fifo_${i}_spi_clk_rst/peripheral_aresetn
@@ -370,7 +405,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 trig_cmd_fifo_aclk_rst {} {
 # Trigger command FIFO
 cell lcb:user:fifo_async trig_cmd_fifo {
   DATA_WIDTH 32
-  ADDR_WIDTH 10
+  ADDR_WIDTH $trig_cmd_fifo_addr_width
 } {
   wr_clk aclk
   wr_rst_n trig_cmd_fifo_aclk_rst/peripheral_aresetn
@@ -385,7 +420,7 @@ cell xilinx.com:ip:xlconcat:2.1 trig_cmd_fifo_sts_word {
   NUM_PORTS 7
 } {
   In0 trig_cmd_fifo/fifo_count_wr_clk
-  In1 sts_word_padding/dout
+  In1 trig_cmd_sts_word_padding/dout
   In2 trig_cmd_fifo/full
   In3 trig_cmd_fifo/almost_full
   In4 trig_cmd_fifo/empty
@@ -419,7 +454,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 trig_data_fifo_aclk_rst {} {
 # Trigger data FIFO
 cell lcb:user:fifo_async trig_data_fifo {
   DATA_WIDTH 32
-  ADDR_WIDTH 10
+  ADDR_WIDTH $trig_data_fifo_addr_width
 } {
   wr_clk spi_clk
   wr_rst_n trig_data_fifo_spi_clk_rst/peripheral_aresetn
@@ -435,7 +470,7 @@ cell xilinx.com:ip:xlconcat:2.1 trig_data_fifo_sts_word {
   NUM_PORTS 7
 } {
   In0 trig_data_fifo/fifo_count_rd_clk
-  In1 sts_word_padding/dout
+  In1 trig_data_sts_word_padding/dout
   In2 trig_data_fifo/full
   In3 trig_data_fifo/almost_full
   In4 trig_data_fifo/empty

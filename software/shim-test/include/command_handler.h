@@ -41,6 +41,9 @@ typedef struct command_context {
   pthread_t adc_stream_threads[8];      // Thread handles for ADC streaming
   bool adc_stream_running[8];           // Status of each ADC stream thread
   volatile bool adc_stream_stop[8];     // Stop signals for each ADC stream thread
+  pthread_t dac_stream_threads[8];      // Thread handles for DAC streaming
+  bool dac_stream_running[8];           // Status of each DAC stream thread
+  volatile bool dac_stream_stop[8];     // Stop signals for each DAC stream thread
   FILE* log_file;                       // File handle for command logging
   bool logging_enabled;                 // Whether command logging is active
 } command_context_t;
@@ -143,6 +146,10 @@ int cmd_read_adc_to_file(const char** args, int arg_count, const command_flag_t*
 // ADC streaming command functions (require board and file path)
 int cmd_stream_adc_to_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);       // Start ADC streaming to file
 int cmd_stop_adc_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);          // Stop ADC streaming for specified board
+
+// DAC streaming command functions (require board and file path)
+int cmd_stream_dac_from_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);     // Start DAC streaming from waveform file
+int cmd_stop_dac_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);          // Stop DAC streaming for specified board
 
 // Command logging and playback functions (require file path)
 int cmd_log_commands(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);             // Start logging commands to file
