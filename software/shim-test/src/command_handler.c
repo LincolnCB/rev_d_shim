@@ -1180,8 +1180,8 @@ int cmd_adc_read(const char** args, int arg_count, const command_flag_t* flags, 
     fprintf(stderr, "Invalid loop count for adc_read: %ld. Must be at least 1.\n", loop_count);
     return -1;
   }
-  if (loop_count > 0x3FFFFFF) {
-    fprintf(stderr, "Loop count too large for adc_read: %ld. Must be 0 to 67108863 (26-bit value).\n", loop_count);
+  if (loop_count > 0x1FFFFFF) {
+    fprintf(stderr, "Loop count too large for adc_read: %ld. Must be 0 to 33554431 (25-bit value).\n", loop_count);
     return -1;
   }
   
@@ -1635,8 +1635,8 @@ static int parse_waveform_file(const char* file_path, waveform_command_t** comma
     }
     
     // Validate value range
-    if (value > 0x3FFFFFF) {
-      fprintf(stderr, "Invalid line %d: value %u out of range (max 67108863)\n", line_num, value);
+    if (value > 0x1FFFFFF) {
+      fprintf(stderr, "Invalid line %d: value %u out of range (max 0x1FFFFFF or 33554431)\n", line_num, value);
       fclose(file);
       return -1;
     }

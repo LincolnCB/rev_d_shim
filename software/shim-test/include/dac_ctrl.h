@@ -12,17 +12,18 @@
 #define DAC_CMD_FIFO_WORDCOUNT   (uint32_t) 1024 // Size in 32-bit words
 #define DAC_DATA_FIFO_WORDCOUNT  (uint32_t) 1024 // Size in 32-bit words
 
-// DAC command codes (2 MSB of command word)
-#define DAC_CMD_NO_OP    0x0
-#define DAC_CMD_DAC_WR   0x1
-#define DAC_CMD_SET_CAL  0x2
-#define DAC_CMD_CANCEL   0x3
+// DAC command codes (3 MSB of command word)
+#define DAC_CMD_NO_OP    0
+#define DAC_CMD_SET_CAL  1
+#define DAC_CMD_DAC_WR   2
+#define DAC_CMD_WR_CH    3
+#define DAC_CMD_CANCEL   7
 
 // DAC command bits
-#define DAC_CMD_CMD_LSB  30
-#define DAC_CMD_LDAC_BIT 29
+#define DAC_CMD_CMD_LSB  29
 #define DAC_CMD_TRIG_BIT 28
 #define DAC_CMD_CONT_BIT 27
+#define DAC_CMD_LDAC_BIT 26
 
 // DAC state codes
 #define DAC_STATE_RESET      0
