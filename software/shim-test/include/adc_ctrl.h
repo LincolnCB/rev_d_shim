@@ -12,19 +12,6 @@
 #define ADC_CMD_FIFO_WORDCOUNT  (uint32_t) 1024 // Size in 32-bit words
 #define ADC_DATA_FIFO_WORDCOUNT  (uint32_t) 1024 // Size in 32-bit words
 
-// ADC command codes (3 MSB of command word)
-#define ADC_CMD_NO_OP    0
-#define ADC_CMD_SET_ORD  1
-#define ADC_CMD_ADC_RD   2
-#define ADC_CMD_RD_CH    3
-#define ADC_CMD_LOOP     4
-#define ADC_CMD_CANCEL   5
-
-// ADC command bits
-#define ADC_CMD_CMD_LSB  29
-#define ADC_CMD_TRIG_BIT 28
-#define ADC_CMD_CONT_BIT 27
-
 // ADC state codes
 #define ADC_STATE_RESET      0
 #define ADC_STATE_INIT       1
@@ -35,7 +22,22 @@
 #define ADC_STATE_DELAY      6
 #define ADC_STATE_TRIG_WAIT  7
 #define ADC_STATE_ADC_RD     8
-#define ADC_STATE_ERROR      9
+#define ADC_STATE_ADC_RD_CH  9
+#define ADC_STATE_LOOP_NEXT  10
+#define ADC_STATE_ERROR      15
+
+// ADC command codes (3 MSB of command word)
+#define ADC_CMD_NO_OP     0
+#define ADC_CMD_SET_ORD   1
+#define ADC_CMD_ADC_RD    2
+#define ADC_CMD_ADC_RD_CH 3
+#define ADC_CMD_LOOP      4
+#define ADC_CMD_CANCEL    7
+
+// ADC command bits
+#define ADC_CMD_CMD_LSB  29
+#define ADC_CMD_TRIG_BIT 28
+#define ADC_CMD_CONT_BIT 27
 
 // ADC debug codes
 #define ADC_DBG(word)             (((word) >> 28) & 0x0F) // Top 4 bits for debug code
@@ -63,6 +65,8 @@ struct adc_ctrl_t {
 struct adc_ctrl_t create_adc_ctrl(bool verbose);
 // Read ADC value from a specific board
 uint32_t adc_read(struct adc_ctrl_t *adc_ctrl, uint8_t board);
+// Read a single ADC sample (one channel) from a specific board
+int16_t adc_read_ch(struct adc_ctrl_t *adc_ctrl, uint8_t board);
 // Interpret and print ADC value as debug information
 void adc_print_debug(uint32_t adc_value);
 // Interpret and print the ADC state
@@ -71,6 +75,7 @@ void adc_print_state(uint8_t state_code);
 // ADC command word functions
 void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t value, bool verbose);
 void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t value, bool verbose);
+void adc_cmd_adc_rd_ch(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t ch, bool verbose);
 void adc_cmd_set_ord(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t channel_order[8], bool verbose);
 void adc_cmd_cancel(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool verbose);
 void adc_cmd_loop_next(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint32_t loop_count, bool verbose);

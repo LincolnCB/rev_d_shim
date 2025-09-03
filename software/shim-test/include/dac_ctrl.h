@@ -12,19 +12,6 @@
 #define DAC_CMD_FIFO_WORDCOUNT   (uint32_t) 1024 // Size in 32-bit words
 #define DAC_DATA_FIFO_WORDCOUNT  (uint32_t) 1024 // Size in 32-bit words
 
-// DAC command codes (3 MSB of command word)
-#define DAC_CMD_NO_OP    0
-#define DAC_CMD_SET_CAL  1
-#define DAC_CMD_DAC_WR   2
-#define DAC_CMD_WR_CH    3
-#define DAC_CMD_CANCEL   7
-
-// DAC command bits
-#define DAC_CMD_CMD_LSB  29
-#define DAC_CMD_TRIG_BIT 28
-#define DAC_CMD_CONT_BIT 27
-#define DAC_CMD_LDAC_BIT 26
-
 // DAC state codes
 #define DAC_STATE_RESET      0
 #define DAC_STATE_INIT       1
@@ -35,7 +22,21 @@
 #define DAC_STATE_DELAY      6
 #define DAC_STATE_TRIG_WAIT  7
 #define DAC_STATE_DAC_WR     8
-#define DAC_STATE_ERROR      9
+#define DAC_STATE_DAC_WR_CH  9
+#define DAC_STATE_ERROR      15
+
+// DAC command codes (3 MSB of command word)
+#define DAC_CMD_NO_OP     0
+#define DAC_CMD_SET_CAL   1
+#define DAC_CMD_DAC_WR    2
+#define DAC_CMD_DAC_WR_CH 3
+#define DAC_CMD_CANCEL    7
+
+// DAC command bits
+#define DAC_CMD_CMD_LSB  29
+#define DAC_CMD_TRIG_BIT 28
+#define DAC_CMD_CONT_BIT 27
+#define DAC_CMD_LDAC_BIT 26
 
 // DAC debug codes
 #define DAC_DBG(word)             (((word) >> 28) & 0x0F) // Top 4 bits for debug code
@@ -70,6 +71,7 @@ void dac_print_state(uint8_t state_code);
 // DAC command word functions
 void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool trig, bool cont, bool ldac, uint32_t value, bool verbose);
 void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[8], bool trig, bool cont, bool ldac, uint32_t value, bool verbose);
+void dac_cmd_dac_wr_ch(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t ch, int16_t ch_val, bool verbose);
 void dac_cmd_set_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel, int16_t offset, bool verbose);
 void dac_cmd_cancel(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool verbose);
 

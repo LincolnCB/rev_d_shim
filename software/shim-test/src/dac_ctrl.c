@@ -65,28 +65,31 @@ void dac_print_state(uint8_t state_code) {
       printf("RESET");
       break;
     case DAC_STATE_INIT:
-      printf("INIT");
+      printf("Init");
       break;
     case DAC_STATE_TEST_WR:
-      printf("TEST Write");
+      printf("Test Write");
       break;
     case DAC_STATE_REQ_RD:
       printf("Request Read");
       break;
     case DAC_STATE_TEST_RD:
-      printf("TEST Read");
+      printf("Test Read");
       break;
     case DAC_STATE_IDLE:
-      printf("IDLE");
+      printf("Idle");
       break;
     case DAC_STATE_DELAY:
-      printf("DELAY");
+      printf("Delay Wait");
       break;
     case DAC_STATE_TRIG_WAIT:
       printf("Trigger Wait");
       break;
     case DAC_STATE_DAC_WR:
       printf("DAC Write");
+      break;
+    case DAC_STATE_DAC_WR_CH:
+      printf("DAC Write Channel");
       break;
     case DAC_STATE_ERROR:
       printf("ERROR");
@@ -151,6 +154,27 @@ void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[
     }
     *(dac_ctrl->buffer[board]) = word;
   }
+}
+
+void dac_cmd_dac_wr_ch(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t ch, int16_t ch_val, bool verbose) {
+  if (board > 7) {
+    fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
+    return;
+  }
+  if (ch > 7) {
+    fprintf(stderr, "Invalid DAC channel: %d. Must be 0-7.\n", ch);
+    return;
+  }
+
+  uint32_t cmd_word = (DAC_CMD_DAC_WR_CH << DAC_CMD_CMD_LSB) |
+                      ((ch & 0x7) << 16) | // Channel index
+                      ((uint16_t)DAC_SIGNED_TO_OFFSET(ch_val) & 0xFFFF);
+
+  if (verbose) {
+    printf("DAC[%d] DAC_WR_CH command word: 0x%08X (channel %d, value=0x%04X)\n", 
+           board, cmd_word, ch, (uint16_t)DAC_SIGNED_TO_OFFSET(ch_val) & 0xFFFF);
+  }
+  *(dac_ctrl->buffer[board]) = cmd_word;
 }
 
 void dac_cmd_set_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel, int16_t cal, bool verbose) {

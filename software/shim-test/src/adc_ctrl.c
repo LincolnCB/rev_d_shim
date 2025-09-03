@@ -19,7 +19,7 @@ struct adc_ctrl_t create_adc_ctrl(bool verbose) {
   return adc_ctrl;
 }
 
-// Read ADC value from a specific board
+// Read ADC value word from a specific board
 uint32_t adc_read(struct adc_ctrl_t *adc_ctrl, uint8_t board) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
@@ -27,6 +27,18 @@ uint32_t adc_read(struct adc_ctrl_t *adc_ctrl, uint8_t board) {
   }
 
   return *(adc_ctrl->buffer[board]);
+}
+
+// Read a single ADC sample (one channel) from a specific board
+int16_t adc_read_ch(struct adc_ctrl_t *adc_ctrl, uint8_t board) {
+  if (board > 7) {
+    fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
+    return 0; // Return 0 for invalid board
+  }
+
+  uint32_t data = *(adc_ctrl->buffer[board]);
+  uint16_t lower_16 = data & 0xFFFF;
+  return ADC_OFFSET_TO_SIGNED(lower_16);
 }
 
 // Interpret and print ADC value as debug information
@@ -65,28 +77,34 @@ void adc_print_state(uint8_t state_code) {
       printf("RESET");
       break;
     case ADC_STATE_INIT:
-      printf("INIT");
+      printf("Init");
       break;
     case ADC_STATE_TEST_WR:
-      printf("TEST Write");
+      printf("Test Write");
       break;
     case ADC_STATE_REQ_RD:
       printf("Request Read");
       break;
     case ADC_STATE_TEST_RD:
-      printf("TEST Read");
+      printf("Test Read");
       break;
     case ADC_STATE_IDLE:
-      printf("IDLE");
+      printf("Idle");
       break;
     case ADC_STATE_DELAY:
-      printf("DELAY");
+      printf("Delay Wait");
       break;
     case ADC_STATE_TRIG_WAIT:
       printf("Trigger Wait");
       break;
     case ADC_STATE_ADC_RD:
       printf("ADC Read");
+      break;
+    case ADC_STATE_ADC_RD_CH:
+      printf("ADC Read Channel");
+      break;
+    case ADC_STATE_LOOP_NEXT:
+      printf("Loop Next");
       break;
     case ADC_STATE_ERROR:
       printf("ERROR");
@@ -135,7 +153,28 @@ void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool 
     printf("ADC[%d] ADC_RD command word: 0x%08X\n", board, cmd_word);
   }
   *(adc_ctrl->buffer[board]) = cmd_word;
-}void adc_cmd_set_ord(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t channel_order[8], bool verbose) {
+}
+
+void adc_cmd_adc_rd_ch(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t ch, bool verbose) {
+  if (board > 7) {
+    fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
+    return;
+  }
+  if (ch > 7) {
+    fprintf(stderr, "Invalid ADC channel: %d. Must be 0-7.\n", ch);
+    return;
+  }
+  
+  uint32_t cmd_word = (ADC_CMD_ADC_RD_CH << ADC_CMD_CMD_LSB ) |
+                      ((ch & 0x7) << 0);
+  
+  if (verbose) {
+    printf("ADC[%d] ADC_RD_CH command word: 0x%08X (channel: %d)\n", board, cmd_word, ch);
+  }
+  *(adc_ctrl->buffer[board]) = cmd_word;
+}
+
+void adc_cmd_set_ord(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t channel_order[8], bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
     return;

@@ -156,5 +156,11 @@ int cmd_log_commands(const char** args, int arg_count, const command_flag_t* fla
 int cmd_stop_log(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);                // Stop logging commands
 int cmd_load_commands(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);            // Load and execute commands from file
 
+// Single channel commands (require channel 0-63)
+int cmd_do_dac_wr_ch(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);             // Write DAC single channel
+int cmd_do_adc_rd_ch(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);             // Read ADC single channel  
+int cmd_read_adc_single(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);          // Read single ADC channel data
+int cmd_set_and_check(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);           // Set DAC and check ADC with buffer validation
+
 
 #endif // COMMAND_HANDLER_H
