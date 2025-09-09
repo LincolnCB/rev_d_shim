@@ -61,6 +61,8 @@
 #define STS_INTEG_EN_OOB             (uint32_t) 0x0206 // Integrator enable register out of bounds.
 #define STS_BOOT_TEST_SKIP_OOB       (uint32_t) 0x0207 // Boot test skip out of bounds.
 #define STS_DEBUG_OOB                (uint32_t) 0x0208 // Debug out of bounds.
+#define STS_MOSI_SCK_POL_OOB         (uint32_t) 0x0209 // MOSI SCK polarity out of bounds.
+#define STS_MISO_SCK_POL_OOB         (uint32_t) 0x020A // MISO SCK polarity out of bounds.
 // Shutdown sense
 #define STS_SHUTDOWN_SENSE           (uint32_t) 0x0300 // Shutdown sense detected.
 #define STS_EXT_SHUTDOWN             (uint32_t) 0x0301 // External shutdown triggered.

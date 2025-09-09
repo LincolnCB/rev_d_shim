@@ -18,7 +18,8 @@
 typedef enum {
   FLAG_ALL,
   FLAG_VERBOSE,
-  FLAG_CONTINUE
+  FLAG_CONTINUE,
+  FLAG_SIMPLE
 } command_flag_t;
 
 typedef struct {
@@ -161,6 +162,11 @@ int cmd_do_dac_wr_ch(const char** args, int arg_count, const command_flag_t* fla
 int cmd_do_adc_rd_ch(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);             // Read ADC single channel  
 int cmd_read_adc_single(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);          // Read single ADC channel data
 int cmd_set_and_check(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);           // Set DAC and check ADC with buffer validation
+
+// New test commands
+int cmd_channel_test(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);             // Set and check current on individual channels
+int cmd_stream_adc_from_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);     // Start ADC streaming from command file  
+int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);            // Load, run, and log waveforms
 
 
 #endif // COMMAND_HANDLER_H

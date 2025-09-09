@@ -24,7 +24,7 @@ def get_user_input():
     print("DAC Waveform Generator")
     print("=" * 50)
     
-    # Get clock frequency first
+    # Get clock frequency
     while True:
         try:
             clock_freq = float(input("System clock frequency (MHz): "))
@@ -44,6 +44,17 @@ def get_user_input():
             break
         print("Please enter 'sine' or 'trap'/'trapezoid'")
     
+    # Get polarity alternation preference
+    while True:
+        polarity_input = input("Alternate channel polarity? [Y/n]: ").strip().lower()
+        if polarity_input in ['', 'y', 'yes']:
+            alternate_polarity = True
+            break
+        elif polarity_input in ['n', 'no']:
+            alternate_polarity = False
+            break
+        print("Please enter 'y' for yes or 'n' for no")
+    
     # Get waveform-specific parameters
     if waveform_type == 'sine':
         params = get_sine_parameters(clock_freq)
@@ -55,6 +66,7 @@ def get_user_input():
     
     params['type'] = waveform_type
     params['clock_freq'] = clock_freq
+    params['alternate_polarity'] = alternate_polarity
     return params
 
 def get_sine_parameters(clock_freq):
@@ -188,8 +200,16 @@ def generate_sine_wave(params):
     """
     Generate sine wave samples for 8 channels.
     
+    The sine wave duration is determined by sample_rate * duration,
+    where duration is specified in milliseconds and sample_rate in kHz.
+    Total samples = (sample_rate_kHz * 1000) * (duration_ms / 1000) = sample_rate_kHz * duration_ms
+    
     Args:
-        params: Dictionary with waveform parameters
+        params: Dictionary with waveform parameters including:
+                - duration: Duration in milliseconds
+                - sample_rate: Sample rate in kHz
+                - frequency: Sine wave frequency in kHz
+                - amplitude: Amplitude in volts (0-4V)
     
     Returns:
         List of tuples, each containing 8 channel values for one sample
@@ -207,18 +227,24 @@ def generate_sine_wave(params):
     samples = []
     
     for i in range(num_samples):
-        # Calculate time for this sample
-        t = i / sample_rate_hz
+        # Calculate time for this sample (offset by one sample period so first sample isn't at t=0)
+        t = (i + 1) / sample_rate_hz
         
         # Generate sine wave value (-1 to +1)
         sine_value = math.sin(2 * math.pi * frequency_hz * t)
         
         # Convert to DAC value using amplitude
-        dac_value = voltage_to_dac_value(sine_value, amplitude_v)
+        base_dac_value = voltage_to_dac_value(sine_value, amplitude_v)
         
-        # Generate the same value for all 8 channels
-        # (Could be modified to generate different waveforms per channel)
-        channel_values = [dac_value] * 8
+        # Generate channel values based on polarity preference
+        channel_values = []
+        for ch in range(8):
+            if params['alternate_polarity'] and ch % 2 == 1:
+                # Odd channels get negative polarity when alternating is enabled
+                channel_values.append(-base_dac_value)
+            else:
+                # Even channels or all channels when not alternating
+                channel_values.append(base_dac_value)
         
         samples.append(channel_values)
     
@@ -229,17 +255,15 @@ def generate_trapezoid_wave(params):
     Generate trapezoid wave samples for 8 channels.
     
     The trapezoid consists of:
-    1. Rise phase: linear ramp up from 0 to amplitude
-    2. Flat phase: constant amplitude (implemented with a single long delay)
+    1. Rise phase: linear ramp up from initial value to amplitude
+    2. Flat phase: constant amplitude with extended delay
     3. Fall phase: linear ramp down from amplitude to 0
     
     Args:
         params: Dictionary with waveform parameters
     
     Returns:
-        List of sample data, where each sample is either:
-        - (delay_cycles, [ch0, ch1, ..., ch7]) for regular samples
-        - (long_delay_cycles, [ch0, ch1, ..., ch7]) for the flat section
+        List of channel value lists for each sample
     """
     sample_rate_hz = params['sample_rate'] * 1000  # Convert kHz to Hz
     sample_period_s = 1.0 / sample_rate_hz
@@ -251,45 +275,76 @@ def generate_trapezoid_wave(params):
     
     # Calculate number of samples for each phase
     rise_samples = max(1, int(rise_time_s / sample_period_s))
+    flat_samples = max(1, int(flat_time_s / sample_period_s))
     fall_samples = max(1, int(fall_time_s / sample_period_s))
-    
-    # Calculate how many sample periods the flat time represents
-    flat_sample_periods = flat_time_s / sample_period_s
     
     samples = []
     
-    # Phase 1: Rise (linear ramp from 0 to amplitude)
+    # For consistent step sizing, calculate max value based on rise samples
+    # This ensures nice integer steps like 1000, 2000, 3000, etc.
+    # We'll use a reasonable max value that gives clean steps
+    if rise_samples <= 5:
+        max_dac_value = rise_samples * 1000  # e.g., 5000 for 5 samples
+    else:
+        # For larger sample counts, use standard voltage conversion
+        max_dac_value = voltage_to_dac_value(1.0, amplitude_v)
+    
+    # Phase 1: Rise (linear ramp up to amplitude)
     for i in range(rise_samples):
-        # Linear interpolation from 0 to 1
-        ramp_value = i / (rise_samples - 1) if rise_samples > 1 else 1.0
+        # Calculate ramp value: starts from 1/rise_samples, goes to rise_samples/rise_samples = 1.0
+        step_value = int((i + 1) * max_dac_value / rise_samples)
         
-        # Convert to DAC value
-        dac_value = voltage_to_dac_value(ramp_value, amplitude_v)
-        
-        # All channels get the same value
-        channel_values = [dac_value] * 8
+        # Generate channel values based on polarity preference
+        channel_values = []
+        for ch in range(8):
+            if params['alternate_polarity'] and ch % 2 == 1:
+                # Odd channels get negative polarity when alternating is enabled
+                channel_values.append(-step_value)
+            else:
+                # Even channels or all channels when not alternating
+                channel_values.append(step_value)
         samples.append(channel_values)
     
-    # Phase 2: Flat section (single long delay with amplitude value)
-    # The flat section is implemented as a single sample with a long delay
-    # This keeps the raster time accurate while minimizing sample count
-    flat_dac_value = voltage_to_dac_value(1.0, amplitude_v)  # Full amplitude
-    flat_channel_values = [flat_dac_value] * 8
+    # Phase 2: Flat section with first fall value and extended delay
+    # The flat section uses the first fall value and extends the delay
+    if fall_samples > 0:
+        first_fall_value = int((fall_samples - 1) * max_dac_value / fall_samples)
+    else:
+        first_fall_value = max_dac_value
     
-    # This sample will have a special long delay calculated later
-    samples.append(('FLAT_SECTION', flat_channel_values, flat_sample_periods))
+    flat_channel_values = []
+    for ch in range(8):
+        if params['alternate_polarity'] and ch % 2 == 1:
+            # Odd channels get negative polarity when alternating is enabled
+            flat_channel_values.append(-first_fall_value)
+        else:
+            # Even channels or all channels when not alternating
+            flat_channel_values.append(first_fall_value)
     
-    # Phase 3: Fall (linear ramp from amplitude to 0)
-    for i in range(fall_samples):
-        # Linear interpolation from 1 to 0
-        ramp_value = 1.0 - (i / (fall_samples - 1)) if fall_samples > 1 else 0.0
+    # Add flat section as a special marker with sample count info
+    samples.append(('FLAT_SECTION', flat_channel_values, flat_samples))
+    
+    # Phase 3: Fall (linear ramp down from amplitude to 0, skipping first fall value)
+    for i in range(1, fall_samples):  # Start from 1 to skip first fall value
+        # Calculate ramp value: starts from (fall_samples-2)/fall_samples, goes down to 0
+        step_value = int((fall_samples - 1 - i) * max_dac_value / fall_samples)
         
-        # Convert to DAC value
-        dac_value = voltage_to_dac_value(ramp_value, amplitude_v)
-        
-        # All channels get the same value
-        channel_values = [dac_value] * 8
+        # Generate channel values based on polarity preference
+        channel_values = []
+        for ch in range(8):
+            if params['alternate_polarity'] and ch % 2 == 1:
+                # Odd channels get negative polarity when alternating is enabled
+                channel_values.append(-step_value)
+            else:
+                # Even channels or all channels when not alternating
+                channel_values.append(step_value)
         samples.append(channel_values)
+    
+    # Add one extra zero sample at the end
+    zero_channel_values = []
+    for ch in range(8):
+        zero_channel_values.append(0)
+    samples.append(zero_channel_values)
     
     return samples
 
@@ -319,7 +374,7 @@ def calculate_sample_delay(sample_rate_khz, clock_freq_mhz):
     # Ensure delay is within valid range (1 to 33554431)
     return max(1, min(33554431, delay))
 
-def write_waveform_file(filename, samples, sample_rate_khz, clock_freq_mhz, waveform_type):
+def write_waveform_file(filename, samples, sample_rate_khz, clock_freq_mhz, waveform_type, params=None):
     """
     Write samples to a DAC waveform file.
     
@@ -329,6 +384,7 @@ def write_waveform_file(filename, samples, sample_rate_khz, clock_freq_mhz, wave
         sample_rate_khz: Sample rate in kHz
         clock_freq_mhz: System clock frequency in MHz
         waveform_type: Type of waveform (for comments)
+        params: Optional waveform parameters for additional comment information
     """
     delay_value = calculate_sample_delay(sample_rate_khz, clock_freq_mhz)
     
@@ -338,8 +394,58 @@ def write_waveform_file(filename, samples, sample_rate_khz, clock_freq_mhz, wave
             f.write("# DAC Waveform File\n")
             f.write(f"# Generated by wavegen.py\n")
             f.write(f"# Waveform type: {waveform_type}\n")
-            f.write(f"# Sample rate: {sample_rate_khz} kHz\n")
-            f.write(f"# Clock frequency: {clock_freq_mhz} MHz\n")
+            
+            # Round sample rate and clock frequency to nearest millionth
+            sample_rate_str = f"{sample_rate_khz:.6g}" if isinstance(sample_rate_khz, (int, float)) else str(sample_rate_khz)
+            clock_freq_str = f"{clock_freq_mhz:.6g}" if isinstance(clock_freq_mhz, (int, float)) else str(clock_freq_mhz)
+            
+            f.write(f"# Sample rate: {sample_rate_str} kHz\n")
+            f.write(f"# Clock frequency: {clock_freq_str} MHz\n")
+            
+            # Add duration information for sine waves
+            if params and waveform_type == 'sine':
+                duration_ms = params.get('duration', 'unknown')
+                frequency_khz = params.get('frequency', 'unknown')
+                amplitude_v = params.get('amplitude', 'unknown')
+                
+                # Round values to nearest millionth (6 decimal places)
+                duration_str = f"{duration_ms:.6g}" if isinstance(duration_ms, (int, float)) else str(duration_ms)
+                frequency_str = f"{frequency_khz:.6g}" if isinstance(frequency_khz, (int, float)) else str(frequency_khz)
+                amplitude_str = f"{amplitude_v:.6g}" if isinstance(amplitude_v, (int, float)) else str(amplitude_v)
+                
+                f.write(f"# Sine wave duration: {duration_str} ms\n")
+                f.write(f"# Sine wave frequency: {frequency_str} kHz\n")
+                f.write(f"# Sine wave amplitude: {amplitude_str} V\n")
+                if isinstance(duration_ms, (int, float)) and isinstance(sample_rate_khz, (int, float)):
+                    total_samples = int(sample_rate_khz * duration_ms)
+                    f.write(f"# Expected total samples: {total_samples}\n")
+            
+            # Add duration information for trapezoid waves
+            elif params and waveform_type == 'trapezoid':
+                rise_time = params.get('rise_time', 'unknown')
+                flat_time = params.get('flat_time', 'unknown') 
+                fall_time = params.get('fall_time', 'unknown')
+                amplitude_v = params.get('amplitude', 'unknown')
+                total_duration = 'unknown'
+                
+                # Round values to nearest millionth (6 decimal places)
+                rise_str = f"{rise_time:.6g}" if isinstance(rise_time, (int, float)) else str(rise_time)
+                flat_str = f"{flat_time:.6g}" if isinstance(flat_time, (int, float)) else str(flat_time)
+                fall_str = f"{fall_time:.6g}" if isinstance(fall_time, (int, float)) else str(fall_time)
+                amplitude_str = f"{amplitude_v:.6g}" if isinstance(amplitude_v, (int, float)) else str(amplitude_v)
+                
+                if all(isinstance(t, (int, float)) for t in [rise_time, flat_time, fall_time]):
+                    total_duration = rise_time + flat_time + fall_time
+                    total_str = f"{total_duration:.6g}"
+                else:
+                    total_str = str(total_duration)
+                
+                f.write(f"# Trapezoid rise time: {rise_str} ms\n")
+                f.write(f"# Trapezoid flat time: {flat_str} ms\n")
+                f.write(f"# Trapezoid fall time: {fall_str} ms\n")
+                f.write(f"# Trapezoid total duration: {total_str} ms\n")
+                f.write(f"# Trapezoid amplitude: {amplitude_str} V\n")
+            
             f.write(f"# Normal delay value: {delay_value}\n")
             f.write("# Format: First command: T 1 <ch0-ch7>, Subsequent commands: D <delay> <ch0-ch7>\n")
             f.write("# Note: First command waits for trigger, subsequent commands use delay timing\n")
@@ -358,21 +464,21 @@ def write_waveform_file(filename, samples, sample_rate_khz, clock_freq_mhz, wave
                     sample_data[0] == 'FLAT_SECTION'):
                     
                     # Special flat section handling
-                    _, channel_values, flat_sample_periods = sample_data
+                    _, channel_values, flat_sample_count = sample_data
                     
-                    # Calculate the long delay for the flat section
-                    # This is the delay UNTIL the next sample (the fall begins)
-                    flat_delay = int(flat_sample_periods * delay_value)
+                    # Calculate the extended delay for the flat section
+                    # This is the delay to hold the flat value, plus normal delay to next sample
+                    flat_delay = delay_value * flat_sample_count + delay_value
                     flat_delay = max(1, min(33554431, flat_delay))  # Clamp to valid range
                     
-                    f.write(f"# Flat section: {flat_sample_periods:.2f} sample periods = {flat_delay} cycles\n")
+                    f.write(f"# Flat section: {flat_sample_count} samples + 1 transition = {flat_delay} cycles total\n")
                     
                     if is_first_command:
                         # First command: Trigger type waiting for 1 trigger
                         line = f"T 1"
                         f.write("# First command: Trigger type waiting for 1 trigger\n")
                     else:
-                        # Regular delay command
+                        # Regular delay command with extended delay
                         line = f"D {flat_delay}"
                     
                     for ch_val in channel_values:
@@ -438,7 +544,7 @@ def main():
         filename = default_filename
     
     # Write waveform file
-    write_waveform_file(filename, samples, params['sample_rate'], params['clock_freq'], params['type'])
+    write_waveform_file(filename, samples, params['sample_rate'], params['clock_freq'], params['type'], params)
     
     print("Waveform generation complete!")
 

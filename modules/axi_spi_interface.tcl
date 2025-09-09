@@ -111,27 +111,27 @@ cell xilinx.com:ip:smartconnect:1.0 board_ch_axi_intercon {
 # Status word padding for making 32-bit status words
 cell xilinx.com:ip:xlconstant:1.1 dac_cmd_sts_word_padding {
   CONST_VAL 0
-  CONST_WIDTH [expr {32 - (5 + $dac_cmd_fifo_addr_width)}]
+  CONST_WIDTH [expr {32 - (6 + $dac_cmd_fifo_addr_width)}]
 } {}
 cell xilinx.com:ip:xlconstant:1.1 dac_data_sts_word_padding {
   CONST_VAL 0
-  CONST_WIDTH [expr {32 - (5 + $dac_data_fifo_addr_width)}]
+  CONST_WIDTH [expr {32 - (6 + $dac_data_fifo_addr_width)}]
 } {}
 cell xilinx.com:ip:xlconstant:1.1 adc_cmd_sts_word_padding {
   CONST_VAL 0
-  CONST_WIDTH [expr {32 - (5 + $adc_cmd_fifo_addr_width)}]
+  CONST_WIDTH [expr {32 - (6 + $adc_cmd_fifo_addr_width)}]
 } {}
 cell xilinx.com:ip:xlconstant:1.1 adc_data_sts_word_padding {
   CONST_VAL 0
-  CONST_WIDTH [expr {32 - (5 + $adc_data_fifo_addr_width)}]
+  CONST_WIDTH [expr {32 - (6 + $adc_data_fifo_addr_width)}]
 } {}
 cell xilinx.com:ip:xlconstant:1.1 trig_cmd_sts_word_padding {
   CONST_VAL 0
-  CONST_WIDTH [expr {32 - (5 + $trig_cmd_fifo_addr_width)}]
+  CONST_WIDTH [expr {32 - (6 + $trig_cmd_fifo_addr_width)}]
 } {}
 cell xilinx.com:ip:xlconstant:1.1 trig_data_sts_word_padding {
   CONST_VAL 0
-  CONST_WIDTH [expr {32 - (5 + $trig_data_fifo_addr_width)}]
+  CONST_WIDTH [expr {32 - (6 + $trig_data_fifo_addr_width)}]
 } {}
 
 

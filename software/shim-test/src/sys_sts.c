@@ -134,6 +134,12 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
       case STS_DEBUG_OOB:
         printf("Status: Debug out of bounds\n");
         break;
+      case STS_MOSI_SCK_POL_OOB:
+        printf("Status: MOSI SCK polarity out of bounds\n");
+        break;
+      case STS_MISO_SCK_POL_OOB:
+        printf("Status: MISO SCK polarity out of bounds\n");
+        break;
       case STS_SHUTDOWN_SENSE:
         printf("Status: Shutdown sense detected\n");
         print_board_number = true;
@@ -267,7 +273,7 @@ void print_debug_registers(struct sys_sts_t *sys_sts) {
 uint32_t get_fifo_status(volatile uint32_t *fifo_sts_ptr, const char *fifo_name, bool verbose) {
   if (verbose) {
     printf("Reading %s FIFO status register...\n", fifo_name);
-    printf("%s FIFO status raw: 0x%" PRIx32 "\n", fifo_name, *fifo_sts_ptr);
+    printf("%s FIFO status raw: 0x%08" PRIx32 "\n", fifo_name, *fifo_sts_ptr);
   }
   return *fifo_sts_ptr;
 }

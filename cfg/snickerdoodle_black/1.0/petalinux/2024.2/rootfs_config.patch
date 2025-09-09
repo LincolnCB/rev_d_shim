@@ -34,6 +34,86 @@
  # CONFIG_libstdcPLUSPLUS-dev is not set
  
  #
+@@ -2586,33 +2586,33 @@
+ #
+ # python3 
+ #
+-# CONFIG_python3 is not set
++CONFIG_python3=y
+ # CONFIG_python3-smtpd is not set
+-# CONFIG_python3-syslog is not set
++CONFIG_python3-syslog=y
+ # CONFIG_python3-pickle is not set
+-# CONFIG_python3-dbg is not set
++CONFIG_python3-dbg=y
+ # CONFIG_python3-db is not set
+-# CONFIG_python3-fcntl is not set
+-# CONFIG_python3-html is not set
+-# CONFIG_python3-core is not set
++CONFIG_python3-fcntl=y
++CONFIG_python3-html=y
++CONFIG_python3-core=y
+ # CONFIG_python3-distutils is not set
+-# CONFIG_python3-terminal is not set
+-# CONFIG_python3-pprint is not set
++CONFIG_python3-terminal=y
++CONFIG_python3-pprint=y
+ # CONFIG_python3-tkinter is not set
+-# CONFIG_python3-unixadmin is not set
++CONFIG_python3-unixadmin=y
+ # CONFIG_python3-mime is not set
+-# CONFIG_python3-logging is not set
+-# CONFIG_python3-resource is not set
++CONFIG_python3-logging=y
++CONFIG_python3-resource=y
+ # CONFIG_python3-email is not set
+-# CONFIG_python3-math is not set
+-# CONFIG_python3-json is not set
+-# CONFIG_python3-image is not set
++CONFIG_python3-math=y
++CONFIG_python3-json=y
++CONFIG_python3-image=y
+ # CONFIG_python3-stringold is not set
+ # CONFIG_python3-pydoc is not set
+-# CONFIG_python3-codecs is not set
++CONFIG_python3-codecs=y
+ # CONFIG_python3-debugger is not set
+ # CONFIG_python3-xmlrpc is not set
+-# CONFIG_python3-io is not set
++CONFIG_python3-io=y
+ # CONFIG_python3-pkgutil is not set
+ # CONFIG_python3-idle is not set
+ # CONFIG_python3-difflib is not set
+@@ -2623,22 +2623,22 @@
+ # CONFIG_python3-profile is not set
+ # CONFIG_python3-sqlite3 is not set
+ # CONFIG_python3-2to3 is not set
+-# CONFIG_libpython3 is not set
++CONFIG_libpython3=y
+ # CONFIG_python3-xml is not set
+-# CONFIG_python3-threading is not set
+-# CONFIG_python3-modules is not set
+-# CONFIG_python3-dev is not set
++CONFIG_python3-threading=y
++CONFIG_python3-modules=y
++CONFIG_python3-dev=y
+ # CONFIG_python3-curses is not set
+ # CONFIG_python3-multiprocessing is not set
+ # CONFIG_python3-crypt is not set
+ # CONFIG_python3-compression is not set
+-# CONFIG_python3-shell is not set
++CONFIG_python3-shell=y
+ # CONFIG_python3-tests is not set
+-# CONFIG_python3-numbers is not set
++CONFIG_python3-numbers=y
+ # CONFIG_python3-audio is not set
+ # CONFIG_python3-pyvenv is not set
+ # CONFIG_python3-asyncio is not set
+-# CONFIG_python3-misc is not set
++CONFIG_python3-misc=y
+ # CONFIG_python3-datetime is not set
+ # CONFIG_python3-compile is not set
+ # CONFIG_python3-mmap is not set
 @@ -3775,7 +3775,7 @@
  #
  # PetaLinux RootFS Settings
