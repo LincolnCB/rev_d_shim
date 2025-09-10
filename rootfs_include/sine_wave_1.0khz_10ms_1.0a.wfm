@@ -5,10 +5,10 @@
 # Clock frequency: 20 MHz
 # Sine wave duration: 10 ms
 # Sine wave frequency: 1 kHz
-# Sine wave amplitude: 1 V
+# Sine wave amplitude: 1 A
 # Expected total samples: 500
 # Normal delay value: 400
-# Format: First command: T 1 <ch0-ch7>, Subsequent commands: D <delay> <ch0-ch7>
+# Format: T 1 <ch0-ch7> (update to values after trigger) / D <delay> <ch0-ch7> (update to values after delay)
 # Note: First command waits for trigger, subsequent commands use delay timing
 #
 # First command: Trigger type waiting for 1 trigger

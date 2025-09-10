@@ -8,7 +8,51 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <pthread.h>
+#include <glob.h>
 #include "command_handler.h"
+
+// Hardware state constants
+#define HW_STATE_RUNNING 1
+
+// Structure to hold a parsed waveform command
+typedef struct {
+  bool is_trigger;     // true for T, false for D
+  uint32_t value;      // command value
+  bool has_ch_vals;    // whether channel values are present
+  int16_t ch_vals[8];  // channel values (if present)
+  bool cont;           // continue flag
+} waveform_command_t;
+
+// ADC command structure
+typedef struct {
+  char type;           // 'L', 'T', 'D', 'O'
+  uint32_t value;      // Value for the command 
+  uint8_t order[8];    // For 'O' command, sample order
+} adc_command_t;
+
+// Structure to pass data to the ADC data streaming thread (for stream_adc_to_file)
+typedef struct {
+  command_context_t* ctx;
+  uint8_t board;
+  char file_path[1024];
+  volatile bool* should_stop;
+} adc_data_stream_t;
+
+// Structure to pass data to the ADC command streaming thread (for stream_adc_from_file)
+typedef struct {
+  command_context_t* ctx;
+  uint8_t board;
+  char file_path[1024];
+  volatile bool* should_stop;
+  adc_command_t* commands;
+  int command_count;
+  int loop_count;       // Number of times to loop through the commands (1 = play once)
+  bool simple_mode;     // Whether to unroll loops instead of using loop command
+} adc_stream_data_t;
+
+// Function declarations
+static int resolve_file_pattern(const char* pattern, char* resolved_path, size_t resolved_path_size);
+static void* adc_data_stream_thread(void* arg);
 
 /**
  * Command Table
@@ -109,13 +153,13 @@ static command_entry_t command_table[] = {
   {"stop_adc_stream", cmd_stop_adc_stream, {1, 1, {-1}, "Stop ADC streaming for specified board (0-7)"}},
   
   // DAC streaming command functions (require board and file path, optional loop count)
-  {"stream_dac_from_file", cmd_stream_dac_from_file, {2, 3, {-1}, "Start DAC streaming from waveform file: <board> <file_path> [loop_count] (D/T prefix with optional 8 ch values)"}},
+  {"stream_dac_from_file", cmd_stream_dac_from_file, {2, 3, {-1}, "Start DAC streaming from waveform file: <board> <file_path> [loop_count] (supports * wildcards)"}},
   {"stop_dac_stream", cmd_stop_dac_stream, {1, 1, {-1}, "Stop DAC streaming for specified board (0-7)"}},
   
   // Command logging and playback functions (require file path)
   {"log_commands", cmd_log_commands, {1, 1, {-1}, "Start logging commands to file: <file_path>"}},
   {"stop_log", cmd_stop_log, {0, 0, {-1}, "Stop logging commands"}},
-  {"load_commands", cmd_load_commands, {1, 1, {-1}, "Load and execute commands from file: <file_path> (0.25s delay between commands)"}},
+  {"load_commands", cmd_load_commands, {1, 1, {-1}, "Load and execute commands from file: <file_path> (0.25s delay between commands, supports * wildcards)"}},
   
   // Single channel commands (require channel 0-63)
   {"do_dac_wr_ch", cmd_do_dac_wr_ch, {2, 2, {-1}, "Write DAC single channel: <channel> <value> (channel 0-63, board=ch/8, ch=ch%8)"}},
@@ -125,7 +169,7 @@ static command_entry_t command_table[] = {
   
   // New test commands
   {"channel_test", cmd_channel_test, {2, 2, {-1}, "Set and check current on individual channels: <channel> <value> (channel 0-63)"}},
-  {"stream_adc_from_file", cmd_stream_adc_from_file, {2, 3, {FLAG_SIMPLE, -1}, "Start ADC streaming from command file: <board> <file_path> [loop_count] [--simple]"}},
+  {"stream_adc_from_file", cmd_stream_adc_from_file, {2, 3, {FLAG_SIMPLE, -1}, "Start ADC streaming from command file: <board> <file_path> [loop_count] [--simple] (supports * wildcards)"}},
   {"waveform_test", cmd_waveform_test, {0, 0, {-1}, "Interactive waveform test: prompts for DAC/ADC files, loops, output file, and trigger lockout"}},
   
   // Sentinel entry - marks end of table (must be last)
@@ -1343,17 +1387,9 @@ int cmd_read_adc_to_file(const char** args, int arg_count, const command_flag_t*
   return 0;
 }
 
-// Structure to pass data to the streaming thread
-typedef struct {
-  command_context_t* ctx;
-  uint8_t board;
-  char file_path[1024];
-  volatile bool* should_stop;
-} adc_stream_data_t;
-
-// Thread function for ADC streaming
-void* adc_stream_thread(void* arg) {
-  adc_stream_data_t* stream_data = (adc_stream_data_t*)arg;
+// Thread function for ADC data streaming (raw data to file)
+static void* adc_data_stream_thread(void* arg) {
+  adc_data_stream_t* stream_data = (adc_data_stream_t*)arg;
   command_context_t* ctx = stream_data->ctx;
   uint8_t board = stream_data->board;
   const char* file_path = stream_data->file_path;
@@ -1456,23 +1492,23 @@ int cmd_stream_adc_to_file(const char** args, int arg_count, const command_flag_
   clean_and_expand_path(args[1], full_path, sizeof(full_path));
   
   // Allocate thread data structure
-  adc_stream_data_t* stream_data = malloc(sizeof(adc_stream_data_t));
+  adc_data_stream_t* stream_data = malloc(sizeof(adc_data_stream_t));
   if (stream_data == NULL) {
     fprintf(stderr, "Failed to allocate memory for stream data\n");
     return -1;
   }
-  
+
   stream_data->ctx = ctx;
   stream_data->board = (uint8_t)board;
   strcpy(stream_data->file_path, full_path);
   stream_data->should_stop = &(ctx->adc_stream_stop[board]);
-  
+
   // Initialize stop flag and mark stream as running
   ctx->adc_stream_stop[board] = false;
   ctx->adc_stream_running[board] = true;
-  
+
   // Create the streaming thread
-  if (pthread_create(&(ctx->adc_stream_threads[board]), NULL, adc_stream_thread, stream_data) != 0) {
+  if (pthread_create(&(ctx->adc_stream_threads[board]), NULL, adc_data_stream_thread, stream_data) != 0) {
     fprintf(stderr, "Failed to create ADC streaming thread for board %d: %s\n", board, strerror(errno));
     ctx->adc_stream_running[board] = false;
     free(stream_data);
@@ -1555,18 +1591,20 @@ int cmd_stop_log(const char** args, int arg_count, const command_flag_t* flags, 
 }
 
 int cmd_load_commands(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  // Clean and expand file path
-  char full_path[1024];
-  clean_and_expand_path(args[0], full_path, sizeof(full_path));
-  
-  // Open file for reading
-  FILE* file = fopen(full_path, "r");
-  if (file == NULL) {
-    fprintf(stderr, "Failed to open command file '%s' for reading: %s\n", full_path, strerror(errno));
+  // Resolve file pattern (handles glob patterns)
+  char resolved_path[1024];
+  if (resolve_file_pattern(args[0], resolved_path, sizeof(resolved_path)) != 0) {
     return -1;
   }
   
-  printf("Loading and executing commands from file '%s'...\n", full_path);
+  // Open file for reading
+  FILE* file = fopen(resolved_path, "r");
+  if (file == NULL) {
+    fprintf(stderr, "Failed to open command file '%s' for reading: %s\n", resolved_path, strerror(errno));
+    return -1;
+  }
+  
+  printf("Loading and executing commands from file '%s'...\n", resolved_path);
   
   char line[256];
   int line_number = 0;
@@ -1610,25 +1648,9 @@ int cmd_load_commands(const char** args, int arg_count, const command_flag_t* fl
   }
   
   fclose(file);
-  printf("Successfully executed %d commands from file '%s'.\n", commands_executed, full_path);
+  printf("Successfully executed %d commands from file '%s'.\n", commands_executed, resolved_path);
   return 0;
 }
-
-// Structure to hold a parsed waveform command
-typedef struct {
-  bool is_trigger;     // true for T, false for D
-  uint32_t value;      // command value
-  bool has_ch_vals;    // whether channel values are present
-  int16_t ch_vals[8];  // channel values (if present)
-  bool cont;           // continue flag
-} waveform_command_t;
-
-// ADC command structure
-typedef struct {
-  char type;           // 'L', 'T', 'D', 'O'
-  uint32_t value;      // Value for the command 
-  uint8_t order[8];    // For 'O' command, sample order
-} adc_command_t;
 
 // Structure to pass data to the DAC streaming thread
 typedef struct {
@@ -1640,18 +1662,6 @@ typedef struct {
   int command_count;
   int loop_count;       // Number of times to loop through the waveform (1 = play once)
 } dac_stream_data_t;
-
-// Structure to pass data to the ADC streaming thread
-typedef struct {
-  command_context_t* ctx;
-  uint8_t board;
-  char file_path[1024];
-  volatile bool* should_stop;
-  adc_command_t* commands;
-  int command_count;
-  int loop_count;       // Number of times to loop through the commands (1 = play once)
-  bool simple_mode;     // Whether to unroll loops instead of using loop command
-} adc_stream_data_t;
 
 // Function to validate and parse a waveform file
 static int parse_waveform_file(const char* file_path, waveform_command_t** commands, int* command_count) {
@@ -2027,9 +2037,15 @@ int cmd_stream_dac_from_file(const char** args, int arg_count, const command_fla
     return -1;
   }
   
+  // Resolve glob pattern if present
+  char resolved_path[1024];
+  if (resolve_file_pattern(args[1], resolved_path, sizeof(resolved_path)) != 0) {
+    return -1;
+  }
+  
   // Clean and expand file path
   char full_path[1024];
-  clean_and_expand_path(args[1], full_path, sizeof(full_path));
+  clean_and_expand_path(resolved_path, full_path, sizeof(full_path));
   
   // Parse and validate the waveform file
   waveform_command_t* commands = NULL;
@@ -2243,9 +2259,15 @@ int cmd_stream_adc_from_file(const char** args, int arg_count, const command_fla
     return -1;
   }
   
+  // Resolve glob pattern if present
+  char resolved_path[1024];
+  if (resolve_file_pattern(args[1], resolved_path, sizeof(resolved_path)) != 0) {
+    return -1;
+  }
+  
   // Clean and expand file path
   char full_path[1024];
-  clean_and_expand_path(args[1], full_path, sizeof(full_path));
+  clean_and_expand_path(resolved_path, full_path, sizeof(full_path));
   
   // Parse and validate the ADC command file
   adc_command_t* commands = NULL;
@@ -2423,7 +2445,7 @@ int cmd_set_and_check(const char** args, int arg_count, const command_flag_t* fl
     fprintf(stderr, "DAC command FIFO for board %d is not empty. Cannot proceed.\n", board);
     return -1;
   }
-  printf("✓ DAC command buffer for board %d is empty\n", board);
+  printf("- DAC command buffer for board %d is empty\n", board);
   
   // Step 2: Check that ADC command buffer is empty
   uint32_t adc_cmd_status = sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, board, *(ctx->verbose));
@@ -2435,7 +2457,7 @@ int cmd_set_and_check(const char** args, int arg_count, const command_flag_t* fl
     fprintf(stderr, "ADC command FIFO for board %d is not empty. Cannot proceed.\n", board);
     return -1;
   }
-  printf("✓ ADC command buffer for board %d is empty\n", board);
+  printf("- ADC command buffer for board %d is empty\n", board);
   
   // Step 3: Check that ADC data buffer is empty
   uint32_t adc_data_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, board, *(ctx->verbose));
@@ -2447,7 +2469,7 @@ int cmd_set_and_check(const char** args, int arg_count, const command_flag_t* fl
     fprintf(stderr, "ADC data FIFO for board %d is not empty. Cannot proceed.\n", board);
     return -1;
   }
-  printf("✓ ADC data buffer for board %d is empty\n", board);
+  printf("- ADC data buffer for board %d is empty\n", board);
   
   // Step 4: Execute DAC write (do_dac_wr_ch equivalent)
   printf("Writing DAC channel %d with value %d...\n", channel, ch_val);
@@ -2475,7 +2497,7 @@ int cmd_set_and_check(const char** args, int arg_count, const command_flag_t* fl
   
   // Read the ADC data
   int16_t data = adc_read_ch(ctx->adc_ctrl, board);
-  printf("✓ Read ADC channel %d data: %d (0x%04X)\n", channel, data, (uint16_t)data);
+  printf("- Read ADC channel %d data: %d (0x%04X)\n", channel, data, (uint16_t)data);
   
   printf("Set and check completed successfully.\n");
   return 0;
@@ -2515,7 +2537,7 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
     fprintf(stderr, "System is not running. Current state: 0x%X. Please turn system on first.\n", HW_STS_STATE(hw_status));
     return -1;
   }
-  printf("✓ System is running\n");
+  printf("- System is running\n");
 
   // Step 2: Reset ADC and DAC buffers for this board
   printf("\nStep 2: Resetting buffers for board %u...\n", board);
@@ -2525,7 +2547,7 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
   usleep(1000); // Wait 1ms
   sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
   sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
-  printf("✓ Buffers reset for board %u\n", board);
+  printf("- Buffers reset for board %u\n", board);
 
   // Step 3: Send wr_ch command to DAC, 100000 cycle delay command to ADC, and rd_ch command to ADC
   printf("\nStep 3: Sending commands...\n");
@@ -2555,7 +2577,7 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
   }
   
   int16_t adc_value = adc_read_ch(ctx->adc_ctrl, board);
-  printf("✓ Read ADC value: %d (0x%04X)\n", adc_value, (uint16_t)adc_value);
+  printf("- Read ADC value: %d (0x%04X)\n", adc_value, (uint16_t)adc_value);
   
   // Step 6: Calculate and print error
   printf("\nStep 6: Error Analysis\n");
@@ -2572,6 +2594,67 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
   
   printf("\n=== Channel Test Complete ===\n");
   return 0;
+}
+
+// Helper function to handle glob patterns and file disambiguation
+static int resolve_file_pattern(const char* pattern, char* resolved_path, size_t resolved_path_size) {
+  glob_t glob_result;
+  int glob_ret;
+  
+  // Perform glob expansion
+  glob_ret = glob(pattern, GLOB_ERR, NULL, &glob_result);
+  
+  if (glob_ret == GLOB_NOMATCH) {
+    // No matches - treat as literal filename
+    strncpy(resolved_path, pattern, resolved_path_size - 1);
+    resolved_path[resolved_path_size - 1] = '\0';
+    globfree(&glob_result);
+    return 0;
+  } else if (glob_ret != 0) {
+    // Error in glob
+    fprintf(stderr, "Error expanding pattern '%s'\n", pattern);
+    globfree(&glob_result);
+    return -1;
+  }
+  
+  if (glob_result.gl_pathc == 1) {
+    // Single match - use it directly
+    strncpy(resolved_path, glob_result.gl_pathv[0], resolved_path_size - 1);
+    resolved_path[resolved_path_size - 1] = '\0';
+    globfree(&glob_result);
+    return 0;
+  } else if (glob_result.gl_pathc > 1) {
+    // Multiple matches - present list for disambiguation
+    printf("Multiple files match pattern '%s':\n", pattern);
+    for (size_t i = 0; i < glob_result.gl_pathc; i++) {
+      printf("  %zu: %s\n", i + 1, glob_result.gl_pathv[i]);
+    }
+    
+    printf("Enter selection (1-%zu): ", glob_result.gl_pathc);
+    fflush(stdout);
+    
+    int selection;
+    if (scanf("%d", &selection) != 1 || selection < 1 || selection > (int)glob_result.gl_pathc) {
+      fprintf(stderr, "Invalid selection. Must be 1-%zu.\n", glob_result.gl_pathc);
+      globfree(&glob_result);
+      return -1;
+    }
+    
+    // Clear input buffer
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
+    
+    // Use selected file
+    strncpy(resolved_path, glob_result.gl_pathv[selection - 1], resolved_path_size - 1);
+    resolved_path[resolved_path_size - 1] = '\0';
+    globfree(&glob_result);
+    return 0;
+  } else {
+    // No matches (pathc == 0)
+    fprintf(stderr, "No files match pattern '%s'\n", pattern);
+    globfree(&glob_result);
+    return -1;
+  }
 }
 
 int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
@@ -2592,7 +2675,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   usleep(1000); // Wait 1ms
   sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
   sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
-  printf("✓ All buffers reset\n\n");
+  printf("- All buffers reset\n\n");
   
   // Step 2: Prompt for board number
   printf("Step 2: Board Selection\n");
@@ -2605,11 +2688,11 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   // Clear input buffer
   int c;
   while ((c = getchar()) != '\n' && c != EOF);
-  printf("✓ Using board %d\n\n");
+  printf("- Using board %d\n\n", board_number);
   
   // Step 3: Prompt for DAC command file
   printf("Step 3: DAC Configuration\n");
-  printf("Enter DAC command file path: ");
+  printf("Enter DAC command file path (supports * wildcards): ");
   fflush(stdout);
   if (fgets(dac_file, sizeof(dac_file), stdin) == NULL) {
     fprintf(stderr, "Failed to read DAC file path\n");
@@ -2621,9 +2704,15 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     dac_file[len-1] = '\0';
   }
   
+  // Resolve glob pattern if present
+  char resolved_dac_file[1024];
+  if (resolve_file_pattern(dac_file, resolved_dac_file, sizeof(resolved_dac_file)) != 0) {
+    return -1;
+  }
+  
   // Clean and expand DAC file path
   char full_dac_path[1024];
-  clean_and_expand_path(dac_file, full_dac_path, sizeof(full_dac_path));
+  clean_and_expand_path(resolved_dac_file, full_dac_path, sizeof(full_dac_path));
   
   // Parse DAC file to count trigger lines
   waveform_command_t* dac_commands = NULL;
@@ -2635,15 +2724,15 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   // Count trigger lines in DAC file
   int trigger_lines = 0;
   for (int i = 0; i < dac_command_count; i++) {
-    if (dac_commands[i].trigger) {
+    if (dac_commands[i].is_trigger) {
       trigger_lines++;
     }
   }
-  printf("✓ DAC file parsed: %d commands, %d trigger lines\n", dac_command_count, trigger_lines);
+  printf("- DAC file parsed: %d commands, %d trigger lines\n", dac_command_count, trigger_lines);
   
   // Step 4: Prompt for ADC command file
   printf("\nStep 4: ADC Configuration\n");
-  printf("Enter ADC command file path: ");
+  printf("Enter ADC command file path (supports * wildcards): ");
   fflush(stdout);
   if (fgets(adc_file, sizeof(adc_file), stdin) == NULL) {
     fprintf(stderr, "Failed to read ADC file path\n");
@@ -2656,9 +2745,16 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     adc_file[len-1] = '\0';
   }
   
+  // Resolve glob pattern if present
+  char resolved_adc_file[1024];
+  if (resolve_file_pattern(adc_file, resolved_adc_file, sizeof(resolved_adc_file)) != 0) {
+    free(dac_commands);
+    return -1;
+  }
+  
   // Clean and expand ADC file path
   char full_adc_path[1024];
-  clean_and_expand_path(adc_file, full_adc_path, sizeof(full_adc_path));
+  clean_and_expand_path(resolved_adc_file, full_adc_path, sizeof(full_adc_path));
   
   // Parse ADC file
   adc_command_t* adc_commands = NULL;
@@ -2667,7 +2763,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     free(dac_commands);
     return -1;
   }
-  printf("✓ ADC file parsed: %d commands\n", adc_command_count);
+  printf("- ADC file parsed: %d commands\n", adc_command_count);
   
   // Step 5: Prompt for number of loops
   printf("\nStep 5: Loop Configuration\n");
@@ -2680,7 +2776,6 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     return -1;
   }
   // Clear input buffer
-  int c;
   while ((c = getchar()) != '\n' && c != EOF);
   
   // Step 6: Prompt for output file
@@ -2729,13 +2824,13 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   // Step 8: Set trigger lockout
   printf("Step 8: Setting trigger lockout...\n");
   trigger_cmd_set_lockout(ctx->trigger_ctrl, lockout_time);
-  printf("✓ Trigger lockout set to %u cycles\n", lockout_time);
+  printf("- Trigger lockout set to %u cycles\n", lockout_time);
   
   // Step 9: Send expect external triggers command
   uint32_t total_triggers = trigger_lines * num_loops;
   printf("\nStep 9: Setting expected external triggers...\n");
   trigger_cmd_expect_ext(ctx->trigger_ctrl, total_triggers);
-  printf("✓ Expecting %u external triggers\n", total_triggers);
+  printf("- Expecting %u external triggers\n", total_triggers);
   
   // Step 10: Start streaming (DAC and ADC on selected board)
   printf("\nStep 10: Starting waveform streaming...\n");
@@ -2762,7 +2857,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     return -1;
   }
   
-  printf("✓ DAC and ADC streaming started\n");
+  printf("- DAC and ADC streaming started\n");
   
   // Step 11: Start output file streaming
   printf("\nStep 11: Starting output file streaming...\n");
@@ -2775,7 +2870,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     free(adc_commands);
     return -1;
   }
-  printf("✓ Output file streaming started\n");
+  printf("- Output file streaming started\n");
   
   printf("\n=== Waveform Test Running ===\n");
   printf("DAC and ADC are now streaming on board %d. Monitor the output file: %s\n", board_number, full_output_path);
