@@ -28,7 +28,7 @@
 // Macro for extracting the 4-bit state
 #define HW_STS_STATE(hw_status) ((hw_status) & 0xF)
 // Macro for extracting the 25-bit status code
-#define HW_STS_CODE(hw_status) (((hw_status) >> 4) & 0x1FFFFFFF)
+#define HW_STS_CODE(hw_status) (((hw_status) >> 4) & 0x1FFFFFF)
 // Macro for extracting the 3-bit board number
 #define HW_STS_BOARD(hw_status) (((hw_status) >> 29) & 0x7)
 

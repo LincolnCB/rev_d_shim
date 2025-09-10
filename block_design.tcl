@@ -1,5 +1,5 @@
 ## Variably define the channel count (MUST BE 1 TO 8 INCLUSIVE)
-set board_count 3
+set board_count 1
 
 # If the board count is not 8, then error out
 if {$board_count < 1 || $board_count > 8} {
