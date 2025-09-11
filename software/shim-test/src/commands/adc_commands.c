@@ -78,15 +78,15 @@ int cmd_read_adc_pair(const char** args, int arg_count, const command_flag_t* fl
     int count = 0;
     while (!FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
       uint32_t data = adc_read(ctx->adc_ctrl, (uint8_t)board);
-      printf("Sample %d - ADC data from board %d: 0x%" PRIx32 "\n", ++count, board, data);
-      print_adc_pair(data);
+      if (*(ctx->verbose)) printf("Sample %d - ADC data from board %d: 0x%" PRIx32 "\n", ++count, board, data);
+      adc_print_pair(data);
       printf("\n");
     }
     printf("Read %d samples total.\n", count);
   } else {
     uint32_t data = adc_read(ctx->adc_ctrl, (uint8_t)board);
-    printf("Read ADC data from board %d: 0x%" PRIx32 "\n", board, data);
-    print_adc_pair(data);
+    if (*(ctx->verbose)) printf("Read ADC data from board %d: 0x%" PRIx32 "\n", board, data);
+    adc_print_pair(data);
   }
   return 0;
 }
@@ -110,9 +110,9 @@ int cmd_read_adc_single(const char** args, int arg_count, const command_flag_t* 
     int count = 0;
     while (!FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
       uint32_t data = adc_read(ctx->adc_ctrl, (uint8_t)board);
-      int16_t signed_lower = ADC_OFFSET_TO_SIGNED(data);
-      int16_t signed_upper = ADC_OFFSET_TO_SIGNED(data >> 16);
-      printf("Sample %d - Board %d: %d, %d\n", ++count, board, signed_lower, signed_upper);
+      if (*(ctx->verbose)) printf("Sample %d - ADC data from board %d: 0x%" PRIx32 "\n", ++count, board, data);
+      adc_print_single(data);
+      printf("\n");
     }
     printf("Read %d samples total for board %d.\n", count, board);
   } else {
@@ -122,9 +122,8 @@ int cmd_read_adc_single(const char** args, int arg_count, const command_flag_t* 
     }
     
     uint32_t data = adc_read(ctx->adc_ctrl, (uint8_t)board);
-    int16_t signed_lower = ADC_OFFSET_TO_SIGNED(data);
-    int16_t signed_upper = ADC_OFFSET_TO_SIGNED(data >> 16);
-    printf("Board %d data: %d, %d\n", board, signed_lower, signed_upper);
+    if (*(ctx->verbose)) printf("Read ADC data from board %d: 0x%" PRIx32 "\n", board, data);
+    adc_print_single(data);
   }
   return 0;
 }

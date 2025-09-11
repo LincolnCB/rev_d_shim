@@ -71,6 +71,10 @@ int16_t adc_read_ch(struct adc_ctrl_t *adc_ctrl, uint8_t board);
 void adc_print_debug(uint32_t adc_value);
 // Interpret and print the ADC state
 void adc_print_state(uint8_t state_code);
+// Convert and print a pair of ADC samples from a 32-bit word
+void adc_print_pair(uint32_t data_word);
+// Convert and print a single ADC sample from a 32-bit word
+void adc_print_single(uint32_t data_word);
 
 // ADC command word functions
 void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t value, bool verbose);

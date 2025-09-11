@@ -253,7 +253,8 @@ for {set i 0} {$i < $board_count} {incr i} {
     AXI_DATA_WIDTH 32
   } {
     aclk aclk
-    aresetn aresetn
+    wr_resetn dac_cmd_fifo_${i}_spi_clk_rst/peripheral_aresetn
+    rd_resetn dac_data_fifo_${i}_spi_clk_rst/peripheral_aresetn
     S_AXI ch${i}_axi_intercon/M00_AXI
     fifo_wr_data dac_cmd_fifo_${i}/wr_data
     fifo_wr_en dac_cmd_fifo_${i}/wr_en
@@ -368,7 +369,8 @@ for {set i 0} {$i < $board_count} {incr i} {
     AXI_DATA_WIDTH 32
   } {
     aclk aclk
-    aresetn aresetn
+    wr_resetn adc_cmd_fifo_${i}_spi_clk_rst/peripheral_aresetn
+    rd_resetn adc_data_fifo_${i}_spi_clk_rst/peripheral_aresetn
     S_AXI ch${i}_axi_intercon/M01_AXI
     fifo_wr_data adc_cmd_fifo_${i}/wr_data
     fifo_wr_en adc_cmd_fifo_${i}/wr_en
@@ -484,7 +486,8 @@ cell lcb:user:axi_fifo_bridge trig_fifo_axi_bridge {
   AXI_DATA_WIDTH 32
 } {
   aclk aclk
-  aresetn aresetn
+  wr_resetn trig_cmd_fifo_spi_clk_rst/peripheral_aresetn
+  rd_resetn trig_data_fifo_spi_clk_rst/peripheral_aresetn
   S_AXI board_ch_axi_intercon/M0${board_count}_AXI
   fifo_wr_data trig_cmd_fifo/wr_data
   fifo_wr_en trig_cmd_fifo/wr_en
