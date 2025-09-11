@@ -87,50 +87,34 @@ int cmd_read_dac_data(const char** args, int arg_count, const command_flag_t* fl
 }
 
 int cmd_read_dac_dbg(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  int board = validate_board_number(args[0]);
+  int board = parse_board_number(args[0]);
   if (board < 0) {
     fprintf(stderr, "Invalid board number for read_dac_dbg: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
   
   if (FIFO_PRESENT(sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))) == 0) {
-    printf("DAC data FIFO for board %d is not present. Cannot read data.\n", board);
+    printf("DAC data FIFO for board %d is not present. Cannot read debug data.\n", board);
     return -1;
   }
   
   if (FIFO_STS_EMPTY(sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
-    printf("DAC data FIFO for board %d is empty. Cannot read data.\n", board);
+    printf("DAC data FIFO for board %d is empty. Cannot read debug data.\n", board);
     return -1;
   }
   
   bool read_all = has_flag(flags, flag_count, FLAG_ALL);
   
   if (read_all) {
-    printf("Reading all debug data from DAC FIFO for board %d...\n", board);
-    int count = 0;
+    printf("Reading all debug information from DAC FIFO for board %d...\n", board);
     while (!FIFO_STS_EMPTY(sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
       uint32_t data = dac_read(ctx->dac_ctrl, (uint8_t)board);
-      printf("Sample %d - DAC debug data from board %d:\n", ++count, board);
-      printf("  Raw data: 0x%" PRIx32 "\n", data);
-      print_data_words(data);
-      
-      // Additional debug information
-      int16_t signed_lower = convert_to_signed_16bit(data);
-      int16_t signed_upper = convert_to_signed_16bit(data >> 16);
-      printf("  Signed values: %d, %d\n", signed_lower, signed_upper);
-      printf("\n");
+      dac_print_debug(data);
     }
-    printf("Read %d debug samples total.\n", count);
   } else {
     uint32_t data = dac_read(ctx->dac_ctrl, (uint8_t)board);
-    printf("Read DAC debug data from board %d:\n", board);
-    printf("  Raw data: 0x%" PRIx32 "\n", data);
-    print_data_words(data);
-    
-    // Additional debug information
-    int16_t signed_lower = convert_to_signed_16bit(data);
-    int16_t signed_upper = convert_to_signed_16bit(data >> 16);
-    printf("  Signed values: %d, %d\n", signed_lower, signed_upper);
+    printf("Reading one debug sample from DAC FIFO for board %d...\n", board);
+    dac_print_debug(data);
   }
   return 0;
 }
@@ -268,12 +252,8 @@ int cmd_do_dac_wr_ch(const char** args, int arg_count, const command_flag_t* fla
   
   printf("Writing value %ld to DAC channel %d (board %d, channel %d)...\n", value, atoi(args[0]), board, channel);
   
-  // Create channel array with the specified value at the right channel
-  int16_t ch_vals[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-  ch_vals[channel] = (int16_t)value;
-  
-  // Write to DAC with delay mode, no continue, ldac true, delay value 1000
-  dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, false, false, true, 1000, *(ctx->verbose));
+  // Use the dedicated single channel write command
+  dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, (int16_t)value, *(ctx->verbose));
   
   printf("Wrote value %ld to DAC channel %d (board %d, channel %d).\n", value, atoi(args[0]), board, channel);
   return 0;

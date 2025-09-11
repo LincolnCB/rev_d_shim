@@ -268,6 +268,65 @@ static void print_wrapped_line(const char* prefix, const char* text, const char*
   printf("\n");
 }
 
+// Print help for a specific command
+void print_command_help(const char* command_name) {
+  command_entry_t* cmd = find_command(command_name);
+  if (cmd == NULL) {
+    printf("Unknown command: %s\n", command_name);
+    return;
+  }
+  
+  printf("Usage: %s", command_name);
+  
+  // Show argument requirements
+  if (cmd->info.min_args > 0) {
+    for (int i = 0; i < cmd->info.min_args; i++) {
+      printf(" <arg%d>", i + 1);
+    }
+    
+    // Show optional arguments
+    if (cmd->info.max_args > cmd->info.min_args) {
+      for (int i = cmd->info.min_args; i < cmd->info.max_args; i++) {
+        printf(" [arg%d]", i + 1);
+      }
+    }
+  }
+  
+  // Show valid flags
+  bool has_flags = false;
+  for (int i = 0; i < MAX_FLAGS && cmd->info.valid_flags[i] != -1; i++) {
+    if (!has_flags) {
+      printf(" [flags]");
+      has_flags = true;
+      break;
+    }
+  }
+  
+  printf("\n");
+  
+  // Use print_wrapped_line for the description
+  print_wrapped_line("Description: ", cmd->info.description, "             ");
+  
+  // Show valid flags if any
+  if (has_flags) {
+    printf("Valid flags:");
+    for (int i = 0; i < MAX_FLAGS && cmd->info.valid_flags[i] != -1; i++) {
+      switch (cmd->info.valid_flags[i]) {
+        case FLAG_ALL:
+          printf(" --all");
+          break;
+        case FLAG_CONTINUE:
+          printf(" --continue");
+          break;
+        case FLAG_SIMPLE:
+          printf(" --simple");
+          break;
+      }
+    }
+    printf("\n");
+  }
+}
+
 // Main help printing function
 void print_help(void) {
   printf("\nAvailable commands:\n");
@@ -443,6 +502,7 @@ int execute_command(const char* line, command_context_t* ctx) {
   command_entry_t* cmd = find_command(args[0]);
   if (cmd == NULL) {
     printf("Unknown command: %s\n", args[0]);
+    printf("Type 'help' to see all available commands.\n");
     return -1;
   }
   
@@ -454,6 +514,8 @@ int execute_command(const char* line, command_context_t* ctx) {
       printf("-%d", cmd->info.max_args);
     }
     printf(" arguments, got %d\n", cmd_args);
+    printf("\n");
+    print_command_help(args[0]);
     return -1;
   }
   

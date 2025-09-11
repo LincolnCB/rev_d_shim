@@ -316,7 +316,7 @@ cell xilinx.com:ip:util_vector_logic n_unlock_cfg {
 }
 ## Timing calculation cores
 cell lcb:user:shim_ad5676_dac_timing_calc dac_timing_calc {} {
-  clk spi_clk/clk_out1
+  clk ps/FCLK_CLK0
   resetn ps_rst/peripheral_aresetn
   spi_clk_freq_hz spi_clk_freq_hz_const/dout
   calc n_unlock_cfg/Res
@@ -324,7 +324,7 @@ cell lcb:user:shim_ad5676_dac_timing_calc dac_timing_calc {} {
 cell lcb:user:shim_ads816x_adc_timing_calc adc_timing_calc {
   ADS_MODEL_ID 8
 } {
-  clk spi_clk/clk_out1
+  clk ps/FCLK_CLK0
   resetn ps_rst/peripheral_aresetn
   spi_clk_freq_hz spi_clk_freq_hz_const/dout
   calc n_unlock_cfg/Res

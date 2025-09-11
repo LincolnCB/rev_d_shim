@@ -305,34 +305,44 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
   printf("Starting channel test for board %d, channel %d, value %d\n", board, channel, dac_value);
   
   // Step 1: Check that the system is on (already done above)
-  printf("  Step 1: System is running ✓\n");
+  printf("  Step 1: System is running\n");
   
   // Step 2: Reset the ADC and DAC buffers for that board
   printf("  Step 2: Resetting ADC and DAC buffers for board %d\n", board);
-  uint32_t board_mask = 1 << board;
+  uint32_t board_mask = 3 << (2 * board);
   sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, board_mask, *(ctx->verbose));
   sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, board_mask, *(ctx->verbose));
   usleep(10000); // 10ms
   sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
   sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
   usleep(10000); // 10ms
-  
-  // Step 3: Send wr_ch command to DAC, 100000 cycle delay to ADC, and rd_ch command to ADC
-  printf("  Step 3: Sending commands to DAC and ADC\n");
-  dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, (int16_t)dac_value, *(ctx->verbose));
-  adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, 100000, *(ctx->verbose)); // 100000 cycle delay
-  adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, *(ctx->verbose));
-  
-  // Step 4: Sleep 10 ms
-  printf("  Step 4: Waiting 10ms for ADC conversion\n");
+
+  // Step 3: Send cancel command to DAC and ADC for that board
+  printf("  Step 3: Sending CANCEL command to DAC and ADC for board %d\n", board);
+  dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, *(ctx->verbose));
+  adc_cmd_cancel(ctx->adc_ctrl, (uint8_t)board, *(ctx->verbose));
   usleep(10000); // 10ms
   
-  // Step 5: Read single from ADC
-  printf("  Step 5: Reading ADC value\n");
+  // Step 4: Send wr_ch command to DAC, 100000 cycle delay to ADC, and rd_ch command to ADC
+  printf("  Step 4: Sending commands to DAC and ADC\n");
+  dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, (int16_t)dac_value, *(ctx->verbose));
+  adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, false, 100000, *(ctx->verbose)); // 100000 cycle delay
+  adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, *(ctx->verbose));
+  
+  // Step 5: Sleep 10 ms
+  printf("  Step 5: Waiting 10ms for ADC conversion\n");
+  usleep(10000); // 10ms
+
+  // Step 6: Send wr_ch command to DAC to set channel back to 0
+  printf("  Step 6: Resetting DAC to 0\n");
+  dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, 0, *(ctx->verbose));
+  
+  // Step 7: Read single from ADC
+  printf("  Step 7: Reading ADC value\n");
   int16_t adc_reading = adc_read_ch(ctx->adc_ctrl, (uint8_t)board);
   
-  // Step 6: Calculate and print error
-  printf("  Step 6: Calculating error\n");
+  // Step 8: Calculate and print error
+  printf("  Step 8: Calculating error\n");
   printf("    DAC value set: %d\n", dac_value);
   printf("    ADC value read: %d\n", adc_reading);
   

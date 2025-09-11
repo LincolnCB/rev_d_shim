@@ -40,6 +40,7 @@ typedef struct {
 // Main command execution and help functions
 int execute_command(const char* line, command_context_t* ctx);
 void print_help(void);
+void print_command_help(const char* command_name);
 int cmd_help(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
 // Command parsing and lookup functions
