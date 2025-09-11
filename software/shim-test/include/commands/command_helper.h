@@ -71,11 +71,7 @@ int resolve_file_pattern(const char* pattern, char* resolved_path, size_t resolv
 void clean_and_expand_path(const char* input_path, char* full_path, size_t full_path_size);
 void set_file_permissions(const char* file_path, bool verbose);
 
-// Data conversion utilities
-int16_t convert_to_signed_16bit(uint32_t raw_value);
-
 // Display/output helper functions
-void print_data_words(uint32_t data);
 void print_trigger_data(uint64_t data);
 
 #endif // COMMAND_HELPER_H

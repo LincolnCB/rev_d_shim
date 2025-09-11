@@ -48,44 +48,6 @@ int cmd_dac_data_fifo_sts(const char** args, int arg_count, const command_flag_t
   return 0;
 }
 
-// DAC data reading commands
-int cmd_read_dac_data(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  int board = validate_board_number(args[0]);
-  if (board < 0) {
-    fprintf(stderr, "Invalid board number for read_dac_data: '%s'. Must be 0-7.\n", args[0]);
-    return -1;
-  }
-  
-  if (FIFO_PRESENT(sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))) == 0) {
-    printf("DAC data FIFO for board %d is not present. Cannot read data.\n", board);
-    return -1;
-  }
-  
-  if (FIFO_STS_EMPTY(sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
-    printf("DAC data FIFO for board %d is empty. Cannot read data.\n", board);
-    return -1;
-  }
-  
-  bool read_all = has_flag(flags, flag_count, FLAG_ALL);
-  
-  if (read_all) {
-    printf("Reading all data from DAC FIFO for board %d...\n", board);
-    int count = 0;
-    while (!FIFO_STS_EMPTY(sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
-      uint32_t data = dac_read(ctx->dac_ctrl, (uint8_t)board);
-      printf("Sample %d - DAC data from board %d: 0x%" PRIx32 "\n", ++count, board, data);
-      print_data_words(data);
-      printf("\n");
-    }
-    printf("Read %d samples total.\n", count);
-  } else {
-    uint32_t data = dac_read(ctx->dac_ctrl, (uint8_t)board);
-    printf("Read DAC data from board %d: 0x%" PRIx32 "\n", board, data);
-    print_data_words(data);
-  }
-  return 0;
-}
-
 int cmd_read_dac_dbg(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = parse_board_number(args[0]);
   if (board < 0) {

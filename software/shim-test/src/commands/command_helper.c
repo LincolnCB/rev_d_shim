@@ -114,26 +114,13 @@ int validate_channel_number(const char* channel_str, int* board, int* channel) {
   return 0;
 }
 
-// Convert signed integer to 16-bit signed value for display
-int16_t convert_to_signed_16bit(uint32_t raw_value) {
-  return (int16_t)(raw_value & 0xFFFF);
-}
-
-// Print data words breakdown for debugging
-void print_data_words(uint32_t data) {
-  int16_t word0 = (int16_t)(data & 0xFFFF);
-  int16_t word1 = (int16_t)((data >> 16) & 0xFFFF);
-  
-  printf("  Word 0 (bits 15-0):  0x%04X (%d)\n", (uint16_t)word0, word0);
-  printf("  Word 1 (bits 31-16): 0x%04X (%d)\n", (uint16_t)word1, word1);
-}
-
 // Print 64-bit trigger data breakdown
 void print_trigger_data(uint64_t data) {
   uint32_t low_word = data & 0xFFFFFFFF;
   uint32_t high_word = (data >> 32) & 0xFFFFFFFF;
-  printf("  Low 32 bits:  0x%08" PRIx32 " (%" PRIu32 ")\n", low_word, low_word);
-  printf("  High 32 bits: 0x%08" PRIx32 " (%" PRIu32 ")\n", high_word, high_word);
+  printf("  Low 32 bits:  0x%08X\n", low_word);
+  printf("  High 32 bits: 0x%08X\n", high_word);
+  printf("  64-bit value: 0x%016" PRIX64 " (%" PRIu64 ")\n", data, data);
 }
 
 // Helper function to clean and expand file paths

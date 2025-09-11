@@ -54,7 +54,7 @@ int cmd_adc_data_fifo_sts(const char** args, int arg_count, const command_flag_t
 }
 
 // ADC data reading commands
-int cmd_read_adc_data(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+int cmd_read_adc_pair(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
     fprintf(stderr, "Invalid board number for read_adc_data: '%s'. Must be 0-7.\n", args[0]);
@@ -79,14 +79,52 @@ int cmd_read_adc_data(const char** args, int arg_count, const command_flag_t* fl
     while (!FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
       uint32_t data = adc_read(ctx->adc_ctrl, (uint8_t)board);
       printf("Sample %d - ADC data from board %d: 0x%" PRIx32 "\n", ++count, board, data);
-      print_data_words(data);
+      print_adc_pair(data);
       printf("\n");
     }
     printf("Read %d samples total.\n", count);
   } else {
     uint32_t data = adc_read(ctx->adc_ctrl, (uint8_t)board);
     printf("Read ADC data from board %d: 0x%" PRIx32 "\n", board, data);
-    print_data_words(data);
+    print_adc_pair(data);
+  }
+  return 0;
+}
+
+int cmd_read_adc_single(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  int board = validate_board_number(args[0]);
+  if (board < 0) {
+    fprintf(stderr, "Invalid board number for read_adc_single: '%s'. Must be 0-7.\n", args[0]);
+    return -1;
+  }
+  
+  if (FIFO_PRESENT(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))) == 0) {
+    printf("ADC data FIFO for board %d is not present. Cannot read data.\n", board);
+    return -1;
+  }
+  
+  bool read_all = has_flag(flags, flag_count, FLAG_ALL);
+  
+  if (read_all) {
+    printf("Reading all available ADC data for board %d...\n", board);
+    int count = 0;
+    while (!FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
+      uint32_t data = adc_read(ctx->adc_ctrl, (uint8_t)board);
+      int16_t signed_lower = ADC_OFFSET_TO_SIGNED(data);
+      int16_t signed_upper = ADC_OFFSET_TO_SIGNED(data >> 16);
+      printf("Sample %d - Board %d: %d, %d\n", ++count, board, signed_lower, signed_upper);
+    }
+    printf("Read %d samples total for board %d.\n", count, board);
+  } else {
+    if (FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
+      printf("ADC data FIFO for board %d is empty. Cannot read data.\n", board);
+      return -1;
+    }
+    
+    uint32_t data = adc_read(ctx->adc_ctrl, (uint8_t)board);
+    int16_t signed_lower = ADC_OFFSET_TO_SIGNED(data);
+    int16_t signed_upper = ADC_OFFSET_TO_SIGNED(data >> 16);
+    printf("Board %d data: %d, %d\n", board, signed_lower, signed_upper);
   }
   return 0;
 }
@@ -194,7 +232,7 @@ int cmd_adc_set_ord(const char** args, int arg_count, const command_flag_t* flag
 }
 
 // ADC reading operations
-int cmd_adc_simple_read(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+int cmd_do_adc_simple_read(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
     fprintf(stderr, "Invalid board number for adc_simple_read: '%s'. Must be 0-7.\n", args[0]);
@@ -227,7 +265,7 @@ int cmd_adc_simple_read(const char** args, int arg_count, const command_flag_t* 
   return 0;
 }
 
-int cmd_adc_read(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+int cmd_do_adc_read(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
     fprintf(stderr, "Invalid board number for adc_read: '%s'. Must be 0-7.\n", args[0]);
@@ -256,7 +294,6 @@ int cmd_adc_read(const char** args, int arg_count, const command_flag_t* flags, 
   return 0;
 }
 
-// Single channel ADC operations
 int cmd_do_adc_rd_ch(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board, channel;
   if (validate_channel_number(args[0], &board, &channel) < 0) {
@@ -269,47 +306,10 @@ int cmd_do_adc_rd_ch(const char** args, int arg_count, const command_flag_t* fla
   
   printf("Reading ADC channel %d (board %d, channel %d)...\n", atoi(args[0]), board, channel);
   
-  // Read the ADC channel
-  adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, 1000, *(ctx->verbose));
+  // Read the specific ADC channel
+  adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, *(ctx->verbose));
   
-  printf("ADC read command sent for channel %d (board %d, channel %d).\n", atoi(args[0]), board, channel);
-  return 0;
-}
-
-int cmd_read_adc_single(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  int board, channel;
-  if (validate_channel_number(args[0], &board, &channel) < 0) {
-    return -1;
-  }
-  
-  if (FIFO_PRESENT(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))) == 0) {
-    printf("ADC data FIFO for board %d is not present. Cannot read data.\n", board);
-    return -1;
-  }
-  
-  bool read_all = has_flag(flags, flag_count, FLAG_ALL);
-  
-  if (read_all) {
-    printf("Reading all available ADC data for channel %d (board %d)...\n", atoi(args[0]), board);
-    int count = 0;
-    while (!FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
-      uint32_t data = adc_read(ctx->adc_ctrl, (uint8_t)board);
-      int16_t signed_lower = convert_to_signed_16bit(data);
-      int16_t signed_upper = convert_to_signed_16bit(data >> 16);
-      printf("Sample %d - Channel %d: %d, %d\n", ++count, atoi(args[0]), signed_lower, signed_upper);
-    }
-    printf("Read %d samples total for channel %d.\n", count, atoi(args[0]));
-  } else {
-    if (FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
-      printf("ADC data FIFO for board %d is empty. Cannot read data for channel %d.\n", board, atoi(args[0]));
-      return -1;
-    }
-    
-    uint32_t data = adc_read(ctx->adc_ctrl, (uint8_t)board);
-    int16_t signed_lower = convert_to_signed_16bit(data);
-    int16_t signed_upper = convert_to_signed_16bit(data >> 16);
-    printf("Channel %d data: %d, %d\n", atoi(args[0]), signed_lower, signed_upper);
-  }
+  printf("ADC read channel command sent for channel %d (board %d, channel %d).\n", atoi(args[0]), board, channel);
   return 0;
 }
 

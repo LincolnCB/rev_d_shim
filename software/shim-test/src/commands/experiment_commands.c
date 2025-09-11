@@ -270,8 +270,8 @@ static void* adc_experiment_stream_thread(void* arg) {
 
 // Channel test command implementation
 int cmd_channel_test(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  if (arg_count < 3) {
-    fprintf(stderr, "Usage: channel_test <board> <channel> <value>\n");
+  if (arg_count < 2) {
+    fprintf(stderr, "Usage: channel_test <channel> <value>\n");
     return -1;
   }
   
@@ -280,29 +280,22 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
     return -1;
   }
   
-  // Parse board number
-  int board = validate_board_number(args[0]);
-  if (board < 0) {
-    fprintf(stderr, "Invalid board number: '%s'. Must be 0-7.\n", args[0]);
-    return -1;
-  }
-  
-  // Parse channel number
-  char* endptr;
-  int channel = (int)parse_value(args[1], &endptr);
-  if (*endptr != '\0' || channel < 0 || channel > 7) {
-    fprintf(stderr, "Invalid channel number: '%s'. Must be 0-7.\n", args[1]);
+  // Parse channel number and calculate board/channel
+  int board, channel;
+  if (validate_channel_number(args[0], &board, &channel) < 0) {
     return -1;
   }
   
   // Parse DAC value
-  int dac_value = (int)parse_value(args[2], &endptr);
+  char* endptr;
+  int dac_value = (int)parse_value(args[1], &endptr);
   if (*endptr != '\0' || dac_value < -32767 || dac_value > 32767) {
-    fprintf(stderr, "Invalid DAC value: '%s'. Must be -32767 to 32767.\n", args[2]);
+    fprintf(stderr, "Invalid DAC value: '%s'. Must be -32767 to 32767.\n", args[1]);
     return -1;
   }
   
-  printf("Starting channel test for board %d, channel %d, value %d\n", board, channel, dac_value);
+  printf("Starting channel test for channel %d (board %d, channel %d), value %d\n", 
+         atoi(args[0]), board, channel, dac_value);
   
   // Step 1: Check that the system is on (already done above)
   printf("  Step 1: System is running\n");
