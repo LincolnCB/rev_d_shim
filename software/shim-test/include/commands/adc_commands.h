@@ -50,10 +50,13 @@ int cmd_do_adc_simple_read(const char** args, int arg_count, const command_flag_
 int cmd_do_adc_read(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_do_adc_rd_ch(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
-// File operations (placeholders - need full implementation)
+// ADC data streaming operations (reading ADC data to files)
 int cmd_read_adc_to_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
-int cmd_stream_adc_to_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
-int cmd_stop_adc_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
-int cmd_stream_adc_from_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+int cmd_stream_adc_data_to_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+int cmd_stop_adc_data_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+
+// ADC command streaming operations (streaming commands from files)
+int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+int cmd_stop_adc_cmd_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
 #endif // ADC_COMMANDS_H

@@ -63,10 +63,8 @@ struct adc_ctrl_t {
 // Function declarations
 // Create ADC control structure
 struct adc_ctrl_t create_adc_ctrl(bool verbose);
-// Read ADC value from a specific board
-uint32_t adc_read(struct adc_ctrl_t *adc_ctrl, uint8_t board);
-// Read a single ADC sample (one channel) from a specific board
-int16_t adc_read_ch(struct adc_ctrl_t *adc_ctrl, uint8_t board);
+// Read ADC data word from a specific board
+uint32_t adc_read_word(struct adc_ctrl_t *adc_ctrl, uint8_t board);
 // Interpret and print ADC value as debug information
 void adc_print_debug(uint32_t adc_value);
 // Interpret and print the ADC state

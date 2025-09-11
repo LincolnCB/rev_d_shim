@@ -81,9 +81,13 @@ int main(int argc, char *argv[])
     .trigger_ctrl = &trigger_ctrl,
     .verbose = &verbose,
     .should_exit = &should_exit,
-    .adc_stream_threads = {0},    // Initialize thread handles to 0
-    .adc_stream_running = {false}, // Initialize all streams as not running
-    .adc_stream_stop = {false},    // Initialize all stop flags as false
+    .adc_data_stream_threads = {0},    // Initialize thread handles to 0
+    .adc_data_stream_running = {false}, // Initialize all data streams as not running
+    .adc_data_stream_stop = {false},    // Initialize all data stream stop flags as false
+    .adc_cmd_stream_running = {false},  // Initialize all command streams as not running
+    .adc_cmd_stream_stop = {false},     // Initialize all command stream stop flags as false
+    .dac_cmd_stream_running = {false},  // Initialize all DAC command streams as not running
+    .dac_cmd_stream_stop = {false},     // Initialize all DAC command stream stop flags as false
     .log_file = NULL,              // Initialize log file as NULL
     .logging_enabled = false       // Initialize logging as disabled
   };
@@ -119,13 +123,31 @@ int main(int argc, char *argv[])
   // Stop all running ADC streaming threads
   printf("Stopping all ADC streams...\n");
   for (int i = 0; i < 8; i++) {
-    if (cmd_ctx.adc_stream_running[i]) {
-      printf("Stopping ADC stream for board %d...\n", i);
-      cmd_ctx.adc_stream_stop[i] = true;
-      if (pthread_join(cmd_ctx.adc_stream_threads[i], NULL) != 0) {
-        fprintf(stderr, "Failed to join ADC streaming thread for board %d\n", i);
+    if (cmd_ctx.adc_data_stream_running[i]) {
+      printf("Stopping ADC data stream for board %d...\n", i);
+      cmd_ctx.adc_data_stream_stop[i] = true;
+      if (pthread_join(cmd_ctx.adc_data_stream_threads[i], NULL) != 0) {
+        fprintf(stderr, "Failed to join ADC data streaming thread for board %d\n", i);
       } else {
-        printf("ADC stream for board %d stopped.\n", i);
+        printf("ADC data stream for board %d stopped.\n", i);
+      }
+    }
+    if (cmd_ctx.adc_cmd_stream_running[i]) {
+      printf("Stopping ADC command stream for board %d...\n", i);
+      cmd_ctx.adc_cmd_stream_stop[i] = true;
+      if (pthread_join(cmd_ctx.adc_cmd_stream_threads[i], NULL) != 0) {
+        fprintf(stderr, "Failed to join ADC command streaming thread for board %d\n", i);
+      } else {
+        printf("ADC command stream for board %d stopped.\n", i);
+      }
+    }
+    if (cmd_ctx.dac_cmd_stream_running[i]) {
+      printf("Stopping DAC command stream for board %d...\n", i);
+      cmd_ctx.dac_cmd_stream_stop[i] = true;
+      if (pthread_join(cmd_ctx.dac_cmd_stream_threads[i], NULL) != 0) {
+        fprintf(stderr, "Failed to join DAC command streaming thread for board %d\n", i);
+      } else {
+        printf("DAC command stream for board %d stopped.\n", i);
       }
     }
   }

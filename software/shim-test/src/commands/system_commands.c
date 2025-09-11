@@ -57,23 +57,31 @@ int cmd_hard_reset(const char** args, int arg_count, const command_flag_t* flags
   printf("  Step 1: Stopping all active streaming threads\n");
   for (int board = 0; board < 8; board++) {
     // Stop DAC streams
-    if (ctx->dac_stream_running[board]) {
-      printf("    Stopping DAC stream for board %d\n", board);
-      ctx->dac_stream_stop[board] = true;
-      if (pthread_join(ctx->dac_stream_threads[board], NULL) != 0) {
-        fprintf(stderr, "Warning: Failed to join DAC streaming thread for board %d\n", board);
+    if (ctx->dac_cmd_stream_running[board]) {
+      printf("    Stopping DAC command stream for board %d\n", board);
+      ctx->dac_cmd_stream_stop[board] = true;
+      if (pthread_join(ctx->dac_cmd_stream_threads[board], NULL) != 0) {
+        fprintf(stderr, "Warning: Failed to join DAC command streaming thread for board %d\n", board);
       }
-      ctx->dac_stream_running[board] = false;
+      ctx->dac_cmd_stream_running[board] = false;
     }
     
     // Stop ADC streams
-    if (ctx->adc_stream_running[board]) {
-      printf("    Stopping ADC stream for board %d\n", board);
-      ctx->adc_stream_stop[board] = true;
-      if (pthread_join(ctx->adc_stream_threads[board], NULL) != 0) {
-        fprintf(stderr, "Warning: Failed to join ADC streaming thread for board %d\n", board);
+    if (ctx->adc_data_stream_running[board]) {
+      printf("    Stopping ADC data stream for board %d\n", board);
+      ctx->adc_data_stream_stop[board] = true;
+      if (pthread_join(ctx->adc_data_stream_threads[board], NULL) != 0) {
+        fprintf(stderr, "Warning: Failed to join ADC data streaming thread for board %d\n", board);
       }
-      ctx->adc_stream_running[board] = false;
+      ctx->adc_data_stream_running[board] = false;
+    }
+    if (ctx->adc_cmd_stream_running[board]) {
+      printf("    Stopping ADC command stream for board %d\n", board);
+      ctx->adc_cmd_stream_stop[board] = true;
+      if (pthread_join(ctx->adc_cmd_stream_threads[board], NULL) != 0) {
+        fprintf(stderr, "Warning: Failed to join ADC command streaming thread for board %d\n", board);
+      }
+      ctx->adc_cmd_stream_running[board] = false;
     }
   }
   

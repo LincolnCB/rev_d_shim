@@ -63,8 +63,8 @@ static command_entry_t command_table[] = {
   {"dac_cancel", cmd_dac_cancel, {1, 1, {-1}, "Send DAC cancel command to specified board (0-7)"}},
   {"write_dac_update", cmd_write_dac_update, {11, 11, {FLAG_CONTINUE, -1}, "Send DAC write update command: <board> <ch0> <ch1> <ch2> <ch3> <ch4> <ch5> <ch6> <ch7> <\"trig\"|\"delay\"> <value> [--continue]"}},
   {"do_dac_wr_ch", cmd_do_dac_wr_ch, {2, 2, {-1}, "Write DAC single channel: <channel> <value> (channel 0-63, board=ch/8, ch=ch%8)"}},
-  {"stream_dac_from_file", cmd_stream_dac_from_file, {2, 3, {-1}, "Start DAC streaming from waveform file: <board> <file_path> [loop_count] (supports * wildcards)"}},
-  {"stop_dac_stream", cmd_stop_dac_stream, {1, 1, {-1}, "Stop DAC streaming for specified board (0-7)"}},
+  {"stream_dac_commands_from_file", cmd_stream_dac_commands_from_file, {2, 3, {-1}, "Start DAC command streaming from waveform file: <board> <file_path> [loop_count] (supports * wildcards)"}},
+  {"stop_dac_cmd_stream", cmd_stop_dac_cmd_stream, {1, 1, {-1}, "Stop DAC command streaming for specified board (0-7)"}},
   
   // ===== ADC COMMANDS (from adc_commands.h) =====
   {"adc_cmd_fifo_sts", cmd_adc_cmd_fifo_sts, {1, 1, {-1}, "Show ADC command FIFO status for specified board (0-7)"}},
@@ -78,10 +78,11 @@ static command_entry_t command_table[] = {
   {"do_adc_simple_read", cmd_do_adc_simple_read, {3, 3, {-1}, "Perform simple ADC reads: <board> <loop_count> <delay_cycles> (reads ADC with delay mode)"}},
   {"do_adc_read", cmd_do_adc_read, {3, 3, {-1}, "Perform ADC read using loop command: <board> <loop_count> <delay_cycles> (sends loop_next command then single read command)"}},
   {"do_adc_rd_ch", cmd_do_adc_rd_ch, {1, 1, {-1}, "Read ADC single channel: <channel> (channel 0-63, board=ch/8, ch=ch%8)"}},
-  {"read_adc_to_file", cmd_read_adc_to_file, {2, 2, {FLAG_ALL, -1}, "Read ADC data to file: <board> <file_path> [--all] (converts to signed values, writes one per line)"}},
-  {"stream_adc_to_file", cmd_stream_adc_to_file, {2, 2, {-1}, "Start ADC streaming to file: <board> <file_path> (reads 4 words at a time, 8 samples)"}},
-  {"stream_adc_from_file", cmd_stream_adc_from_file, {2, 3, {FLAG_SIMPLE, -1}, "Start ADC streaming from command file: <board> <file_path> [loop_count] [--simple] (supports * wildcards)"}},
-  {"stop_adc_stream", cmd_stop_adc_stream, {1, 1, {-1}, "Stop ADC streaming for specified board (0-7)"}},
+  {"read_adc_to_file", cmd_read_adc_to_file, {3, 3, {-1}, "Read ADC data to file: <board> <word_count> <file_path> (streams ADC data from FIFO to file)"}},
+  {"stream_adc_data_to_file", cmd_stream_adc_data_to_file, {3, 3, {-1}, "Start ADC data streaming to file: <board> <word_count> <file_path> (alias for read_adc_to_file)"}},
+  {"stream_adc_commands_from_file", cmd_stream_adc_commands_from_file, {2, 3, {FLAG_SIMPLE, -1}, "Start ADC command streaming from file: <board> <file_path> [loop_count] [--simple] (supports * wildcards)"}},
+  {"stop_adc_data_stream", cmd_stop_adc_data_stream, {1, 1, {-1}, "Stop ADC data streaming for specified board (0-7)"}},
+  {"stop_adc_cmd_stream", cmd_stop_adc_cmd_stream, {1, 1, {-1}, "Stop ADC command streaming for specified board (0-7)"}},
   
   // ===== TRIGGER COMMANDS (from trigger_commands.h) =====
   {"trig_cmd_fifo_sts", cmd_trig_cmd_fifo_sts, {0, 0, {-1}, "Show trigger command FIFO status"}},

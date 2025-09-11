@@ -39,14 +39,17 @@ typedef struct command_context {
   bool* should_exit;
   
   // ADC streaming management
-  pthread_t adc_stream_threads[8];      // Thread handles for ADC streaming
-  bool adc_stream_running[8];           // Status of each ADC stream thread
-  volatile bool adc_stream_stop[8];     // Stop signals for each ADC stream thread
+  pthread_t adc_data_stream_threads[8];      // Thread handles for ADC data streaming (reading to file)
+  bool adc_data_stream_running[8];           // Status of each ADC data stream thread
+  volatile bool adc_data_stream_stop[8];     // Stop signals for each ADC data stream thread
+  pthread_t adc_cmd_stream_threads[8];       // Thread handles for ADC command streaming (from file)
+  bool adc_cmd_stream_running[8];            // Status of each ADC command stream thread
+  volatile bool adc_cmd_stream_stop[8];      // Stop signals for each ADC command stream thread
   
   // DAC streaming management
-  pthread_t dac_stream_threads[8];      // Thread handles for DAC streaming
-  bool dac_stream_running[8];           // Status of each DAC stream thread
-  volatile bool dac_stream_stop[8];     // Stop signals for each DAC stream thread
+  pthread_t dac_cmd_stream_threads[8];      // Thread handles for DAC command streaming
+  bool dac_cmd_stream_running[8];           // Status of each DAC command stream thread
+  volatile bool dac_cmd_stream_stop[8];     // Stop signals for each DAC command stream thread
   
   // Command logging
   FILE* log_file;                       // File handle for command logging

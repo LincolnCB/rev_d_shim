@@ -89,9 +89,9 @@ int cmd_dac_noop(const char** args, int arg_count, const command_flag_t* flags, 
     return -1;
   }
   
-  // Check if DAC stream is running for this board
-  if (ctx->dac_stream_running[board]) {
-    fprintf(stderr, "Cannot send DAC no-op command to board %d: DAC stream is currently running. Stop the stream first.\n", board);
+  // Check if DAC command stream is running for this board
+  if (ctx->dac_cmd_stream_running[board]) {
+    fprintf(stderr, "Cannot send DAC no-op command to board %d: DAC command stream is currently running. Stop the stream first.\n", board);
     return -1;
   }
   
@@ -121,9 +121,9 @@ int cmd_dac_cancel(const char** args, int arg_count, const command_flag_t* flags
     return -1;
   }
   
-  // Check if DAC stream is running for this board
-  if (ctx->dac_stream_running[board]) {
-    fprintf(stderr, "Cannot send DAC cancel command to board %d: DAC stream is currently running. Stop the stream first.\n", board);
+  // Check if DAC command stream is running for this board
+  if (ctx->dac_cmd_stream_running[board]) {
+    fprintf(stderr, "Cannot send DAC cancel command to board %d: DAC command stream is currently running. Stop the stream first.\n", board);
     return -1;
   }
   
@@ -139,9 +139,9 @@ int cmd_write_dac_update(const char** args, int arg_count, const command_flag_t*
     return -1;
   }
   
-  // Check if DAC stream is running for this board
-  if (ctx->dac_stream_running[board]) {
-    fprintf(stderr, "Cannot send DAC write update command to board %d: DAC stream is currently running. Stop the stream first.\n", board);
+  // Check if DAC command stream is running for this board
+  if (ctx->dac_cmd_stream_running[board]) {
+    fprintf(stderr, "Cannot send DAC write update command to board %d: DAC command stream is currently running. Stop the stream first.\n", board);
     return -1;
   }
   
@@ -195,9 +195,9 @@ int cmd_do_dac_wr_ch(const char** args, int arg_count, const command_flag_t* fla
     return -1;
   }
   
-  // Check if DAC stream is running for this board
-  if (ctx->dac_stream_running[board]) {
-    fprintf(stderr, "Cannot write to DAC channel %d (board %d): DAC stream is currently running. Stop the stream first.\n", atoi(args[0]), board);
+  // Check if DAC command stream is running for this board
+  if (ctx->dac_cmd_stream_running[board]) {
+    fprintf(stderr, "Cannot write to DAC channel %d (board %d): DAC command stream is currently running. Stop the stream first.\n", atoi(args[0]), board);
     return -1;
   }
   
@@ -351,7 +351,7 @@ static int parse_waveform_file(const char* file_path, waveform_command_t** comma
 }
 
 // Thread function for DAC streaming
-void* dac_stream_thread(void* arg) {
+void* dac_cmd_stream_thread(void* arg) {
   dac_command_stream_params_t* stream_data = (dac_command_stream_params_t*)arg;
   command_context_t* ctx = stream_data->ctx;
   uint8_t board = stream_data->board;
@@ -381,8 +381,8 @@ void* dac_stream_thread(void* arg) {
         goto cleanup;
       }
       
-      uint32_t words_used = FIFO_STS_WORD_COUNT(fifo_status);
-      uint32_t words_available = DAC_CMD_FIFO_WORDCOUNT - (words_used + 1);
+      uint32_t words_used = FIFO_STS_WORD_COUNT(fifo_status) + 1; // +1 for safety margin
+      uint32_t words_available = DAC_CMD_FIFO_WORDCOUNT - words_used;
       
       // Check if we have space for the next command
       waveform_command_t* cmd = &commands[cmd_index];
@@ -406,15 +406,15 @@ void* dac_stream_thread(void* arg) {
         cmd_index++;
         
         if (*(ctx->verbose)) {
-          printf("DAC Stream Thread[%d]: Loop %d/%d, Sent command %d/%d (%s, value=%u, %s, cont=%s)\n", 
+          printf("DAC Stream Thread[%d]: Loop %d/%d, Sent command %d/%d (%s, value=%u, %s, cont=%s) [FIFO: %u/%u words]\n", 
                  board, current_loop + 1, loop_count, commands_sent_this_loop, command_count, 
                  cmd->is_trigger ? "trigger" : "delay", cmd->value,
                  cmd->has_ch_vals ? "with ch_vals" : "noop",
-                 cont_flag ? "true" : "false");
+                 cont_flag ? "true" : "false", words_used + words_needed + 1, DAC_CMD_FIFO_WORDCOUNT);
         }
       } else {
-        // Not enough space, sleep and try again
-        usleep(100);
+        // Not enough space in FIFO, sleep and try again
+        usleep(1000); // 1ms
       }
     }
     
@@ -434,13 +434,13 @@ cleanup:
            board, total_commands_sent, file_path, loop_count);
   }
   
-  ctx->dac_stream_running[board] = false;
+  ctx->dac_cmd_stream_running[board] = false;
   free(stream_data->commands);
   free(stream_data);
   return NULL;
 }
 
-int cmd_stream_dac_from_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+int cmd_stream_dac_commands_from_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   // Parse board number
   int board = parse_board_number(args[0]);
   if (board < 0) {
@@ -460,8 +460,8 @@ int cmd_stream_dac_from_file(const char** args, int arg_count, const command_fla
   }
   
   // Check if stream is already running
-  if (ctx->dac_stream_running[board]) {
-    printf("DAC stream for board %d is already running.\n", board);
+  if (ctx->dac_cmd_stream_running[board]) {
+    printf("DAC command stream for board %d is already running.\n", board);
     return -1;
   }
   
@@ -502,55 +502,55 @@ int cmd_stream_dac_from_file(const char** args, int arg_count, const command_fla
   stream_data->ctx = ctx;
   stream_data->board = (uint8_t)board;
   strcpy(stream_data->file_path, full_path);
-  stream_data->should_stop = &(ctx->dac_stream_stop[board]);
+  stream_data->should_stop = &(ctx->dac_cmd_stream_stop[board]);
   stream_data->commands = commands;
   stream_data->command_count = command_count;
   stream_data->loop_count = loop_count;
   
   // Initialize stop flag and mark stream as running
-  ctx->dac_stream_stop[board] = false;
-  ctx->dac_stream_running[board] = true;
+  ctx->dac_cmd_stream_stop[board] = false;
+  ctx->dac_cmd_stream_running[board] = true;
   
   // Create the streaming thread
-  if (pthread_create(&(ctx->dac_stream_threads[board]), NULL, dac_stream_thread, stream_data) != 0) {
-    fprintf(stderr, "Failed to create DAC streaming thread for board %d: %s\n", board, strerror(errno));
-    ctx->dac_stream_running[board] = false;
+  if (pthread_create(&(ctx->dac_cmd_stream_threads[board]), NULL, dac_cmd_stream_thread, stream_data) != 0) {
+    fprintf(stderr, "Failed to create DAC command streaming thread for board %d: %s\n", board, strerror(errno));
+    ctx->dac_cmd_stream_running[board] = false;
     free(commands);
     free(stream_data);
     return -1;
   }
   
-  printf("Started DAC streaming for board %d from file '%s' (looping %d time%s)\n", 
+  printf("Started DAC command streaming for board %d from file '%s' (looping %d time%s)\n", 
          board, full_path, loop_count, loop_count == 1 ? "" : "s");
   return 0;
 }
 
-int cmd_stop_dac_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+int cmd_stop_dac_cmd_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   // Parse board number
   int board = parse_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for stop_dac_stream: '%s'. Must be 0-7.\n", args[0]);
+    fprintf(stderr, "Invalid board number for stop_dac_cmd_stream: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
   
   // Check if stream is running
-  if (!ctx->dac_stream_running[board]) {
-    printf("DAC stream for board %d is not running.\n", board);
+  if (!ctx->dac_cmd_stream_running[board]) {
+    printf("DAC command stream for board %d is not running.\n", board);
     return -1;
   }
   
-  printf("Stopping DAC streaming for board %d...\n", board);
+  printf("Stopping DAC command streaming for board %d...\n", board);
   
   // Signal the thread to stop
-  ctx->dac_stream_stop[board] = true;
+  ctx->dac_cmd_stream_stop[board] = true;
   
   // Wait for the thread to finish
-  if (pthread_join(ctx->dac_stream_threads[board], NULL) != 0) {
-    fprintf(stderr, "Failed to join DAC streaming thread for board %d: %s\n", board, strerror(errno));
+  if (pthread_join(ctx->dac_cmd_stream_threads[board], NULL) != 0) {
+    fprintf(stderr, "Failed to join DAC command streaming thread for board %d: %s\n", board, strerror(errno));
     return -1;
   }
   
-  printf("DAC streaming for board %d has been stopped.\n", board);
+  printf("DAC command streaming for board %d has been stopped.\n", board);
   return 0;
 }
 

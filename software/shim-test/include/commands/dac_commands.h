@@ -38,9 +38,9 @@ int cmd_write_dac_update(const char** args, int arg_count, const command_flag_t*
 // Single channel DAC operations
 int cmd_do_dac_wr_ch(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
-// Streaming operations (placeholders - need full implementation)
-int cmd_stream_dac_from_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
-int cmd_stop_dac_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+// DAC command streaming operations (streaming commands from files)
+int cmd_stream_dac_commands_from_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+int cmd_stop_dac_cmd_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
 // Other DAC operations
 int cmd_set_and_check(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
