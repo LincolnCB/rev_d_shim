@@ -76,6 +76,9 @@ void dac_print_state(uint8_t state_code) {
     case DAC_STATE_TEST_RD:
       printf("Test Read");
       break;
+    case DAC_STATE_SET_MID:
+      printf("Set Midrange");
+      break;
     case DAC_STATE_IDLE:
       printf("Idle");
       break;
