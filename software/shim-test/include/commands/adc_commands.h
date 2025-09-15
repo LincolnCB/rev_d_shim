@@ -17,6 +17,7 @@ typedef struct {
   char file_path[1024];
   uint64_t word_count;         // Number of words to read from ADC
   volatile bool* should_stop;
+  bool binary_mode;            // true for binary format, false for ASCII format
 } adc_data_stream_params_t;
 
 // Structure to pass data to the ADC command streaming thread (for streaming commands from file)

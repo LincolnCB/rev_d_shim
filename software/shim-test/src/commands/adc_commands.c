@@ -320,12 +320,14 @@ static void* adc_data_stream_thread(void* arg) {
   const char* file_path = stream_data->file_path;
   uint64_t word_count = stream_data->word_count;
   volatile bool* should_stop = stream_data->should_stop;
+  bool binary_mode = stream_data->binary_mode;
   bool verbose = *(ctx->verbose);
   
-  printf("ADC Stream Thread[%d]: Starting to write %llu words to file '%s'\n", board, word_count, file_path);
+  printf("ADC Stream Thread[%d]: Starting to write %llu words to file '%s' (%s format)\n", 
+         board, word_count, file_path, binary_mode ? "binary" : "ASCII");
   
-  // Open file for writing
-  FILE* file = fopen(file_path, "wb");
+  // Open file for writing (binary or text mode based on format)
+  FILE* file = fopen(file_path, binary_mode ? "wb" : "w");
   if (file == NULL) {
     fprintf(stderr, "ADC Stream Thread[%d]: Failed to open file '%s' for writing: %s\n", 
            board, file_path, strerror(errno));
@@ -334,6 +336,7 @@ static void* adc_data_stream_thread(void* arg) {
   
   uint64_t words_written = 0;
   uint32_t write_buffer[256]; // Buffer for writing data
+  int samples_on_line = 0; // Track samples per line for formatting (ASCII mode only)
   
   while (words_written < word_count && !(*should_stop)) {
     // Check data FIFO status
@@ -361,15 +364,60 @@ static void* adc_data_stream_thread(void* arg) {
         write_buffer[i] = adc_read_word(ctx->adc_ctrl, board);
       }
       
-      // Write to file
-      size_t written = fwrite(write_buffer, sizeof(uint32_t), words_to_read, file);
-      if (written != words_to_read) {
-        fprintf(stderr, "ADC Stream Thread[%d]: Failed to write to file: %s\n", 
-               board, strerror(errno));
-        break;
+      // Write data based on format mode
+      if (binary_mode) {
+        // Binary mode: write raw 32-bit words directly
+        size_t written = fwrite(write_buffer, sizeof(uint32_t), words_to_read, file);
+        if (written != words_to_read) {
+          fprintf(stderr, "ADC Stream Thread[%d]: Failed to write to file: %s\n", 
+                 board, strerror(errno));
+          break;
+        }
+      } else {
+        // ASCII mode: convert and write samples as text
+        for (uint32_t i = 0; i < words_to_read; i++) {
+          uint32_t word = write_buffer[i];
+          
+          // Extract two 16-bit samples from the 32-bit word
+          uint16_t sample1_offset = (uint16_t)(word & 0xFFFF);        // Bits 15:0
+          uint16_t sample2_offset = (uint16_t)((word >> 16) & 0xFFFF); // Bits 31:16
+          
+          // Convert from offset format to signed using the ADC_OFFSET_TO_SIGNED macro
+          int16_t sample1_signed = ADC_OFFSET_TO_SIGNED(sample1_offset);
+          int16_t sample2_signed = ADC_OFFSET_TO_SIGNED(sample2_offset);
+          
+          // Write sample1
+          if (samples_on_line > 0) {
+            fprintf(file, " ");
+          }
+          fprintf(file, "%d", sample1_signed);
+          samples_on_line++;
+          
+          // Check if we need a new line
+          if (samples_on_line >= 8) {
+            fprintf(file, "\n");
+            samples_on_line = 0;
+          }
+          
+          // Write sample2
+          if (samples_on_line > 0) {
+            fprintf(file, " ");
+          }
+          fprintf(file, "%d", sample2_signed);
+          samples_on_line++;
+          
+          // Check if we need a new line
+          if (samples_on_line >= 8) {
+            fprintf(file, "\n");
+            samples_on_line = 0;
+          }
+        }
       }
       
-      words_written += written;
+      // Flush the file to ensure data is written
+      fflush(file);
+      
+      words_written += words_to_read;
       
       if (verbose && words_written % 10000 == 0) {
         printf("ADC Stream Thread[%d]: Written %llu/%llu words (%.1f%%)\n",
@@ -383,6 +431,10 @@ static void* adc_data_stream_thread(void* arg) {
   }
   
   if (file) {
+    // Add final newline if needed (ASCII mode only, if last line has samples but isn't complete)
+    if (!binary_mode && samples_on_line > 0) {
+      fprintf(file, "\n");
+    }
     fclose(file);
   }
   
@@ -416,6 +468,9 @@ int cmd_stream_adc_data_to_file(const char** args, int arg_count, const command_
     return -1;
   }
   
+  // Check for binary mode flag
+  bool binary_mode = has_flag(flags, flag_count, FLAG_BIN);
+  
   // Check if stream is already running
   if (ctx->adc_data_stream_running[board]) {
     printf("ADC data stream for board %d is already running.\n", board);
@@ -441,8 +496,28 @@ int cmd_stream_adc_data_to_file(const char** args, int arg_count, const command_
   char full_path[1024];
   clean_and_expand_path(args[2], full_path, sizeof(full_path));
   
+  // Modify file extension based on format
+  char final_path[1024];
+  strcpy(final_path, full_path);
+  
+  // If no extension is provided, add default extension based on format
+  char* dot = strrchr(final_path, '.');
+  char* slash = strrchr(final_path, '/');
+  
+  // Check if there's a dot after the last slash (or no slash at all)
+  if (dot == NULL || (slash != NULL && dot < slash)) {
+    // No extension, add default
+    if (binary_mode) {
+      strcat(final_path, ".bin");
+    } else {
+      strcat(final_path, ".txt");
+    }
+  }
+  // If extension exists, user specified it explicitly, so keep it
+  
   if (*(ctx->verbose)) {
-    printf("Output file path: '%s' -> '%s'\n", args[2], full_path);
+    printf("Output file path: '%s' -> '%s' (%s format)\n", 
+           args[2], final_path, binary_mode ? "binary" : "ASCII");
   }
   
   // Allocate thread data structure
@@ -458,17 +533,18 @@ int cmd_stream_adc_data_to_file(const char** args, int arg_count, const command_
   
   stream_data->ctx = ctx;
   stream_data->board = (uint8_t)board;
-  strcpy(stream_data->file_path, full_path);
+  strcpy(stream_data->file_path, final_path);
   stream_data->word_count = word_count;
   stream_data->should_stop = &(ctx->adc_data_stream_stop[board]);
+  stream_data->binary_mode = binary_mode;
   
   if (*(ctx->verbose)) {
-    printf("Stream parameters: board=%d, word_count=%llu, file='%s'\n", 
-           board, word_count, full_path);
+    printf("Stream parameters: board=%d, word_count=%llu, file='%s', format=%s\n", 
+           board, word_count, final_path, binary_mode ? "binary" : "ASCII");
   }
   
   // Set file permissions for group access
-  set_file_permissions(full_path, *(ctx->verbose));
+  set_file_permissions(final_path, *(ctx->verbose));
   
   // Initialize stop flag and mark stream as running
   ctx->adc_data_stream_stop[board] = false;
@@ -490,7 +566,8 @@ int cmd_stream_adc_data_to_file(const char** args, int arg_count, const command_
     printf("Successfully created streaming thread for board %d\n", board);
   }
   
-  printf("Started ADC data streaming for board %d to file '%s' (%llu words)\n", board, full_path, word_count);
+  printf("Started ADC data streaming for board %d to file '%s' (%llu words, %s format)\n", 
+         board, final_path, word_count, binary_mode ? "binary" : "ASCII");
   return 0;
 }
 

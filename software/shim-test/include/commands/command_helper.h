@@ -21,7 +21,8 @@ typedef enum {
   FLAG_ALL,
   FLAG_VERBOSE,
   FLAG_CONTINUE,
-  FLAG_SIMPLE
+  FLAG_SIMPLE,
+  FLAG_BIN
 } command_flag_t;
 
 // Global context passed to all command handlers
