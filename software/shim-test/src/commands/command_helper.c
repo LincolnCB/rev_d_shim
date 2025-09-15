@@ -48,11 +48,36 @@ int resolve_file_pattern(const char* pattern, char* resolved_path, size_t resolv
   int glob_ret = glob(pattern, GLOB_ERR, NULL, &glob_result);
   
   if (glob_ret == 0 && glob_result.gl_pathc > 0) {
-    // Use the first match
-    strncpy(resolved_path, glob_result.gl_pathv[0], resolved_path_size - 1);
-    resolved_path[resolved_path_size - 1] = '\0';
-    globfree(&glob_result);
-    return 0;
+    if (glob_result.gl_pathc == 1) {
+      // Single match - use it directly
+      strncpy(resolved_path, glob_result.gl_pathv[0], resolved_path_size - 1);
+      resolved_path[resolved_path_size - 1] = '\0';
+      globfree(&glob_result);
+      return 0;
+    } else {
+      // Multiple matches - prompt user to choose
+      printf("Multiple files match pattern '%s':\n", pattern);
+      for (size_t i = 0; i < glob_result.gl_pathc; i++) {
+        printf("  %zu: %s\n", i + 1, glob_result.gl_pathv[i]);
+      }
+      
+      printf("Enter your choice (1-%zu): ", glob_result.gl_pathc);
+      fflush(stdout);
+      
+      int choice;
+      if (scanf("%d", &choice) != 1 || choice < 1 || choice > (int)glob_result.gl_pathc) {
+        printf("Invalid choice. Using first match: %s\n", glob_result.gl_pathv[0]);
+        choice = 1;
+      }
+      
+      // Use the selected match (convert to 0-based index)
+      strncpy(resolved_path, glob_result.gl_pathv[choice - 1], resolved_path_size - 1);
+      resolved_path[resolved_path_size - 1] = '\0';
+      printf("Selected: %s\n", resolved_path);
+      
+      globfree(&glob_result);
+      return 0;
+    }
   } else {
     // No matches or error, use the pattern as-is
     strncpy(resolved_path, pattern, resolved_path_size - 1);

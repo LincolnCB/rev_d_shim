@@ -67,17 +67,51 @@ static int count_trigger_lines_in_file(const char* file_path) {
 
 // Helper function to calculate expected number of samples from an ADC command file
 static uint64_t calculate_expected_samples(const char* file_path, int loop_count) {
+  // Use the existing ADC command parser to get the parsed commands
+  adc_command_t* commands = NULL;
+  int command_count = 0;
+  
+  // Parse the ADC command file using the existing function
   FILE* file = fopen(file_path, "r");
   if (file == NULL) {
     fprintf(stderr, "Failed to open ADC command file '%s': %s\n", file_path, strerror(errno));
     return 0;
   }
   
+  // First pass: count valid lines (excluding comments and empty lines)
   char line[512];
-  uint64_t samples_per_loop = 0;
-  int i = 0;
+  int valid_lines = 0;
   
-  // Parse the file to count samples per loop iteration
+  while (fgets(line, sizeof(line), file)) {
+    // Skip empty lines and comments (same logic as parse_adc_command_file)
+    char* trimmed = line;
+    while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
+    if (*trimmed == '\n' || *trimmed == '\r' || *trimmed == '\0' || *trimmed == '#') {
+      continue;
+    }
+    
+    // Check if line starts with valid command
+    if (*trimmed == 'L' || *trimmed == 'T' || *trimmed == 'D' || *trimmed == 'O') {
+      valid_lines++;
+    }
+  }
+  
+  if (valid_lines == 0) {
+    fclose(file);
+    return 0;
+  }
+  
+  // Allocate memory for commands
+  commands = malloc(valid_lines * sizeof(adc_command_t));
+  if (commands == NULL) {
+    fclose(file);
+    return 0;
+  }
+  
+  // Second pass: parse commands (same logic as parse_adc_command_file)
+  rewind(file);
+  command_count = 0;
+  
   while (fgets(line, sizeof(line), file)) {
     // Skip empty lines and comments
     char* trimmed = line;
@@ -86,35 +120,79 @@ static uint64_t calculate_expected_samples(const char* file_path, int loop_count
       continue;
     }
     
-    char cmd_type = *trimmed;
-    uint32_t value = 0;
+    adc_command_t* cmd = &commands[command_count];
+    cmd->type = *trimmed;
     
-    if (cmd_type == 'L') {
-      // Loop command: L <value>
-      if (sscanf(trimmed, "L %u", &value) == 1) {
-        // This will repeat the next command 'value' times
-        // We need to look at the next command to see what gets repeated
-        if (fgets(line, sizeof(line), file)) {
-          char* next_trimmed = line;
-          while (*next_trimmed == ' ' || *next_trimmed == '\t') next_trimmed++;
-          if (*next_trimmed != '\n' && *next_trimmed != '\r' && *next_trimmed != '\0' && *next_trimmed != '#') {
-            char next_cmd = *next_trimmed;
-            if (next_cmd == 'T' || next_cmd == 'D') {
-              // T and D commands generate samples
-              samples_per_loop += value;
-            }
-            // O commands don't generate samples by themselves
-          }
-        }
+    if (cmd->type == 'L') {
+      if (sscanf(trimmed, "L %u", &cmd->value) != 1) {
+        free(commands);
+        fclose(file);
+        return 0;
       }
-    } else if (cmd_type == 'T' || cmd_type == 'D') {
-      // Trigger and Delay commands generate one sample each
-      samples_per_loop++;
+    } else if (cmd->type == 'T') {
+      if (sscanf(trimmed, "T %u", &cmd->value) != 1) {
+        free(commands);
+        fclose(file);
+        return 0;
+      }
+    } else if (cmd->type == 'D') {
+      if (sscanf(trimmed, "D %u", &cmd->value) != 1) {
+        free(commands);
+        fclose(file);
+        return 0;
+      }
+    } else if (cmd->type == 'O') {
+      int order_vals[8];
+      if (sscanf(trimmed, "O %d %d %d %d %d %d %d %d", 
+                 &order_vals[0], &order_vals[1], &order_vals[2], &order_vals[3],
+                 &order_vals[4], &order_vals[5], &order_vals[6], &order_vals[7]) != 8) {
+        free(commands);
+        fclose(file);
+        return 0;
+      }
+      for (int j = 0; j < 8; j++) {
+        cmd->order[j] = (uint8_t)order_vals[j];
+      }
     }
-    // O (Order) commands don't generate samples by themselves
+    
+    command_count++;
   }
   
   fclose(file);
+  
+  // Now simulate the execution in simple mode to count samples
+  uint64_t samples_per_loop = 0;
+  
+  for (int i = 0; i < command_count; i++) {
+    adc_command_t* cmd = &commands[i];
+    
+    switch (cmd->type) {
+      case 'L':
+        // In simple mode, this repeats the next command cmd->value times
+        if (i + 1 < command_count) {
+          adc_command_t* next_cmd = &commands[i + 1];
+          if (next_cmd->type == 'T' || next_cmd->type == 'D') {
+            // T and D commands generate 4 words each
+            samples_per_loop += cmd->value * 4;
+          }
+          // Skip the next command since loop consumes it
+          i++;
+        }
+        break;
+      
+      case 'T':
+      case 'D':
+        // These generate 4 words each (if not consumed by a loop)
+        samples_per_loop += 4;
+        break;
+      
+      case 'O':
+        // Order commands don't generate samples
+        break;
+    }
+  }
+  
+  free(commands);
   
   uint64_t total_samples = samples_per_loop * loop_count;
   printf("Calculated %llu samples per loop, %llu total samples (%d loops)\n", 
@@ -155,11 +233,10 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
   // Step 1: Check that the system is on (already done above)
   printf("  Step 1: System is running\n");
   
-  // Step 2: Reset the ADC and DAC buffers for that board
-  printf("  Step 2: Resetting ADC and DAC buffers for board %d\n", board);
-  uint32_t board_mask = 3 << (2 * board);
-  sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, board_mask, *(ctx->verbose));
-  sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, board_mask, *(ctx->verbose));
+  // Step 2: Reset the ADC and DAC buffers for all boards
+  printf("  Step 2: Resetting ADC and DAC buffers for all boards\n");
+  sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose)); // Reset all boards + trigger
+  sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
   usleep(10000); // 10ms
   sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
   sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
@@ -185,6 +262,20 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
   
   // Step 7: Read single from ADC
   printf("  Step 6: Reading ADC value\n");
+  int tries = 0;
+  uint32_t adc_data_fifo_status;
+  while (tries < 100) {
+    adc_data_fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    if (FIFO_STS_WORD_COUNT(adc_data_fifo_status) > 0) {
+      break;
+    }
+    usleep(10000); // 10ms
+    tries++;
+  }
+  if (FIFO_STS_WORD_COUNT(adc_data_fifo_status) == 0) {
+    fprintf(stderr, "ADC data buffer is still empty after waiting 1 second.\n");
+    return -1;
+  }
   int16_t adc_reading = ADC_OFFSET_TO_SIGNED(adc_read_word(ctx->adc_ctrl, (uint8_t)board) & 0xFFFF);
   
   // Step 8: Calculate and print error
@@ -244,11 +335,25 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     return -1;
   }
   
+  // Resolve DAC file glob pattern
+  char resolved_dac_file[1024];
+  if (resolve_file_pattern(dac_file, resolved_dac_file, sizeof(resolved_dac_file)) != 0) {
+    fprintf(stderr, "Failed to resolve DAC file pattern: '%s'\n", dac_file);
+    return -1;
+  }
+  
   // Step 4: Prompt for ADC command file
   char adc_file[1024];
   printf("Enter ADC command file path: ");
   if (scanf("%1023s", adc_file) != 1) {
     fprintf(stderr, "Failed to read ADC file path.\n");
+    return -1;
+  }
+  
+  // Resolve ADC file glob pattern
+  char resolved_adc_file[1024];
+  if (resolve_file_pattern(adc_file, resolved_adc_file, sizeof(resolved_adc_file)) != 0) {
+    fprintf(stderr, "Failed to resolve ADC file pattern: '%s'\n", adc_file);
     return -1;
   }
   
@@ -277,14 +382,14 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   }
   
   // Step 8: Calculate expected number of samples from ADC command file
-  uint64_t sample_count = calculate_expected_samples(adc_file, loops);
+  uint64_t sample_count = calculate_expected_samples(resolved_adc_file, loops);
   if (sample_count == 0) {
     fprintf(stderr, "Failed to calculate expected sample count from ADC command file\n");
     return -1;
   }
   
   // Step 9: Count trigger lines in DAC file
-  int trigger_count = count_trigger_lines_in_file(dac_file);
+  int trigger_count = count_trigger_lines_in_file(resolved_dac_file);
   if (trigger_count < 0) {
     return -1;
   }
@@ -303,21 +408,21 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   }
   
   // Step 11: Start DAC command streaming using existing function
-  printf("Starting DAC command streaming from file '%s' (%d loops)\n", dac_file, loops);
+  printf("Starting DAC command streaming from file '%s' (%d loops)\n", resolved_dac_file, loops);
   char board_str[16], loops_str[16];
   snprintf(board_str, sizeof(board_str), "%d", board);
   snprintf(loops_str, sizeof(loops_str), "%d", loops);
   
-  const char* dac_args[] = {board_str, dac_file, loops_str};
+  const char* dac_args[] = {board_str, resolved_dac_file, loops_str};
   if (cmd_stream_dac_commands_from_file(dac_args, 3, NULL, 0, ctx) != 0) {
     fprintf(stderr, "Failed to start DAC command streaming\n");
     return -1;
   }
   
   // Step 12: Start ADC command streaming using existing function (with simple flag)
-  printf("Starting ADC command streaming from file '%s' (%d loops, simple mode)\n", adc_file, loops);
+  printf("Starting ADC command streaming from file '%s' (%d loops, simple mode)\n", resolved_adc_file, loops);
   
-  const char* adc_args[] = {board_str, adc_file, loops_str};
+  const char* adc_args[] = {board_str, resolved_adc_file, loops_str};
   command_flag_t simple_flag = {FLAG_SIMPLE, NULL};
   if (cmd_stream_adc_commands_from_file(adc_args, 3, &simple_flag, 1, ctx) != 0) {
     fprintf(stderr, "Failed to start ADC command streaming\n");
@@ -330,7 +435,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   snprintf(sample_count_str, sizeof(sample_count_str), "%llu", sample_count);
   
   const char* adc_data_args[] = {board_str, sample_count_str, output_file};
-  if (cmd_read_adc_to_file(adc_data_args, 3, NULL, 0, ctx) != 0) {
+  if (cmd_stream_adc_data_to_file(adc_data_args, 3, NULL, 0, ctx) != 0) {
     fprintf(stderr, "Failed to start ADC data streaming\n");
     return -1;
   }

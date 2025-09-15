@@ -400,11 +400,11 @@ cleanup:
   return NULL;
 }
 
-int cmd_read_adc_to_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+int cmd_stream_adc_data_to_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   // Parse board number
   int board = parse_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for read_adc_to_file: '%s'. Must be 0-7.\n", args[0]);
+    fprintf(stderr, "Invalid board number for stream_adc_data_to_file: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
   
@@ -412,7 +412,7 @@ int cmd_read_adc_to_file(const char** args, int arg_count, const command_flag_t*
   char* endptr;
   uint64_t word_count = parse_value(args[1], &endptr);
   if (*endptr != '\0' || word_count == 0) {
-    fprintf(stderr, "Invalid word count for read_adc_to_file: '%s'. Must be a positive integer.\n", args[1]);
+    fprintf(stderr, "Invalid word count for stream_adc_data_to_file: '%s'. Must be a positive integer.\n", args[1]);
     return -1;
   }
   
@@ -422,21 +422,28 @@ int cmd_read_adc_to_file(const char** args, int arg_count, const command_flag_t*
     return -1;
   }
   
+  if (*(ctx->verbose)) {
+    printf("Checking ADC data FIFO status for board %d...\n", board);
+  }
+  
   // Check data FIFO presence
   if (FIFO_PRESENT(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))) == 0) {
     printf("ADC data FIFO for board %d is not present. Cannot start streaming.\n", board);
     return -1;
   }
   
-  // Resolve glob pattern if present
-  char resolved_path[1024];
-  if (resolve_file_pattern(args[2], resolved_path, sizeof(resolved_path)) != 0) {
-    return -1;
+  if (*(ctx->verbose)) {
+    printf("ADC data FIFO for board %d is present. Proceeding with file setup...\n", board);
   }
   
-  // Clean and expand file path
+  // For output files, use the path directly (no glob pattern resolution needed)
+  // Just clean and expand the path to handle ~ and relative paths
   char full_path[1024];
-  clean_and_expand_path(resolved_path, full_path, sizeof(full_path));
+  clean_and_expand_path(args[2], full_path, sizeof(full_path));
+  
+  if (*(ctx->verbose)) {
+    printf("Output file path: '%s' -> '%s'\n", args[2], full_path);
+  }
   
   // Allocate thread data structure
   adc_data_stream_params_t* stream_data = malloc(sizeof(adc_data_stream_params_t));
@@ -445,11 +452,20 @@ int cmd_read_adc_to_file(const char** args, int arg_count, const command_flag_t*
     return -1;
   }
   
+  if (*(ctx->verbose)) {
+    printf("Allocated stream data structure, setting up parameters...\n");
+  }
+  
   stream_data->ctx = ctx;
   stream_data->board = (uint8_t)board;
   strcpy(stream_data->file_path, full_path);
   stream_data->word_count = word_count;
   stream_data->should_stop = &(ctx->adc_data_stream_stop[board]);
+  
+  if (*(ctx->verbose)) {
+    printf("Stream parameters: board=%d, word_count=%llu, file='%s'\n", 
+           board, word_count, full_path);
+  }
   
   // Set file permissions for group access
   set_file_permissions(full_path, *(ctx->verbose));
@@ -457,6 +473,10 @@ int cmd_read_adc_to_file(const char** args, int arg_count, const command_flag_t*
   // Initialize stop flag and mark stream as running
   ctx->adc_data_stream_stop[board] = false;
   ctx->adc_data_stream_running[board] = true;
+  
+  if (*(ctx->verbose)) {
+    printf("Initialized stream flags, creating pthread...\n");
+  }
   
   // Create the streaming thread
   if (pthread_create(&(ctx->adc_data_stream_threads[board]), NULL, adc_data_stream_thread, stream_data) != 0) {
@@ -466,13 +486,12 @@ int cmd_read_adc_to_file(const char** args, int arg_count, const command_flag_t*
     return -1;
   }
   
+  if (*(ctx->verbose)) {
+    printf("Successfully created streaming thread for board %d\n", board);
+  }
+  
   printf("Started ADC data streaming for board %d to file '%s' (%llu words)\n", board, full_path, word_count);
   return 0;
-}
-
-int cmd_stream_adc_data_to_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  // This is an alias for read_adc_to_file
-  return cmd_read_adc_to_file(args, arg_count, flags, flag_count, ctx);
 }
 
 int cmd_stop_adc_data_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
