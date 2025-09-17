@@ -205,17 +205,20 @@ static uint64_t calculate_expected_samples(const char* file_path, int loop_count
 int cmd_channel_test(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   if (arg_count < 2) {
     fprintf(stderr, "Usage: channel_test <channel> <value>\n");
+    fflush(stderr);
     return -1;
   }
   
   // Validate system is running
   if (validate_system_running(ctx) != 0) {
+    fflush(stdout);
     return -1;
   }
   
   // Parse channel number and calculate board/channel
   int board, channel;
   if (validate_channel_number(args[0], &board, &channel) < 0) {
+    fflush(stdout);
     return -1;
   }
   
@@ -224,17 +227,21 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
   int dac_value = (int)parse_value(args[1], &endptr);
   if (*endptr != '\0' || dac_value < -32767 || dac_value > 32767) {
     fprintf(stderr, "Invalid DAC value: '%s'. Must be -32767 to 32767.\n", args[1]);
+    fflush(stderr);
     return -1;
   }
   
   printf("Starting channel test for channel %d (board %d, channel %d), value %d\n", 
          atoi(args[0]), board, channel, dac_value);
+  fflush(stdout);
   
   // Step 1: Check that the system is on (already done above)
   printf("  Step 1: System is running\n");
+  fflush(stdout);
   
   // Step 2: Reset the ADC and DAC buffers for all boards
   printf("  Step 2: Resetting ADC and DAC buffers for all boards\n");
+  fflush(stdout);
   sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose)); // Reset all boards + trigger
   sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
   usleep(10000); // 10ms
@@ -244,12 +251,14 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
 
   // Step 3: Send cancel command to DAC and ADC for that board
   printf("  Step 3: Sending CANCEL command to DAC and ADC for board %d\n", board);
+  fflush(stdout);
   dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, *(ctx->verbose));
   adc_cmd_cancel(ctx->adc_ctrl, (uint8_t)board, *(ctx->verbose));
   usleep(10000); // 10ms
   
   // Step 4: Send wr_ch command to DAC, 100ms delay, then and rd_ch command to ADC
   printf("  Step 4: Sending commands to DAC and ADC\n");
+  fflush(stdout);
   dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, (int16_t)dac_value, *(ctx->verbose));
   usleep(100000); // 100ms
   adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, *(ctx->verbose));
@@ -258,10 +267,12 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
 
   // Step 6: Send wr_ch command to DAC to set channel back to 0
   printf("  Step 5: Resetting DAC to 0\n");
+  fflush(stdout);
   dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, 0, *(ctx->verbose));
   
   // Step 7: Read single from ADC
   printf("  Step 6: Reading ADC value\n");
+  fflush(stdout);
   int tries = 0;
   uint32_t adc_data_fifo_status;
   while (tries < 100) {
@@ -274,12 +285,14 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
   }
   if (FIFO_STS_WORD_COUNT(adc_data_fifo_status) == 0) {
     fprintf(stderr, "ADC data buffer is still empty after waiting 1 second.\n");
+    fflush(stderr);
     return -1;
   }
   int16_t adc_reading = ADC_OFFSET_TO_SIGNED(adc_read_word(ctx->adc_ctrl, (uint8_t)board) & 0xFFFF);
   
   // Step 8: Calculate and print error
   printf("  Step 7: Calculating error\n");
+  fflush(stdout);
   printf("    DAC value set: %d\n", dac_value);
   printf("    ADC value read: %d\n", adc_reading);
   
@@ -293,8 +306,10 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
   
   printf("    Absolute error: %d\n", absolute_error);
   printf("    Percent error: %.2f%%\n", percent_error);
+  fflush(stdout);
   
   printf("Channel test completed.\n");
+  fflush(stdout);
   return 0;
 }
 
