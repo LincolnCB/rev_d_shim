@@ -150,6 +150,9 @@ cell xilinx.com:ip:xlconstant:1.1 const_1 {
 # Enable I2C0 on the correct MIO pins
 # Set FCLK0 to 100 MHz
 # Turn off FCLK1-3 and reset1-3
+# Ethernet needs more setup, so leave disabled for now
+  # PCW_ENET0_PERIPHERAL_ENABLE 1
+  # PCW_ENET0_ENET0_IO {MIO 16 .. 27}
 init_ps ps {
   PCW_USE_M_AXI_GP0 1
   PCW_USE_M_AXI_GP1 1
@@ -160,8 +163,6 @@ init_ps ps {
   PCW_MIO_37_PULLUP enabled
   PCW_I2C0_PERIPHERAL_ENABLE 1
   PCW_I2C0_I2C0_IO {MIO 38 .. 39}
-  PCW_ENET0_PERIPHERAL_ENABLE 1
-  PCW_ENET0_ENET0_IO {MIO 16 .. 27}
   PCW_FPGA0_PERIPHERAL_FREQMHZ 100
   PCW_EN_CLK1_PORT 0
   PCW_EN_CLK2_PORT 0
@@ -464,38 +465,46 @@ addr 0x40100000 256 status_reg/S_AXI ps/M_AXI_GP0
 #    31 : 0    --  32b Hardware status code (31:29 board num, 28:4 status code, 3:0 internal state)
 #   575 : 32   -- 544b Command FIFO status (32 bits per buffer, ordered as DAC0, ADC0, ..., DAC7, ADC7, Trigger)
 #  1119 : 576  -- 544b Data FIFO status (32 bits per buffer, ordered as DAC0, ADC0, ..., DAC7, ADC7, Trigger)
-#  1151 : 1120 --  32b Debug 1 (SPI clock locked, spi_off, 28 reserved bits)
-#  2047 : 1152 -- RESERVED (0)
+#  1151 : 1120 --  32b SPI clock frequency in Hz
+#  1183 : 1152 --  32b Debug 1 (SPI clock locked, spi_off, DAC/ADC ~CS high time)
+#  2047 : 1184 -- RESERVED (0)
 cell xilinx.com:ip:xlconcat:2.1 sts_concat {
-  NUM_PORTS 5
+  NUM_PORTS 6
 } {
   In0 hw_manager/status_word
   In1 axi_spi_interface/cmd_fifo_sts
   In2 axi_spi_interface/data_fifo_sts
+  In3 spi_clk_freq_hz_const/dout
   dout status_reg/sts_data
 }
 # Debug 1 tracks the following:
-# 0: SPI clock locked
-# 1: `spi_off` signal
+#    0    --  1b SPI clock locked
+#    1    --  1b `spi_off` signal
+#  6 : 2  --  5b DAC ~CS high time
+# 14 : 7  --  8b ADC ~CS high time
+# 31 : 15 -- 17b RESERVED (0)
 cell xilinx.com:ip:xlconcat:2.1 debug_1 {
-  NUM_PORTS 3
+  NUM_PORTS 5
 } {
   In0 spi_clk/locked
   In1 hw_manager/spi_off
-  dout sts_concat/In3
+  In2 dac_timing_calc/n_cs_high_time
+  In3 adc_timing_calc/n_cs_high_time
+  dout sts_concat/In4
 }
-cell xilinx.com:ip:xlconstant:1.1 pad_30 {
+cell xilinx.com:ip:xlconstant:1.1 pad_17 {
   CONST_VAL 0
   CONST_WIDTH 30
 } {
-  dout debug_1/In2
+  dout debug_1/In4
 }
+
 # Pad reserved bits
 cell xilinx.com:ip:xlconstant:1.1 pad_sts_reserved {
   CONST_VAL 0
-  CONST_WIDTH [expr {2048 - 1152}]
+  CONST_WIDTH [expr {2048 - 1184}]
 } {
-  dout sts_concat/In4
+  dout sts_concat/In5
 }
 
 ## IRQ interrupt concat

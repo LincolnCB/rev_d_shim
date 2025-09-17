@@ -21,9 +21,14 @@
 #define ADC_DATA_FIFO_STS_OFFSET(board)  (18 + (2 * (board) + 1))
 #define TRIG_CMD_FIFO_STS_OFFSET    (uint32_t) 17 // Trigger command FIFO status
 #define TRIG_DATA_FIFO_STS_OFFSET   (uint32_t) 34 // Trigger data FIFO status
+// SPI clock frequency offset
+#define SPI_CLK_FREQ_OFFSET         (uint32_t) 35 // SPI clock frequency in Hz
 // Debug registers
-#define DEBUG_REG_COUNT  (uint32_t) 1 // Number of debug registers
-#define DEBUG_REG_OFFSET(index) (uint32_t) (35 + (index)) // Debug register offset
+#define DEBUG_REG_OFFSET            (uint32_t) 36 // Debug register offset
+#define DEBUG_SPI_CLK_LOCKED_BIT 0  // SPI clock locked status bit
+#define DEBUG_SPI_OFF_BIT        1  // SPI off status bit
+#define DEBUG_DAC_CS_HIGH_TIME(word) (((word) >> 2) & 0x1F) // DAC ~CS high time (5 bits)
+#define DEBUG_ADC_CS_HIGH_TIME(word) (((word) >> 7) & 0xFF) // ADC ~CS high time (8 bits)
 
 // Macro for extracting the 4-bit state
 #define HW_STS_STATE(hw_status) ((hw_status) & 0xF)
@@ -117,7 +122,8 @@ struct sys_sts_t {
   volatile uint32_t *adc_data_fifo_sts[8];   // ADC data FIFO status for 8 boards
   volatile uint32_t *trig_cmd_fifo_sts;      // Trigger command FIFO status
   volatile uint32_t *trig_data_fifo_sts;     // Trigger data FIFO status
-  volatile uint32_t *debug[DEBUG_REG_COUNT]; // Debug registers
+  volatile uint32_t *spi_clk_freq_hz;        // SPI clock frequency in Hz
+  volatile uint32_t *debug;                  // Debug register
 };
 
 // Structure initialization function
@@ -125,12 +131,8 @@ struct sys_sts_t create_sys_sts(bool verbose);
 
 // Get hardware status register value
 uint32_t sys_sts_get_hw_status(struct sys_sts_t *sys_sts, bool verbose);
-// Interpret and print hardware status
-void print_hw_status(uint32_t hw_status, bool verbose);
-
-// Print debug registers
-void print_debug_registers(struct sys_sts_t *sys_sts);
-
+// Get SPI clock frequency in Hz
+uint32_t sys_sts_get_spi_clk_freq_hz(struct sys_sts_t *sys_sts, bool verbose);
 // Get FIFO status from a status pointer
 uint32_t get_fifo_status(volatile uint32_t *fifo_sts_ptr, const char *fifo_name, bool verbose);
 // Get DAC command FIFO status for a specific board
@@ -146,6 +148,12 @@ uint32_t sys_sts_get_trig_cmd_fifo_status(struct sys_sts_t *sys_sts, bool verbos
 // Get trigger data FIFO status
 uint32_t sys_sts_get_trig_data_fifo_status(struct sys_sts_t *sys_sts, bool verbose);
 
+// Interpret and print hardware status
+void print_hw_status(uint32_t hw_status, bool verbose);
+// Print SPI clock frequency in Hz and MHz
+void print_spi_clk_freq(uint32_t freq_hz, bool verbose);
+// Print debug register
+void print_debug_register(struct sys_sts_t *sys_sts);
 // Print FIFO status details
 void print_fifo_status(uint32_t fifo_status, const char *fifo_name);
 

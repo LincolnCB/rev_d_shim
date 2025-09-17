@@ -44,16 +44,34 @@ def get_user_input():
             break
         print("Please enter 'sine' or 'trap'/'trapezoid'")
     
-    # Get polarity alternation preference
+    # Get amplitude
     while True:
-        polarity_input = input("Alternate channel polarity? [Y/n]: ").strip().lower()
-        if polarity_input in ['', 'y', 'yes']:
-            alternate_polarity = True
-            break
-        elif polarity_input in ['n', 'no']:
-            alternate_polarity = False
-            break
-        print("Please enter 'y' for yes or 'n' for no")
+        try:
+            amplitude = float(input("Amplitude (amps, 0 to 4): "))
+            if 0 <= amplitude <= 4:
+                break
+            print("Amplitude must be between 0 and 4 amps")
+        except ValueError:
+            print("Please enter a valid number")
+    
+    # Get channel scale factor
+    if amplitude > 0:
+        # Calculate acceptable range for channel_scale
+        # Max range: +/- (4.0 / amplitude)^(1/7)
+        max_scale = (4.0 / amplitude) ** (1.0/7.0)
+        # Round towards 0 to the next mA (0.001 A)
+        max_scale_rounded = int(max_scale * 1000) / 1000.0
+        
+        while True:
+            try:
+                channel_scale = float(input(f"Channel scale factor (range: -{max_scale_rounded:.3f} to {max_scale_rounded:.3f}): "))
+                if -max_scale_rounded <= channel_scale <= max_scale_rounded:
+                    break
+                print(f"Channel scale must be between -{max_scale_rounded:.3f} and {max_scale_rounded:.3f}")
+            except ValueError:
+                print("Please enter a valid number")
+    else:
+        channel_scale = 1.0  # Default for zero amplitude
     
     # Get waveform-specific parameters
     if waveform_type == 'sine':
@@ -66,7 +84,8 @@ def get_user_input():
     
     params['type'] = waveform_type
     params['clock_freq'] = clock_freq
-    params['alternate_polarity'] = alternate_polarity
+    params['amplitude'] = amplitude
+    params['channel_scale'] = channel_scale
     
     # Ask about ADC readout file
     while True:
@@ -114,20 +133,10 @@ def get_sine_parameters(clock_freq):
         except ValueError:
             print("Please enter a valid number")
     
-    while True:
-        try:
-            amplitude = float(input("Amplitude (amps, 0 to 4): "))
-            if 0 <= amplitude <= 4:
-                break
-            print("Amplitude must be between 0 and 4 amps")
-        except ValueError:
-            print("Please enter a valid number")
-    
     return {
         'sample_rate': sample_rate,
         'duration': duration,
-        'frequency': frequency,
-        'amplitude': amplitude
+        'frequency': frequency
     }
 
 def get_trapezoid_parameters(clock_freq):
@@ -170,21 +179,11 @@ def get_trapezoid_parameters(clock_freq):
         except ValueError:
             print("Please enter a valid number")
     
-    while True:
-        try:
-            amplitude = float(input("Amplitude (amps, 0 to 4): "))
-            if 0 <= amplitude <= 4:
-                break
-            print("Amplitude must be between 0 and 4 amps")
-        except ValueError:
-            print("Please enter a valid number")
-    
     return {
         'sample_rate': sample_rate,
         'rise_time': rise_time,
         'flat_time': flat_time,
-        'fall_time': fall_time,
-        'amplitude': amplitude
+        'fall_time': fall_time
     }
 
 def get_adc_readout_parameters(dac_params):
@@ -222,22 +221,22 @@ def get_adc_readout_parameters(dac_params):
         'adc_extra_time': extra_time
     }
 
-def current_to_dac_value(current, amplitude):
+def current_to_dac_value(current, channel_amplitude):
     """
     Convert sine wave value to signed 16-bit DAC value.
     
-    The amplitude parameter (0-4A) scales to the full DAC range.
+    The channel_amplitude parameter (0-4A) scales to the full DAC range.
     The sine wave value (-1 to +1) then uses the full +/- range.
     
     Args:
         current: Sine wave value (-1 to +1)
-        amplitude: Maximum amplitude (0 to 4A)
+        channel_amplitude: Maximum amplitude for this channel (0 to 4A)
     
     Returns:
         Signed 16-bit integer DAC value
     """
     # Scale amplitude (0-4A) to DAC range (0-32767)
-    max_dac_value = int(amplitude * 32767 / 4.0)
+    max_dac_value = int(channel_amplitude * 32767 / 4.0)
     
     # Apply sine wave value (-1 to +1) to get full +/- range
     dac_value = int(current * max_dac_value)
@@ -258,7 +257,8 @@ def generate_sine_wave(params):
                 - duration: Duration in milliseconds
                 - sample_rate: Sample rate in kHz
                 - frequency: Sine wave frequency in kHz
-                - amplitude: Amplitude in amps (0-4A)
+                - amplitude: Base amplitude in amps (0-4A)
+                - channel_scale: Scale factor for per-channel amplitude
     
     Returns:
         List of tuples, each containing 8 channel values for one sample
@@ -266,7 +266,8 @@ def generate_sine_wave(params):
     sample_rate_hz = params['sample_rate'] * 1000  # Convert kHz to Hz
     duration_s = params['duration'] / 1000         # Convert ms to seconds
     frequency_hz = params['frequency'] * 1000      # Convert kHz to Hz
-    amplitude_a = params['amplitude']
+    base_amplitude = params['amplitude']
+    channel_scale = params['channel_scale']
     
     # Calculate number of samples
     num_samples = int(sample_rate_hz * duration_s)
@@ -282,18 +283,15 @@ def generate_sine_wave(params):
         # Generate sine wave value (-1 to +1)
         sine_value = math.sin(2 * math.pi * frequency_hz * t)
         
-        # Convert to DAC value using amplitude
-        base_dac_value = current_to_dac_value(sine_value, amplitude_a)
-        
-        # Generate channel values based on polarity preference
+        # Generate channel values using per-channel scaling
         channel_values = []
         for ch in range(8):
-            if params['alternate_polarity'] and ch % 2 == 1:
-                # Odd channels get negative polarity when alternating is enabled
-                channel_values.append(-base_dac_value)
-            else:
-                # Even channels or all channels when not alternating
-                channel_values.append(base_dac_value)
+            # Calculate per-channel amplitude: amplitude * channel_scale^n
+            channel_amplitude = base_amplitude * (channel_scale ** ch)
+            
+            # Convert to DAC value using per-channel amplitude
+            dac_value = current_to_dac_value(sine_value, channel_amplitude)
+            channel_values.append(dac_value)
         
         samples.append(channel_values)
     
@@ -309,7 +307,9 @@ def generate_trapezoid_wave(params):
     3. Fall phase: linear ramp down from amplitude to 0
     
     Args:
-        params: Dictionary with waveform parameters
+        params: Dictionary with waveform parameters including:
+                - amplitude: Base amplitude in amps (0-4A)
+                - channel_scale: Scale factor for per-channel amplitude
     
     Returns:
         List of channel value lists for each sample
@@ -320,7 +320,8 @@ def generate_trapezoid_wave(params):
     rise_time_s = params['rise_time'] / 1000        # Convert ms to seconds
     flat_time_s = params['flat_time'] / 1000        # Convert ms to seconds
     fall_time_s = params['fall_time'] / 1000        # Convert ms to seconds
-    amplitude_a = params['amplitude']
+    base_amplitude = params['amplitude']
+    channel_scale = params['channel_scale']
     
     # Calculate number of samples for each phase
     rise_samples = max(1, int(rise_time_s / sample_period_s))
@@ -333,42 +334,60 @@ def generate_trapezoid_wave(params):
     # This ensures nice integer steps like 1000, 2000, 3000, etc.
     # We'll use a reasonable max value that gives clean steps
     if rise_samples <= 5:
-        max_dac_value = rise_samples * 1000  # e.g., 5000 for 5 samples
+        max_dac_value_ch0 = rise_samples * 1000  # e.g., 5000 for 5 samples
     else:
-        # For larger sample counts, use standard current conversion
-        max_dac_value = current_to_dac_value(1.0, amplitude_a)
+        # For larger sample counts, use standard current conversion for channel 0
+        max_dac_value_ch0 = current_to_dac_value(1.0, base_amplitude)
     
     # Phase 1: Rise (linear ramp up to amplitude)
     for i in range(rise_samples):
         # Calculate ramp value: starts from 1/rise_samples, goes to rise_samples/rise_samples = 1.0
-        step_value = int((i + 1) * max_dac_value / rise_samples)
+        step_fraction = (i + 1) / rise_samples
         
-        # Generate channel values based on polarity preference
+        # Generate channel values using per-channel scaling
         channel_values = []
         for ch in range(8):
-            if params['alternate_polarity'] and ch % 2 == 1:
-                # Odd channels get negative polarity when alternating is enabled
-                channel_values.append(-step_value)
+            # Calculate per-channel amplitude: amplitude * channel_scale^n
+            channel_amplitude = base_amplitude * (channel_scale ** ch)
+            
+            # For channel 0, use the calculated max_dac_value_ch0 for consistency
+            if ch == 0:
+                step_value = int(step_fraction * max_dac_value_ch0)
             else:
-                # Even channels or all channels when not alternating
-                channel_values.append(step_value)
+                # For other channels, scale proportionally
+                if base_amplitude > 0:
+                    scale_factor = channel_amplitude / base_amplitude
+                    step_value = int(step_fraction * max_dac_value_ch0 * scale_factor)
+                else:
+                    step_value = 0
+            
+            channel_values.append(step_value)
         samples.append(channel_values)
     
     # Phase 2: Flat section with first fall value and extended delay
     # The flat section uses the first fall value and extends the delay
     if fall_samples > 0:
-        first_fall_value = int((fall_samples - 1) * max_dac_value / fall_samples)
+        first_fall_fraction = (fall_samples - 1) / fall_samples
     else:
-        first_fall_value = max_dac_value
+        first_fall_fraction = 1.0
     
     flat_channel_values = []
     for ch in range(8):
-        if params['alternate_polarity'] and ch % 2 == 1:
-            # Odd channels get negative polarity when alternating is enabled
-            flat_channel_values.append(-first_fall_value)
+        # Calculate per-channel amplitude: amplitude * channel_scale^n
+        channel_amplitude = base_amplitude * (channel_scale ** ch)
+        
+        # For channel 0, use the calculated max_dac_value_ch0 for consistency
+        if ch == 0:
+            flat_value = int(first_fall_fraction * max_dac_value_ch0)
         else:
-            # Even channels or all channels when not alternating
-            flat_channel_values.append(first_fall_value)
+            # For other channels, scale proportionally
+            if base_amplitude > 0:
+                scale_factor = channel_amplitude / base_amplitude
+                flat_value = int(first_fall_fraction * max_dac_value_ch0 * scale_factor)
+            else:
+                flat_value = 0
+        
+        flat_channel_values.append(flat_value)
     
     # Add flat section as a special marker with sample count info
     samples.append(('FLAT_SECTION', flat_channel_values, flat_samples))
@@ -376,17 +395,26 @@ def generate_trapezoid_wave(params):
     # Phase 3: Fall (linear ramp down from amplitude to 0, skipping first fall value)
     for i in range(1, fall_samples):  # Start from 1 to skip first fall value
         # Calculate ramp value: starts from (fall_samples-2)/fall_samples, goes down to 0
-        step_value = int((fall_samples - 1 - i) * max_dac_value / fall_samples)
+        step_fraction = (fall_samples - 1 - i) / fall_samples
         
-        # Generate channel values based on polarity preference
+        # Generate channel values using per-channel scaling
         channel_values = []
         for ch in range(8):
-            if params['alternate_polarity'] and ch % 2 == 1:
-                # Odd channels get negative polarity when alternating is enabled
-                channel_values.append(-step_value)
+            # Calculate per-channel amplitude: amplitude * channel_scale^n
+            channel_amplitude = base_amplitude * (channel_scale ** ch)
+            
+            # For channel 0, use the calculated max_dac_value_ch0 for consistency
+            if ch == 0:
+                step_value = int(step_fraction * max_dac_value_ch0)
             else:
-                # Even channels or all channels when not alternating
-                channel_values.append(step_value)
+                # For other channels, scale proportionally
+                if base_amplitude > 0:
+                    scale_factor = channel_amplitude / base_amplitude
+                    step_value = int(step_fraction * max_dac_value_ch0 * scale_factor)
+                else:
+                    step_value = 0
+            
+            channel_values.append(step_value)
         samples.append(channel_values)
     
     # Add one extra zero sample at the end
@@ -538,15 +566,28 @@ def write_waveform_file(filename, samples, sample_rate_khz, clock_freq_mhz, wave
                 duration_ms = params.get('duration', 'unknown')
                 frequency_khz = params.get('frequency', 'unknown')
                 amplitude_a = params.get('amplitude', 'unknown')
+                channel_scale = params.get('channel_scale', 'unknown')
                 
                 # Round values to nearest millionth (6 decimal places)
                 duration_str = f"{duration_ms:.6g}" if isinstance(duration_ms, (int, float)) else str(duration_ms)
                 frequency_str = f"{frequency_khz:.6g}" if isinstance(frequency_khz, (int, float)) else str(frequency_khz)
                 amplitude_str = f"{amplitude_a:.6g}" if isinstance(amplitude_a, (int, float)) else str(amplitude_a)
+                channel_scale_str = f"{channel_scale:.6g}" if isinstance(channel_scale, (int, float)) else str(channel_scale)
                 
                 f.write(f"# Sine wave duration: {duration_str} ms\n")
                 f.write(f"# Sine wave frequency: {frequency_str} kHz\n")
                 f.write(f"# Sine wave amplitude: {amplitude_str} A\n")
+                f.write(f"# Channel scale factor: {channel_scale_str}\n")
+                
+                # Calculate and display per-channel amplitudes
+                if isinstance(amplitude_a, (int, float)) and isinstance(channel_scale, (int, float)):
+                    f.write("# Per-channel amplitudes: ")
+                    channel_amps = []
+                    for ch in range(8):
+                        ch_amp = amplitude_a * (channel_scale ** ch)
+                        channel_amps.append(f"CH{ch}={ch_amp:.6g}A")
+                    f.write(" ".join(channel_amps) + "\n")
+                
                 if isinstance(duration_ms, (int, float)) and isinstance(sample_rate_khz, (int, float)):
                     total_samples = int(sample_rate_khz * duration_ms)
                     f.write(f"# Expected total samples: {total_samples}\n")
@@ -557,6 +598,7 @@ def write_waveform_file(filename, samples, sample_rate_khz, clock_freq_mhz, wave
                 flat_time = params.get('flat_time', 'unknown') 
                 fall_time = params.get('fall_time', 'unknown')
                 amplitude_a = params.get('amplitude', 'unknown')
+                channel_scale = params.get('channel_scale', 'unknown')
                 total_duration = 'unknown'
                 
                 # Round values to nearest millionth (6 decimal places)
@@ -564,6 +606,7 @@ def write_waveform_file(filename, samples, sample_rate_khz, clock_freq_mhz, wave
                 flat_str = f"{flat_time:.6g}" if isinstance(flat_time, (int, float)) else str(flat_time)
                 fall_str = f"{fall_time:.6g}" if isinstance(fall_time, (int, float)) else str(fall_time)
                 amplitude_str = f"{amplitude_a:.6g}" if isinstance(amplitude_a, (int, float)) else str(amplitude_a)
+                channel_scale_str = f"{channel_scale:.6g}" if isinstance(channel_scale, (int, float)) else str(channel_scale)
                 
                 if all(isinstance(t, (int, float)) for t in [rise_time, flat_time, fall_time]):
                     total_duration = rise_time + flat_time + fall_time
@@ -576,6 +619,16 @@ def write_waveform_file(filename, samples, sample_rate_khz, clock_freq_mhz, wave
                 f.write(f"# Trapezoid fall time: {fall_str} ms\n")
                 f.write(f"# Trapezoid total duration: {total_str} ms\n")
                 f.write(f"# Trapezoid amplitude: {amplitude_str} A\n")
+                f.write(f"# Channel scale factor: {channel_scale_str}\n")
+                
+                # Calculate and display per-channel amplitudes
+                if isinstance(amplitude_a, (int, float)) and isinstance(channel_scale, (int, float)):
+                    f.write("# Per-channel amplitudes: ")
+                    channel_amps = []
+                    for ch in range(8):
+                        ch_amp = amplitude_a * (channel_scale ** ch)
+                        channel_amps.append(f"CH{ch}={ch_amp:.6g}A")
+                    f.write(" ".join(channel_amps) + "\n")
             
             f.write(f"# Normal delay value: {delay_value}\n")
             f.write("# Format: T 1 <ch0-ch7> (update to values after trigger) / D <delay> <ch0-ch7> (update to values after delay)\n")
@@ -664,9 +717,9 @@ def main():
     
     # Get output filename based on waveform type
     if params['type'] == 'sine':
-        default_filename = f"sine_wave_{params['frequency']}khz_{params['amplitude']}a"
+        default_filename = f"sine_wave_{params['frequency']}khz_{params['amplitude']}a_x_{params['channel_scale']}"
     elif params['type'] == 'trapezoid':
-        default_filename = f"trap_wave_{params['rise_time']}ms_rise_{params['flat_time']}ms_flat_{params['fall_time']}ms_fall_{params['amplitude']}a"
+        default_filename = f"trap_wave_{params['rise_time']}ms_rise_{params['flat_time']}ms_flat_{params['fall_time']}ms_fall_{params['amplitude']}a_x_{params['channel_scale']}"
     else:
         default_filename = "waveform"
     

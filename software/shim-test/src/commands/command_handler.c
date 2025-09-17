@@ -45,7 +45,7 @@ static command_entry_t command_table[] = {
   {"on", cmd_on, {0, 0, {-1}, "Turn the system on"}},
   {"off", cmd_off, {0, 0, {-1}, "Turn the system off"}},
   {"sts", cmd_sts, {0, 0, {-1}, "Show hardware manager status"}},
-  {"dbg", cmd_dbg, {0, 0, {-1}, "Show debug registers"}},
+  {"dbg", cmd_dbg, {0, 0, {-1}, "Show debug register"}},
   {"hard_reset", cmd_hard_reset, {0, 0, {-1}, "Perform hard reset: turn the system off, set cmd/data buffer resets to 0x1FFFF, then to 0"}},
   {"exit", cmd_exit, {0, 0, {-1}, "Exit the program"}},
   {"set_boot_test_skip", cmd_set_boot_test_skip, {1, 1, {-1}, "Set boot test skip register to a 16-bit value"}},
@@ -54,6 +54,7 @@ static command_entry_t command_table[] = {
   {"set_data_buf_reset", cmd_set_data_buf_reset, {1, 1, {-1}, "Set data buffer reset register to a 17-bit value"}},
   {"invert_mosi_clk", cmd_invert_mosi_clk, {0, 0, {-1}, "Invert MOSI SCK polarity register"}},
   {"invert_miso_clk", cmd_invert_miso_clk, {0, 0, {-1}, "Invert MISO SCK polarity register"}},
+  {"spi_clk_freq", cmd_spi_clk_freq, {0, 0, {-1}, "Show SPI clock frequency in MHz (and Hz if verbose)"}},
   
   // ===== DAC COMMANDS (from dac_commands.h) =====
   {"dac_cmd_fifo_sts", cmd_dac_cmd_fifo_sts, {1, 1, {-1}, "Show DAC command FIFO status for specified board (0-7)"}},

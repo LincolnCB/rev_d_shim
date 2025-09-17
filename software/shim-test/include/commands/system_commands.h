@@ -26,4 +26,7 @@ int cmd_set_data_buf_reset(const char** args, int arg_count, const command_flag_
 int cmd_invert_mosi_clk(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_invert_miso_clk(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
+// SPI clock frequency commands
+int cmd_spi_clk_freq(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+
 #endif // SYSTEM_COMMANDS_H

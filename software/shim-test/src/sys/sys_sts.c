@@ -33,10 +33,11 @@ struct sys_sts_t create_sys_sts(bool verbose) {
   sys_sts.trig_cmd_fifo_sts = sys_sts_ptr + TRIG_CMD_FIFO_STS_OFFSET;
   sys_sts.trig_data_fifo_sts = sys_sts_ptr + TRIG_DATA_FIFO_STS_OFFSET;
 
-  // Initialize debug registers
-  for (int i = 0; i < DEBUG_REG_COUNT; i++) {
-    sys_sts.debug[i] = sys_sts_ptr + DEBUG_REG_OFFSET(i);
-  }
+  // Initialize SPI clock frequency pointer
+  sys_sts.spi_clk_freq_hz = sys_sts_ptr + SPI_CLK_FREQ_OFFSET;
+
+  // Initialize debug register
+  sys_sts.debug = sys_sts_ptr + DEBUG_REG_OFFSET;
   
   return sys_sts;
 }
@@ -48,6 +49,24 @@ uint32_t sys_sts_get_hw_status(struct sys_sts_t *sys_sts, bool verbose) {
     printf("Hardware status raw: 0x%" PRIx32 "\n", *(sys_sts->hw_status_reg));
   }
   return *(sys_sts->hw_status_reg);
+}
+
+// Get SPI clock frequency in Hz
+uint32_t sys_sts_get_spi_clk_freq_hz(struct sys_sts_t *sys_sts, bool verbose) {
+  if (verbose) {
+    printf("Reading SPI clock frequency register...\n");
+    printf("SPI clock frequency raw: 0x%" PRIx32 "\n", *(sys_sts->spi_clk_freq_hz));
+  }
+  return *(sys_sts->spi_clk_freq_hz);
+}
+
+// Get FIFO status from a status pointer
+uint32_t get_fifo_status(volatile uint32_t *fifo_sts_ptr, const char *fifo_name, bool verbose) {
+  if (verbose) {
+    printf("Reading %s FIFO status register...\n", fifo_name);
+    printf("%s FIFO status raw: 0x%08" PRIx32 "\n", fifo_name, *fifo_sts_ptr);
+  }
+  return *fifo_sts_ptr;
 }
 
 // Interpret and print hardware status
@@ -257,25 +276,29 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
   }
 }
 
-// Print debug registers
-void print_debug_registers(struct sys_sts_t *sys_sts) {
-  for (int i = 0; i < DEBUG_REG_COUNT; i++) { // Assuming only one debug register for now
-    uint32_t value = *(sys_sts->debug[i]);
-    printf("Debug register %d: 0b", i);
-    for (int bit = 31; bit >= 0; bit--) {
-      printf("%u", (value >> bit) & 1);
-    }
-    printf("\n");
+// Print SPI clock frequency in Hz and MHz
+void print_spi_clk_freq(uint32_t freq_hz, bool verbose) {
+  if (verbose) {
+    printf("SPI clock frequency: %" PRIu32 " Hz (%.3f MHz)\n", freq_hz, freq_hz / 1000000.0);
+  } else {
+    printf("SPI Clock: %.3f MHz\n", freq_hz / 1000000.0);
   }
 }
 
-// Get FIFO status from a status pointer
-uint32_t get_fifo_status(volatile uint32_t *fifo_sts_ptr, const char *fifo_name, bool verbose) {
-  if (verbose) {
-    printf("Reading %s FIFO status register...\n", fifo_name);
-    printf("%s FIFO status raw: 0x%08" PRIx32 "\n", fifo_name, *fifo_sts_ptr);
+// Print debug register
+void print_debug_register(struct sys_sts_t *sys_sts) {
+  uint32_t value = *(sys_sts->debug);
+  printf("Debug Register: 0x%08" PRIx32 " (0b", value);
+  for (int bit = 31; bit >= 0; bit--) {
+    printf("%u", (value >> bit) & 1);
   }
-  return *fifo_sts_ptr;
+  printf(")\n");
+  
+  // Print specific bit interpretations
+  printf("  SPI Clock Locked: %s\n", (value & (1 << DEBUG_SPI_CLK_LOCKED_BIT)) ? "Yes" : "No");
+  printf("  SPI Off: %s\n", (value & (1 << DEBUG_SPI_OFF_BIT)) ? "Yes" : "No");
+  printf("  DAC ~CS High Time: %u cycles\n", DEBUG_DAC_CS_HIGH_TIME(value));
+  printf("  ADC ~CS High Time: %u cycles\n", DEBUG_ADC_CS_HIGH_TIME(value));
 }
 
 // Get DAC command FIFO status for a specific board
