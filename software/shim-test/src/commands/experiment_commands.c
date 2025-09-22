@@ -203,15 +203,9 @@ static uint64_t calculate_expected_samples(const char* file_path, int loop_count
 
 // Channel test command implementation
 int cmd_channel_test(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  if (arg_count < 2) {
+  if (arg_count != 2) {
     fprintf(stderr, "Usage: channel_test <channel> <value>\n");
     fflush(stderr);
-    return -1;
-  }
-  
-  // Validate system is running
-  if (validate_system_running(ctx) != 0) {
-    fflush(stdout);
     return -1;
   }
   
@@ -231,64 +225,113 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
     return -1;
   }
   
+  // Step 1: Check that the system is on
+  // Validate system is running
+  if (validate_system_running(ctx) != 0) {
+    fflush(stdout);
+    return -1;
+  }
+  // Check if ADC data FIFO is present before attempting to read
+  uint32_t adc_data_fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+  if (FIFO_PRESENT(adc_data_fifo_status) == 0) {
+    fprintf(stderr, "ADC data FIFO for board %d is not present. Cannot read data.\n", board);
+    fflush(stderr);
+    return -1;
+  }
+  printf("  Step 1: System is running\n");
+  fflush(stdout);
+  
   printf("Starting channel test for channel %d (board %d, channel %d), value %d\n", 
          atoi(args[0]), board, channel, dac_value);
   fflush(stdout);
   
-  // Step 1: Check that the system is on (already done above)
-  printf("  Step 1: System is running\n");
-  fflush(stdout);
+  // Check if --no_reset flag is present
+  bool skip_reset = has_flag(flags, flag_count, FLAG_NO_RESET);
   
-  // Step 2: Reset the ADC and DAC buffers for all boards
-  printf("  Step 2: Resetting ADC and DAC buffers for all boards\n");
-  fflush(stdout);
-  sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose)); // Reset all boards + trigger
-  sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
-  usleep(10000); // 10ms
-  sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
-  sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
-  usleep(10000); // 10ms
+  // Step 2: Reset the ADC and DAC buffers for all boards (unless --no_reset flag is used)
+  if (skip_reset) {
+    printf("  Step 2: Skipping buffer reset (--no_reset flag specified)\n");
+    fflush(stdout);
+  } else {
+    printf("  Step 2: Resetting ADC and DAC buffers for all boards\n");
+    fflush(stdout);
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose)); // Reset all boards + trigger
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
+    __sync_synchronize(); // Memory barrier
+    usleep(100000); // 100ms delay
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
+    __sync_synchronize(); // Memory barrier
+    usleep(100000); // 100ms delay
+    printf("  Buffer resets completed\n");
+    fflush(stdout);
+  }
 
   // Step 3: Send cancel command to DAC and ADC for that board
   printf("  Step 3: Sending CANCEL command to DAC and ADC for board %d\n", board);
   fflush(stdout);
   dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, *(ctx->verbose));
   adc_cmd_cancel(ctx->adc_ctrl, (uint8_t)board, *(ctx->verbose));
-  usleep(10000); // 10ms
+  __sync_synchronize(); // Memory barrier
+  usleep(10000); // 10ms delay
+  printf("  Cancel commands completed\n");
+  fflush(stdout);
   
   // Step 4: Send wr_ch command to DAC, 100ms delay, then and rd_ch command to ADC
   printf("  Step 4: Sending commands to DAC and ADC\n");
   fflush(stdout);
+  printf("    Writing DAC value %d to board %d, channel %d\n", dac_value, board, channel);
+  fflush(stdout);
   dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, (int16_t)dac_value, *(ctx->verbose));
-  usleep(100000); // 100ms
+  __sync_synchronize(); // Memory barrier
+  usleep(100000); // 100ms delay to let DAC settle
+  printf("    Reading ADC from board %d, channel %d\n", board, channel);
+  fflush(stdout);
   adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, *(ctx->verbose));
   // Wait a short moment to ensure ADC data is ready
-  usleep(100000); // 100ms
+  __sync_synchronize(); // Memory barrier
+  usleep(100000); // 100ms delay
+  printf("  DAC/ADC commands completed\n");
+  fflush(stdout);
 
   // Step 6: Send wr_ch command to DAC to set channel back to 0
   printf("  Step 5: Resetting DAC to 0\n");
   fflush(stdout);
   dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, 0, *(ctx->verbose));
+
+  // Brief pause to let the DAC settle
+  __sync_synchronize(); // Memory barrier
+  usleep(100000); // 100ms 
+  printf("  DAC reset to 0 completed\n");
+  fflush(stdout);
   
   // Step 7: Read single from ADC
   printf("  Step 6: Reading ADC value\n");
   fflush(stdout);
-  int tries = 0;
-  uint32_t adc_data_fifo_status;
-  while (tries < 100) {
-    adc_data_fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
-    if (FIFO_STS_WORD_COUNT(adc_data_fifo_status) > 0) {
-      break;
-    }
-    usleep(10000); // 10ms
-    tries++;
-  }
+  
+  // Add some debug info before attempting to read
+  printf("    Checking ADC data FIFO status before reading...\n");
+  fflush(stdout);
+  
+  // Check if the ADC data FIFO has data
+  fflush(stdout);
+  adc_data_fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
   if (FIFO_STS_WORD_COUNT(adc_data_fifo_status) == 0) {
     fprintf(stderr, "ADC data buffer is still empty after waiting 1 second.\n");
     fflush(stderr);
     return -1;
+  } else {
+    printf("    ADC data FIFO has %u words available.\n", FIFO_STS_WORD_COUNT(adc_data_fifo_status));
+    fflush(stdout);
   }
-  int16_t adc_reading = ADC_OFFSET_TO_SIGNED(adc_read_word(ctx->adc_ctrl, (uint8_t)board) & 0xFFFF);
+  
+  // Add a memory barrier and small delay to ensure hardware state is stable
+  __sync_synchronize(); // Memory barrier
+  usleep(50000); // Additional 50ms delay for hardware settling
+  
+  uint32_t adc_word = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
+  int16_t adc_reading = ADC_OFFSET_TO_SIGNED(adc_word & 0xFFFF);
+  __sync_synchronize(); // Memory barrier after critical read to ensure completion
   
   // Step 8: Calculate and print error
   printf("  Step 7: Calculating error\n");
@@ -325,14 +368,21 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     return -1;
   }
   
-  // Step 1: Reset all buffers
-  printf("Step 1: Resetting all buffers\n");
-  sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose)); // Reset all boards + trigger
-  sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
-  usleep(10000); // 10ms
-  sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
-  sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
-  usleep(10000); // 10ms
+  // Check if --no_reset flag is present
+  bool skip_reset = has_flag(flags, flag_count, FLAG_NO_RESET);
+  
+  // Step 1: Reset all buffers (unless --no_reset flag is used)
+  if (skip_reset) {
+    printf("Step 1: Skipping buffer reset (--no_reset flag specified)\n");
+  } else {
+    printf("Step 1: Resetting all buffers\n");
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose)); // Reset all boards + trigger
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
+    usleep(10000); // 10ms
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
+    usleep(10000); // 10ms
+  }
   
   // Step 2: Prompt for board number
   int board;

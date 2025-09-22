@@ -29,6 +29,7 @@ create_bd_pin -dir I -from  4 -to 0 dac_n_cs_high_time
 create_bd_pin -dir I -from  7 -to 0 adc_n_cs_high_time
 create_bd_pin -dir I -from 15 -to 0 boot_test_skip
 create_bd_pin -dir I -from 15 -to 0 debug
+create_bd_pin -dir I -from 15 -to 0 dac_cal_init
 
 ## Status signals (need synchronization)
 # SPI system status
@@ -141,6 +142,7 @@ cell lcb:user:shim_spi_cfg_sync spi_cfg_sync {} {
   adc_n_cs_high_time adc_n_cs_high_time
   boot_test_skip boot_test_skip
   debug debug
+  dac_cal_init dac_cal_init
 }
 ## SPI system reset
 # Create proc_sys_reset for SPI-system-wide reset
@@ -224,6 +226,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     integ_thresh_avg spi_cfg_sync/integ_thresh_avg_sync
     integ_en spi_cfg_sync/integ_en_sync
     dac_n_cs_high_time spi_cfg_sync/dac_n_cs_high_time_sync
+    dac_cal_init spi_cfg_sync/dac_cal_init_sync
     dac_cmd dac_ch${i}_cmd
     dac_cmd_rd_en dac_ch${i}_cmd_rd_en
     dac_cmd_empty dac_ch${i}_cmd_empty

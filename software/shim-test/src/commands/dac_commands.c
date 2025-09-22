@@ -12,6 +12,7 @@
 #include "dac_commands.h"
 #include "command_helper.h"
 #include "sys_sts.h"
+#include "sys_ctrl.h"
 #include "dac_ctrl.h"
 
 // Local helper function to check if system is running
@@ -48,35 +49,35 @@ int cmd_dac_data_fifo_sts(const char** args, int arg_count, const command_flag_t
   return 0;
 }
 
-int cmd_read_dac_dbg(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+int cmd_read_dac_data(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = parse_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for read_dac_dbg: '%s'. Must be 0-7.\n", args[0]);
+    fprintf(stderr, "Invalid board number for read_dac_data: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
   
   if (FIFO_PRESENT(sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))) == 0) {
-    printf("DAC data FIFO for board %d is not present. Cannot read debug data.\n", board);
+    printf("DAC data FIFO for board %d is not present. Cannot read data.\n", board);
     return -1;
   }
   
   if (FIFO_STS_EMPTY(sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
-    printf("DAC data FIFO for board %d is empty. Cannot read debug data.\n", board);
+    printf("DAC data FIFO for board %d is empty. Cannot read data.\n", board);
     return -1;
   }
   
   bool read_all = has_flag(flags, flag_count, FLAG_ALL);
   
   if (read_all) {
-    printf("Reading all debug information from DAC FIFO for board %d...\n", board);
+    printf("Reading all data from DAC FIFO for board %d...\n", board);
     while (!FIFO_STS_EMPTY(sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
-      uint32_t data = dac_read(ctx->dac_ctrl, (uint8_t)board);
-      dac_print_debug(data);
+      uint32_t data = dac_read_data(ctx->dac_ctrl, (uint8_t)board);
+      dac_print_data(data);
     }
   } else {
-    uint32_t data = dac_read(ctx->dac_ctrl, (uint8_t)board);
-    printf("Reading one debug sample from DAC FIFO for board %d...\n", board);
-    dac_print_debug(data);
+    uint32_t data = dac_read_data(ctx->dac_ctrl, (uint8_t)board);
+    printf("Reading one data sample from DAC FIFO for board %d...\n", board);
+    dac_print_data(data);
   }
   return 0;
 }
@@ -218,6 +219,122 @@ int cmd_do_dac_wr_ch(const char** args, int arg_count, const command_flag_t* fla
   dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, (int16_t)value, *(ctx->verbose));
   
   printf("Wrote value %ld to DAC channel %d (board %d, channel %d).\n", value, atoi(args[0]), board, channel);
+  return 0;
+}
+
+// Get DAC calibration value for a single channel
+int cmd_get_dac_cal(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  int board, channel;
+  if (validate_channel_number(args[0], &board, &channel) < 0) {
+    return -1;
+  }
+  
+  // Validate system is running (like channel test)
+  uint32_t hw_status = sys_sts_get_hw_status(ctx->sys_sts, *(ctx->verbose));
+  uint32_t state = HW_STS_STATE(hw_status);
+  if (state != S_RUNNING) {
+    fprintf(stderr, "System is not running. Current state: %d\n", state);
+    return -1;
+  }
+  
+  if (*(ctx->verbose)) {
+    printf("Getting calibration value for channel %d (board %d, channel %d)...\n", atoi(args[0]), board, channel);
+  }
+  
+  // Check if --no_reset flag is present
+  bool skip_reset = has_flag(flags, flag_count, FLAG_NO_RESET);
+  
+  // Reset the data and command buffers for the board chosen (unless --no_reset flag is used)
+  if (skip_reset) {
+    if (*(ctx->verbose)) {
+      printf("  Skipping DAC buffer reset (--no_reset flag specified)\n");
+      fflush(stdout);
+    }
+  } else {
+    if (*(ctx->verbose)) {
+      printf("  Resetting DAC data and command buffers for board %d\n", board);
+      fflush(stdout);
+    }
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, (1 << board), *(ctx->verbose));
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, (1 << board), *(ctx->verbose));
+    usleep(100000); // 100ms
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
+    usleep(100000); // 100ms
+  }
+
+  if (*(ctx->verbose)) {
+    printf("  Sending CANCEL command to DAC for board %d\n", board);
+    fflush(stdout);
+  }
+  dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, *(ctx->verbose));
+  usleep(10000); // 10ms
+  
+  // Send get_cal command
+  if (*(ctx->verbose)) {
+    printf("  Sending GET_CAL command\n");
+    fflush(stdout);
+  }
+  dac_cmd_get_cal(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, *(ctx->verbose));
+  
+  // Wait for data to be available
+  usleep(100000); // 100ms
+  
+  // Read calibration data once available
+  if (*(ctx->verbose)) {
+    printf("  Reading calibration data\n");
+    fflush(stdout);
+  }
+  int tries = 0;
+  uint32_t dac_data_fifo_status;
+  while (tries < 100) {
+    dac_data_fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose));
+    if (FIFO_STS_WORD_COUNT(dac_data_fifo_status) > 0) break;
+    usleep(10000); // 10ms
+    tries++;
+  }
+  dac_data_fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose));
+  if (FIFO_STS_WORD_COUNT(dac_data_fifo_status) == 0) {
+    fprintf(stderr, "No DAC calibration data available after timeout\n");
+    return -1;
+  }
+  
+  // Read and print calibration data using dac_print_data
+  uint32_t cal_data = dac_read_data(ctx->dac_ctrl, (uint8_t)board);
+  if (*(ctx->verbose)) {
+    printf("  ");
+  }
+  dac_print_data(cal_data);
+  
+  if (*(ctx->verbose)) {
+    printf("Get calibration completed.\n");
+  }
+  return 0;
+}
+
+// Simple DAC get calibration command - just sends the command without resets or reads
+int cmd_do_dac_get_cal(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  int board, channel;
+  if (validate_channel_number(args[0], &board, &channel) < 0) {
+    return -1;
+  }
+  
+  if (validate_system_running(ctx) < 0) {
+    return -1;
+  }
+  
+  // Check if DAC command stream is running for this board
+  if (ctx->dac_cmd_stream_running[board]) {
+    fprintf(stderr, "Cannot get DAC calibration for channel %d (board %d): DAC command stream is currently running. Stop the stream first.\n", atoi(args[0]), board);
+    return -1;
+  }
+  
+  printf("Sending GET_CAL command for channel %d (board %d, channel %d)...\n", atoi(args[0]), board, channel);
+  
+  // Just send the get_cal command without any resets or reads
+  dac_cmd_get_cal(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, *(ctx->verbose));
+  
+  printf("GET_CAL command sent for channel %d (board %d, channel %d).\n", atoi(args[0]), board, channel);
   return 0;
 }
 

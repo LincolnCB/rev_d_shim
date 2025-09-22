@@ -19,8 +19,8 @@ struct dac_ctrl_t create_dac_ctrl(bool verbose) {
   return dac_ctrl;
 }
 
-// Read DAC value from a specific board
-uint32_t dac_read(struct dac_ctrl_t *dac_ctrl, uint8_t board) {
+// Read DAC data from a specific board
+uint32_t dac_read_data(struct dac_ctrl_t *dac_ctrl, uint8_t board) {
   if (board > 7) {
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
     return 0; // Return 0 for invalid board
@@ -29,10 +29,10 @@ uint32_t dac_read(struct dac_ctrl_t *dac_ctrl, uint8_t board) {
   return *(dac_ctrl->buffer[board]);
 }
 
-// Interpret and print DAC value as debug information
-void dac_print_debug(uint32_t dac_value) {
-  uint8_t debug_code = DAC_DBG(dac_value);
-  switch (debug_code) {
+// Interpret and print DAC data word as calibration or debug information
+void dac_print_data(uint32_t dac_value) {
+  uint8_t data_code = DAC_DATA_CODE(dac_value);
+  switch (data_code) {
     case DAC_DBG_MISO_DATA:
       printf("Debug: MISO Data = 0x%04X\n", dac_value & 0xFFFF);
       break;
@@ -52,8 +52,14 @@ void dac_print_debug(uint32_t dac_value) {
     case DAC_DBG_SPI_BIT:
       printf("Debug: SPI Bit Counter = %d\n", dac_value & 0x1F);
       break;
+    case DAC_CAL_DATA: {
+      uint8_t channel = DAC_CAL_DATA_CH(dac_value);
+      int16_t cal_value = DAC_CAL_DATA_VAL(dac_value);
+      printf("Calibration: Channel %d = %d\n", channel, cal_value);
+      break;
+    }
     default:
-      printf("Debug: Unknown code %d with value 0x%X\n", debug_code, dac_value);
+      printf("Data: Unknown code %d with value 0x%X\n", data_code, dac_value);
       break;
   }
 }
@@ -197,6 +203,26 @@ void dac_cmd_set_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel
   if (verbose) {
     printf("DAC[%d] SET_CAL command word: 0x%08X (channel %d, cal=0x%04X)\n", 
            board, cmd_word, channel, (uint16_t)cal & 0xFFFF);
+  }
+  *(dac_ctrl->buffer[board]) = cmd_word;
+}
+
+void dac_cmd_get_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel, bool verbose) {
+  if (board > 7) {
+    fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
+    return;
+  }
+  if (channel > 7) {
+    fprintf(stderr, "Invalid channel: %d. Must be 0-7.\n", channel);
+    return;
+  }
+
+  uint32_t cmd_word = (DAC_CMD_GET_CAL << DAC_CMD_CMD_LSB) |
+                      (channel << 16); // Channel index
+
+  if (verbose) {
+    printf("DAC[%d] GET_CAL command word: 0x%08X (channel %d)\n", 
+           board, cmd_word, channel);
   }
   *(dac_ctrl->buffer[board]) = cmd_word;
 }

@@ -25,8 +25,18 @@ uint32_t adc_read_word(struct adc_ctrl_t *adc_ctrl, uint8_t board) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
     return 0; // Return 0 for invalid board
   }
-
-  return *(adc_ctrl->buffer[board]);
+  
+  // Additional safety check for null pointer
+  if (adc_ctrl->buffer[board] == NULL) {
+    fprintf(stderr, "Error: ADC buffer[%d] is NULL. Cannot read data.\n", board);
+    return 0;
+  }
+  
+  // Use volatile access to prevent compiler optimization and ensure actual memory read
+  volatile uint32_t *buffer_ptr = adc_ctrl->buffer[board];
+  uint32_t value = *buffer_ptr;
+  
+  return value;
 }
 
 // Interpret and print ADC value as debug information

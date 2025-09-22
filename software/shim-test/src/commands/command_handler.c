@@ -59,11 +59,13 @@ static command_entry_t command_table[] = {
   // ===== DAC COMMANDS (from dac_commands.h) =====
   {"dac_cmd_fifo_sts", cmd_dac_cmd_fifo_sts, {1, 1, {-1}, "Show DAC command FIFO status for specified board (0-7)"}},
   {"dac_data_fifo_sts", cmd_dac_data_fifo_sts, {1, 1, {-1}, "Show DAC data FIFO status for specified board (0-7)"}},
-  {"read_dac_dbg", cmd_read_dac_dbg, {1, 1, {FLAG_ALL, -1}, "Read and print debug information for DAC data from specified board (0-7)"}},
+  {"read_dac_data", cmd_read_dac_data, {1, 1, {FLAG_ALL, -1}, "Read and print data (debug or calibration) from specified board (0-7)"}},
   {"dac_noop", cmd_dac_noop, {3, 3, {FLAG_CONTINUE, -1}, "Send DAC no-op command: <board> <\"trig\"|\"delay\"> <value> [--continue]"}},
   {"dac_cancel", cmd_dac_cancel, {1, 1, {-1}, "Send DAC cancel command to specified board (0-7)"}},
   {"write_dac_update", cmd_write_dac_update, {11, 11, {FLAG_CONTINUE, -1}, "Send DAC write update command: <board> <ch0> <ch1> <ch2> <ch3> <ch4> <ch5> <ch6> <ch7> <\"trig\"|\"delay\"> <value> [--continue]"}},
   {"do_dac_wr_ch", cmd_do_dac_wr_ch, {2, 2, {-1}, "Write DAC single channel: <channel> <value> (channel 0-63, board=ch/8, ch=ch%8)"}},
+  {"get_dac_cal", cmd_get_dac_cal, {1, 1, {FLAG_NO_RESET, -1}, "Get DAC calibration value for single channel: <channel> (channel 0-63, board=ch/8, ch=ch%8) [--no_reset]"}},
+  {"do_dac_get_cal", cmd_do_dac_get_cal, {1, 1, {-1}, "Send DAC GET_CAL command for single channel: <channel> (channel 0-63, board=ch/8, ch=ch%8)"}},
   {"stream_dac_commands_from_file", cmd_stream_dac_commands_from_file, {2, 3, {-1}, "Start DAC command streaming from waveform file: <board> <file_path> [loop_count] (supports * wildcards)"}},
   {"stop_dac_cmd_stream", cmd_stop_dac_cmd_stream, {1, 1, {-1}, "Stop DAC command streaming for specified board (0-7)"}},
   
@@ -96,8 +98,8 @@ static command_entry_t command_table[] = {
   {"trig_expect_ext", cmd_trig_expect_ext, {1, 1, {-1}, "Send trigger expect external command with count (0 - 0x1FFFFFFF)"}},
   
   // ===== EXPERIMENT COMMANDS (from experiment_commands.h) =====
-  {"channel_test", cmd_channel_test, {3, 3, {-1}, "Set DAC and check ADC on individual channels: <board> <channel> <value> (board 0-7, channel 0-7, value -32767 to 32767)"}},
-  {"waveform_test", cmd_waveform_test, {0, 0, {-1}, "Interactive waveform test: prompts for DAC/ADC files, loops, output file, and trigger lockout"}},
+  {"channel_test", cmd_channel_test, {2, 2, {FLAG_NO_RESET, -1}, "Set DAC and check ADC on individual channels: <channel> <value> (channel 0-63, value -32767 to 32767) [--no_reset]"}},
+  {"waveform_test", cmd_waveform_test, {0, 0, {FLAG_NO_RESET, -1}, "Interactive waveform test: prompts for DAC/ADC files, loops, output file, and trigger lockout [--no_reset]"}},
   
   // ===== COMMAND LOGGING/PLAYBACK (from command_handler.c) =====
   {"log_commands", cmd_log_commands, {1, 1, {-1}, "Start logging commands to file: <file_path>"}},
@@ -324,6 +326,9 @@ void print_command_help(const char* command_name) {
         case FLAG_BIN:
           printf(" --bin");
           break;
+        case FLAG_NO_RESET:
+          printf(" --no_reset");
+          break;
       }
     }
     printf("\n");
@@ -442,6 +447,7 @@ void print_help(void) {
   printf("  --continue   Continue flag for certain commands\n");
   printf("  --simple     Simple mode for certain commands\n");
   printf("  --bin        Write binary format instead of ASCII text\n");
+  printf("  --no_reset   Skip buffer reset operations (for debugging)\n");
   printf("\n");
 }
 
@@ -471,6 +477,8 @@ int parse_command_line(const char* line, const char** args, int* arg_count, comm
         flags[(*flag_count)++] = FLAG_SIMPLE;
       } else if (strcmp(token, "--bin") == 0) {
         flags[(*flag_count)++] = FLAG_BIN;
+      } else if (strcmp(token, "--no_reset") == 0) {
+        flags[(*flag_count)++] = FLAG_NO_RESET;
       }
     } else {
       args[(*arg_count)++] = strdup(token);
