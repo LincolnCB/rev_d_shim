@@ -6,6 +6,9 @@
 // Channel test command - set and check current on individual channels
 int cmd_channel_test(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
+// Channel calibration command - calibrate DAC/ADC channels
+int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+
 // Waveform test command - easily load, run, and log waveforms
 int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 

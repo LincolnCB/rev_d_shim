@@ -224,12 +224,70 @@ int cmd_do_dac_wr_ch(const char** args, int arg_count, const command_flag_t* fla
 
 // Get DAC calibration value for a single channel
 int cmd_get_dac_cal(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  int board, channel;
-  if (validate_channel_number(args[0], &board, &channel) < 0) {
+  // Parse arguments - either a channel number (0-63) or --all flag
+  bool get_all = has_flag(flags, flag_count, FLAG_ALL);
+  int start_ch = 0, end_ch = 0;
+  bool connected_boards[8] = {false}; // Track which boards are connected
+  
+  if (get_all && arg_count > 0) {
+    fprintf(stderr, "Error: Cannot specify both channel number and --all flag\n");
     return -1;
   }
   
-  // Validate system is running (like channel test)
+  if (!get_all && arg_count != 1) {
+    fprintf(stderr, "Usage: get_dac_cal <channel> [--no_reset] OR get_dac_cal --all [--no_reset]\n");
+    return -1;
+  }
+  
+  if (get_all) {
+    start_ch = 0;
+    end_ch = 63;
+    
+    // Check which boards are connected by checking FIFOs
+    int connected_count = 0;
+    printf("Checking connected boards...\n");
+    
+    for (int board = 0; board < 8; board++) {
+      uint32_t dac_cmd_fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+      uint32_t dac_data_fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+      
+      if (FIFO_PRESENT(dac_cmd_fifo_status) && FIFO_PRESENT(dac_data_fifo_status)) {
+        connected_boards[board] = true;
+        connected_count++;
+        printf("  Board %d: Connected\n", board);
+      } else {
+        printf("  Board %d: Not connected\n", board);
+      }
+    }
+    
+    if (connected_count == 0) {
+      printf("No boards are connected. Aborting.\n");
+      return -1;
+    }
+    
+    printf("Getting calibration values for all channels on %d connected board(s)\n", connected_count);
+  } else {
+    // Parse single channel number
+    int board, channel;
+    if (validate_channel_number(args[0], &board, &channel) < 0) {
+      return -1;
+    }
+    start_ch = end_ch = atoi(args[0]);
+    
+    // Check if the board for this channel is connected
+    uint32_t dac_cmd_fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    uint32_t dac_data_fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    
+    if (FIFO_PRESENT(dac_cmd_fifo_status) && FIFO_PRESENT(dac_data_fifo_status)) {
+      connected_boards[board] = true;
+      printf("Getting calibration value for channel %d (board %d connected)\n", start_ch, board);
+    } else {
+      printf("Error: Board %d for channel %d is not connected\n", board, start_ch);
+      return -1;
+    }
+  }
+  
+  // Validate system is running
   uint32_t hw_status = sys_sts_get_hw_status(ctx->sys_sts, *(ctx->verbose));
   uint32_t state = HW_STS_STATE(hw_status);
   if (state != S_RUNNING) {
@@ -237,74 +295,82 @@ int cmd_get_dac_cal(const char** args, int arg_count, const command_flag_t* flag
     return -1;
   }
   
-  if (*(ctx->verbose)) {
-    printf("Getting calibration value for channel %d (board %d, channel %d)...\n", atoi(args[0]), board, channel);
-  }
-  
   // Check if --no_reset flag is present
   bool skip_reset = has_flag(flags, flag_count, FLAG_NO_RESET);
   
-  // Reset the data and command buffers for the board chosen (unless --no_reset flag is used)
-  if (skip_reset) {
-    if (*(ctx->verbose)) {
-      printf("  Skipping DAC buffer reset (--no_reset flag specified)\n");
-      fflush(stdout);
+  // Reset buffers once at the start (unless --no_reset flag is used)
+  if (!skip_reset) {
+    printf("Resetting all buffers...\n");
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
+    usleep(1000); // 1ms
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, false);
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, false);
+    usleep(1000); // 1ms
+  }
+  
+  // Send cancel commands once per connected board
+  if (get_all) {
+    printf("Sending cancel commands to connected boards...\n");
+    for (int board = 0; board < 8; board++) {
+      if (connected_boards[board]) {
+        dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, false);
+      }
     }
   } else {
-    if (*(ctx->verbose)) {
-      printf("  Resetting DAC data and command buffers for board %d\n", board);
+    // For single channel, send cancel to its board
+    int board = start_ch / 8;
+    printf("Sending cancel commands to board %d...\n", board);
+    dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, false);
+  }
+  usleep(1000); // 1ms to let cancel commands complete
+  
+  // Iterate through all channels to get calibration values
+  for (int ch = start_ch; ch <= end_ch; ch++) {
+    int board, channel;
+    board = ch / 8;
+    channel = ch % 8;
+    
+    // If getting all channels, skip boards that are not connected
+    if (get_all && !connected_boards[board]) {
+      continue;
+    }
+    
+    if (get_all) {
+      printf("Ch %02d : ", ch);
       fflush(stdout);
     }
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, (1 << board), *(ctx->verbose));
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, (1 << board), *(ctx->verbose));
-    usleep(100000); // 100ms
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
-    usleep(100000); // 100ms
+    
+    // Send get_cal command
+    dac_cmd_get_cal(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, *(ctx->verbose));
+    
+    // Read calibration data once available
+    int tries = 0;
+    uint32_t dac_data_fifo_status;
+    while (tries < 100) {
+      dac_data_fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose));
+      if (FIFO_STS_WORD_COUNT(dac_data_fifo_status) > 0) break;
+      usleep(100); // 0.1ms
+      tries++;
+    }
+    
+    if (FIFO_STS_WORD_COUNT(dac_data_fifo_status) == 0) {
+      if (get_all) {
+        printf("No data available\n");
+      } else {
+        fprintf(stderr, "No DAC calibration data available after timeout\n");
+        return -1;
+      }
+      continue;
+    }
+    
+    // Read and print calibration data
+    uint32_t cal_data_word = dac_read_data(ctx->dac_ctrl, (uint8_t)board);
+    if (!get_all && *(ctx->verbose)) {
+      printf("  ");
+    }
+    dac_print_data(cal_data_word);
   }
-
-  if (*(ctx->verbose)) {
-    printf("  Sending CANCEL command to DAC for board %d\n", board);
-    fflush(stdout);
-  }
-  dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, *(ctx->verbose));
-  usleep(10000); // 10ms
-  
-  // Send get_cal command
-  if (*(ctx->verbose)) {
-    printf("  Sending GET_CAL command\n");
-    fflush(stdout);
-  }
-  dac_cmd_get_cal(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, *(ctx->verbose));
-  
-  // Wait for data to be available
-  usleep(100000); // 100ms
-  
-  // Read calibration data once available
-  if (*(ctx->verbose)) {
-    printf("  Reading calibration data\n");
-    fflush(stdout);
-  }
-  int tries = 0;
-  uint32_t dac_data_fifo_status;
-  while (tries < 100) {
-    dac_data_fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose));
-    if (FIFO_STS_WORD_COUNT(dac_data_fifo_status) > 0) break;
-    usleep(10000); // 10ms
-    tries++;
-  }
-  dac_data_fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose));
-  if (FIFO_STS_WORD_COUNT(dac_data_fifo_status) == 0) {
-    fprintf(stderr, "No DAC calibration data available after timeout\n");
-    return -1;
-  }
-  
-  // Read and print calibration data using dac_print_data
-  uint32_t cal_data = dac_read_data(ctx->dac_ctrl, (uint8_t)board);
-  if (*(ctx->verbose)) {
-    printf("  ");
-  }
-  dac_print_data(cal_data);
   
   if (*(ctx->verbose)) {
     printf("Get calibration completed.\n");

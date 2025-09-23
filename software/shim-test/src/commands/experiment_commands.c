@@ -9,7 +9,6 @@
 #include <errno.h>
 #include <pthread.h>
 #include <glob.h>
-#include <math.h>
 #include "experiment_commands.h"
 #include "command_helper.h"
 #include "adc_commands.h"
@@ -232,10 +231,23 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
     fflush(stdout);
     return -1;
   }
-  // Check if ADC data FIFO is present before attempting to read
+  // Check if ADC, DAC, and command FIFOs are present before attempting to read
   uint32_t adc_data_fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+  uint32_t dac_cmd_fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+  uint32_t adc_cmd_fifo_status = sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+
   if (FIFO_PRESENT(adc_data_fifo_status) == 0) {
     fprintf(stderr, "ADC data FIFO for board %d is not present. Cannot read data.\n", board);
+    fflush(stderr);
+    return -1;
+  }
+  if (FIFO_PRESENT(dac_cmd_fifo_status) == 0) {
+    fprintf(stderr, "DAC command FIFO for board %d is not present. Cannot send DAC commands.\n", board);
+    fflush(stderr);
+    return -1;
+  }
+  if (FIFO_PRESENT(adc_cmd_fifo_status) == 0) {
+    fprintf(stderr, "ADC command FIFO for board %d is not present. Cannot send ADC commands.\n", board);
     fflush(stderr);
     return -1;
   }
@@ -265,11 +277,11 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
     sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose)); // Reset all boards + trigger
     sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
     __sync_synchronize(); // Memory barrier
-    usleep(10000); // 10ms delay
+    usleep(1000); // 1ms delay
     sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
     sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
     __sync_synchronize(); // Memory barrier
-    usleep(10000); // 10ms delay
+    usleep(1000); // 1ms delay
     if (*(ctx->verbose)) {
       printf("  Buffer resets completed\n");
       fflush(stdout);
@@ -383,6 +395,351 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
   return 0;
 }
 
+// Channel calibration command implementation
+int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  // Parse arguments - either a channel number (0-63) or --all flag
+  bool calibrate_all = has_flag(flags, flag_count, FLAG_ALL);
+  int start_ch = 0, end_ch = 0;
+  bool connected_boards[8] = {false}; // Track which boards are connected
+  
+  if (calibrate_all && arg_count > 0) {
+    fprintf(stderr, "Error: Cannot specify both channel number and --all flag\n");
+    return -1;
+  }
+  
+  if (!calibrate_all && arg_count != 1) {
+    fprintf(stderr, "Usage: channel_cal <channel> [--no_reset] OR channel_cal --all [--no_reset]\n");
+    return -1;
+  }
+  
+  if (calibrate_all) {
+    start_ch = 0;
+    end_ch = 63;
+    
+    // Check which boards are connected by checking FIFOs
+    int connected_count = 0;
+    printf("Checking connected boards...\n");
+    
+    for (int board = 0; board < 8; board++) {
+      uint32_t adc_data_fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+      uint32_t dac_cmd_fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+      uint32_t adc_cmd_fifo_status = sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+      uint32_t dac_data_fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+      
+      if (FIFO_PRESENT(adc_data_fifo_status) && 
+          FIFO_PRESENT(dac_cmd_fifo_status) && 
+          FIFO_PRESENT(adc_cmd_fifo_status) &&
+          FIFO_PRESENT(dac_data_fifo_status)) {
+        connected_boards[board] = true;
+        connected_count++;
+        printf("  Board %d: Connected\n", board);
+      } else {
+        printf("  Board %d: Not connected\n", board);
+      }
+    }
+    
+    if (connected_count == 0) {
+      printf("No boards are connected. Aborting calibration.\n");
+      return -1;
+    }
+    
+    printf("Starting calibration for all channels on %d connected board(s)\n", connected_count);
+  } else {
+    // Parse single channel number
+    int board, channel;
+    if (validate_channel_number(args[0], &board, &channel) < 0) {
+      return -1;
+    }
+    start_ch = end_ch = atoi(args[0]);
+    
+    // Check if the board for this channel is connected
+    uint32_t adc_data_fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    uint32_t dac_cmd_fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    uint32_t adc_cmd_fifo_status = sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    uint32_t dac_data_fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    
+    if (FIFO_PRESENT(adc_data_fifo_status) && 
+        FIFO_PRESENT(dac_cmd_fifo_status) && 
+        FIFO_PRESENT(adc_cmd_fifo_status) &&
+        FIFO_PRESENT(dac_data_fifo_status)) {
+      connected_boards[board] = true;
+      printf("Starting calibration for channel %d (board %d connected)\n", start_ch, board);
+    } else {
+      printf("Error: Board %d for channel %d is not connected\n", board, start_ch);
+      return -1;
+    }
+  }
+  
+  // Check that system is on
+  if (validate_system_running(ctx) != 0) {
+    return -1;
+  }
+  
+  // Check if --no_reset flag is present
+  bool skip_reset = has_flag(flags, flag_count, FLAG_NO_RESET);
+  
+  // Reset buffers once at the start (unless --no_reset flag is used)
+  if (!skip_reset) {
+    printf("Resetting all buffers...\n");
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, false); // Reset all boards + trigger
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
+    usleep(1000); // 1ms
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, false);
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, false);
+    usleep(1000); // 1ms
+  }
+  
+  // Send cancel commands once per connected board
+  if (calibrate_all) {
+    printf("Sending cancel commands to connected boards...\n");
+    for (int board = 0; board < 8; board++) {
+      if (connected_boards[board]) {
+        dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, false);
+        adc_cmd_cancel(ctx->adc_ctrl, (uint8_t)board, false);
+      }
+    }
+  } else {
+    // For single channel, send cancel to its board
+    int board = start_ch / 8;
+    printf("Sending cancel commands to board %d...\n", board);
+    dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, false);
+    adc_cmd_cancel(ctx->adc_ctrl, (uint8_t)board, false);
+  }
+  usleep(1000); // 1ms to let cancel commands complete
+  
+  // Calibration constants
+  const int dac_values[] = {-3276, -1638, 0, 1638, 3276};
+  const int num_dac_values = 5;
+  const int average_count = 5;
+  const int calibration_iterations = 3;
+  const int delay_ms = 1; // 1ms delay
+  
+  // Iterate through all channels to calibrate
+  for (int ch = start_ch; ch <= end_ch; ch++) {
+    int board, channel;
+    board = ch / 8;
+    channel = ch % 8;
+    
+    // If calibrating all channels, skip boards that are not connected
+    if (calibrate_all && !connected_boards[board]) {
+      continue;
+    }
+    
+    printf("Ch %02d : ", ch);
+    fflush(stdout);
+    
+    // Get current DAC calibration value and store it
+    dac_cmd_get_cal(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, false);
+    
+    // Wait for calibration data to be available
+    int tries = 0;
+    uint32_t dac_data_fifo_status;
+    while (tries < 100) {
+      dac_data_fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+      if (FIFO_STS_WORD_COUNT(dac_data_fifo_status) > 0) break;
+      usleep(100); // 0.1ms
+      tries++;
+    }
+    
+    if (FIFO_STS_WORD_COUNT(dac_data_fifo_status) == 0) {
+      printf("-F- |\n");
+      continue;
+    }
+    
+    uint32_t original_cal_data_word = dac_read_data(ctx->dac_ctrl, (uint8_t)board);
+    uint16_t original_cal_value = DAC_CAL_DATA_VAL(original_cal_data_word);
+    int16_t current_cal_value = original_cal_value;
+    
+    // Perform calibration iterations
+    bool calibration_failed = false;
+    bool poor_linearity = false;
+    int completed_iterations = 0;
+    
+    for (int iter = 0; iter < calibration_iterations && !calibration_failed && !poor_linearity; iter++) {
+      // Arrays to store DAC values and corresponding averaged ADC readings
+      double dac_vals[num_dac_values];
+      double avg_adc_vals[num_dac_values];
+      
+      // Test each DAC value
+      for (int i = 0; i < num_dac_values; i++) {
+        int16_t dac_val = dac_values[i];
+        dac_vals[i] = (double)dac_val;
+        
+        // Perform multiple reads and average them
+        double sum_adc = 0.0;
+        
+        for (int avg = 0; avg < average_count; avg++) {
+          // Write DAC value
+          dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, dac_val, false);
+          usleep(delay_ms * 1000); // Wait fixed delay
+          
+          // Read ADC value
+          adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, false);
+          
+          // Wait for ADC data to be available (similar to DAC data loop)
+          int adc_tries = 0;
+          uint32_t adc_data_fifo_status;
+          while (adc_tries < 100) {
+            adc_data_fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+            if (FIFO_STS_WORD_COUNT(adc_data_fifo_status) > 0) break;
+            usleep(100); // 0.1ms
+            adc_tries++;
+          }
+          
+          if (FIFO_STS_WORD_COUNT(adc_data_fifo_status) == 0) {
+            calibration_failed = true;
+            break;
+          }
+          
+          uint32_t adc_word = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
+          int16_t adc_reading = offset_to_signed(adc_word & 0xFFFF);
+          sum_adc += (double)adc_reading;
+        }
+        
+        if (calibration_failed) break;
+        
+        avg_adc_vals[i] = sum_adc / average_count;
+      }
+      
+      if (calibration_failed) break;
+      
+      // Perform linear regression: y = mx + b
+      // Calculate slope (m) and intercept (b)
+      double sum_x = 0, sum_y = 0, sum_xy = 0, sum_x2 = 0;
+      for (int i = 0; i < num_dac_values; i++) {
+        sum_x += dac_vals[i];
+        sum_y += avg_adc_vals[i];
+        sum_xy += dac_vals[i] * avg_adc_vals[i];
+        sum_x2 += dac_vals[i] * dac_vals[i];
+      }
+      
+      // Check for division by zero before calculating slope
+      double denominator = num_dac_values * sum_x2 - sum_x * sum_x;
+      double slope, intercept;
+      bool division_by_zero = false;
+      
+      if (denominator == 0) {
+        division_by_zero = true;
+        slope = 0; // Set to 0 to avoid using uninitialized value
+        intercept = sum_y / num_dac_values; // Simple average for intercept
+      } else {
+        slope = (num_dac_values * sum_xy - sum_x * sum_y) / denominator;
+        intercept = (sum_y - slope * sum_x) / num_dac_values;
+      }
+      
+      // Check for poor linearity conditions
+      bool this_iter_poor_linearity = false;
+      
+      // Check for division by zero (infinite slope)
+      if (division_by_zero) {
+        this_iter_poor_linearity = true;
+      }
+      // Check for slope outside acceptable range (< 0.99 or > 1.01)
+      else if (slope < 0.95 || slope > 1.05) {
+        this_iter_poor_linearity = true;
+      }
+      // Check for negative slope
+      else if (slope < 0) {
+        this_iter_poor_linearity = true;
+      }
+
+      // If verbose, print the updates to the calibration value
+      if (*(ctx->verbose)) {
+        printf("  Iteration %d: Current cal=%d, Slope=%.4f, Intercept=%.2f\n", 
+               iter + 1, current_cal_value, slope, intercept);
+        fflush(stdout);
+      }
+      
+      // Update calibration value: subtract intercept from current cal value
+      current_cal_value = current_cal_value - (int16_t)(intercept >= 0 ? intercept + 0.5 : intercept - 0.5);
+
+      // Print update info if verbose
+      if (*(ctx->verbose)) {
+        printf("    Updated cal value to %d\n", current_cal_value);
+        fflush(stdout);
+      }
+
+      // Clamp calibration value to valid range
+      if (current_cal_value < -4095) {
+        if (*(ctx->verbose)) {
+          printf("    Calibration value clamped to -4095\n");
+          fflush(stdout);
+        }
+        current_cal_value = -4095;
+      }
+      if (current_cal_value > 4095) {
+        if (*(ctx->verbose)) {
+          printf("    Calibration value clamped to 4095\n");
+          fflush(stdout);
+        }
+        current_cal_value = 4095;
+      }
+      
+      // Set new calibration value
+      dac_cmd_set_cal(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, current_cal_value, *(ctx->verbose));
+      
+      // Convert offset and slope to amps (range -4.0 to 4.0 for ±32767)
+      double offset_amps = intercept * 4.0 / 32767.0;
+      
+      // If NOT verbose, print this iteration's results with special slope formatting
+      if (!*(ctx->verbose)) {
+        if (division_by_zero) {
+          printf("%+.4f A ( inf.) | ", offset_amps);
+        } else if (slope < 0) {
+          printf("%+.4f A ( neg.) | ", offset_amps);
+        } else if (slope > 9.99) {
+          printf("%+.4f A (9.999) | ", offset_amps);
+        } else {
+          printf("%+.4f A (%.3f) | ", offset_amps, slope);
+        }
+      }
+      
+      completed_iterations++;
+      
+      // Set poor linearity flag if this iteration has issues
+      if (this_iter_poor_linearity) {
+        poor_linearity = true;
+      }
+      
+      fflush(stdout);
+    }
+
+    // Zero the channel to finalize
+    dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, 0, false);
+    usleep(1000); // 1ms to let DAC settle
+    
+    // Print spaces for skipped iterations to maintain column alignment
+    for (int i = completed_iterations; i < calibration_iterations; i++) {
+      if (!*(ctx->verbose)) printf("  -- Skipped iteration number %d", i + 1);
+      else printf("                   | "); // 19 spaces to match the format above
+    }
+    
+    // Print final status
+    if (*(ctx->verbose)) {
+      if (calibration_failed) {
+        printf(" Calibration FAILED");
+      } else if (poor_linearity) {
+        printf(" Poor linearity");
+      } else {
+        printf(" Calibration OK");
+      }
+    }
+    else {
+      if (calibration_failed) {
+        printf("-F- |");
+      } else if (poor_linearity) {
+        printf("-X- |");
+      } else {
+        printf("--- |");
+      }
+    }
+    
+    printf("\n");
+  }
+  
+  return 0;
+}
+
 // Waveform test command implementation
 int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   printf("Starting interactive waveform test...\n");
@@ -405,10 +762,10 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     printf("Step 1: Resetting all buffers\n");
     sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose)); // Reset all boards + trigger
     sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
-    usleep(10000); // 10ms
+    usleep(1000); // 1ms
     sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
     sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
-    usleep(10000); // 10ms
+    usleep(1000); // 1ms
   }
   
   // Step 2: Prompt for board number
@@ -515,7 +872,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   printf("Starting ADC command streaming from file '%s' (%d loops, simple mode)\n", resolved_adc_file, loops);
   
   const char* adc_args[] = {board_str, resolved_adc_file, loops_str};
-  command_flag_t simple_flag = {FLAG_SIMPLE, NULL};
+  command_flag_t simple_flag = FLAG_SIMPLE;
   if (cmd_stream_adc_commands_from_file(adc_args, 3, &simple_flag, 1, ctx) != 0) {
     fprintf(stderr, "Failed to start ADC command streaming\n");
     return -1;

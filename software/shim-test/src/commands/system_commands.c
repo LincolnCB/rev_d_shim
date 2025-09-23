@@ -89,24 +89,24 @@ int cmd_hard_reset(const char** args, int arg_count, const command_flag_t* flags
   printf("  Step 2: Resetting debug and boot_test_skip registers\n");
   sys_ctrl_set_debug(ctx->sys_ctrl, 0, *(ctx->verbose));
   sys_ctrl_set_boot_test_skip(ctx->sys_ctrl, 0, *(ctx->verbose));
-  usleep(10000); // 10ms
+  usleep(1000); // 1ms
   
   // Step 3: Turn system off
   printf("  Step 3: Turning system off\n");
   sys_ctrl_turn_off(ctx->sys_ctrl, *(ctx->verbose));
-  usleep(100000); // 100ms
+  usleep(1000); // 1ms
   
   // Step 4: Set buffer resets to 0x1FFFF
   printf("  Step 4: Setting buffer resets to 0x1FFFF\n");
   sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
   sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
-  usleep(100000); // 100ms
+  usleep(1000); // 1ms
   
   // Step 5: Set buffer resets to 0
   printf("  Step 5: Setting buffer resets to 0\n");
   sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
   sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
-  usleep(100000); // 100ms
+  usleep(1000); // 1ms
   
   printf("Hard reset completed.\n");
   
