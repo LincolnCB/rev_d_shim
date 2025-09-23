@@ -239,7 +239,7 @@ void adc_cmd_loop_next(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint32_t loop
 // Convert and print a single ADC sample from a 32-bit word (low 16 bits)
 void adc_print_single(uint32_t data_word) {
   uint16_t lower_16 = data_word & 0xFFFF;
-  int16_t signed_value = ADC_OFFSET_TO_SIGNED(lower_16);
+  int16_t signed_value = offset_to_signed(lower_16);
   printf("%d", signed_value);
 }
 
@@ -248,8 +248,8 @@ void adc_print_pair(uint32_t data_word) {
   uint16_t lower_16 = data_word & 0xFFFF;
   uint16_t upper_16 = (data_word >> 16) & 0xFFFF;
   
-  int16_t first_value = ADC_OFFSET_TO_SIGNED(lower_16);
-  int16_t second_value = ADC_OFFSET_TO_SIGNED(upper_16);
+  int16_t first_value = offset_to_signed(lower_16);
+  int16_t second_value = offset_to_signed(upper_16);
   
   printf("%d, %d", first_value, second_value);
 }

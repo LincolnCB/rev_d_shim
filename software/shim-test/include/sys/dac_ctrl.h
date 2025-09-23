@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "map_memory.h"
 
 //////////////////// DAC Control Definitions ////////////////////
 // DAC FIFO address
@@ -49,12 +50,6 @@
 #define DAC_CAL_DATA              8
 #define DAC_CAL_DATA_CH(word)     (((word) >> 16) & 0x07) // Bits [18:16] for channel in cal data
 #define DAC_CAL_DATA_VAL(word)    ((int16_t)((word) & 0xFFFF)) // Bits [15:0] for cal value (signed)
-
-// DAC signed to offset conversion
-#define DAC_OFFSET_TO_SIGNED(val) \
-  (((val) == 0xFFFF) ? 0 : ((int16_t)((val) - 32767)))
-#define DAC_SIGNED_TO_OFFSET(val) \
-  (((val) < -32767 || (val) > 32767) ? 32767 : ((uint16_t)((val) + 32767)))
 
 //////////////////////////////////////////////////////////////////
 

@@ -49,3 +49,13 @@ uint32_t *map_32bit_memory(uint32_t base_addr, size_t wordcount, char *name, boo
   // Return the pointer to the mapped memory region
   return mapped_memory;
 }
+
+// Convert offset binary format to signed value
+int16_t offset_to_signed(uint16_t val) {
+  return (val == 0xFFFF) ? 0 : ((int16_t)(val - 32767));
+}
+
+// Convert signed value to offset binary format
+uint16_t signed_to_offset(int16_t val) {
+  return ((val < -32767 || val > 32767) ? 32767 : ((uint16_t)(val + 32767)));
+}

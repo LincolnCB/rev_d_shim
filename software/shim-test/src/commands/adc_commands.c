@@ -13,6 +13,7 @@
 #include "command_helper.h"
 #include "sys_sts.h"
 #include "adc_ctrl.h"
+#include "map_memory.h"
 
 // Forward declarations for helper functions
 static void* adc_data_stream_thread(void* arg);
@@ -382,9 +383,9 @@ static void* adc_data_stream_thread(void* arg) {
           uint16_t sample1_offset = (uint16_t)(word & 0xFFFF);        // Bits 15:0
           uint16_t sample2_offset = (uint16_t)((word >> 16) & 0xFFFF); // Bits 31:16
           
-          // Convert from offset format to signed using the ADC_OFFSET_TO_SIGNED macro
-          int16_t sample1_signed = ADC_OFFSET_TO_SIGNED(sample1_offset);
-          int16_t sample2_signed = ADC_OFFSET_TO_SIGNED(sample2_offset);
+          // Convert from offset format to signed using the offset_to_signed function
+          int16_t sample1_signed = offset_to_signed(sample1_offset);
+          int16_t sample2_signed = offset_to_signed(sample2_offset);
           
           // Write sample1
           if (samples_on_line > 0) {

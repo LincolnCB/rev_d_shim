@@ -154,8 +154,8 @@ void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[
   // Write channel values
   for (int i = 0; i < 8; i += 2) {
     // Each word contains two channels: [31:16] = ch N+1, [15:0] = ch N
-    uint16_t val0 = DAC_SIGNED_TO_OFFSET(ch_vals[i]);
-    uint16_t val1 = DAC_SIGNED_TO_OFFSET(ch_vals[i + 1]);
+    uint16_t val0 = signed_to_offset(ch_vals[i]);
+    uint16_t val1 = signed_to_offset(ch_vals[i + 1]);
     uint32_t word = ((uint32_t)val1 << 16) | val0;
     if (verbose) {
       printf("DAC[%d] Channel data word %d: 0x%08X (ch%d=0x%04X, ch%d=0x%04X)\n", 
@@ -177,11 +177,11 @@ void dac_cmd_dac_wr_ch(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t ch, i
 
   uint32_t cmd_word = (DAC_CMD_DAC_WR_CH << DAC_CMD_CMD_LSB) |
                       ((ch & 0x7) << 16) | // Channel index
-                      ((uint16_t)DAC_SIGNED_TO_OFFSET(ch_val) & 0xFFFF);
+                      ((uint16_t)signed_to_offset(ch_val) & 0xFFFF);
 
   if (verbose) {
     printf("DAC[%d] DAC_WR_CH command word: 0x%08X (channel %d, value=0x%04X)\n", 
-           board, cmd_word, ch, (uint16_t)DAC_SIGNED_TO_OFFSET(ch_val) & 0xFFFF);
+           board, cmd_word, ch, (uint16_t)signed_to_offset(ch_val) & 0xFFFF);
   }
   *(dac_ctrl->buffer[board]) = cmd_word;
 }

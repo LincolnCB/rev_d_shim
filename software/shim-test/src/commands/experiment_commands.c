@@ -18,6 +18,7 @@
 #include "sys_ctrl.h"
 #include "dac_ctrl.h"
 #include "adc_ctrl.h"
+#include "map_memory.h"
 #include "trigger_ctrl.h"
 
 // Forward declarations for helper functions
@@ -353,7 +354,7 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
   __sync_synchronize(); // Memory barrier
 
   uint32_t adc_word = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
-  int16_t adc_reading = ADC_OFFSET_TO_SIGNED(adc_word & 0xFFFF);
+  int16_t adc_reading = offset_to_signed(adc_word & 0xFFFF);
   
   // Step 8: Calculate and print error
   if (*(ctx->verbose)) {
