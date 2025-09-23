@@ -10,7 +10,7 @@ Each 32-bit word contains two 16-bit samples:
 - Bits 31:16 are sample 2
 - Samples are in offset format and need to be converted to signed
 
-The ADC_OFFSET_TO_SIGNED conversion is:
+The offset_to_signed conversion is:
 - If offset value == 0xFFFF, return 0
 - Otherwise, return (int16_t)(offset_value - 32767)
 """
