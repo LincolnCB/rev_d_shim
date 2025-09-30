@@ -711,15 +711,15 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
     // Print spaces for skipped iterations to maintain column alignment
     for (int i = completed_iterations; i < calibration_iterations; i++) {
       if (*(ctx->verbose)) printf("  -- Skipped iteration number %d", i + 1);
-      else printf("------------------ | "); // 19 spaces to match the format above
+      else printf("----------------- | "); // 18 spaces to match the format above
     }
     
     // Print final status
     if (*(ctx->verbose)) {
       if (calibration_failed) {
-        printf(" Calibration FAILED");
+        printf(" Calibration FAILED (code bug)");
       } else if (poor_linearity) {
-        printf(" Poor linearity");
+        printf(" Poor linearity (check connections)");
       } else {
         printf(" Calibration OK");
       }
