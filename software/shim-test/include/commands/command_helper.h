@@ -59,6 +59,11 @@ typedef struct command_context {
   bool trig_data_stream_running;            // Status of trigger data stream thread
   volatile bool trig_data_stream_stop;      // Stop signal for trigger data stream thread
   
+  // Fieldmap data collection management
+  pthread_t fieldmap_thread;                // Thread handle for fieldmap data collection
+  bool fieldmap_running;                    // Status of fieldmap thread
+  volatile bool fieldmap_stop;              // Stop signal for fieldmap thread
+  
   // Command logging
   FILE* log_file;                       // File handle for command logging
   bool logging_enabled;                 // Whether command logging is active

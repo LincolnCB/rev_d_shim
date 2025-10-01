@@ -18,4 +18,10 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
 // Zero all DAC channels command - set all channels to 0 on all connected boards
 int cmd_zero_all_dacs(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
+// Fieldmap data collection command - automated field mapping with current sweep
+int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+
+// Stop fieldmap data collection command
+int cmd_stop_fieldmap(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+
 #endif // EXPERIMENT_COMMANDS_H

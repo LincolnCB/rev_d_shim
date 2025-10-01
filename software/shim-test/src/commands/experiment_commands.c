@@ -1228,6 +1228,385 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   return 0;
 }
 
+// Fieldmap data collection thread structure
+typedef struct {
+  command_context_t* ctx;
+  int start_channel;
+  int end_channel;
+  double amplitude;
+  uint32_t delay_cycles;
+  double spi_freq_mhz;
+  const char* log_file;
+  bool connected_boards[8];
+  volatile bool* should_stop;
+} fieldmap_params_t;
+
+// Thread function for fieldmap data collection
+static void* fieldmap_thread(void* arg) {
+  fieldmap_params_t* params = (fieldmap_params_t*)arg;
+  command_context_t* ctx = params->ctx;
+  int start_ch = params->start_channel;
+  int end_ch = params->end_channel;
+  double amplitude = params->amplitude;
+  const char* log_file = params->log_file;
+  bool* connected_boards = params->connected_boards;
+  volatile bool* should_stop = params->should_stop;
+  double spi_freq_mhz = params->spi_freq_mhz;
+  
+  // Open log file
+  FILE* file = fopen(log_file, "w");
+  if (file == NULL) {
+    fprintf(stderr, "Fieldmap Thread: Failed to open log file '%s': %s\n", log_file, strerror(errno));
+    return NULL;
+  }
+  
+  // Write CSV header
+  fprintf(file, "time_sec,channel,polarity,current_amps\n");
+  fflush(file);
+  
+  int current_channel = start_ch;
+  bool positive_polarity = true; // Start with positive polarity
+  int total_samples_expected = (end_ch - start_ch + 1) * 2; // 2 polarities per channel
+  int samples_collected = 0;
+  
+  printf("Fieldmap Thread: Starting data collection for %d samples\n", total_samples_expected);
+  
+  while (samples_collected < total_samples_expected && !(*should_stop)) {
+    int current_board = current_channel / 8;
+    
+    // Check if we have data available
+    uint32_t adc_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)current_board, false);
+    uint32_t trig_status = sys_sts_get_trig_data_fifo_status(ctx->sys_sts, false);
+    
+    // Need 1 ADC word and 2 trigger words (64-bit trigger data)
+    if (FIFO_STS_WORD_COUNT(adc_status) >= 1 && FIFO_STS_WORD_COUNT(trig_status) >= 2) {
+      // Read ADC data (single word)
+      uint32_t adc_word = adc_read_word(ctx->adc_ctrl, (uint8_t)current_board);
+      int16_t adc_raw = offset_to_signed(adc_word & 0xFFFF);
+      double current_amps = (double)adc_raw / 32767.0 * 4.0; // Convert to amps
+      
+      // Read trigger data (64-bit)
+      uint64_t trigger_data = trigger_read(ctx->trigger_ctrl);
+      double time_seconds = (double)trigger_data / (spi_freq_mhz * 1e6);
+      
+      // Write to log file
+      fprintf(file, "%.4f,ch%02d,%c,%.3f\n", 
+              time_seconds, 
+              current_channel,
+              positive_polarity ? '+' : '-',
+              current_amps);
+      fflush(file);
+      
+      samples_collected++;
+      
+      // Advance to next measurement
+      if (positive_polarity) {
+        positive_polarity = false; // Switch to negative
+      } else {
+        positive_polarity = true;  // Switch back to positive
+        current_channel++;         // Move to next channel
+      }
+      
+      if (samples_collected % 10 == 0) {
+        printf("Fieldmap Thread: Collected %d/%d samples\n", samples_collected, total_samples_expected);
+      }
+    } else {
+      // No data available, sleep briefly
+      usleep(1000); // 1ms
+    }
+  }
+  
+  fclose(file);
+  
+  if (*should_stop) {
+    printf("Fieldmap Thread: Stopped by user after collecting %d samples\n", samples_collected);
+  } else {
+    printf("Fieldmap Thread: Collection completed, %d samples written to '%s'\n", 
+           samples_collected, log_file);
+  }
+  
+  return NULL;
+}
+
+// Fieldmap command implementation
+int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  printf("Starting fieldmap data collection...\n");
+  
+  // Check that system is running
+  if (validate_system_running(ctx) != 0) {
+    return -1;
+  }
+  
+  // Step 1: Prompt for start and end channels
+  int start_channel, end_channel;
+  printf("Enter start channel (0-63): ");
+  if (scanf("%d", &start_channel) != 1 || start_channel < 0 || start_channel > 63) {
+    fprintf(stderr, "Invalid start channel. Must be 0-63.\n");
+    return -1;
+  }
+  
+  printf("Enter end channel (0-63): ");
+  if (scanf("%d", &end_channel) != 1 || end_channel < 0 || end_channel > 63) {
+    fprintf(stderr, "Invalid end channel. Must be 0-63.\n");
+    return -1;
+  }
+  
+  if (start_channel > end_channel) {
+    fprintf(stderr, "Start channel must be <= end channel.\n");
+    return -1;
+  }
+  
+  // Step 2: Check which boards are connected and validate channels
+  bool connected_boards[8] = {false};
+  int connected_count = 0;
+  printf("Checking connected boards...\n");
+  
+  for (int board = 0; board < 8; board++) {
+    uint32_t adc_data_fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    uint32_t dac_cmd_fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    uint32_t adc_cmd_fifo_status = sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    
+    if (FIFO_PRESENT(adc_data_fifo_status) && 
+        FIFO_PRESENT(dac_cmd_fifo_status) && 
+        FIFO_PRESENT(adc_cmd_fifo_status)) {
+      connected_boards[board] = true;
+      connected_count++;
+      printf("  Board %d: Connected\n", board);
+    } else {
+      printf("  Board %d: Not connected\n", board);
+    }
+  }
+  
+  if (connected_count == 0) {
+    fprintf(stderr, "Error: No boards are connected.\n");
+    return -1;
+  }
+  
+  // Validate that all required boards for the channel range are connected
+  for (int ch = start_channel; ch <= end_channel; ch++) {
+    int board = ch / 8;
+    if (!connected_boards[board]) {
+      fprintf(stderr, "Error: Channel %d requires board %d, but board is not connected.\n", ch, board);
+      return -1;
+    }
+  }
+  
+  // Step 3: Prompt for remaining parameters
+  double amplitude;
+  printf("Enter amplitude in amps (0.0 to 4.0): ");
+  if (scanf("%lf", &amplitude) != 1 || amplitude < 0.0 || amplitude > 4.0) {
+    fprintf(stderr, "Invalid amplitude. Must be 0.0 to 4.0 amps.\n");
+    return -1;
+  }
+  
+  uint32_t delay_cycles;
+  printf("Enter ADC read delay in clock cycles: ");
+  if (scanf("%u", &delay_cycles) != 1) {
+    fprintf(stderr, "Invalid delay cycles.\n");
+    return -1;
+  }
+  
+  char log_filename[1024];
+  printf("Enter log file name: ");
+  if (scanf("%1023s", log_filename) != 1) {
+    fprintf(stderr, "Failed to read log file name.\n");
+    return -1;
+  }
+  
+  double spi_freq_mhz;
+  printf("Enter SPI clock frequency in MHz: ");
+  if (scanf("%lf", &spi_freq_mhz) != 1 || spi_freq_mhz <= 0.0) {
+    fprintf(stderr, "Invalid SPI frequency.\n");
+    return -1;
+  }
+  
+  // Add .csv extension if not present
+  char final_log_path[1024];
+  strcpy(final_log_path, log_filename);
+  char* dot = strrchr(final_log_path, '.');
+  char* slash = strrchr(final_log_path, '/');
+  
+  if (dot == NULL || (slash != NULL && dot < slash)) {
+    strcat(final_log_path, ".csv");
+  }
+  
+  printf("\nFieldmap configuration:\n");
+  printf("  Channels: %d to %d (%d channels)\n", start_channel, end_channel, end_channel - start_channel + 1);
+  printf("  Amplitude: %.3f amps\n", amplitude);
+  printf("  Delay: %u clock cycles\n", delay_cycles);
+  printf("  Log file: %s\n", final_log_path);
+  printf("  SPI frequency: %.3f MHz\n", spi_freq_mhz);
+  
+  // Step 4: Run calibration for all connected boards
+  printf("\nRunning channel calibration for all connected boards...\n");
+  
+  // Use --all flag to calibrate all channels on all connected boards
+  command_flag_t all_flag = FLAG_ALL;
+  int cal_result = cmd_channel_cal(NULL, 0, &all_flag, 1, ctx);
+  if (cal_result != 0) {
+    fprintf(stderr, "Calibration failed\n");
+    return -1;
+  }
+  
+  // Step 5: Reset buffers and add stoppers
+  printf("Resetting buffers...\n");
+  sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
+  sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
+  usleep(1000);
+  sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, false);
+  sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, false);
+  usleep(1000);
+  
+  // Calculate DAC values
+  int16_t dac_positive = (int16_t)(32767.0 * (amplitude / 4.0));
+  int16_t dac_negative = -dac_positive;
+  
+  printf("DAC values: +%d, %d (for %.3f amps)\n", dac_positive, dac_negative, amplitude);
+  
+  // Step 6: Queue DAC commands
+  printf("Queueing DAC commands...\n");
+  for (int ch = start_channel; ch <= end_channel; ch++) {
+    int target_board = ch / 8;
+    int target_channel = ch % 8;
+    
+    // Positive polarity commands for all boards
+    for (int board = 0; board < 8; board++) {
+      if (!connected_boards[board]) continue;
+      
+      int16_t ch_vals[8] = {0};
+      if (board == target_board) {
+        ch_vals[target_channel] = dac_positive;
+      }
+      
+      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, true, false, false, 1, false);
+    }
+    
+    // Negative polarity commands for all boards
+    for (int board = 0; board < 8; board++) {
+      if (!connected_boards[board]) continue;
+      
+      int16_t ch_vals[8] = {0};
+      if (board == target_board) {
+        ch_vals[target_channel] = dac_negative;
+      }
+      
+      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, true, false, false, 1, false);
+    }
+  }
+  
+  // Step 7: Queue ADC commands
+  printf("Queueing ADC commands...\n");
+  for (int ch = start_channel; ch <= end_channel; ch++) {
+    int target_board = ch / 8;
+    int target_channel = ch % 8;
+    
+    // Positive polarity measurement
+    for (int board = 0; board < 8; board++) {
+      if (!connected_boards[board]) continue;
+      
+      // NOOP wait for trigger
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, false);
+      
+      if (board == target_board) {
+        // Delay then read for target board
+        adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, false, delay_cycles, false);
+        adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)target_channel, false);
+      }
+    }
+    
+    // Negative polarity measurement
+    for (int board = 0; board < 8; board++) {
+      if (!connected_boards[board]) continue;
+      
+      // NOOP wait for trigger
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, false);
+      
+      if (board == target_board) {
+        // Delay then read for target board
+        adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, false, delay_cycles, false);
+        adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)target_channel, false);
+      }
+    }
+  }
+  
+  // Step 8: Add buffer stoppers
+  printf("Adding buffer stoppers...\n");
+  for (int board = 0; board < 8; board++) {
+    if (!connected_boards[board]) continue;
+    
+    dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, true, false, false, 1, false);
+    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, false);
+  }
+  
+  // Step 9: Set up trigger system
+  int total_triggers = (end_channel - start_channel + 1) * 2; // 2 per channel
+  printf("Setting up trigger system for %d triggers...\n", total_triggers);
+  
+  trigger_cmd_set_lockout(ctx->trigger_ctrl, 5000); // Default lockout
+  trigger_cmd_expect_ext(ctx->trigger_ctrl, total_triggers, true); // Enable logging
+  
+  // Step 10: Start data collection thread
+  printf("Starting data collection thread...\n");
+  
+  fieldmap_params_t thread_params = {
+    .ctx = ctx,
+    .start_channel = start_channel,
+    .end_channel = end_channel,
+    .amplitude = amplitude,
+    .delay_cycles = delay_cycles,
+    .spi_freq_mhz = spi_freq_mhz,
+    .log_file = final_log_path,
+    .should_stop = &ctx->fieldmap_stop
+  };
+  
+  // Copy connected boards array
+  for (int i = 0; i < 8; i++) {
+    thread_params.connected_boards[i] = connected_boards[i];
+  }
+  
+  ctx->fieldmap_stop = false;
+  ctx->fieldmap_running = true;
+  
+  if (pthread_create(&(ctx->fieldmap_thread), NULL, fieldmap_thread, &thread_params) != 0) {
+    fprintf(stderr, "Failed to create fieldmap data collection thread\n");
+    ctx->fieldmap_running = false;
+    return -1;
+  }
+  
+  // Step 11: Send sync trigger to start
+  printf("Sending sync trigger to start fieldmap...\n");
+  trigger_cmd_sync_ch(ctx->trigger_ctrl, false); // No logging for sync
+  
+  // Wait for thread completion
+  pthread_join(ctx->fieldmap_thread, NULL);
+  
+  ctx->fieldmap_running = false;
+  
+  printf("Fieldmap data collection completed!\n");
+  return 0;
+}
+
+// Stop fieldmap command implementation
+int cmd_stop_fieldmap(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  if (!ctx->fieldmap_running) {
+    printf("No fieldmap data collection is currently running.\n");
+    return 0;
+  }
+  
+  printf("Stopping fieldmap data collection...\n");
+  ctx->fieldmap_stop = true;
+  
+  // Wait for thread to finish
+  if (pthread_join(ctx->fieldmap_thread, NULL) != 0) {
+    fprintf(stderr, "Failed to join fieldmap thread.\n");
+    return -1;
+  }
+  
+  ctx->fieldmap_running = false;
+  printf("Fieldmap data collection stopped.\n");
+  return 0;
+}
+
 // Helper function to validate Rev C DAC file format
 static int validate_rev_c_file_format(const char* file_path, int* line_count) {
   FILE* file = fopen(file_path, "r");

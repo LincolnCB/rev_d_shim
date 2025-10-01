@@ -88,6 +88,10 @@ int main(int argc, char *argv[])
     .adc_cmd_stream_stop = {false},     // Initialize all command stream stop flags as false
     .dac_cmd_stream_running = {false},  // Initialize all DAC command streams as not running
     .dac_cmd_stream_stop = {false},     // Initialize all DAC command stream stop flags as false
+    .trig_data_stream_running = false,  // Initialize trigger data stream as not running
+    .trig_data_stream_stop = false,     // Initialize trigger data stream stop flag as false
+    .fieldmap_running = false,          // Initialize fieldmap as not running
+    .fieldmap_stop = false,             // Initialize fieldmap stop flag as false
     .log_file = NULL,              // Initialize log file as NULL
     .logging_enabled = false       // Initialize logging as disabled
   };
@@ -149,6 +153,28 @@ int main(int argc, char *argv[])
       } else {
         printf("DAC command stream for board %d stopped.\n", i);
       }
+    }
+  }
+  
+  // Stop trigger data stream if running
+  if (cmd_ctx.trig_data_stream_running) {
+    printf("Stopping trigger data stream...\n");
+    cmd_ctx.trig_data_stream_stop = true;
+    if (pthread_join(cmd_ctx.trig_data_stream_thread, NULL) != 0) {
+      fprintf(stderr, "Failed to join trigger data streaming thread\n");
+    } else {
+      printf("Trigger data stream stopped.\n");
+    }
+  }
+  
+  // Stop fieldmap if running
+  if (cmd_ctx.fieldmap_running) {
+    printf("Stopping fieldmap data collection...\n");
+    cmd_ctx.fieldmap_stop = true;
+    if (pthread_join(cmd_ctx.fieldmap_thread, NULL) != 0) {
+      fprintf(stderr, "Failed to join fieldmap thread\n");
+    } else {
+      printf("Fieldmap data collection stopped.\n");
     }
   }
   

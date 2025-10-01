@@ -110,6 +110,8 @@ static command_entry_t command_table[] = {
   {"channel_test", cmd_channel_test, {2, 2, {FLAG_NO_RESET, -1}, "Set DAC and check ADC on individual channels: <channel> <value> (channel 0-63, value -32767 to 32767) [--no_reset]"}},
   {"channel_cal", cmd_channel_cal, {0, 1, {FLAG_ALL, FLAG_NO_RESET, -1}, "Calibrate DAC/ADC channels: <channel> [--no_reset] OR --all [--no_reset] (channel 0-63)"}},
   {"waveform_test", cmd_waveform_test, {0, 0, {FLAG_NO_RESET, FLAG_NO_CAL, -1}, "Interactive waveform test: prompts for DAC/ADC files, loops, output file, and trigger lockout [--no_reset] [--no_cal]"}},
+  {"fieldmap", cmd_fieldmap, {0, 0, {-1}, "Interactive fieldmap data collection: prompts for channel range, amplitude, delay, and log file"}},
+  {"stop_fieldmap", cmd_stop_fieldmap, {0, 0, {-1}, "Stop fieldmap data collection"}},
   {"rev_c_compat", cmd_rev_c_compat, {4, 4, {FLAG_BIN, -1}, "Rev C compatibility: <dac_file> <loops> <adc_output_file> <delay_cycles> [--bin] - Convert Rev C 32-channel DAC files to Rev D format"}},
   {"zero_all_dacs", cmd_zero_all_dacs, {0, 0, {FLAG_NO_RESET, -1}, "Zero all DAC channels on all connected boards [--no_reset]"}},
   
