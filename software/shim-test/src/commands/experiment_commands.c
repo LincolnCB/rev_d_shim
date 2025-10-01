@@ -13,6 +13,7 @@
 #include "command_helper.h"
 #include "adc_commands.h"
 #include "dac_commands.h"
+#include "trigger_commands.h"
 #include "sys_sts.h"
 #include "sys_ctrl.h"
 #include "dac_ctrl.h"
@@ -744,16 +745,17 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
 int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   printf("Starting interactive waveform test...\n");
 
-  // Make sure the system is NOT running
+  // Make sure the system IS running
   uint32_t hw_status = sys_sts_get_hw_status(ctx->sys_sts, *(ctx->verbose));
   uint32_t state = HW_STS_STATE(hw_status);
-  if (state == S_RUNNING) {
-    printf("Error: Hardware manager is currently running (state: %u). Use 'off' command first.\n", state);
+  if (state != S_RUNNING) {
+    printf("Error: Hardware manager is not running (state: %u). Use 'on' command first.\n", state);
     return -1;
   }
   
-  // Check if --no_reset flag is present
+  // Check if --no_reset and --no_cal flags are present
   bool skip_reset = has_flag(flags, flag_count, FLAG_NO_RESET);
+  bool skip_cal = has_flag(flags, flag_count, FLAG_NO_CAL);
   
   // Step 1: Reset all buffers (unless --no_reset flag is used)
   if (skip_reset) {
@@ -768,61 +770,153 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     usleep(1000); // 1ms
   }
   
-  // Step 2: Prompt for board number
-  int board;
-  printf("Enter board number (0-7): ");
-  if (scanf("%d", &board) != 1 || board < 0 || board > 7) {
-    fprintf(stderr, "Invalid board number. Must be 0-7.\n");
+  // Step 2: Check which boards are connected
+  bool connected_boards[8] = {false}; // Track which boards are connected
+  int connected_count = 0;
+  printf("Step 2: Checking connected boards...\n");
+  
+  for (int board = 0; board < 8; board++) {
+    uint32_t adc_data_fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    uint32_t dac_cmd_fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    uint32_t adc_cmd_fifo_status = sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    uint32_t dac_data_fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    
+    if (FIFO_PRESENT(adc_data_fifo_status) && 
+        FIFO_PRESENT(dac_cmd_fifo_status) && 
+        FIFO_PRESENT(adc_cmd_fifo_status) && 
+        FIFO_PRESENT(dac_data_fifo_status)) {
+      connected_boards[board] = true;
+      connected_count++;
+      printf("  Board %d: Connected\n", board);
+    } else {
+      printf("  Board %d: Not connected\n", board);
+    }
+  }
+  
+  if (connected_count == 0) {
+    fprintf(stderr, "Error: No boards are connected. Cannot run waveform test.\n");
     return -1;
   }
   
-  // Step 3: Prompt for DAC command file
-  char dac_file[1024];
-  printf("Enter DAC command file path: ");
-  if (scanf("%1023s", dac_file) != 1) {
-    fprintf(stderr, "Failed to read DAC file path.\n");
-    return -1;
+  printf("Found %d connected board(s)\n", connected_count);
+  
+  // Step 3: Prompt for DAC and ADC command files for each connected board
+  char dac_files[8][1024] = {0};  // DAC command files for each board
+  char adc_files[8][1024] = {0};  // ADC command files for each board
+  char resolved_dac_files[8][1024] = {0};  // Resolved DAC file paths
+  char resolved_adc_files[8][1024] = {0};  // Resolved ADC file paths
+  
+  char previous_dac_file[1024] = "";
+  char previous_adc_file[1024] = "";
+  
+  for (int board = 0; board < 8; board++) {
+    if (!connected_boards[board]) continue;
+    
+    printf("\nBoard %d configuration:\n", board);
+    
+    // Prompt for DAC command file
+    printf("Enter DAC command file for board %d", board);
+    if (strlen(previous_dac_file) > 0) {
+      printf(" (default: %s)", previous_dac_file);
+    }
+    printf(": ");
+    
+    if (scanf("%1023s", dac_files[board]) != 1) {
+      fprintf(stderr, "Failed to read DAC file path for board %d.\n", board);
+      return -1;
+    }
+    
+    // If user just pressed enter and there's a previous file, use it
+    if (strcmp(dac_files[board], ".") == 0 && strlen(previous_dac_file) > 0) {
+      strcpy(dac_files[board], previous_dac_file);
+    }
+    
+    // Resolve DAC file glob pattern
+    if (resolve_file_pattern(dac_files[board], resolved_dac_files[board], sizeof(resolved_dac_files[board])) != 0) {
+      fprintf(stderr, "Failed to resolve DAC file pattern for board %d: '%s'\n", board, dac_files[board]);
+      return -1;
+    }
+    strcpy(previous_dac_file, dac_files[board]);
+    
+    // Prompt for ADC command file
+    printf("Enter ADC command file for board %d", board);
+    if (strlen(previous_adc_file) > 0) {
+      printf(" (default: %s)", previous_adc_file);
+    }
+    printf(": ");
+    
+    if (scanf("%1023s", adc_files[board]) != 1) {
+      fprintf(stderr, "Failed to read ADC file path for board %d.\n", board);
+      return -1;
+    }
+    
+    // If user just pressed enter and there's a previous file, use it
+    if (strcmp(adc_files[board], ".") == 0 && strlen(previous_adc_file) > 0) {
+      strcpy(adc_files[board], previous_adc_file);
+    }
+    
+    // Resolve ADC file glob pattern
+    if (resolve_file_pattern(adc_files[board], resolved_adc_files[board], sizeof(resolved_adc_files[board])) != 0) {
+      fprintf(stderr, "Failed to resolve ADC file pattern for board %d: '%s'\n", board, adc_files[board]);
+      return -1;
+    }
+    strcpy(previous_adc_file, adc_files[board]);
   }
   
-  // Resolve DAC file glob pattern
-  char resolved_dac_file[1024];
-  if (resolve_file_pattern(dac_file, resolved_dac_file, sizeof(resolved_dac_file)) != 0) {
-    fprintf(stderr, "Failed to resolve DAC file pattern: '%s'\n", dac_file);
-    return -1;
+  // Step 4: Prompt for DAC and ADC loop counts for each connected board
+  int dac_loops[8] = {0};  // DAC loop counts for each board
+  int adc_loops[8] = {0};  // ADC loop counts for each board
+  
+  int previous_dac_loops = 0;
+  int previous_adc_loops = 0;
+  
+  printf("\nLoop count configuration:\n");
+  for (int board = 0; board < 8; board++) {
+    if (!connected_boards[board]) continue;
+    
+    // Prompt for DAC loops
+    printf("Enter DAC loop count for board %d", board);
+    if (previous_dac_loops > 0) {
+      printf(" (default: %d)", previous_dac_loops);
+    }
+    printf(": ");
+    
+    if (scanf("%d", &dac_loops[board]) != 1 || dac_loops[board] < 1) {
+      fprintf(stderr, "Invalid DAC loop count for board %d. Must be >= 1.\n", board);
+      return -1;
+    }
+    previous_dac_loops = dac_loops[board];
+    
+    // Prompt for ADC loops
+    printf("Enter ADC loop count for board %d", board);
+    if (previous_adc_loops > 0) {
+      printf(" (default: %d)", previous_adc_loops);
+    } else if (previous_dac_loops > 0) {
+      printf(" (default: %d)", previous_dac_loops);
+    }
+    printf(": ");
+    
+    if (scanf("%d", &adc_loops[board]) != 1 || adc_loops[board] < 1) {
+      fprintf(stderr, "Invalid ADC loop count for board %d. Must be >= 1.\n", board);
+      return -1;
+    }
+    previous_adc_loops = adc_loops[board];
   }
   
-  // Step 4: Prompt for ADC command file
-  char adc_file[1024];
-  printf("Enter ADC command file path: ");
-  if (scanf("%1023s", adc_file) != 1) {
-    fprintf(stderr, "Failed to read ADC file path.\n");
-    return -1;
-  }
-  
-  // Resolve ADC file glob pattern
-  char resolved_adc_file[1024];
-  if (resolve_file_pattern(adc_file, resolved_adc_file, sizeof(resolved_adc_file)) != 0) {
-    fprintf(stderr, "Failed to resolve ADC file pattern: '%s'\n", adc_file);
-    return -1;
-  }
-  
-  // Step 5: Prompt for number of loops
-  int loops;
-  printf("Enter number of loops: ");
-  if (scanf("%d", &loops) != 1 || loops < 1) {
-    fprintf(stderr, "Invalid number of loops. Must be >= 1.\n");
-    return -1;
-  }
-  
-  // Step 6: Prompt for output file
-  char output_file[1024];
-  printf("Enter output file path: ");
-  if (scanf("%1023s", output_file) != 1) {
+  // Step 5: Prompt for base output file name
+  char base_output_file[1024];
+  printf("Enter base output file path: ");
+  if (scanf("%1023s", base_output_file) != 1) {
     fprintf(stderr, "Failed to read output file path.\n");
     return -1;
   }
   
-  // Step 7: Prompt for trigger lockout time
+  printf("\nOutput files will be created with the following naming:\n");
+  printf("  ADC data: <base>_bd_<N>.<ext> (one per connected board)\n");
+  printf("  Trigger data: <base>_trig.<ext>\n");
+  printf("  Extensions: .csv (ASCII) or .dat (binary)\n");
+  
+  // Step 6: Prompt for trigger lockout time
   uint32_t lockout_time;
   printf("Enter trigger lockout time (cycles): ");
   if (scanf("%u", &lockout_time) != 1) {
@@ -830,25 +924,106 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     return -1;
   }
   
-  // Step 8: Calculate expected number of samples from ADC command file
-  uint64_t sample_count = calculate_expected_samples(resolved_adc_file, loops);
-  if (sample_count == 0) {
-    fprintf(stderr, "Failed to calculate expected sample count from ADC command file\n");
-    return -1;
+  // Step 7: Calculate expected samples and triggers for each connected board
+  uint64_t sample_counts[8] = {0};  // Expected samples per board
+  uint32_t board_triggers[8] = {0};  // Triggers per board
+  uint32_t total_expected_triggers = 0;
+  
+  printf("\nCalculating expected data counts:\n");
+  
+  // First pass: calculate triggers for each board and validate consistency
+  int reference_trigger_count = -1;
+  for (int board = 0; board < 8; board++) {
+    if (!connected_boards[board]) continue;
+    
+    // Count trigger lines in DAC file
+    int dac_trigger_count = count_trigger_lines_in_file(resolved_dac_files[board]);
+    if (dac_trigger_count < 0) {
+      return -1;
+    }
+    
+    // Count trigger lines in ADC file  
+    int adc_trigger_count = count_trigger_lines_in_file(resolved_adc_files[board]);
+    if (adc_trigger_count < 0) {
+      return -1;
+    }
+    
+    // Calculate total triggers for this board
+    uint32_t dac_total_triggers = dac_trigger_count * dac_loops[board];
+    uint32_t adc_total_triggers = adc_trigger_count * adc_loops[board];
+    
+    // Validate that DAC and ADC have same trigger count for this board
+    if (dac_total_triggers != adc_total_triggers) {
+      fprintf(stderr, "Error: Board %d DAC triggers (%u) != ADC triggers (%u)\n", 
+              board, dac_total_triggers, adc_total_triggers);
+      fprintf(stderr, "  DAC: %d triggers/file × %d loops = %u\n", 
+              dac_trigger_count, dac_loops[board], dac_total_triggers);
+      fprintf(stderr, "  ADC: %d triggers/file × %d loops = %u\n", 
+              adc_trigger_count, adc_loops[board], adc_total_triggers);
+      return -1;
+    }
+    
+    board_triggers[board] = dac_total_triggers;
+    
+    // Validate that all boards have the same trigger count
+    if (reference_trigger_count == -1) {
+      reference_trigger_count = dac_total_triggers;
+    } else if (reference_trigger_count != dac_total_triggers) {
+      fprintf(stderr, "Error: All boards must have the same total trigger count\n");
+      fprintf(stderr, "  Reference (previous boards): %d triggers\n", reference_trigger_count);
+      fprintf(stderr, "  Board %d: %u triggers\n", board, dac_total_triggers);
+      return -1;
+    }
   }
   
-  // Step 9: Count trigger lines in DAC file
-  int trigger_count = count_trigger_lines_in_file(resolved_dac_file);
-  if (trigger_count < 0) {
-    return -1;
+  // Second pass: calculate sample counts now that triggers are validated
+  for (int board = 0; board < 8; board++) {
+    if (!connected_boards[board]) continue;
+    
+    // Calculate expected number of samples from ADC command file using board-specific ADC loops
+    sample_counts[board] = calculate_expected_samples(resolved_adc_files[board], adc_loops[board]);
+    if (sample_counts[board] == 0) {
+      fprintf(stderr, "Failed to calculate expected sample count from ADC command file for board %d\n", board);
+      return -1;
+    }
+    
+    total_expected_triggers = board_triggers[board]; // All boards have same count
+    
+    printf("Board %d: DAC loops=%d, ADC loops=%d, triggers=%u, ADC samples=%llu\n", 
+           board, dac_loops[board], adc_loops[board], board_triggers[board], sample_counts[board]);
   }
   
-  uint32_t total_expected_triggers = trigger_count * loops;
-  printf("Expecting %d total external triggers (%d triggers x %d loops)\n", 
-         total_expected_triggers, trigger_count, loops);
+  printf("Total expected external triggers (consistent across all boards): %u\n", total_expected_triggers);
   
-  // Step 10: Set trigger lockout and expect external triggers
-  printf("Setting trigger lockout time to %u cycles\n", lockout_time);
+  // Step 8: Run calibration for all boards unless --no_cal flag is set
+  if (!skip_cal) {
+    printf("\nRunning channel calibration for all connected boards...\n");
+    for (int board = 0; board < 8; board++) {
+      if (!connected_boards[board]) continue;
+      
+      printf("Calibrating board %d channels...\n", board);
+      
+      // Run channel_cal command for this board
+      char cal_args_str[32];
+      snprintf(cal_args_str, sizeof(cal_args_str), "%d", board);
+      const char* cal_args[] = {cal_args_str};
+      
+      // Call the channel_cal command function directly
+      int cal_result = cmd_channel_cal(cal_args, 1, NULL, 0, ctx);
+      
+      if (cal_result != 0) {
+        fprintf(stderr, "Calibration failed for board %d\n", board);
+        return -1;
+      }
+      printf("Board %d calibration completed successfully\n", board);
+    }
+    printf("All board calibrations completed\n");
+  } else {
+    printf("\nSkipping calibration (--no_cal flag set)\n");
+  }
+  
+  // Step 9: Set trigger lockout and expect external triggers
+  printf("\nSetting trigger lockout time to %u cycles\n", lockout_time);
   trigger_cmd_set_lockout(ctx->trigger_ctrl, lockout_time);
   
   if (total_expected_triggers > 0) {
@@ -856,44 +1031,163 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     trigger_cmd_expect_ext(ctx->trigger_ctrl, total_expected_triggers);
   }
   
-  // Step 11: Start DAC command streaming using existing function
-  printf("Starting DAC command streaming from file '%s' (%d loops)\n", resolved_dac_file, loops);
-  char board_str[16], loops_str[16];
-  snprintf(board_str, sizeof(board_str), "%d", board);
-  snprintf(loops_str, sizeof(loops_str), "%d", loops);
-  
-  const char* dac_args[] = {board_str, resolved_dac_file, loops_str};
-  if (cmd_stream_dac_commands_from_file(dac_args, 3, NULL, 0, ctx) != 0) {
-    fprintf(stderr, "Failed to start DAC command streaming\n");
-    return -1;
+  // Step 10: Start streaming for each connected board
+  printf("\nStarting command streaming for connected boards:\n");
+  for (int board = 0; board < 8; board++) {
+    if (!connected_boards[board]) continue;
+    
+    char board_str[16], dac_loops_str[16], adc_loops_str[16];
+    snprintf(board_str, sizeof(board_str), "%d", board);
+    snprintf(dac_loops_str, sizeof(dac_loops_str), "%d", dac_loops[board]);
+    snprintf(adc_loops_str, sizeof(adc_loops_str), "%d", adc_loops[board]);
+    
+    // Start DAC command streaming with board-specific DAC loop count
+    printf("  Board %d: Starting DAC command streaming from '%s' (%d loops)\n", 
+           board, resolved_dac_files[board], dac_loops[board]);
+    const char* dac_args[] = {board_str, resolved_dac_files[board], dac_loops_str};
+    if (cmd_stream_dac_commands_from_file(dac_args, 3, NULL, 0, ctx) != 0) {
+      fprintf(stderr, "Failed to start DAC command streaming for board %d\n", board);
+      return -1;
+    }
+    
+    // Start ADC command streaming with board-specific ADC loop count (with simple flag)
+    printf("  Board %d: Starting ADC command streaming from '%s' (%d loops, simple mode)\n", 
+           board, resolved_adc_files[board], adc_loops[board]);
+    const char* adc_args[] = {board_str, resolved_adc_files[board], adc_loops_str};
+    command_flag_t simple_flag = FLAG_SIMPLE;
+    if (cmd_stream_adc_commands_from_file(adc_args, 3, &simple_flag, 1, ctx) != 0) {
+      fprintf(stderr, "Failed to start ADC command streaming for board %d\n", board);
+      return -1;
+    }
   }
   
-  // Step 12: Start ADC command streaming using existing function (with simple flag)
-  printf("Starting ADC command streaming from file '%s' (%d loops, simple mode)\n", resolved_adc_file, loops);
-  
-  const char* adc_args[] = {board_str, resolved_adc_file, loops_str};
-  command_flag_t simple_flag = FLAG_SIMPLE;
-  if (cmd_stream_adc_commands_from_file(adc_args, 3, &simple_flag, 1, ctx) != 0) {
-    fprintf(stderr, "Failed to start ADC command streaming\n");
-    return -1;
+  // Step 10a: Add buffer stoppers (NOOP commands waiting for 1 trigger) to all buffers
+  printf("\nAdding buffer stoppers to all command buffers...\n");
+  for (int board = 0; board < 8; board++) {
+    if (!connected_boards[board]) continue;
+    
+    printf("  Board %d: Adding DAC and ADC buffer stoppers\n", board);
+    
+    // Add DAC NOOP stopper
+    dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, true, false, false, 0, false); // Wait for 1 trigger
+    
+    // Add ADC NOOP stopper  
+    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 0, false); // Wait for 1 trigger
   }
   
-  // Step 13: Start ADC data streaming to output file using existing function
-  printf("Starting ADC data streaming to file '%s' (%llu samples)\n", output_file, sample_count);
-  char sample_count_str[32];
-  snprintf(sample_count_str, sizeof(sample_count_str), "%llu", sample_count);
+  // Send single sync_ch trigger to step past all stoppers
+  printf("Sending single sync_ch trigger to step past buffer stoppers...\n");
+  trigger_cmd_sync_ch(ctx->trigger_ctrl);
   
-  const char* adc_data_args[] = {board_str, sample_count_str, output_file};
-  if (cmd_stream_adc_data_to_file(adc_data_args, 3, NULL, 0, ctx) != 0) {
-    fprintf(stderr, "Failed to start ADC data streaming\n");
-    return -1;
+  usleep(10000); // 10ms delay to let trigger propagate
+  
+  // Step 10b: Start ADC data streaming for each connected board
+  printf("\nStarting ADC data streaming for connected boards:\n");
+  for (int board = 0; board < 8; board++) {
+    if (!connected_boards[board]) continue;
+    
+    // Create board-specific output file name
+    char board_output_file[1024];
+    char* ext_pos = strrchr(base_output_file, '.');
+    if (ext_pos != NULL) {
+      // Insert _bd_N before extension
+      size_t base_len = ext_pos - base_output_file;
+      snprintf(board_output_file, sizeof(board_output_file), "%.*s_bd_%d%s", 
+               (int)base_len, base_output_file, board, ext_pos);
+    } else {
+      // No extension, just append _bd_N
+      snprintf(board_output_file, sizeof(board_output_file), "%s_bd_%d", base_output_file, board);
+    }
+    
+    char board_str[16], sample_count_str[32];
+    snprintf(board_str, sizeof(board_str), "%d", board);
+    snprintf(sample_count_str, sizeof(sample_count_str), "%llu", sample_counts[board]);
+    
+    printf("  Board %d: Starting ADC data streaming to '%s' (%llu samples)\n", 
+           board, board_output_file, sample_counts[board]);
+    const char* adc_data_args[] = {board_str, sample_count_str, board_output_file};
+    if (cmd_stream_adc_data_to_file(adc_data_args, 3, NULL, 0, ctx) != 0) {
+      fprintf(stderr, "Failed to start ADC data streaming for board %d\n", board);
+      return -1;
+    }
   }
   
-  printf("Waveform test setup completed. All streaming started successfully.\n");
-  printf("Use the following commands to monitor and stop streams:\n");
-  printf("  - 'stop_dac_cmd_stream %d' to stop DAC command streaming\n", board);
-  printf("  - 'stop_adc_cmd_stream %d' to stop ADC command streaming\n", board);
-  printf("  - 'stop_adc_data_stream %d' to stop ADC data streaming\n", board);
+  // Step 11: Start trigger data streaming if we expect triggers
+  if (total_expected_triggers > 0) {
+    // Create trigger output file name
+    char trigger_output_file[1024];
+    char* ext_pos = strrchr(base_output_file, '.');
+    if (ext_pos != NULL) {
+      // Insert _trig before extension
+      size_t base_len = ext_pos - base_output_file;
+      snprintf(trigger_output_file, sizeof(trigger_output_file), "%.*s_trig%s", 
+               (int)base_len, base_output_file, ext_pos);
+    } else {
+      // No extension, just append _trig
+      snprintf(trigger_output_file, sizeof(trigger_output_file), "%s_trig", base_output_file);
+    }
+    
+    char trigger_count_str[32];
+    snprintf(trigger_count_str, sizeof(trigger_count_str), "%u", total_expected_triggers);
+    
+    printf("\nStarting trigger data streaming to '%s' (%u samples)\n", 
+           trigger_output_file, total_expected_triggers);
+    const char* trig_args[] = {trigger_count_str, trigger_output_file};
+    if (cmd_stream_trig_data_to_file(trig_args, 2, NULL, 0, ctx) != 0) {
+      fprintf(stderr, "Failed to start trigger data streaming\n");
+      return -1;
+    }
+  }
+  
+  printf("\nWaveform test setup completed. All streaming started successfully.\n");
+  printf("Waiting for all streams to complete...\n");
+  
+  // Wait for completion by monitoring command streams
+  bool all_done = false;
+  while (!all_done) {
+    all_done = true;
+    
+    // Check if any board still has active DAC command streaming
+    for (int board = 0; board < 8; board++) {
+      if (!connected_boards[board]) continue;
+      
+      if (ctx->dac_cmd_stream_running[board]) {
+        all_done = false;
+        break;
+      }
+    }
+    
+    if (!all_done) {
+      usleep(100000); // 100ms polling interval
+      printf(".");
+      fflush(stdout);
+    }
+  }
+  
+  printf("\nAll command streams completed. Zeroing DAC channels...\n");
+  
+  // Step 11: Zero all DAC channels on all connected boards 
+  for (int board = 0; board < 8; board++) {
+    if (!connected_boards[board]) continue;
+    
+    printf("Zeroing DAC channels for board %d...\n", board);
+    
+    // Zero all 8 DAC channels (0-7) for this board
+    for (int channel = 0; channel < 8; channel++) {
+      dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, 0, false);
+    }
+  }
+  
+  printf("\nWaveform test completed successfully!\n");
+  printf("Use the following commands to monitor remaining data streams:\n");
+  for (int board = 0; board < 8; board++) {
+    if (!connected_boards[board]) continue;
+    printf("  - 'stop_adc_data_stream %d' to stop ADC data streaming for board %d\n", board, board);
+  }
+  if (total_expected_triggers > 0) {
+    printf("  - 'stop_trig_data_stream' to stop trigger data streaming\n");
+  }
+  printf("Note: ADC data and trigger streams will continue until manually stopped.\n");
   
   return 0;
 }

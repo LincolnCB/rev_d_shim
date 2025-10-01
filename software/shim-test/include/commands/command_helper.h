@@ -23,7 +23,8 @@ typedef enum {
   FLAG_CONTINUE,
   FLAG_SIMPLE,
   FLAG_BIN,
-  FLAG_NO_RESET
+  FLAG_NO_RESET,
+  FLAG_NO_CAL
 } command_flag_t;
 
 // Global context passed to all command handlers
@@ -52,6 +53,11 @@ typedef struct command_context {
   pthread_t dac_cmd_stream_threads[8];      // Thread handles for DAC command streaming
   bool dac_cmd_stream_running[8];           // Status of each DAC command stream thread
   volatile bool dac_cmd_stream_stop[8];     // Stop signals for each DAC command stream thread
+  
+  // Trigger streaming management
+  pthread_t trig_data_stream_thread;        // Thread handle for trigger data streaming
+  bool trig_data_stream_running;            // Status of trigger data stream thread
+  volatile bool trig_data_stream_stop;      // Stop signal for trigger data stream thread
   
   // Command logging
   FILE* log_file;                       // File handle for command logging

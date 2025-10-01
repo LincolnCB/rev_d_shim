@@ -20,7 +20,14 @@
 /**
  * Command Table
  * 
- * This table defines all available commands in the system. Each entry contains:
+ * This table defines all available       } else if (strcmp(token, "--no_reset") == 0) {
+        flags[(*flag_count)++] = FLAG_NO_RESET;
+      } else if (strcmp(token, "--no_cal") == 0) {
+        flags[(*flag_count)++] = FLAG_NO_CAL;
+      }
+    } else {
+      args[(*arg_count)++] = token;
+    }ds in the system. Each entry contains:
  * - Command name string (what the user types)
  * - Function pointer to the command handler
  * - Command metadata including:
@@ -96,11 +103,13 @@ static command_entry_t command_table[] = {
   {"trig_set_lockout", cmd_trig_set_lockout, {1, 1, {-1}, "Send trigger set lockout command with cycles (1 - 0x1FFFFFFF)"}},
   {"trig_delay", cmd_trig_delay, {1, 1, {-1}, "Send trigger delay command with cycles (0 - 0x1FFFFFFF)"}},
   {"trig_expect_ext", cmd_trig_expect_ext, {1, 1, {-1}, "Send trigger expect external command with count (0 - 0x1FFFFFFF)"}},
+  {"stream_trig_data_to_file", cmd_stream_trig_data_to_file, {2, 2, {FLAG_BIN, -1}, "Start trigger data streaming to file: <sample_count> <file_path> [--bin]"}},
+  {"stop_trig_data_stream", cmd_stop_trig_data_stream, {0, 0, {-1}, "Stop trigger data streaming"}},
   
   // ===== EXPERIMENT COMMANDS (from experiment_commands.h) =====
   {"channel_test", cmd_channel_test, {2, 2, {FLAG_NO_RESET, -1}, "Set DAC and check ADC on individual channels: <channel> <value> (channel 0-63, value -32767 to 32767) [--no_reset]"}},
   {"channel_cal", cmd_channel_cal, {0, 1, {FLAG_ALL, FLAG_NO_RESET, -1}, "Calibrate DAC/ADC channels: <channel> [--no_reset] OR --all [--no_reset] (channel 0-63)"}},
-  {"waveform_test", cmd_waveform_test, {0, 0, {FLAG_NO_RESET, -1}, "Interactive waveform test: prompts for DAC/ADC files, loops, output file, and trigger lockout [--no_reset]"}},
+  {"waveform_test", cmd_waveform_test, {0, 0, {FLAG_NO_RESET, FLAG_NO_CAL, -1}, "Interactive waveform test: prompts for DAC/ADC files, loops, output file, and trigger lockout [--no_reset] [--no_cal]"}},
   {"rev_c_compat", cmd_rev_c_compat, {4, 4, {FLAG_BIN, -1}, "Rev C compatibility: <dac_file> <loops> <adc_output_file> <delay_cycles> [--bin] - Convert Rev C 32-channel DAC files to Rev D format"}},
   {"zero_all_dacs", cmd_zero_all_dacs, {0, 0, {FLAG_NO_RESET, -1}, "Zero all DAC channels on all connected boards [--no_reset]"}},
   
@@ -451,6 +460,7 @@ void print_help(void) {
   printf("  --simple     Simple mode for certain commands\n");
   printf("  --bin        Write binary format instead of ASCII text\n");
   printf("  --no_reset   Skip buffer reset operations (for debugging)\n");
+  printf("  --no_cal     Skip calibration step in waveform test\n");
   printf("\n");
 }
 

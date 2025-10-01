@@ -509,9 +509,9 @@ int cmd_stream_adc_data_to_file(const char** args, int arg_count, const command_
   if (dot == NULL || (slash != NULL && dot < slash)) {
     // No extension, add default
     if (binary_mode) {
-      strcat(final_path, ".bin");
+      strcat(final_path, ".dat");
     } else {
-      strcat(final_path, ".txt");
+      strcat(final_path, ".csv");
     }
   }
   // If extension exists, user specified it explicitly, so keep it
