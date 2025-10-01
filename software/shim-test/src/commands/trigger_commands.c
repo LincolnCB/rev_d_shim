@@ -64,14 +64,16 @@ int cmd_read_trig_data(const char** args, int arg_count, const command_flag_t* f
 
 // Basic trigger command operations
 int cmd_trig_sync_ch(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  trigger_cmd_sync_ch(ctx->trigger_ctrl);
-  printf("Trigger synchronize channels command sent.\n");
+  bool log = (arg_count > 0 && strcmp(args[0], "log") == 0);
+  trigger_cmd_sync_ch(ctx->trigger_ctrl, log);
+  printf("Trigger synchronize channels command sent%s.\n", log ? " with logging" : "");
   return 0;
 }
 
 int cmd_trig_force_trig(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  trigger_cmd_force_trig(ctx->trigger_ctrl);
-  printf("Trigger force trigger command sent.\n");
+  bool log = (arg_count > 0 && strcmp(args[0], "log") == 0);
+  trigger_cmd_force_trig(ctx->trigger_ctrl, log);
+  printf("Trigger force trigger command sent%s.\n", log ? " with logging" : "");
   return 0;
 }
 
@@ -90,8 +92,8 @@ int cmd_trig_set_lockout(const char** args, int arg_count, const command_flag_t*
     return -1;
   }
   
-  if (cycles == 0 || cycles > 0x1FFFFFFF) {
-    fprintf(stderr, "Lockout cycles out of range: %u (valid range: 1 - 536870911)\n", cycles);
+  if (cycles == 0 || cycles > 0x0FFFFFFF) {
+    fprintf(stderr, "Lockout cycles out of range: %u (valid range: 1 - 268435455)\n", cycles);
     return -1;
   }
   
@@ -108,8 +110,8 @@ int cmd_trig_delay(const char** args, int arg_count, const command_flag_t* flags
     return -1;
   }
   
-  if (cycles > 0x1FFFFFFF) {
-    fprintf(stderr, "Delay cycles out of range: %u (valid range: 0 - 536870911)\n", cycles);
+  if (cycles > 0x0FFFFFFF) {
+    fprintf(stderr, "Delay cycles out of range: %u (valid range: 0 - 268435455)\n", cycles);
     return -1;
   }
   
@@ -126,13 +128,14 @@ int cmd_trig_expect_ext(const char** args, int arg_count, const command_flag_t* 
     return -1;
   }
   
-  if (count > 0x1FFFFFFF) {
-    fprintf(stderr, "Count out of range: %u (valid range: 0 - 536870911)\n", count);
+  if (count > 0x0FFFFFFF) {
+    fprintf(stderr, "Count out of range: %u (valid range: 0 - 268435455)\n", count);
     return -1;
   }
   
-  trigger_cmd_expect_ext(ctx->trigger_ctrl, count);
-  printf("Trigger expect external command sent with count %u.\n", count);
+  bool log = (arg_count > 1 && strcmp(args[1], "log") == 0);
+  trigger_cmd_expect_ext(ctx->trigger_ctrl, count, log);
+  printf("Trigger expect external command sent with count %u%s.\n", count, log ? " with logging" : "");
   return 0;
 }
 

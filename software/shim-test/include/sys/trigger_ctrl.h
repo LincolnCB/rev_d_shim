@@ -22,7 +22,8 @@
 
 // Trigger command bits
 #define TRIG_CMD_CODE_SHIFT   29   // Command code position
-#define TRIG_CMD_VALUE_MASK   0x1FFFFFFF // Command value mask (lower 29 bits)
+#define TRIG_CMD_LOG_BIT      28   // Trigger logging enable bit
+#define TRIG_CMD_VALUE_MASK   0x0FFFFFFF // Command value mask (lower 28 bits)
 
 //////////////////////////////////////////////////////////////////
 
@@ -38,11 +39,11 @@ struct trigger_ctrl_t create_trigger_ctrl(bool verbose);
 uint64_t trigger_read(struct trigger_ctrl_t *trigger_ctrl);
 
 // Trigger command functions
-void trigger_cmd_sync_ch(struct trigger_ctrl_t *trigger_ctrl);
+void trigger_cmd_sync_ch(struct trigger_ctrl_t *trigger_ctrl, bool log);
 void trigger_cmd_set_lockout(struct trigger_ctrl_t *trigger_ctrl, uint32_t cycles);
-void trigger_cmd_expect_ext(struct trigger_ctrl_t *trigger_ctrl, uint32_t count);
+void trigger_cmd_expect_ext(struct trigger_ctrl_t *trigger_ctrl, uint32_t count, bool log);
 void trigger_cmd_delay(struct trigger_ctrl_t *trigger_ctrl, uint32_t cycles);
-void trigger_cmd_force_trig(struct trigger_ctrl_t *trigger_ctrl);
+void trigger_cmd_force_trig(struct trigger_ctrl_t *trigger_ctrl, bool log);
 void trigger_cmd_cancel(struct trigger_ctrl_t *trigger_ctrl);
 
 #endif // TRIGGER_CTRL_H

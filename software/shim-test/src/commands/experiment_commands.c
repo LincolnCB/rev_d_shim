@@ -1027,8 +1027,8 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   trigger_cmd_set_lockout(ctx->trigger_ctrl, lockout_time);
   
   if (total_expected_triggers > 0) {
-    printf("Setting expected external triggers to %u\n", total_expected_triggers);
-    trigger_cmd_expect_ext(ctx->trigger_ctrl, total_expected_triggers);
+    printf("Setting expected external triggers to %u with logging enabled\n", total_expected_triggers);
+    trigger_cmd_expect_ext(ctx->trigger_ctrl, total_expected_triggers, true);
   }
   
   // Step 10: Start streaming for each connected board
@@ -1077,7 +1077,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   
   // Send single sync_ch trigger to step past all stoppers
   printf("Sending single sync_ch trigger to step past buffer stoppers...\n");
-  trigger_cmd_sync_ch(ctx->trigger_ctrl);
+  trigger_cmd_sync_ch(ctx->trigger_ctrl, false);
   
   usleep(10000); // 10ms delay to let trigger propagate
   
@@ -1142,35 +1142,36 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   printf("\nWaveform test setup completed. All streaming started successfully.\n");
   printf("Waiting for all streams to complete...\n");
   
-  // Wait for completion by monitoring command streams
-  bool all_done = false;
-  while (!all_done) {
-    all_done = true;
+  // Wait for DAC command streams to complete
+  printf("Waiting for DAC command streams to complete...\n");
+  bool dac_commands_done = false;
+  while (!dac_commands_done) {
+    dac_commands_done = true;
     
     // Check if any board still has active DAC command streaming
     for (int board = 0; board < 8; board++) {
       if (!connected_boards[board]) continue;
       
       if (ctx->dac_cmd_stream_running[board]) {
-        all_done = false;
+        dac_commands_done = false;
         break;
       }
     }
     
-    if (!all_done) {
+    if (!dac_commands_done) {
       usleep(100000); // 100ms polling interval
       printf(".");
       fflush(stdout);
     }
   }
   
-  printf("\nAll command streams completed. Zeroing DAC channels...\n");
+  printf("\nDAC command streams completed. Zeroing DAC channels...\n");
   
   // Step 11: Zero all DAC channels on all connected boards 
   for (int board = 0; board < 8; board++) {
     if (!connected_boards[board]) continue;
     
-    printf("Zeroing DAC channels for board %d...\n", board);
+    printf("Queue zeroing DAC channels for board %d...\n", board);
     
     // Zero all 8 DAC channels (0-7) for this board
     for (int channel = 0; channel < 8; channel++) {
@@ -1178,16 +1179,51 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     }
   }
   
-  printf("\nWaveform test completed successfully!\n");
-  printf("Use the following commands to monitor remaining data streams:\n");
+  printf("\nFor reference, the following commands can manually stop streams if needed:\n");
   for (int board = 0; board < 8; board++) {
     if (!connected_boards[board]) continue;
-    printf("  - 'stop_adc_data_stream %d' to stop ADC data streaming for board %d\n", board, board);
+    printf("  - 'stop_adc_data_stream %d' to manually stop ADC data streaming for board %d\n", board, board);
   }
   if (total_expected_triggers > 0) {
-    printf("  - 'stop_trig_data_stream' to stop trigger data streaming\n");
+    printf("  - 'stop_trig_data_stream' to manually stop trigger data streaming\n");
   }
-  printf("Note: ADC data and trigger streams will continue until manually stopped.\n");
+  
+  // Wait for ADC data streams to complete expected sample counts
+  printf("\nWaiting for ADC data streams to complete %llu samples per board...\n", 
+         connected_boards[0] ? sample_counts[0] : sample_counts[1]); // Show sample count for first connected board
+  bool adc_data_done = false;
+  while (!adc_data_done) {
+    adc_data_done = true;
+    
+    // Check if any board still has active ADC data streaming
+    for (int board = 0; board < 8; board++) {
+      if (!connected_boards[board]) continue;
+      
+      if (ctx->adc_data_stream_running[board]) {
+        adc_data_done = false;
+        break;
+      }
+    }
+    
+    if (!adc_data_done) {
+      usleep(500000); // 500ms polling interval (longer for data streams)
+      printf(".");
+      fflush(stdout);
+    }
+  }
+  
+  // Wait for trigger data stream to complete if started
+  if (total_expected_triggers > 0) {
+    printf("\nWaiting for trigger data stream to complete %u samples...\n", total_expected_triggers);
+    while (ctx->trig_data_stream_running) {
+      usleep(500000); // 500ms polling interval
+      printf(".");
+      fflush(stdout);
+    }
+    printf("\nTrigger data stream completed.\n");
+  }
+  
+  printf("\nAll streams completed successfully! Waveform test finished.\n");
   
   return 0;
 }
