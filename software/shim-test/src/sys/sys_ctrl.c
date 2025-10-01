@@ -132,3 +132,39 @@ void sys_ctrl_invert_miso_sck(struct sys_ctrl_t *sys_ctrl, bool verbose) {
     printf("MISO SCK polarity set to 0x%" PRIx32 "\n", *(sys_ctrl->miso_sck_pol));
   }
 }
+
+// Set the integrator window register to a 32-bit value
+void sys_ctrl_set_integ_window(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose) {
+  if (verbose) {
+    printf("Setting integ_window to 0x%" PRIx32 "\n", value);
+  }
+  // Write the 32-bit value to the integrator window register
+  *(sys_ctrl->integ_window) = value;
+  if (verbose) {
+    printf("integ_window set to 0x%" PRIx32 "\n", *(sys_ctrl->integ_window));
+  }
+}
+
+// Set the integrator threshold average register to a 32-bit value
+void sys_ctrl_set_integ_threshold_average(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose) {
+  if (verbose) {
+    printf("Setting integ_threshold_average to 0x%" PRIx32 "\n", value);
+  }
+  // Write the 32-bit value to the integrator threshold average register
+  *(sys_ctrl->integ_threshold_average) = value;
+  if (verbose) {
+    printf("integ_threshold_average set to 0x%" PRIx32 "\n", *(sys_ctrl->integ_threshold_average));
+  }
+}
+
+// Set the integrator enable register to a 32-bit value
+void sys_ctrl_set_integ_enable(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose) {
+  if (verbose) {
+    printf("Setting integ_enable to 0x%" PRIx32 "\n", value);
+  }
+  // Write the 32-bit value to the integrator enable register
+  *(sys_ctrl->integ_enable) = value;
+  if (verbose) {
+    printf("integ_enable set to 0x%" PRIx32 "\n", *(sys_ctrl->integ_enable));
+  }
+}

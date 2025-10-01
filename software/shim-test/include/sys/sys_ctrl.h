@@ -57,6 +57,12 @@ void sys_ctrl_set_data_buf_reset(struct sys_ctrl_t *sys_ctrl, uint32_t mask, boo
 void sys_ctrl_invert_mosi_sck(struct sys_ctrl_t *sys_ctrl, bool verbose);
 // Invert the MISO SCK polarity register
 void sys_ctrl_invert_miso_sck(struct sys_ctrl_t *sys_ctrl, bool verbose);
+// Set the integrator window register to a 32-bit value
+void sys_ctrl_set_integ_window(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose);
+// Set the integrator threshold average register to a 32-bit value
+void sys_ctrl_set_integ_threshold_average(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose);
+// Set the integrator enable register to a 32-bit value
+void sys_ctrl_set_integ_enable(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose);
 
 
 #endif // SYS_CTRL_H

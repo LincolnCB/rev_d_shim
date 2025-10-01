@@ -214,3 +214,43 @@ int cmd_spi_clk_freq(const char** args, int arg_count, const command_flag_t* fla
   print_spi_clk_freq(freq_hz, *(ctx->verbose));
   return 0;
 }
+
+// Integrator configuration commands
+int cmd_set_integ_window(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  char* endptr;
+  uint32_t value = parse_value(args[0], &endptr);
+  if (*endptr != '\0') {
+    fprintf(stderr, "Invalid value for set_integ_window: '%s'. Must be a number.\n", args[0]);
+    return -1;
+  }
+  
+  sys_ctrl_set_integ_window(ctx->sys_ctrl, value, *(ctx->verbose));
+  printf("Integrator window register set to 0x%08X (%u).\n", value, value);
+  return 0;
+}
+
+int cmd_set_integ_average(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  char* endptr;
+  uint32_t value = parse_value(args[0], &endptr);
+  if (*endptr != '\0') {
+    fprintf(stderr, "Invalid value for set_integ_average: '%s'. Must be a number.\n", args[0]);
+    return -1;
+  }
+  
+  sys_ctrl_set_integ_threshold_average(ctx->sys_ctrl, value, *(ctx->verbose));
+  printf("Integrator threshold average register set to 0x%08X (%u).\n", value, value);
+  return 0;
+}
+
+int cmd_set_integ_enable(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  char* endptr;
+  uint32_t value = parse_value(args[0], &endptr);
+  if (*endptr != '\0') {
+    fprintf(stderr, "Invalid value for set_integ_enable: '%s'. Must be a number.\n", args[0]);
+    return -1;
+  }
+  
+  sys_ctrl_set_integ_enable(ctx->sys_ctrl, value, *(ctx->verbose));
+  printf("Integrator enable register set to 0x%08X (%u).\n", value, value);
+  return 0;
+}
