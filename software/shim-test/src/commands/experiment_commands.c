@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <glob.h>
+#include <time.h>
 #include "experiment_commands.h"
 #include "command_helper.h"
 #include "adc_commands.h"
@@ -1234,10 +1235,12 @@ typedef struct {
   int start_channel;
   int end_channel;
   double amplitude;
+  double delay_ms;
   uint32_t delay_cycles;
   double spi_freq_mhz;
   const char* log_file;
   bool connected_boards[8];
+  bool verbose;
   volatile bool* should_stop;
 } fieldmap_params_t;
 
@@ -1252,6 +1255,7 @@ static void* fieldmap_thread(void* arg) {
   bool* connected_boards = params->connected_boards;
   volatile bool* should_stop = params->should_stop;
   double spi_freq_mhz = params->spi_freq_mhz;
+  bool verbose = params->verbose;
   
   // Open log file
   FILE* file = fopen(log_file, "w");
@@ -1260,8 +1264,18 @@ static void* fieldmap_thread(void* arg) {
     return NULL;
   }
   
-  // Write CSV header
-  fprintf(file, "time_sec,channel,polarity,current_amps\n");
+  // Write delay information and CSV header
+  fprintf(file, "# ADC Delay: %.3f ms (%" PRIu32 " clock cycles at %.3f MHz SPI frequency)\n",
+          params->delay_ms, params->delay_cycles, spi_freq_mhz);
+  fprintf(file, "time_sec,channel,polarity");
+  for (int board = 0; board < 8; board++) {
+    if (!connected_boards[board]) continue;
+    for (int ch_offset = 0; ch_offset < 8; ch_offset++) {
+      int ch = board * 8 + ch_offset;
+      fprintf(file, ",ch%02d", ch);
+    }
+  }
+  fprintf(file, "\n");
   fflush(file);
   
   int current_channel = start_ch;
@@ -1270,32 +1284,165 @@ static void* fieldmap_thread(void* arg) {
   int samples_collected = 0;
   
   printf("Fieldmap Thread: Starting data collection for %d samples\n", total_samples_expected);
+  if (verbose) {
+    printf("Fieldmap Thread [VERBOSE]: Channels %d-%d, verbose mode enabled\n", start_ch, end_ch);
+    printf("Fieldmap Thread [VERBOSE]: Connected boards: ");
+    for (int i = 0; i < 8; i++) {
+      if (connected_boards[i]) printf("%d ", i);
+    }
+    printf("\n");
+  }
+  
+  // Time-based verbose logging variables
+  time_t last_verbose_time = time(NULL);
+  time_t last_status_check_time = time(NULL);
   
   while (samples_collected < total_samples_expected && !(*should_stop)) {
     int current_board = current_channel / 8;
+    time_t current_time = time(NULL);
     
-    // Check if we have data available
-    uint32_t adc_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)current_board, false);
+    // Check if all connected boards have data available (4 words each) and trigger has 2 words
+    bool all_data_ready = true;
     uint32_t trig_status = sys_sts_get_trig_data_fifo_status(ctx->sys_sts, false);
     
-    // Need 1 ADC word and 2 trigger words (64-bit trigger data)
-    if (FIFO_STS_WORD_COUNT(adc_status) >= 1 && FIFO_STS_WORD_COUNT(trig_status) >= 2) {
-      // Read ADC data (single word)
-      uint32_t adc_word = adc_read_word(ctx->adc_ctrl, (uint8_t)current_board);
-      int16_t adc_raw = offset_to_signed(adc_word & 0xFFFF);
-      double current_amps = (double)adc_raw / 32767.0 * 4.0; // Convert to amps
+    // Periodic system status check and verbose logging (once every 5 seconds)
+    if ((current_time - last_status_check_time) >= 5) {
+      // Check system status for halt conditions (always run)
+      uint32_t hw_status = sys_sts_get_hw_status(ctx->sys_sts, false);
+      uint32_t state = HW_STS_STATE(hw_status);
+      uint32_t status_code = HW_STS_CODE(hw_status);
+      
+      if (state != S_RUNNING || status_code != STS_OK) {
+        printf("Fieldmap Thread [ERROR]: System not running properly!\n");
+        print_hw_status(hw_status, true);
+        
+        if (state == S_HALTED) {
+          printf("Fieldmap Thread [ERROR]: System is HALTED - stopping fieldmap!\n");
+          break; // Exit the measurement loop
+        }
+      }
+      
+      // Verbose logging (only when verbose enabled)
+      if (verbose) {
+        printf("Fieldmap Thread [VERBOSE]: Checking for sample %d/%d (ch%02d%c)\n", 
+               samples_collected + 1, total_samples_expected, current_channel,
+               positive_polarity ? '+' : '-');
+        
+        // Show status for all connected boards
+        for (int board = 0; board < 8; board++) {
+          if (!connected_boards[board]) continue;
+          uint32_t adc_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+          printf("Fieldmap Thread [VERBOSE]: Board %d ADC FIFO status=0x%08X (count=%u)\n",
+                 board, adc_status, FIFO_STS_WORD_COUNT(adc_status));
+        }
+        printf("Fieldmap Thread [VERBOSE]: Trigger FIFO status=0x%08X (count=%u)\n",
+               trig_status, FIFO_STS_WORD_COUNT(trig_status));
+      }
+      
+      last_status_check_time = current_time;
+    }
+    
+    // Check that all connected boards have 4 words available and trigger has 2 words
+    for (int board = 0; board < 8; board++) {
+      if (!connected_boards[board]) continue;
+      uint32_t adc_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+      if (FIFO_STS_WORD_COUNT(adc_status) < 4) {
+        all_data_ready = false;
+        break;
+      }
+    }
+    
+    if (all_data_ready && FIFO_STS_WORD_COUNT(trig_status) >= 2) {
+      if (verbose) {
+        printf("Fieldmap Thread [VERBOSE]: Data available! Reading sample %d/%d (ch%02d%c)\n",
+               samples_collected + 1, total_samples_expected, current_channel,
+               positive_polarity ? '+' : '-');
+      }
+      
+      // Read ADC data from all connected boards (4 words each)
+      int16_t channel_data[64]; // Store data for all 64 channels (8 boards x 8 channels)
+      bool channel_valid[64] = {false}; // Track which channels have valid data
+      
+      for (int board = 0; board < 8; board++) {
+        if (!connected_boards[board]) continue;
+        
+        // Read 4 words from this board (ADC pair data)
+        for (int word = 0; word < 4; word++) {
+          uint32_t adc_word = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
+          
+          // Each word contains 2 channels (lower 16 bits = even channel, upper 16 bits = odd channel)
+          int ch_base = board * 8 + word * 2;
+          int16_t ch_even = offset_to_signed(adc_word & 0xFFFF);
+          int16_t ch_odd = offset_to_signed((adc_word >> 16) & 0xFFFF);
+          
+          if (ch_base < 64) {
+            channel_data[ch_base] = ch_even;
+            channel_valid[ch_base] = true;
+          }
+          if (ch_base + 1 < 64) {
+            channel_data[ch_base + 1] = ch_odd;
+            channel_valid[ch_base + 1] = true;
+          }
+        }
+      }
       
       // Read trigger data (64-bit)
       uint64_t trigger_data = trigger_read(ctx->trigger_ctrl);
       double time_seconds = (double)trigger_data / (spi_freq_mhz * 1e6);
       
-      // Write to log file
-      fprintf(file, "%.4f,ch%02d,%c,%.3f\n", 
-              time_seconds, 
-              current_channel,
-              positive_polarity ? '+' : '-',
-              current_amps);
+      if (verbose) {
+        printf("Fieldmap Thread [VERBOSE]: Read data from all boards, trigger_data=0x%016llX (%.6f sec)\n",
+               (unsigned long long)trigger_data, time_seconds);
+      }
+      
+      // Write to CSV file - connected channels only
+      fprintf(file, "%.4f,ch%02d,%c", time_seconds, current_channel, positive_polarity ? '+' : '-');
+      for (int board = 0; board < 8; board++) {
+        if (!connected_boards[board]) continue;
+        for (int ch_offset = 0; ch_offset < 8; ch_offset++) {
+          int ch = board * 8 + ch_offset;
+          if (channel_valid[ch]) {
+            double current_amps = (double)channel_data[ch] / 32767.0 * 4.0;
+            fprintf(file, ",%.3f", current_amps);
+          } else {
+            fprintf(file, ",0.000");  // Default value for channels on connected boards
+          }
+        }
+      }
+      fprintf(file, "\n");
       fflush(file);
+      
+      // Find target channel data and max current from other channels
+      double target_current = 0.0;
+      if (channel_valid[current_channel]) {
+        target_current = (double)channel_data[current_channel] / 32767.0 * 4.0;
+      }
+      
+      double max_other_current = 0.0;
+      int max_other_channel = -1;
+      for (int ch = 0; ch < 64; ch++) {
+        if (ch == current_channel || !channel_valid[ch]) continue;
+        double current_amps = (double)channel_data[ch] / 32767.0 * 4.0;
+        double abs_current = (current_amps < 0.0) ? -current_amps : current_amps;
+        double abs_max = (max_other_current < 0.0) ? -max_other_current : max_other_current;
+        if (abs_current > abs_max) {
+          max_other_current = current_amps;
+          max_other_channel = ch;
+        }
+      }
+      
+      // Print ADC values in real-time
+      if (max_other_channel != -1) {
+        printf("Fieldmap: ch%02d%c = %7.3f A | max_other: ch%02d = %7.3f A [%d/%d]\n", 
+               current_channel, positive_polarity ? '+' : '-', target_current,
+               max_other_channel, max_other_current,
+               samples_collected + 1, total_samples_expected);
+      } else {
+        printf("Fieldmap: ch%02d%c = %7.3f A | [%d/%d]\n", 
+               current_channel, positive_polarity ? '+' : '-', target_current,
+               samples_collected + 1, total_samples_expected);
+      }
+      fflush(stdout);
       
       samples_collected++;
       
@@ -1306,14 +1453,20 @@ static void* fieldmap_thread(void* arg) {
         positive_polarity = true;  // Switch back to positive
         current_channel++;         // Move to next channel
       }
-      
-      if (samples_collected % 10 == 0) {
-        printf("Fieldmap Thread: Collected %d/%d samples\n", samples_collected, total_samples_expected);
-      }
     } else {
       // No data available, sleep briefly
+      if (verbose && (current_time - last_verbose_time) >= 5) {
+        printf("Fieldmap Thread [VERBOSE]: No data available (Trigger count=%u), waiting...\n",
+               FIFO_STS_WORD_COUNT(trig_status));
+        last_verbose_time = current_time;
+      }
       usleep(1000); // 1ms
     }
+  }
+  
+  if (verbose) {
+    printf("Fieldmap Thread [VERBOSE]: Loop ended - samples_collected=%d, total_expected=%d, should_stop=%s\n",
+           samples_collected, total_samples_expected, *should_stop ? "true" : "false");
   }
   
   fclose(file);
@@ -1331,6 +1484,9 @@ static void* fieldmap_thread(void* arg) {
 // Fieldmap command implementation
 int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   printf("Starting fieldmap data collection...\n");
+  if (*(ctx->verbose)) {
+    printf("Fieldmap [VERBOSE]: Verbose mode enabled\n");
+  }
   
   // Check that system is running
   if (validate_system_running(ctx) != 0) {
@@ -1399,17 +1555,10 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
     return -1;
   }
   
-  uint32_t delay_cycles;
-  printf("Enter ADC read delay in clock cycles: ");
-  if (scanf("%u", &delay_cycles) != 1) {
-    fprintf(stderr, "Invalid delay cycles.\n");
-    return -1;
-  }
-  
-  char log_filename[1024];
-  printf("Enter log file name: ");
-  if (scanf("%1023s", log_filename) != 1) {
-    fprintf(stderr, "Failed to read log file name.\n");
+  double delay_ms;
+  printf("Enter ADC read delay in milliseconds (as float): ");
+  if (scanf("%lf", &delay_ms) != 1 || delay_ms < 0.0) {
+    fprintf(stderr, "Invalid delay. Must be >= 0.0 ms.\n");
     return -1;
   }
   
@@ -1417,6 +1566,16 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   printf("Enter SPI clock frequency in MHz: ");
   if (scanf("%lf", &spi_freq_mhz) != 1 || spi_freq_mhz <= 0.0) {
     fprintf(stderr, "Invalid SPI frequency.\n");
+    return -1;
+  }
+  
+  // Calculate delay cycles from milliseconds and SPI frequency
+  uint32_t delay_cycles = (uint32_t)(delay_ms * spi_freq_mhz * 1000.0);
+  
+  char log_filename[1024];
+  printf("Enter log file name: ");
+  if (scanf("%1023s", log_filename) != 1) {
+    fprintf(stderr, "Failed to read log file name.\n");
     return -1;
   }
   
@@ -1433,7 +1592,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   printf("\nFieldmap configuration:\n");
   printf("  Channels: %d to %d (%d channels)\n", start_channel, end_channel, end_channel - start_channel + 1);
   printf("  Amplitude: %.3f amps\n", amplitude);
-  printf("  Delay: %u clock cycles\n", delay_cycles);
+  printf("  Delay: %.3f ms (%u clock cycles)\n", delay_ms, delay_cycles);
   printf("  Log file: %s\n", final_log_path);
   printf("  SPI frequency: %.3f MHz\n", spi_freq_mhz);
   
@@ -1448,7 +1607,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
     return -1;
   }
   
-  // Step 5: Reset buffers and add stoppers
+  // Step 5: Reset buffers
   printf("Resetting buffers...\n");
   sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
   sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
@@ -1457,17 +1616,32 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, false);
   usleep(1000);
   
+  // Step 6: Add buffer stoppers
+  printf("Adding buffer stoppers...\n");
+  for (int board = 0; board < 8; board++) {
+    if (!connected_boards[board]) continue;
+    
+    dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, true, false, false, 1, *(ctx->verbose));
+    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, *(ctx->verbose));
+  }
+  
   // Calculate DAC values
   int16_t dac_positive = (int16_t)(32767.0 * (amplitude / 4.0));
   int16_t dac_negative = -dac_positive;
   
   printf("DAC values: +%d, %d (for %.3f amps)\n", dac_positive, dac_negative, amplitude);
   
-  // Step 6: Queue DAC commands
+  // Step 7: Queue DAC commands
   printf("Queueing DAC commands...\n");
+  int total_dac_commands = 0;
   for (int ch = start_channel; ch <= end_channel; ch++) {
     int target_board = ch / 8;
     int target_channel = ch % 8;
+    
+    if (*(ctx->verbose)) {
+      printf("Fieldmap [VERBOSE]: Queueing DAC commands for ch%02d (board %d, channel %d)\n", 
+             ch, target_board, target_channel);
+    }
     
     // Positive polarity commands for all boards
     for (int board = 0; board < 8; board++) {
@@ -1478,7 +1652,8 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
         ch_vals[target_channel] = dac_positive;
       }
       
-      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, true, false, false, 1, false);
+      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, true, false, true, 1, *(ctx->verbose));
+      total_dac_commands++;
     }
     
     // Negative polarity commands for all boards
@@ -1490,28 +1665,37 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
         ch_vals[target_channel] = dac_negative;
       }
       
-      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, true, false, false, 1, false);
+      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, true, false, true, 1, *(ctx->verbose));
+      total_dac_commands++;
     }
   }
   
-  // Step 7: Queue ADC commands
+  if (*(ctx->verbose)) {
+    printf("Fieldmap [VERBOSE]: Queued %d total DAC commands\n", total_dac_commands);
+  }
+  
+  // Step 8: Queue ADC commands
   printf("Queueing ADC commands...\n");
+  int total_adc_commands = 0;
   for (int ch = start_channel; ch <= end_channel; ch++) {
     int target_board = ch / 8;
     int target_channel = ch % 8;
+    
+    if (*(ctx->verbose)) {
+      printf("Fieldmap [VERBOSE]: Queueing ADC commands for ch%02d (board %d, channel %d)\n", 
+             ch, target_board, target_channel);
+    }
     
     // Positive polarity measurement
     for (int board = 0; board < 8; board++) {
       if (!connected_boards[board]) continue;
       
       // NOOP wait for trigger
-      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, false);
-      
-      if (board == target_board) {
-        // Delay then read for target board
-        adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, false, delay_cycles, false);
-        adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)target_channel, false);
-      }
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, true, 1, *(ctx->verbose));
+      // Delay then read for all connected boards
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, true, delay_cycles, *(ctx->verbose));
+      adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 0, *(ctx->verbose));
+      total_adc_commands += 3;
     }
     
     // Negative polarity measurement
@@ -1519,33 +1703,19 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
       if (!connected_boards[board]) continue;
       
       // NOOP wait for trigger
-      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, false);
-      
-      if (board == target_board) {
-        // Delay then read for target board
-        adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, false, delay_cycles, false);
-        adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)target_channel, false);
-      }
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, true, 1, *(ctx->verbose));
+      // Delay then read for all connected boards
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, true, delay_cycles, *(ctx->verbose));
+      adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 0, *(ctx->verbose));
+      total_adc_commands += 3;
     }
   }
   
-  // Step 8: Add buffer stoppers
-  printf("Adding buffer stoppers...\n");
-  for (int board = 0; board < 8; board++) {
-    if (!connected_boards[board]) continue;
-    
-    dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, true, false, false, 1, false);
-    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, false);
+  if (*(ctx->verbose)) {
+    printf("Fieldmap [VERBOSE]: Queued %d total ADC commands\n", total_adc_commands);
   }
   
-  // Step 9: Set up trigger system
-  int total_triggers = (end_channel - start_channel + 1) * 2; // 2 per channel
-  printf("Setting up trigger system for %d triggers...\n", total_triggers);
-  
-  trigger_cmd_set_lockout(ctx->trigger_ctrl, 5000); // Default lockout
-  trigger_cmd_expect_ext(ctx->trigger_ctrl, total_triggers, true); // Enable logging
-  
-  // Step 10: Start data collection thread
+  // Step 9: Start data collection thread
   printf("Starting data collection thread...\n");
   
   fieldmap_params_t thread_params = {
@@ -1553,9 +1723,11 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
     .start_channel = start_channel,
     .end_channel = end_channel,
     .amplitude = amplitude,
+    .delay_ms = delay_ms,
     .delay_cycles = delay_cycles,
     .spi_freq_mhz = spi_freq_mhz,
     .log_file = final_log_path,
+    .verbose = *(ctx->verbose),
     .should_stop = &ctx->fieldmap_stop
   };
   
@@ -1573,16 +1745,33 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
     return -1;
   }
   
-  // Step 11: Send sync trigger to start
+  // Step 10: Send sync trigger to start
   printf("Sending sync trigger to start fieldmap...\n");
-  trigger_cmd_sync_ch(ctx->trigger_ctrl, false); // No logging for sync
+  if (*(ctx->verbose)) {
+    printf("Fieldmap [VERBOSE]: Sending sync trigger\n");
+  }
+  trigger_cmd_sync_ch(ctx->trigger_ctrl, false); // Use verbose mode for logging
   
-  // Wait for thread completion
-  pthread_join(ctx->fieldmap_thread, NULL);
+  // Step 11: Set up trigger system after sync
+  int total_triggers = (end_channel - start_channel + 1) * 2; // 2 per channel
+  printf("Setting up trigger system for %d triggers...\n", total_triggers);
   
-  ctx->fieldmap_running = false;
+  // Calculate lockout cycles for 1 second based on SPI frequency
+  uint32_t lockout_cycles = (uint32_t)(spi_freq_mhz * 1000000); // 1 second in cycles
+  if (*(ctx->verbose)) {
+    printf("Fieldmap [VERBOSE]: Setting lockout to %u cycles (1.0 sec at %.3f MHz)\n", lockout_cycles, spi_freq_mhz);
+  }
+  trigger_cmd_set_lockout(ctx->trigger_ctrl, lockout_cycles);
   
-  printf("Fieldmap data collection completed!\n");
+  if (*(ctx->verbose)) {
+    printf("Fieldmap [VERBOSE]: Expecting %d external triggers\n", total_triggers);
+  }
+  trigger_cmd_expect_ext(ctx->trigger_ctrl, total_triggers, true); // Enable logging
+  
+  printf("\nFieldmap data collection started successfully!\n");
+  printf("Data collection is running in the background.\n");
+  printf("ADC values will be printed as they are read.\n");
+  printf("Use 'stop_fieldmap' command to stop data collection.\n");
   return 0;
 }
 
@@ -1828,8 +2017,8 @@ static void* rev_c_dac_stream_thread(void* arg) {
         bool is_final_command = (loop == loops - 1) && (line_num == line_count);
         bool cont_flag = !is_final_command;
         
-        // Send DAC write command with trigger wait (trig=true, cont=cont_flag, ldac=false, value=0)
-        dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, true, cont_flag, false, 0, verbose);
+        // Send DAC write command with trigger wait (trig=true, cont=cont_flag, ldac=true, value=0)
+        dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, true, cont_flag, true, 0, verbose);
         total_commands_sent++;
         
         if (verbose && line_num <= 3) { // Only show first few lines to avoid spam
