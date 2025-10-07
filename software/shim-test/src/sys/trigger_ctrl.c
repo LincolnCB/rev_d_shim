@@ -38,11 +38,8 @@ void trigger_cmd_sync_ch(struct trigger_ctrl_t *trigger_ctrl, bool log, bool ver
 }
 
 void trigger_cmd_set_lockout(struct trigger_ctrl_t *trigger_ctrl, uint32_t cycles, bool verbose) {
-  // Hardware minimum lockout requirement (from shim_trigger_core.v)
-  const uint32_t TRIGGER_LOCKOUT_MIN = 4;
-  
-  if (cycles < TRIGGER_LOCKOUT_MIN || cycles > 0x0FFFFFFF) {
-    fprintf(stderr, "Lockout cycles out of range: %u (valid range: %u - 268435455)\n", cycles, TRIGGER_LOCKOUT_MIN);
+  if (cycles > 0x0FFFFFFF) {
+    fprintf(stderr, "Lockout cycles out of range: %u (valid range: 0 - 268435455)\n", cycles);
     return;
   }
   
