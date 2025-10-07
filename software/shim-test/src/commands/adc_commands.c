@@ -111,7 +111,8 @@ int cmd_read_adc_single(const char** args, int arg_count, const command_flag_t* 
     int count = 0;
     while (!FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
       uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
-      if (*(ctx->verbose)) printf("Sample %d - ADC data from board %d: 0x%" PRIx32 "\n", ++count, board, data);
+      count++;
+      if (*(ctx->verbose)) printf("Sample %d - ADC data from board %d: 0x%" PRIx32 "\n", count, board, data);
       adc_print_single(data);
       printf("\n");
     }
@@ -324,8 +325,10 @@ static void* adc_data_stream_thread(void* arg) {
   bool binary_mode = stream_data->binary_mode;
   bool verbose = *(ctx->verbose);
   
-  printf("ADC Stream Thread[%d]: Starting to write %llu words to file '%s' (%s format)\n", 
-         board, word_count, file_path, binary_mode ? "binary" : "ASCII");
+  if (verbose) {
+    printf("ADC Stream Thread[%d]: Starting to write %llu words to file '%s' (%s format)\n", 
+           board, word_count, file_path, binary_mode ? "binary" : "ASCII");
+  }
   
   // Open file for writing (binary or text mode based on format)
   FILE* file = fopen(file_path, binary_mode ? "wb" : "w");
@@ -565,10 +568,9 @@ int cmd_stream_adc_data_to_file(const char** args, int arg_count, const command_
   
   if (*(ctx->verbose)) {
     printf("Successfully created streaming thread for board %d\n", board);
+    printf("Started ADC data streaming for board %d to file '%s' (%llu words, %s format)\n", 
+           board, final_path, word_count, binary_mode ? "binary" : "ASCII");
   }
-  
-  printf("Started ADC data streaming for board %d to file '%s' (%llu words, %s format)\n", 
-         board, final_path, word_count, binary_mode ? "binary" : "ASCII");
   return 0;
 }
 
@@ -732,7 +734,9 @@ static void* adc_cmd_stream_thread(void* arg) {
   uint8_t board = stream_data->board;
   bool verbose = *(ctx->verbose);
   
-  printf("Starting ADC command streaming thread for board %d\n", board);
+  if (verbose) {
+    printf("Starting ADC command streaming thread for board %d\n", board);
+  }
   
   // Stream commands for each loop iteration
   for (int loop = 0; loop < stream_data->loop_count && !*(stream_data->should_stop); loop++) {
@@ -888,9 +892,11 @@ int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const co
     return -1; // Error already printed by parse_adc_command_file
   }
   
-  printf("Parsed %d commands from ADC command file '%s'\n", command_count, full_path);
-  if (simple_mode) {
-    printf("Using simple mode (unrolling loops)\n");
+  if (*(ctx->verbose)) {
+    printf("Parsed %d commands from ADC command file '%s'\n", command_count, full_path);
+    if (simple_mode) {
+      printf("Using simple mode (unrolling loops)\n");
+    }
   }
   
   // Allocate thread data structure
@@ -923,9 +929,11 @@ int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const co
     return -1;
   }
   
-  printf("Started ADC command streaming for board %d from file '%s' (looping %d time%s)%s\n", 
-         board, full_path, loop_count, loop_count == 1 ? "" : "s",
-         simple_mode ? " in simple mode" : "");
+  if (*(ctx->verbose)) {
+    printf("Started ADC command streaming for board %d from file '%s' (looping %d time%s)%s\n", 
+           board, full_path, loop_count, loop_count == 1 ? "" : "s",
+           simple_mode ? " in simple mode" : "");
+  }
   return 0;
 }
 

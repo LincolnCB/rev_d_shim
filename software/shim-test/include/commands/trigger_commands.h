@@ -23,6 +23,8 @@ int cmd_read_trig_data(const char** args, int arg_count, const command_flag_t* f
 int cmd_trig_sync_ch(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_trig_force_trig(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_trig_cancel(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+int cmd_trig_reset_count(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+int cmd_trig_count(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
 // Trigger command operations with value parameters
 int cmd_trig_set_lockout(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);

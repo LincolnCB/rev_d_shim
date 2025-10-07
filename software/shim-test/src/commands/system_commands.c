@@ -11,6 +11,7 @@
 #include <glob.h>
 #include "system_commands.h"
 #include "command_helper.h"
+#include "experiment_commands.h"
 #include "sys_sts.h"
 #include "sys_ctrl.h"
 #include "spi_clk_ctrl.h"
@@ -55,6 +56,10 @@ int cmd_hard_reset(const char** args, int arg_count, const command_flag_t* flags
   
   // Step 1: Cancel all DAC and ADC file streams
   printf("  Step 1: Stopping all active streaming threads\n");
+  
+  // Stop trigger monitor thread
+  cmd_stop_trigger_monitor(NULL, 0, NULL, 0, ctx);
+  
   for (int board = 0; board < 8; board++) {
     // Stop DAC streams
     if (ctx->dac_cmd_stream_running[board]) {

@@ -67,6 +67,12 @@ typedef struct command_context {
   // Command logging
   FILE* log_file;                       // File handle for command logging
   bool logging_enabled;                 // Whether command logging is active
+  
+  // ADC bias calibration storage (64 channels, 8 boards * 8 channels each)
+  double adc_bias[64];                  // ADC bias values for each channel (0-63)
+  bool adc_bias_valid[64];              // Whether each ADC bias value is valid
+  double adc_bias_previous[64];         // Previous ADC bias values for comparison
+  bool adc_bias_previous_valid[64];     // Whether each previous ADC bias value is valid
 } command_context_t;
 
 // Basic parsing and validation utilities
@@ -86,6 +92,10 @@ int resolve_file_pattern(const char* pattern, char* resolved_path, size_t resolv
 // File path utilities
 void clean_and_expand_path(const char* input_path, char* full_path, size_t full_path_size);
 void set_file_permissions(const char* file_path, bool verbose);
+
+// File selection utilities
+int prompt_file_selection(const char* prompt_text, const char* default_file,
+                         char* resolved_path, size_t resolved_path_size);
 
 // Display/output helper functions
 void print_trigger_data(uint64_t data);

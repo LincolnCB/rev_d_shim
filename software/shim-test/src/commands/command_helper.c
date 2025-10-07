@@ -70,6 +70,10 @@ int resolve_file_pattern(const char* pattern, char* resolved_path, size_t resolv
         choice = 1;
       }
       
+      // Clear remaining characters from input buffer (including newline)
+      int c;
+      while ((c = getchar()) != '\n' && c != EOF);
+      
       // Use the selected match (convert to 0-based index)
       strncpy(resolved_path, glob_result.gl_pathv[choice - 1], resolved_path_size - 1);
       resolved_path[resolved_path_size - 1] = '\0';
@@ -194,4 +198,53 @@ void set_file_permissions(const char* file_path, bool verbose) {
   } else if (verbose) {
     printf("Set file permissions to 666 for '%s'\n", file_path);
   }
+}
+
+// Prompt user for file selection with optional default
+int prompt_file_selection(const char* prompt_text, const char* default_file,
+                         char* resolved_path, size_t resolved_path_size) {
+  char input_buffer[1024];
+  
+  // Display prompt with default if provided
+  printf("%s", prompt_text);
+  if (default_file != NULL && strlen(default_file) > 0) {
+    printf(" (default: %s)", default_file);
+  }
+  printf(": ");
+  fflush(stdout);
+  
+  // Read user input
+  if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+    fprintf(stderr, "Failed to read file input.\n");
+    return -1;
+  }
+  
+  // Remove newline from input
+  size_t len = strlen(input_buffer);
+  if (len > 0 && input_buffer[len - 1] == '\n') {
+    input_buffer[len - 1] = '\0';
+  }
+  
+  // Check for default selection (empty string or ".")
+  if ((strlen(input_buffer) == 0 || strcmp(input_buffer, ".") == 0) && 
+      default_file != NULL && strlen(default_file) > 0) {
+    // Use default file directly (assuming it's already resolved)
+    strncpy(resolved_path, default_file, resolved_path_size - 1);
+    resolved_path[resolved_path_size - 1] = '\0';
+    return 0;
+  }
+  
+  // Handle empty input when no default is available
+  if (strlen(input_buffer) == 0) {
+    fprintf(stderr, "No file specified and no default available.\n");
+    return -1;
+  }
+  
+  // Resolve the input pattern/path
+  if (resolve_file_pattern(input_buffer, resolved_path, resolved_path_size) != 0) {
+    fprintf(stderr, "Failed to resolve file pattern: '%s'\n", input_buffer);
+    return -1;
+  }
+  
+  return 0;
 }

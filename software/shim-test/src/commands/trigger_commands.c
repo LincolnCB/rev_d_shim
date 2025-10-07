@@ -83,6 +83,18 @@ int cmd_trig_cancel(const char** args, int arg_count, const command_flag_t* flag
   return 0;
 }
 
+int cmd_trig_reset_count(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  trigger_cmd_reset_count(ctx->trigger_ctrl);
+  printf("Trigger reset count command sent.\n");
+  return 0;
+}
+
+int cmd_trig_count(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  uint32_t count = sys_sts_get_trig_counter(ctx->sys_sts, *(ctx->verbose));
+  printf("Current trigger count: %u (0x%08X)\n", count, count);
+  return 0;
+}
+
 // Trigger command operations with value parameters
 int cmd_trig_set_lockout(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   char* endptr;
@@ -149,8 +161,10 @@ static void* trigger_data_stream_thread(void* arg) {
   bool binary_mode = stream_data->binary_mode;
   bool verbose = *(ctx->verbose);
   
-  printf("Trigger Stream Thread: Starting to write %llu samples to file '%s' (%s format)\n", 
-         sample_count, file_path, binary_mode ? "binary" : "ASCII");
+  if (verbose) {
+    printf("Trigger Stream Thread: Starting to write %llu samples to file '%s' (%s format)\n", 
+           sample_count, file_path, binary_mode ? "binary" : "ASCII");
+  }
   
   // Open file for writing (binary or text mode based on format)
   FILE* file = fopen(file_path, binary_mode ? "wb" : "w");
@@ -325,10 +339,9 @@ int cmd_stream_trig_data_to_file(const char** args, int arg_count, const command
   
   if (*(ctx->verbose)) {
     printf("Created trigger data streaming thread successfully\n");
+    printf("Started trigger data streaming to file '%s' (%llu samples, %s format)\n", 
+           final_path, sample_count, binary_mode ? "binary" : "ASCII");
   }
-  
-  printf("Started trigger data streaming to file '%s' (%llu samples, %s format)\n", 
-         final_path, sample_count, binary_mode ? "binary" : "ASCII");
   return 0;
 }
 

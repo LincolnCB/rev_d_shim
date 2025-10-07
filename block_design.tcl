@@ -469,14 +469,16 @@ addr 0x40100000 256 status_reg/S_AXI ps/M_AXI_GP0
 #  1119 : 576  -- 544b Data FIFO status (32 bits per buffer, ordered as DAC0, ADC0, ..., DAC7, ADC7, Trigger)
 #  1151 : 1120 --  32b SPI clock frequency in Hz
 #  1183 : 1152 --  32b Debug 1 (SPI clock locked, spi_off, DAC/ADC ~CS high time)
-#  2047 : 1184 -- RESERVED (0)
+#  1215 : 1184 --  32b Trigger counter (number of triggers received)
+#  2047 : 1216 -- RESERVED (0)
 cell xilinx.com:ip:xlconcat:2.1 sts_concat {
-  NUM_PORTS 6
+  NUM_PORTS 7
 } {
   In0 hw_manager/status_word
   In1 axi_spi_interface/cmd_fifo_sts
   In2 axi_spi_interface/data_fifo_sts
   In3 spi_clk_freq_hz_const/dout
+  In5 spi_clk_domain/trig_counter
   dout status_reg/sts_data
 }
 # Debug 1 tracks the following:
@@ -506,7 +508,7 @@ cell xilinx.com:ip:xlconstant:1.1 pad_sts_reserved {
   CONST_VAL 0
   CONST_WIDTH [expr {2048 - 1184}]
 } {
-  dout sts_concat/In5
+  dout sts_concat/In6
 }
 
 ## IRQ interrupt concat

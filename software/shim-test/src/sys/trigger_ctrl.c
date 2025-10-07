@@ -64,4 +64,8 @@ void trigger_cmd_force_trig(struct trigger_ctrl_t *trigger_ctrl, bool log) {
 void trigger_cmd_cancel(struct trigger_ctrl_t *trigger_ctrl) {
   *(trigger_ctrl->buffer) = (TRIG_CMD_CANCEL << TRIG_CMD_CODE_SHIFT);
 }
+
+void trigger_cmd_reset_count(struct trigger_ctrl_t *trigger_ctrl) {
+  *(trigger_ctrl->buffer) = (TRIG_CMD_RESET_COUNT << TRIG_CMD_CODE_SHIFT);
+}
   

@@ -93,7 +93,11 @@ int main(int argc, char *argv[])
     .fieldmap_running = false,          // Initialize fieldmap as not running
     .fieldmap_stop = false,             // Initialize fieldmap stop flag as false
     .log_file = NULL,              // Initialize log file as NULL
-    .logging_enabled = false       // Initialize logging as disabled
+    .logging_enabled = false,      // Initialize logging as disabled
+    .adc_bias = {0.0},             // Initialize all ADC bias values to 0.0
+    .adc_bias_valid = {false},     // Initialize all ADC bias validity flags to false
+    .adc_bias_previous = {0.0},    // Initialize all previous ADC bias values to 0.0
+    .adc_bias_previous_valid = {false}  // Initialize all previous ADC bias validity flags to false
   };
 
   char command[256];

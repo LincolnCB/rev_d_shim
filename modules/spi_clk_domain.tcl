@@ -39,6 +39,7 @@ create_bd_pin -dir O -from 7 -to 0 over_thresh
 create_bd_pin -dir O -from 7 -to 0 thresh_underflow
 create_bd_pin -dir O -from 7 -to 0 thresh_overflow
 # Trigger channel status
+create_bd_pin -dir O -from 31 -to 0 trig_counter
 create_bd_pin -dir O bad_trig_cmd
 create_bd_pin -dir O trig_data_buf_overflow
 # DAC channel status
@@ -121,10 +122,10 @@ cell xilinx.com:ip:xlconstant:1.1 const_1 {
 
 ### Clock domain crossings
 
-## SPI clock domain crossing reset (first reset)
+## SPI clock domain crossing reset (synchronized aresetn to spi_clk)
 # Create proc_sys_reset for the synchronization reset
-cell xilinx.com:ip:proc_sys_reset:5.0 sync_rst_core {} {
-  ext_reset_in spi_en
+cell xilinx.com:ip:proc_sys_reset:5.0 sync_reset {} {
+  ext_reset_in aresetn
   slowest_sync_clk spi_clk
 }
 ## SPI system configuration synchronization
@@ -132,7 +133,7 @@ cell lcb:user:shim_spi_cfg_sync spi_cfg_sync {} {
   aclk aclk
   aresetn aresetn
   spi_clk spi_clk
-  spi_resetn sync_rst_core/peripheral_aresetn
+  spi_resetn sync_reset/peripheral_aresetn
   spi_en spi_en
   block_bufs block_bufs
   integ_thresh_avg integ_thresh_avg
@@ -144,22 +145,17 @@ cell lcb:user:shim_spi_cfg_sync spi_cfg_sync {} {
   debug debug
   dac_cal_init dac_cal_init
 }
-## SPI system reset
-# Create proc_sys_reset for SPI-system-wide reset
-cell xilinx.com:ip:proc_sys_reset:5.0 spi_rst_core {} {
-  ext_reset_in spi_cfg_sync/spi_en_sync
-  slowest_sync_clk spi_clk
-}
-
-
 ## SPI system status synchronization
 cell lcb:user:shim_spi_sts_sync spi_sts_sync {} {
   aclk aclk
   aresetn aresetn
+  spi_clk spi_clk
+  spi_resetn sync_reset/peripheral_aresetn
   spi_off_sync spi_off
   over_thresh_sync over_thresh
   thresh_underflow_sync thresh_underflow
   thresh_overflow_sync thresh_overflow
+  trig_counter_sync trig_counter
   bad_trig_cmd_sync bad_trig_cmd
   trig_data_buf_overflow_sync trig_data_buf_overflow
   dac_boot_fail_sync dac_boot_fail
@@ -177,6 +173,14 @@ cell lcb:user:shim_spi_sts_sync spi_sts_sync {} {
   adc_data_buf_overflow_sync adc_data_buf_overflow
   unexp_adc_trig_sync unexp_adc_trig
 }
+## SPI system reset
+# Create proc_sys_reset for SPI-system-wide reset
+cell xilinx.com:ip:proc_sys_reset:5.0 spi_rst_core {} {
+  ext_reset_in spi_cfg_sync/spi_en_sync
+  slowest_sync_clk spi_clk
+}
+
+
 
 ##################################################
 
@@ -210,6 +214,7 @@ cell lcb:user:shim_trigger_core trig_core {
   data_buf_full trig_data_full_blocked/Res
   data_buf_almost_full trig_data_almost_full
   ext_trig ext_trig
+  trig_counter spi_sts_sync/trig_counter
   bad_cmd spi_sts_sync/bad_trig_cmd
   data_buf_overflow spi_sts_sync/trig_data_buf_overflow
 } 

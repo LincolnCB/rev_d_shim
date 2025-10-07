@@ -133,10 +133,10 @@ int cmd_dac_cancel(const char** args, int arg_count, const command_flag_t* flags
   return 0;
 }
 
-int cmd_write_dac_update(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+int cmd_do_dac_wr(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for write_dac_update: '%s'. Must be 0-7.\n", args[0]);
+    fprintf(stderr, "Invalid board number for do_dac_wr: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
   
@@ -152,7 +152,7 @@ int cmd_write_dac_update(const char** args, int arg_count, const command_flag_t*
     char* endptr;
     long val = strtol(args[i + 1], &endptr, 0);
     if (*endptr != '\0') {
-      fprintf(stderr, "Invalid channel %d value for write_dac_update: '%s'\n", i, args[i + 1]);
+      fprintf(stderr, "Invalid channel %d value for do_dac_wr: '%s'\n", i, args[i + 1]);
       return -1;
     }
     if (val < -32767 || val > 32767) {
@@ -301,12 +301,12 @@ int cmd_get_dac_cal(const char** args, int arg_count, const command_flag_t* flag
   // Reset buffers once at the start (unless --no_reset flag is used)
   if (!skip_reset) {
     printf("Resetting all buffers...\n");
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
-    usleep(1000); // 1ms
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, false);
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, false);
-    usleep(1000); // 1ms
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
+    usleep(10000); // 10ms
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
+    usleep(10000); // 10ms
   }
   
   // Send cancel commands once per connected board
@@ -314,16 +314,16 @@ int cmd_get_dac_cal(const char** args, int arg_count, const command_flag_t* flag
     printf("Sending cancel commands to connected boards...\n");
     for (int board = 0; board < 8; board++) {
       if (connected_boards[board]) {
-        dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, false);
+        dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, *(ctx->verbose));
       }
     }
   } else {
     // For single channel, send cancel to its board
     int board = start_ch / 8;
     printf("Sending cancel commands to board %d...\n", board);
-    dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, false);
+    dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, *(ctx->verbose));
   }
-  usleep(1000); // 1ms to let cancel commands complete
+  usleep(10000); // 10ms to let cancel commands complete
   
   // Iterate through all channels to get calibration values
   for (int ch = start_ch; ch <= end_ch; ch++) {
@@ -401,6 +401,46 @@ int cmd_do_dac_get_cal(const char** args, int arg_count, const command_flag_t* f
   dac_cmd_get_cal(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, *(ctx->verbose));
   
   printf("GET_CAL command sent for channel %d (board %d, channel %d).\n", atoi(args[0]), board, channel);
+  return 0;
+}
+
+// Set DAC calibration command - sets the calibration value for a channel
+int cmd_set_dac_cal(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  int board, channel;
+  if (validate_channel_number(args[0], &board, &channel) < 0) {
+    return -1;
+  }
+  
+  if (validate_system_running(ctx) < 0) {
+    return -1;
+  }
+  
+  // Check if DAC command stream is running for this board
+  if (ctx->dac_cmd_stream_running[board]) {
+    fprintf(stderr, "Cannot set DAC calibration for channel %d (board %d): DAC command stream is currently running. Stop the stream first.\n", atoi(args[0]), board);
+    return -1;
+  }
+  
+  // Parse calibration value
+  char* endptr;
+  long cal_value = strtol(args[1], &endptr, 0);
+  if (*endptr != '\0') {
+    fprintf(stderr, "Invalid calibration value for set_dac_cal: '%s'. Must be a number.\n", args[1]);
+    return -1;
+  }
+  if (cal_value < -32768 || cal_value > 32767) {
+    fprintf(stderr, "Calibration value out of range: %ld (valid range: -32768 to 32767)\n", cal_value);
+    return -1;
+  }
+  
+  printf("Setting DAC calibration for channel %d (board %d, channel %d) to %ld...\n", 
+         atoi(args[0]), board, channel, cal_value);
+  
+  // Send the set_cal command
+  dac_cmd_set_cal(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, (int16_t)cal_value, *(ctx->verbose));
+  
+  printf("DAC calibration set for channel %d (board %d, channel %d) to %ld.\n", 
+         atoi(args[0]), board, channel, cal_value);
   return 0;
 }
 
@@ -544,8 +584,10 @@ void* dac_cmd_stream_thread(void* arg) {
   int command_count = stream_data->command_count;
   int loop_count = stream_data->loop_count;
   
-  printf("DAC Stream Thread[%d]: Started streaming from file '%s' (%d commands, %d loop%s)\n", 
-         board, file_path, command_count, loop_count, loop_count == 1 ? "" : "s");
+  if (*(ctx->verbose)) {
+    printf("DAC Stream Thread[%d]: Started streaming from file '%s' (%d commands, %d loop%s)\n", 
+           board, file_path, command_count, loop_count, loop_count == 1 ? "" : "s");
+  }
   
   int total_commands_sent = 0;
   int current_loop = 0;
@@ -672,7 +714,9 @@ int cmd_stream_dac_commands_from_file(const char** args, int arg_count, const co
     return -1; // Error already printed by parse_waveform_file
   }
   
-  printf("Parsed %d commands from waveform file '%s'\n", command_count, full_path);
+  if (*(ctx->verbose)) {
+    printf("Parsed %d commands from waveform file '%s'\n", command_count, full_path);
+  }
   
   // Allocate thread data structure
   dac_command_stream_params_t* stream_data = malloc(sizeof(dac_command_stream_params_t));
@@ -703,8 +747,10 @@ int cmd_stream_dac_commands_from_file(const char** args, int arg_count, const co
     return -1;
   }
   
-  printf("Started DAC command streaming for board %d from file '%s' (looping %d time%s)\n", 
-         board, full_path, loop_count, loop_count == 1 ? "" : "s");
+  if (*(ctx->verbose)) {
+    printf("Started DAC command streaming for board %d from file '%s' (looping %d time%s)\n", 
+           board, full_path, loop_count, loop_count == 1 ? "" : "s");
+  }
   return 0;
 }
 

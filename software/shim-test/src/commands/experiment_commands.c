@@ -18,6 +18,7 @@
 #include "sys_sts.h"
 #include "sys_ctrl.h"
 #include "dac_ctrl.h"
+#include "map_memory.h"
 #include "adc_ctrl.h"
 #include "map_memory.h"
 #include "trigger_ctrl.h"
@@ -26,6 +27,23 @@
 static int validate_system_running(command_context_t* ctx);
 static int count_trigger_lines_in_file(const char* file_path);
 static uint64_t calculate_expected_samples(const char* file_path, int loop_count);
+
+// Structure for trigger monitoring thread
+typedef struct {
+  struct sys_sts_t* sys_sts;
+  uint32_t initial_trigger_count;
+  uint32_t expected_total_triggers;
+  volatile bool* should_stop;
+  bool verbose;
+} trigger_monitor_params_t;
+
+// Thread function for trigger monitoring
+static void* trigger_monitor_thread(void* arg);
+
+// Global trigger monitor control
+static volatile bool g_trigger_monitor_should_stop = false;
+static pthread_t g_trigger_monitor_tid;
+static bool g_trigger_monitor_active = false;
 
 // Local helper function to check if system is running
 static int validate_system_running(command_context_t* ctx) {
@@ -368,7 +386,16 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
   __sync_synchronize(); // Memory barrier
 
   uint32_t adc_word = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
-  int16_t adc_reading = offset_to_signed(adc_word & 0xFFFF);
+  int16_t adc_reading_raw = offset_to_signed(adc_word & 0xFFFF);
+  
+  // Apply ADC bias correction if available
+  int ch = atoi(args[0]); // Get the global channel number (0-63)
+  double adc_reading_corrected = (double)adc_reading_raw;
+  if (ctx->adc_bias_valid[ch]) {
+    adc_reading_corrected -= ctx->adc_bias[ch];
+  }
+  // Simple rounding without math library: add 0.5 and truncate
+  int16_t adc_reading = (int16_t)(adc_reading_corrected + (adc_reading_corrected >= 0 ? 0.5 : -0.5));
   
   // Step 8: Calculate and print error
   if (*(ctx->verbose)) {
@@ -512,7 +539,7 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
   // Calibration constants
   const int dac_values[] = {-3276, -1638, 0, 1638, 3276};
   const int num_dac_values = 5;
-  const int average_count = 5;
+  const int average_count = 10;
   const int calibration_iterations = 3;
   const int delay_ms = 1; // 1ms delay
   
@@ -595,7 +622,14 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
           
           uint32_t adc_word = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
           int16_t adc_reading = offset_to_signed(adc_word & 0xFFFF);
-          sum_adc += (double)adc_reading;
+          double adc_value = (double)adc_reading;
+          
+          // Subtract ADC bias if available
+          if (ctx->adc_bias_valid[ch]) {
+            adc_value -= ctx->adc_bias[ch];
+          }
+          
+          sum_adc += adc_value;
         }
         
         if (calibration_failed) break;
@@ -742,6 +776,54 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
   return 0;
 }
 
+// Thread function for trigger monitoring
+static void* trigger_monitor_thread(void* arg) {
+  trigger_monitor_params_t* params = (trigger_monitor_params_t*)arg;
+  time_t last_display = time(NULL);
+  uint32_t last_trigger_count = params->initial_trigger_count;
+  bool completed_message_shown = false;
+  
+  if (params->verbose) {
+    printf("Trigger monitor thread started. Initial count: %u, Expected: %u\n",
+           params->initial_trigger_count, params->expected_total_triggers);
+  }
+  
+  while (!*(params->should_stop)) {
+    usleep(500000); // 500ms polling interval
+    
+    uint32_t current_trigger_count = sys_sts_get_trig_counter(params->sys_sts, false);
+    uint32_t triggers_received = current_trigger_count - params->initial_trigger_count;
+    
+    // Check if 3 seconds have passed since last display
+    time_t current_time = time(NULL);
+    if (current_time - last_display >= 3) {
+      printf("Trigger count: %u (%u/%u)\n", 
+             current_trigger_count, triggers_received, params->expected_total_triggers);
+      fflush(stdout);
+      last_display = current_time;
+    }
+    
+    // Check if we've reached the expected trigger count
+    if (triggers_received >= params->expected_total_triggers) {
+      if (!completed_message_shown) {
+        printf("\nExpected trigger count reached: %u (%u/%u)\n", 
+               current_trigger_count, triggers_received, params->expected_total_triggers);
+        fflush(stdout);
+        completed_message_shown = true;
+      }
+      // Keep monitoring but don't exit - let the main program control when to stop
+    }
+    
+    last_trigger_count = current_trigger_count;
+  }
+  
+  if (params->verbose) {
+    printf("Trigger monitor thread stopping\n");
+  }
+  
+  pthread_exit(NULL);
+}
+
 // Waveform test command implementation
 int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   printf("Starting interactive waveform test...\n");
@@ -757,6 +839,11 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   // Check if --no_reset and --no_cal flags are present
   bool skip_reset = has_flag(flags, flag_count, FLAG_NO_RESET);
   bool skip_cal = has_flag(flags, flag_count, FLAG_NO_CAL);
+  
+  if (*(ctx->verbose)) {
+    printf("Waveform test flags: skip_reset=%s, skip_cal=%s (flag_count=%d)\n", 
+           skip_reset ? "true" : "false", skip_cal ? "true" : "false", flag_count);
+  }
   
   // Step 1: Reset all buffers (unless --no_reset flag is used)
   if (skip_reset) {
@@ -802,8 +889,6 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   printf("Found %d connected board(s)\n", connected_count);
   
   // Step 3: Prompt for DAC and ADC command files for each connected board
-  char dac_files[8][1024] = {0};  // DAC command files for each board
-  char adc_files[8][1024] = {0};  // ADC command files for each board
   char resolved_dac_files[8][1024] = {0};  // Resolved DAC file paths
   char resolved_adc_files[8][1024] = {0};  // Resolved ADC file paths
   
@@ -815,53 +900,31 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     
     printf("\nBoard %d configuration:\n", board);
     
-    // Prompt for DAC command file
-    printf("Enter DAC command file for board %d", board);
-    if (strlen(previous_dac_file) > 0) {
-      printf(" (default: %s)", previous_dac_file);
-    }
-    printf(": ");
+    // Prompt for DAC command file using helper function
+    char dac_prompt[128];
+    snprintf(dac_prompt, sizeof(dac_prompt), "Enter DAC command file for board %d", board);
     
-    if (scanf("%1023s", dac_files[board]) != 1) {
-      fprintf(stderr, "Failed to read DAC file path for board %d.\n", board);
+    if (prompt_file_selection(dac_prompt, 
+                             strlen(previous_dac_file) > 0 ? previous_dac_file : NULL,
+                             resolved_dac_files[board], 
+                             sizeof(resolved_dac_files[board])) != 0) {
+      fprintf(stderr, "Failed to get DAC file for board %d\n", board);
       return -1;
     }
+    strcpy(previous_dac_file, resolved_dac_files[board]);
     
-    // If user just pressed enter and there's a previous file, use it
-    if (strcmp(dac_files[board], ".") == 0 && strlen(previous_dac_file) > 0) {
-      strcpy(dac_files[board], previous_dac_file);
-    }
+    // Prompt for ADC command file using helper function
+    char adc_prompt[128];
+    snprintf(adc_prompt, sizeof(adc_prompt), "Enter ADC command file for board %d", board);
     
-    // Resolve DAC file glob pattern
-    if (resolve_file_pattern(dac_files[board], resolved_dac_files[board], sizeof(resolved_dac_files[board])) != 0) {
-      fprintf(stderr, "Failed to resolve DAC file pattern for board %d: '%s'\n", board, dac_files[board]);
+    if (prompt_file_selection(adc_prompt, 
+                             strlen(previous_adc_file) > 0 ? previous_adc_file : NULL,
+                             resolved_adc_files[board], 
+                             sizeof(resolved_adc_files[board])) != 0) {
+      fprintf(stderr, "Failed to get ADC file for board %d\n", board);
       return -1;
     }
-    strcpy(previous_dac_file, dac_files[board]);
-    
-    // Prompt for ADC command file
-    printf("Enter ADC command file for board %d", board);
-    if (strlen(previous_adc_file) > 0) {
-      printf(" (default: %s)", previous_adc_file);
-    }
-    printf(": ");
-    
-    if (scanf("%1023s", adc_files[board]) != 1) {
-      fprintf(stderr, "Failed to read ADC file path for board %d.\n", board);
-      return -1;
-    }
-    
-    // If user just pressed enter and there's a previous file, use it
-    if (strcmp(adc_files[board], ".") == 0 && strlen(previous_adc_file) > 0) {
-      strcpy(adc_files[board], previous_adc_file);
-    }
-    
-    // Resolve ADC file glob pattern
-    if (resolve_file_pattern(adc_files[board], resolved_adc_files[board], sizeof(resolved_adc_files[board])) != 0) {
-      fprintf(stderr, "Failed to resolve ADC file pattern for board %d: '%s'\n", board, adc_files[board]);
-      return -1;
-    }
-    strcpy(previous_adc_file, adc_files[board]);
+    strcpy(previous_adc_file, resolved_adc_files[board]);
   }
   
   // Step 4: Prompt for DAC and ADC loop counts for each connected board
@@ -875,40 +938,92 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   for (int board = 0; board < 8; board++) {
     if (!connected_boards[board]) continue;
     
-    // Prompt for DAC loops
+    // Prompt for DAC loops with default handling
+    char input_buffer[64];
     printf("Enter DAC loop count for board %d", board);
     if (previous_dac_loops > 0) {
       printf(" (default: %d)", previous_dac_loops);
     }
     printf(": ");
+    fflush(stdout);
     
-    if (scanf("%d", &dac_loops[board]) != 1 || dac_loops[board] < 1) {
-      fprintf(stderr, "Invalid DAC loop count for board %d. Must be >= 1.\n", board);
+    if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+      fprintf(stderr, "Failed to read DAC loop count input.\n");
       return -1;
+    }
+    
+    // Remove newline
+    size_t len = strlen(input_buffer);
+    if (len > 0 && input_buffer[len - 1] == '\n') {
+      input_buffer[len - 1] = '\0';
+    }
+    
+    // Check for default (empty input or ".")
+    if ((strlen(input_buffer) == 0 || strcmp(input_buffer, ".") == 0) && previous_dac_loops > 0) {
+      dac_loops[board] = previous_dac_loops;
+    } else {
+      dac_loops[board] = atoi(input_buffer);
+      if (dac_loops[board] < 1) {
+        fprintf(stderr, "Invalid DAC loop count for board %d. Must be >= 1.\n", board);
+        return -1;
+      }
     }
     previous_dac_loops = dac_loops[board];
     
-    // Prompt for ADC loops
+    // Prompt for ADC loops with default handling
     printf("Enter ADC loop count for board %d", board);
-    if (previous_adc_loops > 0) {
-      printf(" (default: %d)", previous_adc_loops);
-    } else if (previous_dac_loops > 0) {
-      printf(" (default: %d)", previous_dac_loops);
+    int default_adc_loops = (previous_adc_loops > 0) ? previous_adc_loops : previous_dac_loops;
+    if (default_adc_loops > 0) {
+      printf(" (default: %d)", default_adc_loops);
     }
     printf(": ");
+    fflush(stdout);
     
-    if (scanf("%d", &adc_loops[board]) != 1 || adc_loops[board] < 1) {
-      fprintf(stderr, "Invalid ADC loop count for board %d. Must be >= 1.\n", board);
+    if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+      fprintf(stderr, "Failed to read ADC loop count input.\n");
       return -1;
+    }
+    
+    // Remove newline
+    len = strlen(input_buffer);
+    if (len > 0 && input_buffer[len - 1] == '\n') {
+      input_buffer[len - 1] = '\0';
+    }
+    
+    // Check for default (empty input or ".")
+    if ((strlen(input_buffer) == 0 || strcmp(input_buffer, ".") == 0) && default_adc_loops > 0) {
+      adc_loops[board] = default_adc_loops;
+    } else {
+      adc_loops[board] = atoi(input_buffer);
+      if (adc_loops[board] < 1) {
+        fprintf(stderr, "Invalid ADC loop count for board %d. Must be >= 1.\n", board);
+        return -1;
+      }
     }
     previous_adc_loops = adc_loops[board];
   }
   
   // Step 5: Prompt for base output file name
   char base_output_file[1024];
+  char input_buffer[1024];
   printf("Enter base output file path: ");
-  if (scanf("%1023s", base_output_file) != 1) {
+  fflush(stdout);
+  
+  if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
     fprintf(stderr, "Failed to read output file path.\n");
+    return -1;
+  }
+  
+  // Remove newline and copy to base_output_file
+  size_t len = strlen(input_buffer);
+  if (len > 0 && input_buffer[len - 1] == '\n') {
+    input_buffer[len - 1] = '\0';
+  }
+  strncpy(base_output_file, input_buffer, sizeof(base_output_file) - 1);
+  base_output_file[sizeof(base_output_file) - 1] = '\0';
+  
+  if (strlen(base_output_file) == 0) {
+    fprintf(stderr, "Output file path cannot be empty.\n");
     return -1;
   }
   
@@ -917,13 +1032,53 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   printf("  Trigger data: <base>_trig.<ext>\n");
   printf("  Extensions: .csv (ASCII) or .dat (binary)\n");
   
-  // Step 6: Prompt for trigger lockout time
-  uint32_t lockout_time;
-  printf("Enter trigger lockout time (cycles): ");
-  if (scanf("%u", &lockout_time) != 1) {
-    fprintf(stderr, "Invalid trigger lockout time.\n");
+  // Step 6: Prompt for SPI frequency and trigger lockout time
+  double spi_freq_mhz;
+  printf("Enter SPI clock frequency in MHz: ");
+  fflush(stdout);
+  
+  if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+    fprintf(stderr, "Failed to read SPI frequency.\n");
     return -1;
   }
+  
+  // Remove newline
+  len = strlen(input_buffer);
+  if (len > 0 && input_buffer[len - 1] == '\n') {
+    input_buffer[len - 1] = '\0';
+  }
+  
+  spi_freq_mhz = atof(input_buffer);
+  if (spi_freq_mhz <= 0.0) {
+    fprintf(stderr, "Invalid SPI frequency. Must be > 0 MHz.\n");
+    return -1;
+  }
+  
+  double lockout_ms;
+  printf("Enter trigger lockout time (milliseconds): ");
+  fflush(stdout);
+  
+  if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+    fprintf(stderr, "Failed to read trigger lockout time.\n");
+    return -1;
+  }
+  
+  // Remove newline
+  len = strlen(input_buffer);
+  if (len > 0 && input_buffer[len - 1] == '\n') {
+    input_buffer[len - 1] = '\0';
+  }
+  
+  lockout_ms = atof(input_buffer);
+  if (lockout_ms <= 0) {
+    fprintf(stderr, "Invalid trigger lockout time. Must be > 0 milliseconds.\n");
+    return -1;
+  }
+  
+  // Calculate lockout cycles from milliseconds and SPI frequency
+  uint32_t lockout_time = (uint32_t)(lockout_ms * spi_freq_mhz * 1000.0);
+  printf("Calculated lockout: %u cycles (%.3f ms at %.3f MHz)\n", 
+         lockout_time, lockout_ms, spi_freq_mhz);
   
   // Step 7: Calculate expected samples and triggers for each connected board
   uint64_t sample_counts[8] = {0};  // Expected samples per board
@@ -999,41 +1154,73 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   // Step 8: Run calibration for all boards unless --no_cal flag is set
   if (!skip_cal) {
     printf("\nRunning channel calibration for all connected boards...\n");
-    for (int board = 0; board < 8; board++) {
-      if (!connected_boards[board]) continue;
+    
+    // Use --all flag to calibrate all channels on all connected boards
+    command_flag_t all_flag = FLAG_ALL;
+    int cal_result = cmd_channel_cal(NULL, 0, &all_flag, 1, ctx);
+    
+    if (cal_result != 0) {
+      printf("\nSome channels may have calibration issues (see output above).\n");
+      printf("Do you want to continue with the waveform test anyway? (y/n): ");
+      fflush(stdout);
       
-      printf("Calibrating board %d channels...\n", board);
-      
-      // Run channel_cal command for this board
-      char cal_args_str[32];
-      snprintf(cal_args_str, sizeof(cal_args_str), "%d", board);
-      const char* cal_args[] = {cal_args_str};
-      
-      // Call the channel_cal command function directly
-      int cal_result = cmd_channel_cal(cal_args, 1, NULL, 0, ctx);
-      
-      if (cal_result != 0) {
-        fprintf(stderr, "Calibration failed for board %d\n", board);
+      char response[16];
+      if (fgets(response, sizeof(response), stdin) == NULL) {
+        fprintf(stderr, "Failed to read user response\n");
         return -1;
       }
-      printf("Board %d calibration completed successfully\n", board);
+      
+      if (response[0] != 'y' && response[0] != 'Y') {
+        printf("Waveform test cancelled by user.\n");
+        return 0;
+      }
+      printf("Continuing with waveform test...\n");
+    } else {
+      printf("All board calibrations completed successfully\n");
     }
-    printf("All board calibrations completed\n");
   } else {
     printf("\nSkipping calibration (--no_cal flag set)\n");
   }
   
-  // Step 9: Set trigger lockout and expect external triggers
-  printf("\nSetting trigger lockout time to %u cycles\n", lockout_time);
+  // Step 9: Set trigger lockout (expect_ext will be called later)
+  if (*(ctx->verbose)) {
+    printf("\nSetting trigger lockout time to %u cycles\n", lockout_time);
+  }
   trigger_cmd_set_lockout(ctx->trigger_ctrl, lockout_time);
   
+  // Capture initial trigger count before starting streams
+  uint32_t initial_trigger_count = sys_sts_get_trig_counter(ctx->sys_sts, *(ctx->verbose));
+  uint32_t expected_total_triggers = 1; // Start with 1 for the sync_ch trigger
+  
   if (total_expected_triggers > 0) {
-    printf("Setting expected external triggers to %u with logging enabled\n", total_expected_triggers);
-    trigger_cmd_expect_ext(ctx->trigger_ctrl, total_expected_triggers, true);
+    expected_total_triggers += total_expected_triggers; // Add the external triggers
   }
   
-  // Step 10: Start streaming for each connected board
-  printf("\nStarting command streaming for connected boards:\n");
+  if (*(ctx->verbose)) {
+    printf("Initial trigger count: %u, expecting %u total triggers\n", 
+           initial_trigger_count, expected_total_triggers);
+  }
+
+  // Step 10: Add buffer stoppers (NOOP commands waiting for 1 trigger) to all buffers BEFORE starting streams
+  printf("Adding buffer stoppers before starting streams...\n");
+  for (int board = 0; board < 8; board++) {
+    if (!connected_boards[board]) continue;
+    
+    if (*(ctx->verbose)) {
+      printf("  Board %d: Adding DAC and ADC buffer stoppers\n", board);
+    }
+    
+    // Add DAC NOOP stopper
+    dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, true, false, false, 0, false); // Wait for 1 trigger
+    
+    // Add ADC NOOP stopper  
+    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 0, false); // Wait for 1 trigger
+  }
+
+  // Step 10a: Start command streaming for each connected board
+  if (*(ctx->verbose)) {
+    printf("\nStarting command streaming for %d connected boards...\n", connected_count);
+  }
   for (int board = 0; board < 8; board++) {
     if (!connected_boards[board]) continue;
     
@@ -1043,8 +1230,10 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     snprintf(adc_loops_str, sizeof(adc_loops_str), "%d", adc_loops[board]);
     
     // Start DAC command streaming with board-specific DAC loop count
-    printf("  Board %d: Starting DAC command streaming from '%s' (%d loops)\n", 
-           board, resolved_dac_files[board], dac_loops[board]);
+    if (*(ctx->verbose)) {
+      printf("  Board %d: Starting DAC command streaming from '%s' (%d loops)\n", 
+             board, resolved_dac_files[board], dac_loops[board]);
+    }
     const char* dac_args[] = {board_str, resolved_dac_files[board], dac_loops_str};
     if (cmd_stream_dac_commands_from_file(dac_args, 3, NULL, 0, ctx) != 0) {
       fprintf(stderr, "Failed to start DAC command streaming for board %d\n", board);
@@ -1052,8 +1241,10 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     }
     
     // Start ADC command streaming with board-specific ADC loop count (with simple flag)
-    printf("  Board %d: Starting ADC command streaming from '%s' (%d loops, simple mode)\n", 
-           board, resolved_adc_files[board], adc_loops[board]);
+    if (*(ctx->verbose)) {
+      printf("  Board %d: Starting ADC command streaming from '%s' (%d loops, simple mode)\n", 
+             board, resolved_adc_files[board], adc_loops[board]);
+    }
     const char* adc_args[] = {board_str, resolved_adc_files[board], adc_loops_str};
     command_flag_t simple_flag = FLAG_SIMPLE;
     if (cmd_stream_adc_commands_from_file(adc_args, 3, &simple_flag, 1, ctx) != 0) {
@@ -1062,28 +1253,10 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     }
   }
   
-  // Step 10a: Add buffer stoppers (NOOP commands waiting for 1 trigger) to all buffers
-  printf("\nAdding buffer stoppers to all command buffers...\n");
-  for (int board = 0; board < 8; board++) {
-    if (!connected_boards[board]) continue;
-    
-    printf("  Board %d: Adding DAC and ADC buffer stoppers\n", board);
-    
-    // Add DAC NOOP stopper
-    dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, true, false, false, 0, false); // Wait for 1 trigger
-    
-    // Add ADC NOOP stopper  
-    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 0, false); // Wait for 1 trigger
-  }
-  
-  // Send single sync_ch trigger to step past all stoppers
-  printf("Sending single sync_ch trigger to step past buffer stoppers...\n");
-  trigger_cmd_sync_ch(ctx->trigger_ctrl, false);
-  
-  usleep(10000); // 10ms delay to let trigger propagate
-  
   // Step 10b: Start ADC data streaming for each connected board
-  printf("\nStarting ADC data streaming for connected boards:\n");
+  if (*(ctx->verbose)) {
+    printf("Starting ADC data streaming for %d connected boards...\n", connected_count);
+  }
   for (int board = 0; board < 8; board++) {
     if (!connected_boards[board]) continue;
     
@@ -1104,8 +1277,10 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     snprintf(board_str, sizeof(board_str), "%d", board);
     snprintf(sample_count_str, sizeof(sample_count_str), "%llu", sample_counts[board]);
     
-    printf("  Board %d: Starting ADC data streaming to '%s' (%llu samples)\n", 
-           board, board_output_file, sample_counts[board]);
+    if (*(ctx->verbose)) {
+      printf("  Board %d: Starting ADC data streaming to '%s' (%llu samples)\n", 
+             board, board_output_file, sample_counts[board]);
+    }
     const char* adc_data_args[] = {board_str, sample_count_str, board_output_file};
     if (cmd_stream_adc_data_to_file(adc_data_args, 3, NULL, 0, ctx) != 0) {
       fprintf(stderr, "Failed to start ADC data streaming for board %d\n", board);
@@ -1131,8 +1306,10 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     char trigger_count_str[32];
     snprintf(trigger_count_str, sizeof(trigger_count_str), "%u", total_expected_triggers);
     
-    printf("\nStarting trigger data streaming to '%s' (%u samples)\n", 
-           trigger_output_file, total_expected_triggers);
+    if (*(ctx->verbose)) {
+      printf("Starting trigger data streaming to '%s' (%u samples)\n", 
+             trigger_output_file, total_expected_triggers);
+    }
     const char* trig_args[] = {trigger_count_str, trigger_output_file};
     if (cmd_stream_trig_data_to_file(trig_args, 2, NULL, 0, ctx) != 0) {
       fprintf(stderr, "Failed to start trigger data streaming\n");
@@ -1140,91 +1317,228 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     }
   }
   
-  printf("\nWaveform test setup completed. All streaming started successfully.\n");
-  printf("Waiting for all streams to complete...\n");
+  // Wait for command buffers to preload before sending sync trigger
+  printf("Waiting for command buffers to preload (at least 10 words or stream completion)...\n");
+  bool buffers_ready = false;
+  int check_count = 0;
+  const int max_checks = 500; // Max 5 seconds at 10ms per check
   
-  // Wait for DAC command streams to complete
-  printf("Waiting for DAC command streams to complete...\n");
-  bool dac_commands_done = false;
-  while (!dac_commands_done) {
-    dac_commands_done = true;
+  while (!buffers_ready && check_count < max_checks) {
+    buffers_ready = true;
     
-    // Check if any board still has active DAC command streaming
     for (int board = 0; board < 8; board++) {
       if (!connected_boards[board]) continue;
       
+      // Check DAC command buffer
       if (ctx->dac_cmd_stream_running[board]) {
-        dac_commands_done = false;
-        break;
+        uint32_t dac_cmd_fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+        uint32_t dac_words = FIFO_STS_WORD_COUNT(dac_cmd_fifo_status);
+        if (dac_words < 10) {
+          buffers_ready = false;
+          if (*(ctx->verbose)) {
+            printf("  Board %d DAC buffer: %u words (waiting for 10+)\n", board, dac_words);
+          }
+        }
+      }
+      
+      // Check ADC command buffer  
+      if (ctx->adc_cmd_stream_running[board]) {
+        uint32_t adc_cmd_fifo_status = sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+        uint32_t adc_words = FIFO_STS_WORD_COUNT(adc_cmd_fifo_status);
+        if (adc_words < 10) {
+          buffers_ready = false;
+          if (*(ctx->verbose)) {
+            printf("  Board %d ADC buffer: %u words (waiting for 10+)\n", board, adc_words);
+          }
+        }
       }
     }
     
-    if (!dac_commands_done) {
-      usleep(100000); // 100ms polling interval
-      printf(".");
-      fflush(stdout);
+    if (!buffers_ready) {
+      usleep(10000); // Wait 10ms
+      check_count++;
     }
   }
   
-  printf("\nDAC command streams completed. Zeroing DAC channels...\n");
-  
-  // Step 11: Zero all DAC channels on all connected boards 
-  for (int board = 0; board < 8; board++) {
-    if (!connected_boards[board]) continue;
-    
-    printf("Queue zeroing DAC channels for board %d...\n", board);
-    
-    // Zero all 8 DAC channels (0-7) for this board
-    for (int channel = 0; channel < 8; channel++) {
-      dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, 0, false);
-    }
+  if (check_count >= max_checks) {
+    printf("Warning: Timeout waiting for buffer preload - proceeding anyway\n");
+  } else if (*(ctx->verbose)) {
+    printf("Command buffers preloaded successfully\n");
   }
   
-  printf("\nFor reference, the following commands can manually stop streams if needed:\n");
-  for (int board = 0; board < 8; board++) {
-    if (!connected_boards[board]) continue;
-    printf("  - 'stop_adc_data_stream %d' to manually stop ADC data streaming for board %d\n", board, board);
-  }
+  // Send sync_ch trigger to start all streams (after all streams including trigger are set up)
+  printf("Sending sync trigger to start waveform test...\n");
+  trigger_cmd_sync_ch(ctx->trigger_ctrl, false);
+  
+  // Set up trigger expectations after sync trigger is sent and trigger streaming is ready
   if (total_expected_triggers > 0) {
-    printf("  - 'stop_trig_data_stream' to manually stop trigger data streaming\n");
+    if (*(ctx->verbose)) {
+      printf("Setting expected external triggers to %u with logging enabled\n", total_expected_triggers);
+    }
+    trigger_cmd_expect_ext(ctx->trigger_ctrl, total_expected_triggers, true);
   }
   
-  // Wait for ADC data streams to complete expected sample counts
-  printf("\nWaiting for ADC data streams to complete %llu samples per board...\n", 
-         connected_boards[0] ? sample_counts[0] : sample_counts[1]); // Show sample count for first connected board
-  bool adc_data_done = false;
-  while (!adc_data_done) {
-    adc_data_done = true;
+  if (*(ctx->verbose)) {
+    printf("Waveform test setup completed. All streaming started successfully.\n");
+  }
+  
+  // Stop any existing trigger monitor
+  if (g_trigger_monitor_active) {
+    g_trigger_monitor_should_stop = true;
+    usleep(100000); // Give it 100ms to stop
+    g_trigger_monitor_active = false;
+  }
+  
+  // Start new trigger monitoring thread
+  g_trigger_monitor_should_stop = false;
+  
+  static trigger_monitor_params_t monitor_params;
+  monitor_params.sys_sts = ctx->sys_sts;
+  monitor_params.initial_trigger_count = initial_trigger_count;
+  monitor_params.expected_total_triggers = expected_total_triggers;
+  monitor_params.should_stop = &g_trigger_monitor_should_stop;
+  monitor_params.verbose = *(ctx->verbose);
+  
+  int thread_result = pthread_create(&g_trigger_monitor_tid, NULL, trigger_monitor_thread, &monitor_params);
+  if (thread_result != 0) {
+    fprintf(stderr, "Failed to create trigger monitoring thread: %d\n", thread_result);
+    return -1;
+  }
+  
+  // Detach the thread so it can clean up automatically
+  pthread_detach(g_trigger_monitor_tid);
+  g_trigger_monitor_active = true;
+  
+  printf("\nWaveform test started - streams running in background, trigger monitoring active.\n");
+  
+  if (*(ctx->verbose)) {
+    printf("Trigger progress will be displayed every 3 seconds during execution.\n");
     
-    // Check if any board still has active ADC data streaming
+    printf("The following commands can manually control the streams:\n");
+    
+    // Print connected boards list once
+    printf("Connected boards: ");
+    bool first = true;
     for (int board = 0; board < 8; board++) {
       if (!connected_boards[board]) continue;
-      
-      if (ctx->adc_data_stream_running[board]) {
-        adc_data_done = false;
-        break;
-      }
+      if (!first) printf(", ");
+      printf("%d", board);
+      first = false;
+    }
+    printf("\n");
+    
+    printf("  - 'stop_waveform' to stop all waveform test streaming and monitoring\n");
+    printf("  - 'stop_dac_cmd_stream <board>' to stop DAC command streaming\n");
+    printf("  - 'stop_adc_cmd_stream <board>' to stop ADC command streaming\n");
+    printf("  - 'stop_adc_data_stream <board>' to stop ADC data streaming\n");
+    if (total_expected_triggers > 0) {
+      printf("  - 'stop_trig_data_stream' to stop trigger data streaming\n");
+    }
+    printf("  - 'stop_trigger_monitor' to stop trigger monitoring thread\n");
+    printf("  - 'sts' to check current hardware status\n");
+    printf("  - 'trig_count' to manually check trigger count\n");
+    
+    printf("Expected data collection:\n");
+    for (int board = 0; board < 8; board++) {
+      if (!connected_boards[board]) continue;
+      printf("  - Board %d: %llu ADC samples\n", board, sample_counts[board]);
+    }
+    if (total_expected_triggers > 0) {
+      printf("  - Trigger data: %u samples\n", total_expected_triggers);
     }
     
-    if (!adc_data_done) {
-      usleep(500000); // 500ms polling interval (longer for data streams)
-      printf(".");
-      fflush(stdout);
+    printf("Waveform test started successfully. Streams running in background.\n");
+  }
+  
+  return 0;
+}
+
+// Stop trigger monitoring command
+int cmd_stop_trigger_monitor(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  (void)args; (void)arg_count; (void)flags; (void)flag_count; (void)ctx; // Suppress unused parameter warnings
+  
+  if (g_trigger_monitor_active) {
+    printf("Stopping trigger monitor...\n");
+    g_trigger_monitor_should_stop = true;
+    usleep(100000); // Give it 100ms to stop
+    g_trigger_monitor_active = false;
+    printf("Trigger monitor stopped.\n");
+  } else {
+    printf("No trigger monitor is currently running.\n");
+  }
+  
+  return 0;
+}
+
+// Stop waveform test command - stops all streaming and monitoring
+int cmd_stop_waveform(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  (void)args; (void)arg_count; (void)flags; (void)flag_count; // Suppress unused parameter warnings
+  
+  printf("Stopping waveform test - shutting down all streams and monitoring...\n");
+  
+  bool anything_stopped = false;
+  
+  // Stop trigger monitor if running
+  if (g_trigger_monitor_active) {
+    printf("  Stopping trigger monitor\n");
+    g_trigger_monitor_should_stop = true;
+    usleep(100000); // Give it 100ms to stop
+    g_trigger_monitor_active = false;
+    anything_stopped = true;
+  }
+  
+  // Stop trigger data streaming if running
+  if (ctx->trig_data_stream_running) {
+    printf("  Stopping trigger data stream\n");
+    ctx->trig_data_stream_stop = true;
+    if (pthread_join(ctx->trig_data_stream_thread, NULL) != 0) {
+      fprintf(stderr, "Warning: Failed to join trigger data streaming thread\n");
+    }
+    ctx->trig_data_stream_running = false;
+    anything_stopped = true;
+  }
+  
+  // Stop all board streaming (DAC command, ADC command, ADC data)
+  for (int board = 0; board < 8; board++) {
+    // Stop DAC command streaming
+    if (ctx->dac_cmd_stream_running[board]) {
+      printf("  Stopping DAC command stream for board %d\n", board);
+      ctx->dac_cmd_stream_stop[board] = true;
+      if (pthread_join(ctx->dac_cmd_stream_threads[board], NULL) != 0) {
+        fprintf(stderr, "Warning: Failed to join DAC command streaming thread for board %d\n", board);
+      }
+      ctx->dac_cmd_stream_running[board] = false;
+      anything_stopped = true;
+    }
+    
+    // Stop ADC command streaming
+    if (ctx->adc_cmd_stream_running[board]) {
+      printf("  Stopping ADC command stream for board %d\n", board);
+      ctx->adc_cmd_stream_stop[board] = true;
+      if (pthread_join(ctx->adc_cmd_stream_threads[board], NULL) != 0) {
+        fprintf(stderr, "Warning: Failed to join ADC command streaming thread for board %d\n", board);
+      }
+      ctx->adc_cmd_stream_running[board] = false;
+      anything_stopped = true;
+    }
+    
+    // Stop ADC data streaming
+    if (ctx->adc_data_stream_running[board]) {
+      printf("  Stopping ADC data stream for board %d\n", board);
+      ctx->adc_data_stream_stop[board] = true;
+      if (pthread_join(ctx->adc_data_stream_threads[board], NULL) != 0) {
+        fprintf(stderr, "Warning: Failed to join ADC data streaming thread for board %d\n", board);
+      }
+      ctx->adc_data_stream_running[board] = false;
+      anything_stopped = true;
     }
   }
   
-  // Wait for trigger data stream to complete if started
-  if (total_expected_triggers > 0) {
-    printf("\nWaiting for trigger data stream to complete %u samples...\n", total_expected_triggers);
-    while (ctx->trig_data_stream_running) {
-      usleep(500000); // 500ms polling interval
-      printf(".");
-      fflush(stdout);
-    }
-    printf("\nTrigger data stream completed.\n");
+  if (anything_stopped) {
+    printf("Waveform test stopped - all streams and monitoring shut down.\n");
+  } else {
+    printf("No waveform test streams or monitoring were running.\n");
   }
-  
-  printf("\nAll streams completed successfully! Waveform test finished.\n");
   
   return 0;
 }
@@ -1372,8 +1686,22 @@ static void* fieldmap_thread(void* arg) {
           
           // Each word contains 2 channels (lower 16 bits = even channel, upper 16 bits = odd channel)
           int ch_base = board * 8 + word * 2;
-          int16_t ch_even = offset_to_signed(adc_word & 0xFFFF);
-          int16_t ch_odd = offset_to_signed((adc_word >> 16) & 0xFFFF);
+          int16_t ch_even_raw = offset_to_signed(adc_word & 0xFFFF);
+          int16_t ch_odd_raw = offset_to_signed((adc_word >> 16) & 0xFFFF);
+          
+          // Apply bias correction for even channel
+          int16_t ch_even = ch_even_raw;
+          if (ch_base < 64 && ctx->adc_bias_valid[ch_base]) {
+            double corrected = (double)ch_even_raw - ctx->adc_bias[ch_base];
+            ch_even = (int16_t)(corrected + (corrected >= 0 ? 0.5 : -0.5));
+          }
+          
+          // Apply bias correction for odd channel  
+          int16_t ch_odd = ch_odd_raw;
+          if (ch_base + 1 < 64 && ctx->adc_bias_valid[ch_base + 1]) {
+            double corrected = (double)ch_odd_raw - ctx->adc_bias[ch_base + 1];
+            ch_odd = (int16_t)(corrected + (corrected >= 0 ? 0.5 : -0.5));
+          }
           
           if (ch_base < 64) {
             channel_data[ch_base] = ch_even;
@@ -1487,6 +1815,10 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   if (*(ctx->verbose)) {
     printf("Fieldmap [VERBOSE]: Verbose mode enabled\n");
   }
+
+  // Check flags
+  bool skip_reset = has_flag(flags, flag_count, FLAG_NO_RESET);
+  bool skip_cal = has_flag(flags, flag_count, FLAG_NO_CAL);
   
   // Check that system is running
   if (validate_system_running(ctx) != 0) {
@@ -1494,15 +1826,29 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   }
   
   // Step 1: Prompt for start and end channels
+  char input_buffer[256];
   int start_channel, end_channel;
+  
   printf("Enter start channel (0-63): ");
-  if (scanf("%d", &start_channel) != 1 || start_channel < 0 || start_channel > 63) {
+  fflush(stdout);
+  if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+    fprintf(stderr, "Failed to read start channel.\n");
+    return -1;
+  }
+  start_channel = atoi(input_buffer);
+  if (start_channel < 0 || start_channel > 63) {
     fprintf(stderr, "Invalid start channel. Must be 0-63.\n");
     return -1;
   }
   
   printf("Enter end channel (0-63): ");
-  if (scanf("%d", &end_channel) != 1 || end_channel < 0 || end_channel > 63) {
+  fflush(stdout);
+  if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+    fprintf(stderr, "Failed to read end channel.\n");
+    return -1;
+  }
+  end_channel = atoi(input_buffer);
+  if (end_channel < 0 || end_channel > 63) {
     fprintf(stderr, "Invalid end channel. Must be 0-63.\n");
     return -1;
   }
@@ -1550,32 +1896,80 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   // Step 3: Prompt for remaining parameters
   double amplitude;
   printf("Enter amplitude in amps (0.0 to 4.0): ");
-  if (scanf("%lf", &amplitude) != 1 || amplitude < 0.0 || amplitude > 4.0) {
+  fflush(stdout);
+  if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+    fprintf(stderr, "Failed to read amplitude.\n");
+    return -1;
+  }
+  amplitude = atof(input_buffer);
+  if (amplitude < 0.0 || amplitude > 4.0) {
     fprintf(stderr, "Invalid amplitude. Must be 0.0 to 4.0 amps.\n");
     return -1;
   }
   
   double delay_ms;
-  printf("Enter ADC read delay in milliseconds (as float): ");
-  if (scanf("%lf", &delay_ms) != 1 || delay_ms < 0.0) {
+  printf("Enter ADC read delay in milliseconds: ");
+  fflush(stdout);
+  if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+    fprintf(stderr, "Failed to read delay.\n");
+    return -1;
+  }
+  delay_ms = atof(input_buffer);
+  if (delay_ms < 0.0) {
     fprintf(stderr, "Invalid delay. Must be >= 0.0 ms.\n");
     return -1;
   }
   
   double spi_freq_mhz;
   printf("Enter SPI clock frequency in MHz: ");
-  if (scanf("%lf", &spi_freq_mhz) != 1 || spi_freq_mhz <= 0.0) {
-    fprintf(stderr, "Invalid SPI frequency.\n");
+  fflush(stdout);
+  if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+    fprintf(stderr, "Failed to read SPI frequency.\n");
+    return -1;
+  }
+  spi_freq_mhz = atof(input_buffer);
+  if (spi_freq_mhz <= 0.0) {
+    fprintf(stderr, "Invalid SPI frequency. Must be > 0 MHz.\n");
+    return -1;
+  }
+  
+  double lockout_ms;
+  printf("Enter trigger lockout time in milliseconds: ");
+  fflush(stdout);
+  if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+    fprintf(stderr, "Failed to read lockout time.\n");
+    return -1;
+  }
+  lockout_ms = atof(input_buffer);
+  if (lockout_ms <= 0.0) {
+    fprintf(stderr, "Invalid lockout time. Must be > 0 milliseconds.\n");
     return -1;
   }
   
   // Calculate delay cycles from milliseconds and SPI frequency
   uint32_t delay_cycles = (uint32_t)(delay_ms * spi_freq_mhz * 1000.0);
   
+  // Calculate lockout cycles from milliseconds and SPI frequency  
+  uint32_t lockout_cycles = (uint32_t)(lockout_ms * spi_freq_mhz * 1000.0);
+  
   char log_filename[1024];
   printf("Enter log file name: ");
-  if (scanf("%1023s", log_filename) != 1) {
+  fflush(stdout);
+  if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
     fprintf(stderr, "Failed to read log file name.\n");
+    return -1;
+  }
+  
+  // Remove newline and copy to log_filename
+  size_t len = strlen(input_buffer);
+  if (len > 0 && input_buffer[len - 1] == '\n') {
+    input_buffer[len - 1] = '\0';
+  }
+  strncpy(log_filename, input_buffer, sizeof(log_filename) - 1);
+  log_filename[sizeof(log_filename) - 1] = '\0';
+  
+  if (strlen(log_filename) == 0) {
+    fprintf(stderr, "Log file name cannot be empty.\n");
     return -1;
   }
   
@@ -1593,28 +1987,37 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   printf("  Channels: %d to %d (%d channels)\n", start_channel, end_channel, end_channel - start_channel + 1);
   printf("  Amplitude: %.3f amps\n", amplitude);
   printf("  Delay: %.3f ms (%u clock cycles)\n", delay_ms, delay_cycles);
+  printf("  Lockout: %.3f ms (%u clock cycles)\n", lockout_ms, lockout_cycles);
   printf("  Log file: %s\n", final_log_path);
   printf("  SPI frequency: %.3f MHz\n", spi_freq_mhz);
   
-  // Step 4: Run calibration for all connected boards
-  printf("\nRunning channel calibration for all connected boards...\n");
-  
-  // Use --all flag to calibrate all channels on all connected boards
-  command_flag_t all_flag = FLAG_ALL;
-  int cal_result = cmd_channel_cal(NULL, 0, &all_flag, 1, ctx);
-  if (cal_result != 0) {
-    fprintf(stderr, "Calibration failed\n");
-    return -1;
+  // Step 4: Run calibration for all connected boards unless --no_cal flag is set
+  if (!skip_cal) {
+    printf("\nRunning channel calibration for all connected boards...\n");
+    
+    // Use --all flag to calibrate all channels on all connected boards
+    command_flag_t all_flag = FLAG_ALL;
+    int cal_result = cmd_channel_cal(NULL, 0, &all_flag, 1, ctx);
+    if (cal_result != 0) {
+      fprintf(stderr, "Calibration failed\n");
+      return -1;
+    }
+  } else {
+    printf("\nSkipping calibration (--no_cal flag set)\n");
   }
   
-  // Step 5: Reset buffers
-  printf("Resetting buffers...\n");
-  sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
-  sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
-  usleep(1000);
-  sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, false);
-  sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, false);
-  usleep(1000);
+  // Step 5: Reset buffers unless --no_reset flag is set
+  if (!skip_reset) {
+    printf("Resetting buffers...\n");
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
+    usleep(1000);
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, false);
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, false);
+    usleep(1000);
+  } else {
+    printf("Skipping buffer reset (--no_reset flag set)\n");
+  }
   
   // Step 6: Add buffer stoppers
   printf("Adding buffer stoppers...\n");
@@ -1756,10 +2159,9 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   int total_triggers = (end_channel - start_channel + 1) * 2; // 2 per channel
   printf("Setting up trigger system for %d triggers...\n", total_triggers);
   
-  // Calculate lockout cycles for 1 second based on SPI frequency
-  uint32_t lockout_cycles = (uint32_t)(spi_freq_mhz * 1000000); // 1 second in cycles
+  // Set lockout cycles (calculated earlier from user input)
   if (*(ctx->verbose)) {
-    printf("Fieldmap [VERBOSE]: Setting lockout to %u cycles (1.0 sec at %.3f MHz)\n", lockout_cycles, spi_freq_mhz);
+    printf("Fieldmap [VERBOSE]: Setting lockout to %u cycles (%.3f ms at %.3f MHz)\n", lockout_cycles, lockout_ms, spi_freq_mhz);
   }
   trigger_cmd_set_lockout(ctx->trigger_ctrl, lockout_cycles);
   
@@ -2195,8 +2597,26 @@ static void* rev_c_adc_data_stream_thread(void* arg) {
         uint16_t sample2_offset = (uint16_t)((word >> 16) & 0xFFFF); // Bits 31:16
         
         // Convert to signed format
-        int16_t sample1_signed = offset_to_signed(sample1_offset);
-        int16_t sample2_signed = offset_to_signed(sample2_offset);
+        int16_t sample1_raw = offset_to_signed(sample1_offset);
+        int16_t sample2_raw = offset_to_signed(sample2_offset);
+        
+        // Apply bias correction if available (Rev C mode reads one word per board)
+        // Each word contains 2 samples, so we get channels in pairs
+        // Board 0: channels 0-1, Board 1: channels 8-9, etc.
+        int ch1 = board * 8;     // First channel for this board 
+        int ch2 = ch1 + 1;       // Second channel for this board
+        
+        int16_t sample1_signed = sample1_raw;
+        if (ch1 < 64 && ctx->adc_bias_valid[ch1]) {
+          double corrected = (double)sample1_raw - ctx->adc_bias[ch1];
+          sample1_signed = (int16_t)(corrected + (corrected >= 0 ? 0.5 : -0.5));
+        }
+        
+        int16_t sample2_signed = sample2_raw;
+        if (ch2 < 64 && ctx->adc_bias_valid[ch2]) {
+          double corrected = (double)sample2_raw - ctx->adc_bias[ch2];
+          sample2_signed = (int16_t)(corrected + (corrected >= 0 ? 0.5 : -0.5));
+        }
         
         // Write samples with spaces between them
         if (!first_sample) {
@@ -2480,6 +2900,519 @@ int cmd_zero_all_dacs(const char** args, int arg_count, const command_flag_t* fl
   
   printf("Successfully zeroed %d DAC channels on %d connected board(s)\n", 
          channels_zeroed, connected_count);
+  
+  return 0;
+}
+
+// ADC bias calibration command - find and store ADC bias values for all connected channels
+int cmd_find_bias(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  printf("Starting ADC bias calibration for all connected boards...\n");
+  
+  // Validate system is running
+  uint32_t hw_status = sys_sts_get_hw_status(ctx->sys_sts, *(ctx->verbose));
+  uint32_t state = HW_STS_STATE(hw_status);
+  if (state != S_RUNNING) {
+    fprintf(stderr, "System is not running. Current state: %d. Use 'on' command first.\n", state);
+    return -1;
+  }
+  
+  // Check which boards are connected by checking FIFOs
+  bool connected_boards[8] = {false};
+  int connected_count = 0;
+  
+  if (*(ctx->verbose)) {
+    printf("Checking connected boards...\n");
+  }
+  
+  for (int board = 0; board < 8; board++) {
+    uint32_t adc_data_fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    uint32_t dac_cmd_fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    uint32_t adc_cmd_fifo_status = sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    uint32_t dac_data_fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    
+    if (FIFO_PRESENT(adc_data_fifo_status) && 
+        FIFO_PRESENT(dac_cmd_fifo_status) && 
+        FIFO_PRESENT(adc_cmd_fifo_status) &&
+        FIFO_PRESENT(dac_data_fifo_status)) {
+      connected_boards[board] = true;
+      connected_count++;
+      if (*(ctx->verbose)) {
+        printf("  Board %d: Connected\n", board);
+      }
+    } else {
+      if (*(ctx->verbose)) {
+        printf("  Board %d: Not connected\n", board);
+      }
+    }
+  }
+  
+  if (connected_count == 0) {
+    printf("No boards are connected. Aborting ADC bias calibration.\n");
+    return -1;
+  }
+  
+  printf("Starting ADC bias calibration for all channels on %d connected board(s)\n", connected_count);
+  
+  // Store previous bias values before starting new measurement
+  for (int ch = 0; ch < 64; ch++) {
+    ctx->adc_bias_previous[ch] = ctx->adc_bias[ch];
+    ctx->adc_bias_previous_valid[ch] = ctx->adc_bias_valid[ch];
+  }
+  
+  // Check if --no_reset flag is present
+  bool skip_reset = has_flag(flags, flag_count, FLAG_NO_RESET);
+  
+  // Reset buffers once at the start (unless --no_reset flag is used)
+  if (!skip_reset) {
+    if (*(ctx->verbose)) {
+      printf("Resetting all buffers...\n");
+    }
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
+    usleep(1000); // 1ms
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, false);
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, false);
+    usleep(1000); // 1ms
+  }
+  
+  // Send cancel commands to all connected boards
+  if (*(ctx->verbose)) {
+    printf("Sending cancel commands to connected boards...\n");
+  }
+  for (int board = 0; board < 8; board++) {
+    if (connected_boards[board]) {
+      dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, false);
+      adc_cmd_cancel(ctx->adc_ctrl, (uint8_t)board, false);
+    }
+  }
+  usleep(1000); // 1ms to let cancel commands complete
+  
+  // Calibration constants
+  const int dac_values[] = {-3276, -1638, 0, 1638, 3276};
+  const int num_dac_values = 5;
+  const int slope_samples = 5; // Samples per DAC value for slope check
+  const int16_t dac_zero_value = 0; // Only sample at DAC = 0 for bias measurement
+  const int bias_sample_count = 50; // Take 50 samples per channel for bias
+  const int delay_ms = 1; // 1ms delay
+  const double slope_tolerance = 0.01; // +/-0.01 slope tolerance
+  
+  int channels_calibrated = 0;
+  int channels_failed = 0;
+  bool channel_slope_valid[64] = {false}; // Track which channels pass slope test
+  
+  // Initialize all ADC bias values as invalid
+  for (int ch = 0; ch < 64; ch++) {
+    ctx->adc_bias_valid[ch] = false;
+    ctx->adc_bias[ch] = 0.0;
+  }
+  
+  // Phase 1: Slope validation for all channels
+  printf("Phase 1: Validating channels are unplugged (slope near zero)...\n");
+  
+  for (int ch = 0; ch < 64; ch++) {
+    int board = ch / 8;
+    int channel = ch % 8;
+    
+    // Skip boards that are not connected
+    if (!connected_boards[board]) {
+      continue;
+    }
+    
+    if (*(ctx->verbose)) {
+      printf("Checking slope for Ch %02d...\n", ch);
+    }
+    
+    // Arrays to store DAC values and corresponding averaged ADC readings for slope test
+    double dac_vals[num_dac_values];
+    double avg_adc_vals[num_dac_values];
+    bool slope_test_failed = false;
+    
+    // Test each DAC value for slope calculation
+    for (int i = 0; i < num_dac_values && !slope_test_failed; i++) {
+      int16_t dac_val = dac_values[i];
+      dac_vals[i] = (double)dac_val;
+      
+      // Perform multiple reads and average them
+      double sum_adc = 0.0;
+      
+      for (int avg = 0; avg < slope_samples && !slope_test_failed; avg++) {
+        // Write DAC value
+        dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, dac_val, false);
+        usleep(delay_ms * 1000); // Wait fixed delay
+        
+        // Read ADC value
+        adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, false);
+        
+        // Wait for ADC data to be available
+        int adc_tries = 0;
+        uint32_t adc_data_fifo_status;
+        while (adc_tries < 100) {
+          adc_data_fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+          if (FIFO_STS_WORD_COUNT(adc_data_fifo_status) > 0) break;
+          usleep(100); // 0.1ms
+          adc_tries++;
+        }
+        
+        if (FIFO_STS_WORD_COUNT(adc_data_fifo_status) == 0) {
+          slope_test_failed = true;
+          break;
+        }
+        
+        uint32_t adc_word = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
+        int16_t adc_reading = offset_to_signed(adc_word & 0xFFFF);
+        double adc_val = (double)adc_reading;
+        
+        sum_adc += adc_val;
+      }
+      
+      if (slope_test_failed) break;
+      
+      avg_adc_vals[i] = sum_adc / slope_samples;
+    }
+    
+    if (slope_test_failed) {
+      if (*(ctx->verbose)) {
+        printf("  Ch %02d: FAIL (no ADC data)\n", ch);
+      }
+      channels_failed++;
+      continue;
+    }
+    
+    // Perform linear regression: y = mx + b
+    double sum_x = 0, sum_y = 0, sum_xy = 0, sum_x2 = 0;
+    for (int i = 0; i < num_dac_values; i++) {
+      sum_x += dac_vals[i];
+      sum_y += avg_adc_vals[i];
+      sum_xy += dac_vals[i] * avg_adc_vals[i];
+      sum_x2 += dac_vals[i] * dac_vals[i];
+    }
+    
+    // Calculate slope and check for division by zero
+    double denominator = num_dac_values * sum_x2 - sum_x * sum_x;
+    double slope;
+    
+    if (denominator == 0) {
+      if (*(ctx->verbose)) {
+        printf("  Ch %02d: FAIL (div by zero)\n", ch);
+      }
+      channels_failed++;
+      continue;
+    }
+    
+    slope = (num_dac_values * sum_xy - sum_x * sum_y) / denominator;
+    
+    // Check if slope is within tolerance (close to 0)
+    if (slope < -slope_tolerance || slope > slope_tolerance) {
+      if (*(ctx->verbose)) {
+        printf("  Ch %02d: FAIL (slope=%.4f, not near 0)\n", ch, slope);
+      }
+      channels_failed++;
+      continue;
+    }
+    
+    // Slope is acceptable
+    channel_slope_valid[ch] = true;
+    if (*(ctx->verbose)) {
+      printf("  Ch %02d: slope check passed (slope=%.4f)\n", ch, slope);
+    }
+  }
+  
+  // Count channels that passed slope test
+  int slope_passed_count = 0;
+  for (int ch = 0; ch < 64; ch++) {
+    if (channel_slope_valid[ch]) {
+      slope_passed_count++;
+    }
+  }
+  
+  printf("Phase 1 complete: %d channels passed slope validation, %d failed\n", slope_passed_count, channels_failed);
+  
+  if (channels_failed > 0) {
+    printf("Some channels failed slope validation. Aborting bias calibration to avoid partial results.\n");
+    return -1;
+  }
+  
+  if (slope_passed_count == 0) {
+    printf("No channels passed slope validation. Aborting bias calibration.\n");
+    return -1;
+  }
+  
+  // Phase 2: Bias measurement for channels that passed slope test
+  printf("Phase 2: Measuring ADC bias (sampling at DAC=0, 50 samples per channel)...\n");
+  
+  channels_failed = 0; // Reset for bias measurement phase
+  
+  // Iterate through channels that passed slope test
+  for (int ch = 0; ch < 64; ch++) {
+    int board = ch / 8;
+    int channel = ch % 8;
+    
+    // Skip channels that didn't pass slope test or boards not connected
+    if (!connected_boards[board] || !channel_slope_valid[ch]) {
+      continue;
+    }
+    
+    printf("Ch %02d : ", ch);
+    fflush(stdout);
+    
+    // Array to store all samples for this channel
+    double samples[bias_sample_count];
+    bool calibration_failed = false;
+    
+    // Set DAC to zero value
+    dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, dac_zero_value, false);
+    usleep(delay_ms * 1000); // Wait for DAC to settle
+    
+    // Collect samples
+    for (int i = 0; i < bias_sample_count && !calibration_failed; i++) {
+      // Read ADC value
+      adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, false);
+      
+      // Wait for ADC data to be available
+      int adc_tries = 0;
+      uint32_t adc_data_fifo_status;
+      while (adc_tries < 100) {
+        adc_data_fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+        if (FIFO_STS_WORD_COUNT(adc_data_fifo_status) > 0) break;
+        usleep(100); // 0.1ms
+        adc_tries++;
+      }
+      
+      if (FIFO_STS_WORD_COUNT(adc_data_fifo_status) == 0) {
+        calibration_failed = true;
+        break;
+      }
+      
+      uint32_t adc_word = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
+      int16_t adc_reading = offset_to_signed(adc_word & 0xFFFF);
+      samples[i] = (double)adc_reading;
+      
+      usleep(delay_ms * 1000); // Small delay between samples
+    }
+    
+    if (calibration_failed) {
+      printf("FAIL (no ADC data)\n");
+      channels_failed++;
+      continue;
+    }
+    
+    // Calculate mean (bias)
+    double sum = 0.0;
+    for (int i = 0; i < bias_sample_count; i++) {
+      sum += samples[i];
+    }
+    double bias_average = sum / bias_sample_count;
+    
+    // Calculate standard deviation
+    double variance_sum = 0.0;
+    for (int i = 0; i < bias_sample_count; i++) {
+      double diff = samples[i] - bias_average;
+      variance_sum += diff * diff;
+    }
+    double std_dev = variance_sum > 0 ? (variance_sum / (bias_sample_count - 1)) : 0.0;
+    // Calculate square root manually without math library
+    double std_dev_sqrt = 0.0;
+    if (std_dev > 0) {
+      // Newton's method for square root
+      std_dev_sqrt = std_dev / 2.0;
+      for (int iter = 0; iter < 10; iter++) {
+        std_dev_sqrt = (std_dev_sqrt + std_dev / std_dev_sqrt) / 2.0;
+      }
+    }
+    
+    // Store the bias value
+    ctx->adc_bias[ch] = bias_average;
+    ctx->adc_bias_valid[ch] = true;
+    
+    // Format bias result with proper alignment and difference from previous
+    char diff_str[32] = "";
+    if (ctx->adc_bias_previous_valid[ch]) {
+      double diff = bias_average - ctx->adc_bias_previous[ch];
+      snprintf(diff_str, sizeof(diff_str), " (%+.2f)", diff);
+    } else {
+      snprintf(diff_str, sizeof(diff_str), " (new)");
+    }
+    
+    printf("bias=%+7.2f, std=%5.2f%s\n", bias_average, std_dev_sqrt, diff_str);
+    channels_calibrated++;
+  }
+  
+  printf("\nADC bias calibration complete:\n");
+  printf("  Channels calibrated: %d\n", channels_calibrated);
+  printf("  Channels failed: %d\n", channels_failed);
+  
+  if (channels_calibrated == 0) {
+    printf("No channels were successfully calibrated.\n");
+    return -1;
+  }
+  
+  printf("\nADC bias values for successfully calibrated channels:\n");
+  for (int ch = 0; ch < 64; ch++) {
+    if (ctx->adc_bias_valid[ch]) {
+      int board = ch / 8;
+      int channel = ch % 8;
+      
+      // Format difference from previous measurement
+      char diff_str[32] = "";
+      if (ctx->adc_bias_previous_valid[ch]) {
+        double diff = ctx->adc_bias[ch] - ctx->adc_bias_previous[ch];
+        snprintf(diff_str, sizeof(diff_str), " (%+.2f)", diff);
+      } else {
+        snprintf(diff_str, sizeof(diff_str), " (new)");
+      }
+      
+      printf("  Ch %02d (Board %d, Channel %d): %+7.2f%s\n", 
+             ch, board, channel, ctx->adc_bias[ch], diff_str);
+    }
+  }
+  
+  printf("ADC bias calibration completed successfully.\n");
+  return 0;
+}
+
+// Print ADC bias values command
+int cmd_print_adc_bias(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  printf("Current ADC bias values:\n");
+  
+  int valid_count = 0;
+  int invalid_count = 0;
+  
+  printf("%-6s %-8s %-8s %-10s %s\n", "Ch", "Board", "Channel", "Bias", "Status");
+  printf("%-6s %-8s %-8s %-10s %s\n", "------", "--------", "--------", "----------", "--------");
+  
+  for (int ch = 0; ch < 64; ch++) {
+    int board = ch / 8;
+    int channel = ch % 8;
+    
+    if (ctx->adc_bias_valid[ch]) {
+      printf("%-6d %-8d %-8d %-10.2f %s\n", ch, board, channel, ctx->adc_bias[ch], "Valid");
+      valid_count++;
+    } else {
+      printf("%-6d %-8d %-8d %-10s %s\n", ch, board, channel, "N/A", "Invalid");
+      invalid_count++;
+    }
+  }
+  
+  printf("\nSummary: %d valid bias values, %d invalid\n", valid_count, invalid_count);
+  return 0;
+}
+
+// Save ADC bias values to CSV file command
+int cmd_save_adc_bias(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  const char* filename = args[0];
+  
+  // Clean and expand file path
+  char full_path[1024];
+  clean_and_expand_path(filename, full_path, sizeof(full_path));
+  
+  FILE* file = fopen(full_path, "w");
+  if (file == NULL) {
+    fprintf(stderr, "Failed to open file '%s' for writing: %s\n", full_path, strerror(errno));
+    return -1;
+  }
+  
+  // Write CSV header
+  fprintf(file, "Channel,Board,Channel_Index,Bias_Value,Valid\n");
+  
+  int saved_count = 0;
+  
+  // Write all channels
+  for (int ch = 0; ch < 64; ch++) {
+    int board = ch / 8;
+    int channel = ch % 8;
+    
+    fprintf(file, "%d,%d,%d,%.6f,%s\n", 
+            ch, board, channel, 
+            ctx->adc_bias_valid[ch] ? ctx->adc_bias[ch] : 0.0,
+            ctx->adc_bias_valid[ch] ? "true" : "false");
+    
+    if (ctx->adc_bias_valid[ch]) {
+      saved_count++;
+    }
+  }
+  
+  fclose(file);
+  
+  printf("Successfully saved ADC bias values to '%s'\n", full_path);
+  printf("Saved %d valid bias values (out of 64 channels)\n", saved_count);
+  
+  return 0;
+}
+
+// Load ADC bias values from CSV file command
+int cmd_load_adc_bias(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  const char* filename = args[0];
+  
+  // Clean and expand file path
+  char full_path[1024];
+  clean_and_expand_path(filename, full_path, sizeof(full_path));
+  
+  FILE* file = fopen(full_path, "r");
+  if (file == NULL) {
+    fprintf(stderr, "Failed to open file '%s' for reading: %s\n", full_path, strerror(errno));
+    return -1;
+  }
+  
+  // Read and skip header line
+  char line[256];
+  if (fgets(line, sizeof(line), file) == NULL) {
+    fprintf(stderr, "Failed to read header line from file '%s'\n", full_path);
+    fclose(file);
+    return -1;
+  }
+  
+  // Initialize all bias values as invalid before loading
+  for (int ch = 0; ch < 64; ch++) {
+    ctx->adc_bias_valid[ch] = false;
+    ctx->adc_bias[ch] = 0.0;
+  }
+  
+  int loaded_count = 0;
+  int line_num = 1;
+  
+  // Read data lines
+  while (fgets(line, sizeof(line), file)) {
+    line_num++;
+    
+    // Parse CSV line: Channel,Board,Channel_Index,Bias_Value,Valid
+    int channel, board, channel_index;
+    double bias_value;
+    char valid_str[16];
+    
+    int parsed = sscanf(line, "%d,%d,%d,%lf,%15s", 
+                       &channel, &board, &channel_index, &bias_value, valid_str);
+    
+    if (parsed != 5) {
+      fprintf(stderr, "Warning: Invalid format on line %d, skipping\n", line_num);
+      continue;
+    }
+    
+    // Validate channel number
+    if (channel < 0 || channel >= 64) {
+      fprintf(stderr, "Warning: Invalid channel %d on line %d, skipping\n", channel, line_num);
+      continue;
+    }
+    
+    // Check if this bias value should be marked as valid
+    bool is_valid = (strcmp(valid_str, "true") == 0);
+    
+    if (is_valid) {
+      ctx->adc_bias[channel] = bias_value;
+      ctx->adc_bias_valid[channel] = true;
+      loaded_count++;
+    }
+  }
+  
+  fclose(file);
+  
+  printf("Successfully loaded ADC bias values from '%s'\n", full_path);
+  printf("Loaded %d valid bias values from file\n", loaded_count);
+  
+  if (loaded_count > 0) {
+    printf("ADC bias correction is now active for %d channels\n", loaded_count);
+  } else {
+    printf("No valid bias values were loaded\n");
+  }
   
   return 0;
 }

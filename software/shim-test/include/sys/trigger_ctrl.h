@@ -18,6 +18,7 @@
 #define TRIG_CMD_EXPECT_EXT   0x3  // Expect external triggers
 #define TRIG_CMD_DELAY        0x4  // Delay for specified cycles
 #define TRIG_CMD_FORCE_TRIG   0x5  // Force trigger immediately
+#define TRIG_CMD_RESET_COUNT  0x6  // Reset trigger counter
 #define TRIG_CMD_CANCEL       0x7  // Cancel current operation
 
 // Trigger command bits
@@ -44,6 +45,7 @@ void trigger_cmd_set_lockout(struct trigger_ctrl_t *trigger_ctrl, uint32_t cycle
 void trigger_cmd_expect_ext(struct trigger_ctrl_t *trigger_ctrl, uint32_t count, bool log);
 void trigger_cmd_delay(struct trigger_ctrl_t *trigger_ctrl, uint32_t cycles);
 void trigger_cmd_force_trig(struct trigger_ctrl_t *trigger_ctrl, bool log);
+void trigger_cmd_reset_count(struct trigger_ctrl_t *trigger_ctrl);
 void trigger_cmd_cancel(struct trigger_ctrl_t *trigger_ctrl);
 
 #endif // TRIGGER_CTRL_H

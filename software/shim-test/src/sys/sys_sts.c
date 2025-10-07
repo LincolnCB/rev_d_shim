@@ -39,6 +39,9 @@ struct sys_sts_t create_sys_sts(bool verbose) {
   // Initialize debug register
   sys_sts.debug = sys_sts_ptr + DEBUG_REG_OFFSET;
   
+  // Initialize trigger counter pointer
+  sys_sts.trig_counter = sys_sts_ptr + TRIG_COUNTER_OFFSET;
+  
   return sys_sts;
 }
 
@@ -345,6 +348,24 @@ uint32_t sys_sts_get_trig_cmd_fifo_status(struct sys_sts_t *sys_sts, bool verbos
 // Get trigger data FIFO status
 uint32_t sys_sts_get_trig_data_fifo_status(struct sys_sts_t *sys_sts, bool verbose) {
   return get_fifo_status(sys_sts->trig_data_fifo_sts, "Trigger Data", verbose);
+}
+
+// Get debug register value
+uint32_t sys_sts_get_debug(struct sys_sts_t *sys_sts, bool verbose) {
+  if (verbose) {
+    printf("Reading debug register...\n");
+    printf("Debug register raw: 0x%" PRIx32 "\n", *(sys_sts->debug));
+  }
+  return *(sys_sts->debug);
+}
+
+// Get trigger counter value
+uint32_t sys_sts_get_trig_counter(struct sys_sts_t *sys_sts, bool verbose) {
+  if (verbose) {
+    printf("Reading trigger counter register...\n");
+    printf("Trigger counter raw: 0x%" PRIx32 "\n", *(sys_sts->trig_counter));
+  }
+  return *(sys_sts->trig_counter);
 }
 
 // Print FIFO status details
