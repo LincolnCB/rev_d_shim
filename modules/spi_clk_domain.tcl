@@ -201,8 +201,9 @@ cell xilinx.com:ip:util_vector_logic trig_data_full_blocked {
   Op2 spi_cfg_sync/block_bufs_sync
 }
 ## Trigger core
+# 10000000 = 0.5 seconds at 20 MHz SPI clock
 cell lcb:user:shim_trigger_core trig_core {
-  TRIGGER_LOCKOUT_DEFAULT 5000
+  TRIGGER_LOCKOUT_DEFAULT 10000000
 } {
   clk spi_clk
   resetn spi_rst_core/peripheral_aresetn

@@ -60,6 +60,16 @@ int cmd_hard_reset(const char** args, int arg_count, const command_flag_t* flags
   // Stop trigger monitor thread
   cmd_stop_trigger_monitor(NULL, 0, NULL, 0, ctx);
   
+  // Stop trigger data streaming if running
+  if (ctx->trig_data_stream_running) {
+    printf("    Stopping trigger data stream\n");
+    ctx->trig_data_stream_stop = true;
+    if (pthread_join(ctx->trig_data_stream_thread, NULL) != 0) {
+      fprintf(stderr, "Warning: Failed to join trigger data streaming thread\n");
+    }
+    ctx->trig_data_stream_running = false;
+  }
+  
   for (int board = 0; board < 8; board++) {
     // Stop DAC streams
     if (ctx->dac_cmd_stream_running[board]) {
@@ -103,15 +113,15 @@ int cmd_hard_reset(const char** args, int arg_count, const command_flag_t* flags
   
   // Step 4: Set buffer resets to 0x1FFFF
   printf("  Step 4: Setting buffer resets to 0x1FFFF\n");
-  sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
+  0(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
   sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
-  usleep(1000); // 1ms
+  usleep(10000); // 10ms
   
   // Step 5: Set buffer resets to 0
   printf("  Step 5: Setting buffer resets to 0\n");
   sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
   sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
-  usleep(1000); // 1ms
+  usleep(10000); // 10ms
   
   printf("Hard reset completed.\n");
   

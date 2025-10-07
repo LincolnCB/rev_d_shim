@@ -10,8 +10,8 @@
 #define ADC_FIFO(board)    (0x80001000 + (board) * 0x10000)
 
 // ADC FIFO depths
-#define ADC_CMD_FIFO_WORDCOUNT  (uint32_t) 1024 // Size in 32-bit words
-#define ADC_DATA_FIFO_WORDCOUNT  (uint32_t) 1024 // Size in 32-bit words
+#define ADC_CMD_FIFO_WORDCOUNT   (uint32_t)(1 << 10) // 1024 words (2^10)
+#define ADC_DATA_FIFO_WORDCOUNT  (uint32_t)(1 << 13) // 8192 words (2^13)
 
 // ADC state codes
 #define ADC_STATE_RESET      0

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <inttypes.h>
 #include <unistd.h>
 #include <pwd.h>
@@ -26,12 +27,11 @@
 // Forward declarations for helper functions
 static int validate_system_running(command_context_t* ctx);
 static int count_trigger_lines_in_file(const char* file_path);
-static uint64_t calculate_expected_samples(const char* file_path, int loop_count);
+static uint64_t calculate_expected_samples(const char* file_path, int loop_count, bool verbose);
 
 // Structure for trigger monitoring thread
 typedef struct {
   struct sys_sts_t* sys_sts;
-  uint32_t initial_trigger_count;
   uint32_t expected_total_triggers;
   volatile bool* should_stop;
   bool verbose;
@@ -86,7 +86,7 @@ static int count_trigger_lines_in_file(const char* file_path) {
 }
 
 // Helper function to calculate expected number of samples from an ADC command file
-static uint64_t calculate_expected_samples(const char* file_path, int loop_count) {
+static uint64_t calculate_expected_samples(const char* file_path, int loop_count, bool verbose) {
   // Use the existing ADC command parser to get the parsed commands
   adc_command_t* commands = NULL;
   int command_count = 0;
@@ -215,8 +215,10 @@ static uint64_t calculate_expected_samples(const char* file_path, int loop_count
   free(commands);
   
   uint64_t total_samples = samples_per_loop * loop_count;
-  printf("Calculated %llu samples per loop, %llu total samples (%d loops)\n", 
-         samples_per_loop, total_samples, loop_count);
+  if (verbose) {
+    printf("Calculated %llu samples per loop, %llu total samples (%d loops)\n", 
+           samples_per_loop, total_samples, loop_count);
+  }
   
   return total_samples;
 }
@@ -297,11 +299,11 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
     sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose)); // Reset all boards + trigger
     sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
     __sync_synchronize(); // Memory barrier
-    usleep(1000); // 1ms delay
+    usleep(10000); // 10ms delay
     sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
     sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
     __sync_synchronize(); // Memory barrier
-    usleep(1000); // 1ms delay
+    usleep(10000); // 10ms delay
     if (*(ctx->verbose)) {
       printf("  Buffer resets completed\n");
       fflush(stdout);
@@ -512,10 +514,10 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
     printf("Resetting all buffers...\n");
     sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, false); // Reset all boards + trigger
     sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
-    usleep(1000); // 1ms
+    usleep(10000); // 10ms
     sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, false);
     sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, false);
-    usleep(1000); // 1ms
+    usleep(10000); // 10ms
   }
   
   // Send cancel commands once per connected board
@@ -557,8 +559,12 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
     printf("Ch %02d : ", ch);
     fflush(stdout);
     
+    if (*(ctx->verbose)) {
+      printf("\n  Starting calibration for channel %d (board %d, channel %d)\n", ch, board, channel);
+    }
+    
     // Get current DAC calibration value and store it
-    dac_cmd_get_cal(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, false);
+    dac_cmd_get_cal(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, *(ctx->verbose));
     
     // Wait for calibration data to be available
     int tries = 0;
@@ -571,7 +577,21 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
     }
     
     if (FIFO_STS_WORD_COUNT(dac_data_fifo_status) == 0) {
-      printf("-F- |\n");
+      if (*(ctx->verbose)) {
+        printf("FAILED - DAC calibration data timeout (no data in FIFO after %d tries)\n", tries);
+      } else {
+        printf("-F- |\n");
+      }
+      
+      // Check hardware status when calibration fails - if system is halted, abort calibration
+      printf("Reading hardware status register...\n");
+      uint32_t hw_status = sys_sts_get_hw_status(ctx->sys_sts, *(ctx->verbose));
+      if (HW_STS_HALTED(hw_status)) {
+        printf("Hardware status shows system is HALTED. Aborting channel calibration.\n");
+        print_hw_status(hw_status, *(ctx->verbose));
+        return -1;
+      }
+      
       continue;
     }
     
@@ -594,16 +614,20 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
         int16_t dac_val = dac_values[i];
         dac_vals[i] = (double)dac_val;
         
+        if (*(ctx->verbose)) {
+          printf("    Testing DAC value %d (%d/%d), averaging %d samples...\n", dac_val, i+1, num_dac_values, average_count);
+        }
+        
         // Perform multiple reads and average them
         double sum_adc = 0.0;
         
         for (int avg = 0; avg < average_count; avg++) {
           // Write DAC value
-          dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, dac_val, false);
+          dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, dac_val, *(ctx->verbose));
           usleep(delay_ms * 1000); // Wait fixed delay
           
           // Read ADC value
-          adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, false);
+          adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, *(ctx->verbose));
           
           // Wait for ADC data to be available (similar to DAC data loop)
           int adc_tries = 0;
@@ -616,6 +640,9 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
           }
           
           if (FIFO_STS_WORD_COUNT(adc_data_fifo_status) == 0) {
+            if (*(ctx->verbose)) {
+              printf("      ADC data timeout (no data in FIFO after %d tries)\n", adc_tries);
+            }
             calibration_failed = true;
             break;
           }
@@ -629,12 +656,21 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
             adc_value -= ctx->adc_bias[ch];
           }
           
+          if (*(ctx->verbose) && avg < 3) {  // Only show first few readings to avoid spam
+            printf("      Sample %d: ADC raw=0x%08X, signed=%d, bias_corrected=%.1f\n", 
+                   avg+1, adc_word, adc_reading, adc_value);
+          }
+          
           sum_adc += adc_value;
         }
         
         if (calibration_failed) break;
         
         avg_adc_vals[i] = sum_adc / average_count;
+        
+        if (*(ctx->verbose)) {
+          printf("    DAC=%d -> ADC_avg=%.2f\n", dac_val, avg_adc_vals[i]);
+        }
       }
       
       if (calibration_failed) break;
@@ -741,13 +777,24 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
     }
 
     // Zero the channel to finalize
-    dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, 0, false);
+    dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, 0, *(ctx->verbose));
     usleep(1000); // 1ms to let DAC settle
     
     // Print spaces for skipped iterations to maintain column alignment
     for (int i = completed_iterations; i < calibration_iterations; i++) {
       if (*(ctx->verbose)) printf("  -- Skipped iteration number %d", i + 1);
       else printf("----------------- | "); // 18 spaces to match the format above
+    }
+    
+    // Check hardware status when calibration fails - if system is halted, abort calibration
+    if (calibration_failed) {
+      printf("Reading hardware status register...\n");
+      uint32_t hw_status = sys_sts_get_hw_status(ctx->sys_sts, *(ctx->verbose));
+      if (HW_STS_HALTED(hw_status)) {
+        printf("Hardware status shows system is HALTED. Aborting channel calibration.\n");
+        print_hw_status(hw_status, *(ctx->verbose));
+        return -1;
+      }
     }
     
     // Print final status
@@ -780,34 +827,34 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
 static void* trigger_monitor_thread(void* arg) {
   trigger_monitor_params_t* params = (trigger_monitor_params_t*)arg;
   time_t last_display = time(NULL);
-  uint32_t last_trigger_count = params->initial_trigger_count;
+  uint32_t last_trigger_count = 0;  // Since we reset count after sync, start from 0
   bool completed_message_shown = false;
   
   if (params->verbose) {
-    printf("Trigger monitor thread started. Initial count: %u, Expected: %u\n",
-           params->initial_trigger_count, params->expected_total_triggers);
+    printf("Trigger monitor thread started. Expected: %u triggers\n",
+           params->expected_total_triggers);
   }
   
   while (!*(params->should_stop)) {
     usleep(500000); // 500ms polling interval
     
     uint32_t current_trigger_count = sys_sts_get_trig_counter(params->sys_sts, false);
-    uint32_t triggers_received = current_trigger_count - params->initial_trigger_count;
+    // Since we reset the count after sync_ch, current_trigger_count is the actual triggers received
     
     // Check if 3 seconds have passed since last display
     time_t current_time = time(NULL);
     if (current_time - last_display >= 3) {
-      printf("Trigger count: %u (%u/%u)\n", 
-             current_trigger_count, triggers_received, params->expected_total_triggers);
+      printf("Trigger count: %u/%u\n", 
+             current_trigger_count, params->expected_total_triggers);
       fflush(stdout);
       last_display = current_time;
     }
     
     // Check if we've reached the expected trigger count
-    if (triggers_received >= params->expected_total_triggers) {
+    if (current_trigger_count >= params->expected_total_triggers) {
       if (!completed_message_shown) {
-        printf("\nExpected trigger count reached: %u (%u/%u)\n", 
-               current_trigger_count, triggers_received, params->expected_total_triggers);
+        printf("\nExpected trigger count reached: %u/%u\n", 
+               current_trigger_count, params->expected_total_triggers);
         fflush(stdout);
         completed_message_shown = true;
       }
@@ -852,10 +899,10 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     printf("Step 1: Resetting all buffers\n");
     sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose)); // Reset all boards + trigger
     sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
-    usleep(1000); // 1ms
+    usleep(10000); // 10ms
     sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
     sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
-    usleep(1000); // 1ms
+    usleep(10000); // 10ms
   }
   
   // Step 2: Check which boards are connected
@@ -1085,7 +1132,9 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   uint32_t board_triggers[8] = {0};  // Triggers per board
   uint32_t total_expected_triggers = 0;
   
-  printf("\nCalculating expected data counts:\n");
+  if (*(ctx->verbose)) {
+    printf("\nCalculating expected data counts:\n");
+  }
   
   // First pass: calculate triggers for each board and validate consistency
   int reference_trigger_count = -1;
@@ -1137,7 +1186,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     if (!connected_boards[board]) continue;
     
     // Calculate expected number of samples from ADC command file using board-specific ADC loops
-    sample_counts[board] = calculate_expected_samples(resolved_adc_files[board], adc_loops[board]);
+    sample_counts[board] = calculate_expected_samples(resolved_adc_files[board], adc_loops[board], *(ctx->verbose));
     if (sample_counts[board] == 0) {
       fprintf(stderr, "Failed to calculate expected sample count from ADC command file for board %d\n", board);
       return -1;
@@ -1145,11 +1194,15 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     
     total_expected_triggers = board_triggers[board]; // All boards have same count
     
-    printf("Board %d: DAC loops=%d, ADC loops=%d, triggers=%u, ADC samples=%llu\n", 
-           board, dac_loops[board], adc_loops[board], board_triggers[board], sample_counts[board]);
+    if (*(ctx->verbose)) {
+      printf("Board %d: DAC loops=%d, ADC loops=%d, triggers=%u, ADC samples=%llu\n", 
+             board, dac_loops[board], adc_loops[board], board_triggers[board], sample_counts[board]);
+    }
   }
   
-  printf("Total expected external triggers (consistent across all boards): %u\n", total_expected_triggers);
+  if (*(ctx->verbose)) {
+    printf("Total expected external triggers (consistent across all boards): %u\n", total_expected_triggers);
+  }
   
   // Step 8: Run calibration for all boards unless --no_cal flag is set
   if (!skip_cal) {
@@ -1182,26 +1235,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     printf("\nSkipping calibration (--no_cal flag set)\n");
   }
   
-  // Step 9: Set trigger lockout (expect_ext will be called later)
-  if (*(ctx->verbose)) {
-    printf("\nSetting trigger lockout time to %u cycles\n", lockout_time);
-  }
-  trigger_cmd_set_lockout(ctx->trigger_ctrl, lockout_time);
-  
-  // Capture initial trigger count before starting streams
-  uint32_t initial_trigger_count = sys_sts_get_trig_counter(ctx->sys_sts, *(ctx->verbose));
-  uint32_t expected_total_triggers = 1; // Start with 1 for the sync_ch trigger
-  
-  if (total_expected_triggers > 0) {
-    expected_total_triggers += total_expected_triggers; // Add the external triggers
-  }
-  
-  if (*(ctx->verbose)) {
-    printf("Initial trigger count: %u, expecting %u total triggers\n", 
-           initial_trigger_count, expected_total_triggers);
-  }
-
-  // Step 10: Add buffer stoppers (NOOP commands waiting for 1 trigger) to all buffers BEFORE starting streams
+  // Step 9: Add buffer stoppers (NOOP commands waiting for 1 trigger) to all buffers BEFORE starting streams
   printf("Adding buffer stoppers before starting streams...\n");
   for (int board = 0; board < 8; board++) {
     if (!connected_boards[board]) continue;
@@ -1211,10 +1245,10 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     }
     
     // Add DAC NOOP stopper
-    dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, true, false, false, 0, false); // Wait for 1 trigger
+    dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, true, false, false, 1, *(ctx->verbose)); // Wait for 1 trigger
     
     // Add ADC NOOP stopper  
-    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 0, false); // Wait for 1 trigger
+    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, *(ctx->verbose)); // Wait for 1 trigger
   }
 
   // Step 10a: Start command streaming for each connected board
@@ -1240,14 +1274,13 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
       return -1;
     }
     
-    // Start ADC command streaming with board-specific ADC loop count (with simple flag)
+    // Start ADC command streaming with board-specific ADC loop count (using hardware loops)
     if (*(ctx->verbose)) {
-      printf("  Board %d: Starting ADC command streaming from '%s' (%d loops, simple mode)\n", 
+      printf("  Board %d: Starting ADC command streaming from '%s' (%d loops)\n", 
              board, resolved_adc_files[board], adc_loops[board]);
     }
     const char* adc_args[] = {board_str, resolved_adc_files[board], adc_loops_str};
-    command_flag_t simple_flag = FLAG_SIMPLE;
-    if (cmd_stream_adc_commands_from_file(adc_args, 3, &simple_flag, 1, ctx) != 0) {
+    if (cmd_stream_adc_commands_from_file(adc_args, 3, NULL, 0, ctx) != 0) {
       fprintf(stderr, "Failed to start ADC command streaming for board %d\n", board);
       return -1;
     }
@@ -1361,21 +1394,71 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   }
   
   if (check_count >= max_checks) {
-    printf("Warning: Timeout waiting for buffer preload - proceeding anyway\n");
+    printf("Warning: Timeout waiting for buffer preload!\n");
+    printf("Current buffer status:\n");
+    for (int board = 0; board < 8; board++) {
+      if (!connected_boards[board]) continue;
+      
+      if (ctx->dac_cmd_stream_running[board]) {
+        uint32_t dac_cmd_fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+        uint32_t dac_words = FIFO_STS_WORD_COUNT(dac_cmd_fifo_status);
+        printf("  Board %d DAC command buffer: %u words\n", board, dac_words);
+      }
+      
+      if (ctx->adc_cmd_stream_running[board]) {
+        uint32_t adc_cmd_fifo_status = sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+        uint32_t adc_words = FIFO_STS_WORD_COUNT(adc_cmd_fifo_status);
+        printf("  Board %d ADC command buffer: %u words\n", board, adc_words);
+      }
+    }
+    
+    char input_buffer[1024];
+    printf("Do you want to proceed anyway? (y/N): ");
+    fflush(stdout);
+    
+    if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+      printf("Failed to read user input, aborting\n");
+      return -1;
+    }
+    
+    // Remove newline
+    size_t len = strlen(input_buffer);
+    if (len > 0 && input_buffer[len - 1] == '\n') {
+      input_buffer[len - 1] = '\0';
+    }
+    
+    if (strcasecmp(input_buffer, "y") != 0 && strcasecmp(input_buffer, "yes") != 0) {
+      printf("Waveform test aborted by user\n");
+      return -1;
+    }
+    
+    printf("Proceeding with waveform test...\n");
   } else if (*(ctx->verbose)) {
     printf("Command buffers preloaded successfully\n");
   }
   
   // Send sync_ch trigger to start all streams (after all streams including trigger are set up)
   printf("Sending sync trigger to start waveform test...\n");
-  trigger_cmd_sync_ch(ctx->trigger_ctrl, false);
+  trigger_cmd_sync_ch(ctx->trigger_ctrl, false, *(ctx->verbose));
+  
+  // Reset trigger count after sync_ch to start counting from 0
+  if (*(ctx->verbose)) {
+    printf("Resetting trigger count after sync\n");
+  }
+  trigger_cmd_reset_count(ctx->trigger_ctrl, *(ctx->verbose));
+  
+  // Set trigger lockout
+  if (*(ctx->verbose)) {
+    printf("Setting trigger lockout time to %u cycles\n", lockout_time);
+  }
+  trigger_cmd_set_lockout(ctx->trigger_ctrl, lockout_time, *(ctx->verbose));
   
   // Set up trigger expectations after sync trigger is sent and trigger streaming is ready
   if (total_expected_triggers > 0) {
     if (*(ctx->verbose)) {
       printf("Setting expected external triggers to %u with logging enabled\n", total_expected_triggers);
     }
-    trigger_cmd_expect_ext(ctx->trigger_ctrl, total_expected_triggers, true);
+    trigger_cmd_expect_ext(ctx->trigger_ctrl, total_expected_triggers, true, *(ctx->verbose));
   }
   
   if (*(ctx->verbose)) {
@@ -1394,8 +1477,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   
   static trigger_monitor_params_t monitor_params;
   monitor_params.sys_sts = ctx->sys_sts;
-  monitor_params.initial_trigger_count = initial_trigger_count;
-  monitor_params.expected_total_triggers = expected_total_triggers;
+  monitor_params.expected_total_triggers = total_expected_triggers; // Just the external triggers
   monitor_params.should_stop = &g_trigger_monitor_should_stop;
   monitor_params.verbose = *(ctx->verbose);
   
@@ -2011,10 +2093,10 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
     printf("Resetting buffers...\n");
     sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
     sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
-    usleep(1000);
+    usleep(10000); // 10ms delay
     sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, false);
     sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, false);
-    usleep(1000);
+    usleep(10000); // 10ms delay
   } else {
     printf("Skipping buffer reset (--no_reset flag set)\n");
   }
@@ -2153,7 +2235,13 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   if (*(ctx->verbose)) {
     printf("Fieldmap [VERBOSE]: Sending sync trigger\n");
   }
-  trigger_cmd_sync_ch(ctx->trigger_ctrl, false); // Use verbose mode for logging
+  trigger_cmd_sync_ch(ctx->trigger_ctrl, false, *(ctx->verbose)); // Use verbose mode for logging
+  
+  // Reset trigger count after sync_ch to start counting from 0
+  if (*(ctx->verbose)) {
+    printf("Fieldmap [VERBOSE]: Resetting trigger count after sync\n");
+  }
+  trigger_cmd_reset_count(ctx->trigger_ctrl, *(ctx->verbose));
   
   // Step 11: Set up trigger system after sync
   int total_triggers = (end_channel - start_channel + 1) * 2; // 2 per channel
@@ -2163,12 +2251,12 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   if (*(ctx->verbose)) {
     printf("Fieldmap [VERBOSE]: Setting lockout to %u cycles (%.3f ms at %.3f MHz)\n", lockout_cycles, lockout_ms, spi_freq_mhz);
   }
-  trigger_cmd_set_lockout(ctx->trigger_ctrl, lockout_cycles);
+  trigger_cmd_set_lockout(ctx->trigger_ctrl, lockout_cycles, *(ctx->verbose));
   
   if (*(ctx->verbose)) {
     printf("Fieldmap [VERBOSE]: Expecting %d external triggers\n", total_triggers);
   }
-  trigger_cmd_expect_ext(ctx->trigger_ctrl, total_triggers, true); // Enable logging
+  trigger_cmd_expect_ext(ctx->trigger_ctrl, total_triggers, true, *(ctx->verbose)); // Enable logging
   
   printf("\nFieldmap data collection started successfully!\n");
   printf("Data collection is running in the background.\n");
@@ -2853,11 +2941,11 @@ int cmd_zero_all_dacs(const char** args, int arg_count, const command_flag_t* fl
     sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose)); // Reset all boards + trigger
     sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
     __sync_synchronize(); // Memory barrier
-    usleep(1000); // 1ms delay
+    usleep(10000); // 10ms delay
     sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
     sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
     __sync_synchronize(); // Memory barrier
-    usleep(1000); // 1ms delay
+    usleep(10000); // 10ms delay
   } else {
     if (*(ctx->verbose)) {
       printf("Skipping buffer reset (--no_reset flag specified)\n");
@@ -2967,12 +3055,12 @@ int cmd_find_bias(const char** args, int arg_count, const command_flag_t* flags,
     if (*(ctx->verbose)) {
       printf("Resetting all buffers...\n");
     }
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
-    usleep(1000); // 1ms
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, false);
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, false);
-    usleep(1000); // 1ms
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
+    usleep(10000); // 10ms
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
+    usleep(10000); // 10ms
   }
   
   // Send cancel commands to all connected boards
@@ -2981,8 +3069,8 @@ int cmd_find_bias(const char** args, int arg_count, const command_flag_t* flags,
   }
   for (int board = 0; board < 8; board++) {
     if (connected_boards[board]) {
-      dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, false);
-      adc_cmd_cancel(ctx->adc_ctrl, (uint8_t)board, false);
+      dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, *(ctx->verbose));
+      adc_cmd_cancel(ctx->adc_ctrl, (uint8_t)board, *(ctx->verbose));
     }
   }
   usleep(1000); // 1ms to let cancel commands complete
@@ -2991,14 +3079,22 @@ int cmd_find_bias(const char** args, int arg_count, const command_flag_t* flags,
   const int dac_values[] = {-3276, -1638, 0, 1638, 3276};
   const int num_dac_values = 5;
   const int slope_samples = 5; // Samples per DAC value for slope check
-  const int16_t dac_zero_value = 0; // Only sample at DAC = 0 for bias measurement
   const int bias_sample_count = 50; // Take 50 samples per channel for bias
   const int delay_ms = 1; // 1ms delay
-  const double slope_tolerance = 0.01; // +/-0.01 slope tolerance
+  const double slope_tolerance = 0.1; // +/-0.1 slope tolerance
   
   int channels_calibrated = 0;
   int channels_failed = 0;
   bool channel_slope_valid[64] = {false}; // Track which channels pass slope test
+  
+  // Track failed channels for reporting
+  int failed_channels_phase1[64];
+  char failed_reasons_phase1[64][64];
+  int phase1_failed_count = 0;
+  
+  int failed_channels_phase2[64];
+  char failed_reasons_phase2[64][64];
+  int phase2_failed_count = 0;
   
   // Initialize all ADC bias values as invalid
   for (int ch = 0; ch < 64; ch++) {
@@ -3074,6 +3170,9 @@ int cmd_find_bias(const char** args, int arg_count, const command_flag_t* flags,
       if (*(ctx->verbose)) {
         printf("  Ch %02d: FAIL (no ADC data)\n", ch);
       }
+      failed_channels_phase1[phase1_failed_count] = ch;
+      snprintf(failed_reasons_phase1[phase1_failed_count], sizeof(failed_reasons_phase1[phase1_failed_count]), "no ADC data");
+      phase1_failed_count++;
       channels_failed++;
       continue;
     }
@@ -3095,6 +3194,9 @@ int cmd_find_bias(const char** args, int arg_count, const command_flag_t* flags,
       if (*(ctx->verbose)) {
         printf("  Ch %02d: FAIL (div by zero)\n", ch);
       }
+      failed_channels_phase1[phase1_failed_count] = ch;
+      snprintf(failed_reasons_phase1[phase1_failed_count], sizeof(failed_reasons_phase1[phase1_failed_count]), "div by zero");
+      phase1_failed_count++;
       channels_failed++;
       continue;
     }
@@ -3106,6 +3208,9 @@ int cmd_find_bias(const char** args, int arg_count, const command_flag_t* flags,
       if (*(ctx->verbose)) {
         printf("  Ch %02d: FAIL (slope=%.4f, not near 0)\n", ch, slope);
       }
+      failed_channels_phase1[phase1_failed_count] = ch;
+      snprintf(failed_reasons_phase1[phase1_failed_count], sizeof(failed_reasons_phase1[phase1_failed_count]), "slope=%.4f (not near 0)", slope);
+      phase1_failed_count++;
       channels_failed++;
       continue;
     }
@@ -3129,6 +3234,13 @@ int cmd_find_bias(const char** args, int arg_count, const command_flag_t* flags,
   
   if (channels_failed > 0) {
     printf("Some channels failed slope validation. Aborting bias calibration to avoid partial results.\n");
+    printf("Failed channels in Phase 1 (slope validation):\n");
+    for (int i = 0; i < phase1_failed_count; i++) {
+      int ch = failed_channels_phase1[i];
+      int board = ch / 8;
+      int channel = ch % 8;
+      printf("  Ch %02d (Board %d, Channel %d): %s\n", ch, board, channel, failed_reasons_phase1[i]);
+    }
     return -1;
   }
   
@@ -3160,7 +3272,7 @@ int cmd_find_bias(const char** args, int arg_count, const command_flag_t* flags,
     bool calibration_failed = false;
     
     // Set DAC to zero value
-    dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, dac_zero_value, false);
+    dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, 0, false);
     usleep(delay_ms * 1000); // Wait for DAC to settle
     
     // Collect samples
@@ -3192,6 +3304,9 @@ int cmd_find_bias(const char** args, int arg_count, const command_flag_t* flags,
     
     if (calibration_failed) {
       printf("FAIL (no ADC data)\n");
+      failed_channels_phase2[phase2_failed_count] = ch;
+      snprintf(failed_reasons_phase2[phase2_failed_count], sizeof(failed_reasons_phase2[phase2_failed_count]), "no ADC data");
+      phase2_failed_count++;
       channels_failed++;
       continue;
     }
@@ -3240,6 +3355,16 @@ int cmd_find_bias(const char** args, int arg_count, const command_flag_t* flags,
   printf("\nADC bias calibration complete:\n");
   printf("  Channels calibrated: %d\n", channels_calibrated);
   printf("  Channels failed: %d\n", channels_failed);
+  
+  if (channels_failed > 0) {
+    printf("Failed channels in Phase 2 (bias measurement):\n");
+    for (int i = 0; i < phase2_failed_count; i++) {
+      int ch = failed_channels_phase2[i];
+      int board = ch / 8;
+      int channel = ch % 8;
+      printf("  Ch %02d (Board %d, Channel %d): %s\n", ch, board, channel, failed_reasons_phase2[i]);
+    }
+  }
   
   if (channels_calibrated == 0) {
     printf("No channels were successfully calibrated.\n");

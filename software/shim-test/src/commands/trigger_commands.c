@@ -65,26 +65,26 @@ int cmd_read_trig_data(const char** args, int arg_count, const command_flag_t* f
 // Basic trigger command operations
 int cmd_trig_sync_ch(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   bool log = (arg_count > 0 && strcmp(args[0], "log") == 0);
-  trigger_cmd_sync_ch(ctx->trigger_ctrl, log);
+  trigger_cmd_sync_ch(ctx->trigger_ctrl, log, *(ctx->verbose));
   printf("Trigger synchronize channels command sent%s.\n", log ? " with logging" : "");
   return 0;
 }
 
 int cmd_trig_force_trig(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   bool log = (arg_count > 0 && strcmp(args[0], "log") == 0);
-  trigger_cmd_force_trig(ctx->trigger_ctrl, log);
+  trigger_cmd_force_trig(ctx->trigger_ctrl, log, *(ctx->verbose));
   printf("Trigger force trigger command sent%s.\n", log ? " with logging" : "");
   return 0;
 }
 
 int cmd_trig_cancel(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  trigger_cmd_cancel(ctx->trigger_ctrl);
+  trigger_cmd_cancel(ctx->trigger_ctrl, *(ctx->verbose));
   printf("Trigger cancel command sent.\n");
   return 0;
 }
 
 int cmd_trig_reset_count(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  trigger_cmd_reset_count(ctx->trigger_ctrl);
+  trigger_cmd_reset_count(ctx->trigger_ctrl, *(ctx->verbose));
   printf("Trigger reset count command sent.\n");
   return 0;
 }
@@ -109,7 +109,7 @@ int cmd_trig_set_lockout(const char** args, int arg_count, const command_flag_t*
     return -1;
   }
   
-  trigger_cmd_set_lockout(ctx->trigger_ctrl, cycles);
+  trigger_cmd_set_lockout(ctx->trigger_ctrl, cycles, *(ctx->verbose));
   printf("Trigger set lockout command sent with %u cycles.\n", cycles);
   return 0;
 }
@@ -127,7 +127,7 @@ int cmd_trig_delay(const char** args, int arg_count, const command_flag_t* flags
     return -1;
   }
   
-  trigger_cmd_delay(ctx->trigger_ctrl, cycles);
+  trigger_cmd_delay(ctx->trigger_ctrl, cycles, *(ctx->verbose));
   printf("Trigger delay command sent with %u cycles.\n", cycles);
   return 0;
 }
@@ -146,7 +146,7 @@ int cmd_trig_expect_ext(const char** args, int arg_count, const command_flag_t* 
   }
   
   bool log = (arg_count > 1 && strcmp(args[1], "log") == 0);
-  trigger_cmd_expect_ext(ctx->trigger_ctrl, count, log);
+  trigger_cmd_expect_ext(ctx->trigger_ctrl, count, log, *(ctx->verbose));
   printf("Trigger expect external command sent with count %u%s.\n", count, log ? " with logging" : "");
   return 0;
 }

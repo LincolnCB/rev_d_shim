@@ -10,8 +10,8 @@
 #define DAC_FIFO(board)    (0x80000000 + (board) * 0x10000)
 
 // DAC FIFO depths
-#define DAC_CMD_FIFO_WORDCOUNT   (uint32_t) 1024 // Size in 32-bit words
-#define DAC_DATA_FIFO_WORDCOUNT  (uint32_t) 1024 // Size in 32-bit words
+#define DAC_CMD_FIFO_WORDCOUNT   (uint32_t)(1 << 13) // 8192 words (2^13)
+#define DAC_DATA_FIFO_WORDCOUNT  (uint32_t)(1 << 10) // 1024 words (2^10)
 
 // DAC state codes
 #define DAC_STATE_RESET      0

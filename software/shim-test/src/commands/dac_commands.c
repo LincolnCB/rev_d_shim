@@ -84,17 +84,7 @@ int cmd_read_dac_data(const char** args, int arg_count, const command_flag_t* fl
 
 // DAC command operations
 int cmd_dac_noop(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  int board = validate_board_number(args[0]);
-  if (board < 0) {
-    fprintf(stderr, "Invalid board number for dac_noop: '%s'. Must be 0-7.\n", args[0]);
-    return -1;
-  }
-  
-  // Check if DAC command stream is running for this board
-  if (ctx->dac_cmd_stream_running[board]) {
-    fprintf(stderr, "Cannot send DAC no-op command to board %d: DAC command stream is currently running. Stop the stream first.\n", board);
-    return -1;
-  }
+  bool use_all = (strcmp(args[0], "all") == 0);
   
   bool is_trigger;
   uint32_t value;
@@ -109,9 +99,59 @@ int cmd_dac_noop(const char** args, int arg_count, const command_flag_t* flags, 
   
   bool cont = has_flag(flags, flag_count, FLAG_CONTINUE);
   
-  dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, is_trigger, cont, false, value, *(ctx->verbose));
-  printf("DAC no-op command sent to board %d with %s mode, value %u%s.\n", 
-         board, is_trigger ? "trigger" : "delay", value, cont ? ", continuous" : "");
+  if (use_all) {
+    // Check which boards are connected by checking FIFOs
+    bool connected_boards[8] = {false};
+    int connected_count = 0;
+    
+    for (int board = 0; board < 8; board++) {
+      uint32_t dac_cmd_fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+      uint32_t dac_data_fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+      
+      if (FIFO_PRESENT(dac_cmd_fifo_status) && FIFO_PRESENT(dac_data_fifo_status)) {
+        connected_boards[board] = true;
+        connected_count++;
+      }
+    }
+    
+    if (connected_count == 0) {
+      printf("No boards are connected.\n");
+      return 0;
+    }
+    
+    printf("Sending DAC no-op command to %d connected board(s) with %s mode, value %u%s:\n", 
+           connected_count, is_trigger ? "trigger" : "delay", value, cont ? ", continuous" : "");
+    
+    for (int board = 0; board < 8; board++) {
+      if (!connected_boards[board]) continue;
+      
+      // Check if DAC command stream is running for this board
+      if (ctx->dac_cmd_stream_running[board]) {
+        printf("  Board %d: Skipped (DAC command stream is running)\n", board);
+        continue;
+      }
+      
+      dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, is_trigger, cont, false, value, *(ctx->verbose));
+      printf("  Board %d: DAC no-op command sent\n", board);
+    }
+  } else {
+    int board = validate_board_number(args[0]);
+    if (board < 0) {
+      fprintf(stderr, "Invalid board number for dac_noop: '%s'. Must be 0-7.\n", args[0]);
+      return -1;
+    }
+    
+    // Check if DAC command stream is running for this board
+    if (ctx->dac_cmd_stream_running[board]) {
+      fprintf(stderr, "Cannot send DAC no-op command to board %d: DAC command stream is currently running. Stop the stream first.\n", board);
+      return -1;
+    }
+    
+    dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, is_trigger, cont, false, value, *(ctx->verbose));
+    printf("DAC no-op command sent to board %d with %s mode, value %u%s.\n", 
+           board, is_trigger ? "trigger" : "delay", value, cont ? ", continuous" : "");
+  }
+  
   return 0;
 }
 
@@ -585,7 +625,7 @@ void* dac_cmd_stream_thread(void* arg) {
   int loop_count = stream_data->loop_count;
   
   if (*(ctx->verbose)) {
-    printf("DAC Stream Thread[%d]: Started streaming from file '%s' (%d commands, %d loop%s)\n", 
+    printf("DAC Command Stream Thread[%d]: Started streaming from file '%s' (%d commands, %d loop%s)\n", 
            board, file_path, command_count, loop_count, loop_count == 1 ? "" : "s");
   }
   
@@ -602,7 +642,7 @@ void* dac_cmd_stream_thread(void* arg) {
       uint32_t fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, board, false);
       
       if (FIFO_PRESENT(fifo_status) == 0) {
-        fprintf(stderr, "DAC Stream Thread[%d]: FIFO not present, stopping stream\n", board);
+        fprintf(stderr, "DAC Command Stream Thread[%d]: FIFO not present, stopping stream\n", board);
         goto cleanup;
       }
       
@@ -631,7 +671,7 @@ void* dac_cmd_stream_thread(void* arg) {
         cmd_index++;
         
         if (*(ctx->verbose)) {
-          printf("DAC Stream Thread[%d]: Loop %d/%d, Sent command %d/%d (%s, value=%u, %s, cont=%s) [FIFO: %u/%u words]\n", 
+          printf("DAC Command Stream Thread[%d]: Loop %d/%d, Sent command %d/%d (%s, value=%u, %s, cont=%s) [FIFO: %u/%u words]\n", 
                  board, current_loop + 1, loop_count, commands_sent_this_loop, command_count, 
                  cmd->is_trigger ? "trigger" : "delay", cmd->value,
                  cmd->has_ch_vals ? "with ch_vals" : "noop",
@@ -645,17 +685,17 @@ void* dac_cmd_stream_thread(void* arg) {
     
     current_loop++;
     if (current_loop < loop_count && *(ctx->verbose)) {
-      printf("DAC Stream Thread[%d]: Completed loop %d/%d, starting next loop\n", 
+      printf("DAC Command Stream Thread[%d]: Completed loop %d/%d, starting next loop\n", 
              board, current_loop, loop_count);
     }
   }
 
 cleanup:
   if (*should_stop) {
-    printf("DAC Stream Thread[%d]: Stopping stream (user requested), sent %d total commands (%d complete loops)\n", 
+    printf("DAC Command Stream Thread[%d]: Stopping stream (user requested), sent %d total commands (%d complete loops)\n", 
            board, total_commands_sent, current_loop);
   } else {
-    printf("DAC Stream Thread[%d]: Stream completed, sent %d total commands from file '%s' (%d loops)\n", 
+    printf("DAC Command Stream Thread[%d]: Stream completed, sent %d total commands from file '%s' (%d loops)\n", 
            board, total_commands_sent, file_path, loop_count);
   }
   
@@ -716,6 +756,53 @@ int cmd_stream_dac_commands_from_file(const char** args, int arg_count, const co
   
   if (*(ctx->verbose)) {
     printf("Parsed %d commands from waveform file '%s'\n", command_count, full_path);
+  }
+  
+  // Validate trigger gaps to prevent FIFO underflow
+  int words_since_last_trigger = 0;
+  int max_gap = 0;
+  bool found_trigger = false;
+  
+  for (int i = 0; i < command_count; i++) {
+    waveform_command_t* cmd = &commands[i];
+    uint32_t words_needed = cmd->has_ch_vals ? 5 : 1; // dac_wr needs 5 words, noop needs 1
+    
+    if (cmd->is_trigger) {
+      // Found a trigger command - check the gap since last trigger
+      if (found_trigger && words_since_last_trigger > max_gap) {
+        max_gap = words_since_last_trigger;
+      }
+      found_trigger = true;
+      words_since_last_trigger = words_needed; // Reset counter with current command
+    } else {
+      words_since_last_trigger += words_needed;
+    }
+  }
+  
+  // Check the final gap (from last trigger to end)
+  if (found_trigger && words_since_last_trigger > max_gap) {
+    max_gap = words_since_last_trigger;
+  }
+  
+  // Warn if any gap exceeds FIFO size
+  if (!found_trigger) {
+    // No trigger commands found - check if total command size exceeds FIFO
+    int total_words = words_since_last_trigger;
+    if (total_words > DAC_CMD_FIFO_WORDCOUNT) {
+      printf("WARNING: Waveform contains no triggers and requires %d words, which exceeds DAC FIFO size (%u words).\n", 
+             total_words, DAC_CMD_FIFO_WORDCOUNT);
+      printf("         This may cause FIFO overflow during streaming. Consider adding trigger commands, keeping delays long, or reducing waveform size.\n");
+    } else if (*(ctx->verbose)) {
+      printf("No trigger validation: Waveform requires %d words (FIFO size: %u words) - OK\n", 
+             total_words, DAC_CMD_FIFO_WORDCOUNT);
+    }
+  } else if (max_gap > DAC_CMD_FIFO_WORDCOUNT) {
+    printf("WARNING: Maximum gap between triggers is %d words, which exceeds DAC FIFO size (%u words).\n", 
+           max_gap, DAC_CMD_FIFO_WORDCOUNT);
+    printf("         This may cause FIFO underflow during streaming. Consider reducing number of delay commands between triggers or keeping delays long.\n");
+  } else if (*(ctx->verbose)) {
+    printf("Trigger gap validation: Maximum gap is %d words (FIFO size: %u words) - OK\n", 
+           max_gap, DAC_CMD_FIFO_WORDCOUNT);
   }
   
   // Allocate thread data structure

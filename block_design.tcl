@@ -29,10 +29,10 @@ if {$spi_clk_freq_mhz < 1.0 || $spi_clk_freq_mhz > 50.0} {
 # This sets the depth of the FIFOs as 2^ADDR_WIDTH
 # Larger FIFOs use more FPGA resources, but allow for longer bursts and more buffering.
 # This can hit the cap fast!
-set dac_cmd_fifo_addr_width 11
+set dac_cmd_fifo_addr_width 13
 set dac_data_fifo_addr_width 10
 set adc_cmd_fifo_addr_width 10
-set adc_data_fifo_addr_width 11
+set adc_data_fifo_addr_width 13
 set trig_cmd_fifo_addr_width 10
 set trig_data_fifo_addr_width 10
 
@@ -208,6 +208,7 @@ cell lcb:user:shim_axi_sys_ctrl axi_sys_ctrl {
   INTEG_EN_DEFAULT 1
   MOSI_SCK_POL_DEFAULT 0
   MISO_SCK_POL_DEFAULT 1
+  DAC_CAL_INIT_DEFAULT 14
 } {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
@@ -498,7 +499,7 @@ cell xilinx.com:ip:xlconcat:2.1 debug_1 {
 }
 cell xilinx.com:ip:xlconstant:1.1 pad_17 {
   CONST_VAL 0
-  CONST_WIDTH 30
+  CONST_WIDTH 17
 } {
   dout debug_1/In4
 }
