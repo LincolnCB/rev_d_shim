@@ -113,7 +113,7 @@ int cmd_hard_reset(const char** args, int arg_count, const command_flag_t* flags
   
   // Step 4: Set buffer resets to 0x1FFFF
   printf("  Step 4: Setting buffer resets to 0x1FFFF\n");
-  0(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
+  sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
   sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
   usleep(10000); // 10ms
   
@@ -268,4 +268,147 @@ int cmd_set_integ_enable(const char** args, int arg_count, const command_flag_t*
   sys_ctrl_set_integ_enable(ctx->sys_ctrl, value, *(ctx->verbose));
   printf("Integrator enable register set to 0x%08X (%u).\n", value, value);
   return 0;
+}
+
+// Safe buffer reset function that only resets buffers with entries (when system is on)
+void safe_buffer_reset(command_context_t* ctx, bool verbose) {
+  if (verbose) {
+    printf("Performing safe buffer reset...\n");
+  }
+  
+  // Check system status
+  uint32_t hw_status = sys_sts_get_hw_status(ctx->sys_sts, verbose);
+  uint32_t system_state = HW_STS_STATE(hw_status);
+  bool system_is_off = (system_state != S_RUNNING);
+  
+  if (verbose) {
+    printf("System state: %u %s\n", system_state, system_is_off ? "(OFF)" : "(ON)");
+  }
+  
+  uint32_t cmd_reset_mask = 0;
+  uint32_t data_reset_mask = 0;
+  
+  // Check DAC command and data buffers for boards 0-7
+  // DAC command buffers: bits 0, 2, 4, 6, 8, 10, 12, 14
+  // DAC data buffers: same bits
+  for (int board = 0; board < 8; board++) {
+    uint32_t dac_bit = board * 2;  // 0, 2, 4, 6, 8, 10, 12, 14
+    
+    // Check DAC command buffer
+    uint32_t dac_cmd_fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, board, false);
+    if (FIFO_PRESENT(dac_cmd_fifo_status)) {
+      if (system_is_off || FIFO_STS_WORD_COUNT(dac_cmd_fifo_status) > 0) {
+        cmd_reset_mask |= (1U << dac_bit);
+        if (verbose) {
+          printf("  DAC board %d command buffer: %s - will reset\n", board,
+                 (FIFO_STS_WORD_COUNT(dac_cmd_fifo_status) > 0 ? "has entries" : "empty"));
+        }
+      } else if (verbose) {
+        printf("  DAC board %d command buffer: empty - skipping reset\n", board);
+      }
+    }
+    
+    // Check DAC data buffer
+    uint32_t dac_data_fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, board, false);
+    if (FIFO_PRESENT(dac_data_fifo_status)) {
+      if (system_is_off || FIFO_STS_WORD_COUNT(dac_data_fifo_status) > 0) {
+        data_reset_mask |= (1U << dac_bit);
+        if (verbose) {
+          printf("  DAC board %d data buffer: %s - will reset\n", board,
+                 (FIFO_STS_WORD_COUNT(dac_data_fifo_status) > 0 ? "has entries" : "empty"));
+        }
+      } else if (verbose) {
+        printf("  DAC board %d data buffer: empty - skipping reset\n", board);
+      }
+    }
+  }
+  
+  // Check ADC command and data buffers for boards 0-7
+  // ADC command buffers: bits 1, 3, 5, 7, 9, 11, 13, 15
+  // ADC data buffers: same bits
+  for (int board = 0; board < 8; board++) {
+    uint32_t adc_bit = board * 2 + 1;  // 1, 3, 5, 7, 9, 11, 13, 15
+    
+    // Check ADC command buffer
+    uint32_t adc_cmd_fifo_status = sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, board, false);
+    if (FIFO_PRESENT(adc_cmd_fifo_status)) {
+      if (system_is_off || FIFO_STS_WORD_COUNT(adc_cmd_fifo_status) > 0) {
+        cmd_reset_mask |= (1U << adc_bit);
+        if (verbose) {
+          printf("  ADC board %d command buffer: %s - will reset\n", board,
+                 (FIFO_STS_WORD_COUNT(adc_cmd_fifo_status) > 0 ? "has entries" : "empty"));
+        }
+      } else if (verbose) {
+        printf("  ADC board %d command buffer: empty - skipping reset\n", board);
+      }
+    }
+    
+    // Check ADC data buffer
+    uint32_t adc_data_fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, board, false);
+    if (FIFO_PRESENT(adc_data_fifo_status)) {
+      if (system_is_off || FIFO_STS_WORD_COUNT(adc_data_fifo_status) > 0) {
+        data_reset_mask |= (1U << adc_bit);
+        if (verbose) {
+          printf("  ADC board %d data buffer: %s - will reset\n", board,
+                 (FIFO_STS_WORD_COUNT(adc_data_fifo_status) > 0 ? "has entries" : "empty"));
+        }
+      } else if (verbose) {
+        printf("  ADC board %d data buffer: empty - skipping reset\n", board);
+      }
+    }
+  }
+  
+  // Check trigger command and data buffers - bit 16
+  uint32_t trig_cmd_fifo_status = sys_sts_get_trig_cmd_fifo_status(ctx->sys_sts, false);
+  if (FIFO_PRESENT(trig_cmd_fifo_status)) {
+    if (system_is_off || FIFO_STS_WORD_COUNT(trig_cmd_fifo_status) > 0) {
+      cmd_reset_mask |= (1U << 16);
+      if (verbose) {
+        printf("  Trigger command buffer: %s - will reset\n",
+               (FIFO_STS_WORD_COUNT(trig_cmd_fifo_status) > 0 ? "has entries" : "empty"));
+      }
+    } else if (verbose) {
+      printf("  Trigger command buffer: empty - skipping reset\n");
+    }
+  }
+  
+  uint32_t trig_data_fifo_status = sys_sts_get_trig_data_fifo_status(ctx->sys_sts, false);
+  if (FIFO_PRESENT(trig_data_fifo_status)) {
+    if (system_is_off || FIFO_STS_WORD_COUNT(trig_data_fifo_status) > 0) {
+      data_reset_mask |= (1U << 16);
+      if (verbose) {
+        printf("  Trigger data buffer: %s - will reset\n",
+               (FIFO_STS_WORD_COUNT(trig_data_fifo_status) > 0 ? "has entries" : "empty"));
+      }
+    } else if (verbose) {
+      printf("  Trigger data buffer: empty - skipping reset\n");
+    }
+  }
+  
+  // Apply the resets
+  if (cmd_reset_mask != 0) {
+    if (verbose) {
+      printf("Setting command buffer reset mask: 0x%05X\n", cmd_reset_mask);
+    }
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, cmd_reset_mask, verbose);
+    usleep(1000); // 1ms delay
+    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, verbose);
+  } else if (verbose) {
+    printf("No command buffers need resetting\n");
+  }
+  
+  if (data_reset_mask != 0) {
+    if (verbose) {
+      printf("Setting data buffer reset mask: 0x%05X\n", data_reset_mask);
+    }
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, data_reset_mask, verbose);
+    usleep(1000); // 1ms delay
+    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, verbose);
+  } else if (verbose) {
+    printf("No data buffers need resetting\n");
+  }
+  
+  if (verbose) {
+    printf("Safe buffer reset complete.\n");
+  }
 }

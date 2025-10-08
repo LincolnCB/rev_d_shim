@@ -34,4 +34,7 @@ int cmd_set_integ_window(const char** args, int arg_count, const command_flag_t*
 int cmd_set_integ_average(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_set_integ_enable(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
+// Safe buffer reset function
+void safe_buffer_reset(command_context_t* ctx, bool verbose);
+
 #endif // SYSTEM_COMMANDS_H

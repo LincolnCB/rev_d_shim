@@ -16,6 +16,7 @@
 #include "adc_commands.h"
 #include "dac_commands.h"
 #include "trigger_commands.h"
+#include "system_commands.h"
 #include "sys_sts.h"
 #include "sys_ctrl.h"
 #include "dac_ctrl.h"
@@ -296,12 +297,7 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
       printf("  Step 2: Resetting ADC and DAC buffers for all boards\n");
       fflush(stdout);
     }
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose)); // Reset all boards + trigger
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
-    __sync_synchronize(); // Memory barrier
-    usleep(10000); // 10ms delay
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
+    safe_buffer_reset(ctx, *(ctx->verbose));
     __sync_synchronize(); // Memory barrier
     usleep(10000); // 10ms delay
     if (*(ctx->verbose)) {
@@ -512,11 +508,7 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
   // Reset buffers once at the start (unless --no_reset flag is used)
   if (!skip_reset) {
     printf("Resetting all buffers...\n");
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, false); // Reset all boards + trigger
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
-    usleep(10000); // 10ms
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, false);
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, false);
+    safe_buffer_reset(ctx, false);
     usleep(10000); // 10ms
   }
   
@@ -586,7 +578,7 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
       // Check hardware status when calibration fails - if system is halted, abort calibration
       printf("Reading hardware status register...\n");
       uint32_t hw_status = sys_sts_get_hw_status(ctx->sys_sts, *(ctx->verbose));
-      if (HW_STS_HALTED(hw_status)) {
+      if (HW_STS_STATE(hw_status) == S_HALTED) {
         printf("Hardware status shows system is HALTED. Aborting channel calibration.\n");
         print_hw_status(hw_status, *(ctx->verbose));
         return -1;
@@ -790,7 +782,7 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
     if (calibration_failed) {
       printf("Reading hardware status register...\n");
       uint32_t hw_status = sys_sts_get_hw_status(ctx->sys_sts, *(ctx->verbose));
-      if (HW_STS_HALTED(hw_status)) {
+      if (HW_STS_STATE(hw_status) == S_HALTED) {
         printf("Hardware status shows system is HALTED. Aborting channel calibration.\n");
         print_hw_status(hw_status, *(ctx->verbose));
         return -1;
@@ -857,8 +849,11 @@ static void* trigger_monitor_thread(void* arg) {
                current_trigger_count, params->expected_total_triggers);
         fflush(stdout);
         completed_message_shown = true;
+        
+        // Auto-stop monitoring after reaching expected count
+        printf("Trigger monitoring auto-stopping after reaching expected count.\n");
+        break;
       }
-      // Keep monitoring but don't exit - let the main program control when to stop
     }
     
     last_trigger_count = current_trigger_count;
@@ -897,11 +892,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     printf("Step 1: Skipping buffer reset (--no_reset flag specified)\n");
   } else {
     printf("Step 1: Resetting all buffers\n");
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose)); // Reset all boards + trigger
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
-    usleep(10000); // 10ms
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
+    safe_buffer_reset(ctx, *(ctx->verbose));
     usleep(10000); // 10ms
   }
   
@@ -2091,11 +2082,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   // Step 5: Reset buffers unless --no_reset flag is set
   if (!skip_reset) {
     printf("Resetting buffers...\n");
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, false);
-    usleep(10000); // 10ms delay
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, false);
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, false);
+    safe_buffer_reset(ctx, false);
     usleep(10000); // 10ms delay
   } else {
     printf("Skipping buffer reset (--no_reset flag set)\n");
@@ -2938,12 +2925,7 @@ int cmd_zero_all_dacs(const char** args, int arg_count, const command_flag_t* fl
     if (*(ctx->verbose)) {
       printf("Resetting DAC command and data buffers for all boards...\n");
     }
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose)); // Reset all boards + trigger
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
-    __sync_synchronize(); // Memory barrier
-    usleep(10000); // 10ms delay
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
+    safe_buffer_reset(ctx, *(ctx->verbose));
     __sync_synchronize(); // Memory barrier
     usleep(10000); // 10ms delay
   } else {
@@ -3055,11 +3037,7 @@ int cmd_find_bias(const char** args, int arg_count, const command_flag_t* flags,
     if (*(ctx->verbose)) {
       printf("Resetting all buffers...\n");
     }
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
-    usleep(10000); // 10ms
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
+    safe_buffer_reset(ctx, *(ctx->verbose));
     usleep(10000); // 10ms
   }
   

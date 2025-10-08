@@ -11,6 +11,7 @@
 #include <glob.h>
 #include "dac_commands.h"
 #include "command_helper.h"
+#include "system_commands.h"
 #include "sys_sts.h"
 #include "sys_ctrl.h"
 #include "dac_ctrl.h"
@@ -341,11 +342,7 @@ int cmd_get_dac_cal(const char** args, int arg_count, const command_flag_t* flag
   // Reset buffers once at the start (unless --no_reset flag is used)
   if (!skip_reset) {
     printf("Resetting all buffers...\n");
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0x1FFFF, *(ctx->verbose));
-    usleep(10000); // 10ms
-    sys_ctrl_set_data_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
-    sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
+    safe_buffer_reset(ctx, *(ctx->verbose));
     usleep(10000); // 10ms
   }
   
