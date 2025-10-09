@@ -125,7 +125,7 @@ static command_entry_t command_table[] = {
   {"stop_trigger_monitor", cmd_stop_trigger_monitor, {0, 0, {-1}, "Stop trigger monitoring thread"}},
   {"stop_waveform", cmd_stop_waveform, {0, 0, {-1}, "Stop waveform test - stops all streaming and monitoring"}},
   {"rev_c_compat", cmd_rev_c_compat, {4, 4, {FLAG_BIN, -1}, "Rev C compatibility: <dac_file> <loops> <adc_output_file> <delay_cycles> [--bin] - Convert Rev C 32-channel DAC files to Rev D format"}},
-  {"zero_all_dacs", cmd_zero_all_dacs, {0, 0, {FLAG_NO_RESET, -1}, "Zero all DAC channels on all connected boards [--no_reset]"}},
+  {"dac_zero", cmd_dac_zero, {1, 1, {FLAG_NO_RESET, -1}, "Set DAC channels to calibrated zero: <board_num|all> [--no_reset]"}},
   
   // ===== COMMAND LOGGING/PLAYBACK (from command_handler.c) =====
   {"log_commands", cmd_log_commands, {1, 1, {-1}, "Start logging commands to file: <file_path>"}},

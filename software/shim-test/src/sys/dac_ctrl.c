@@ -227,6 +227,19 @@ void dac_cmd_get_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel
   *(dac_ctrl->buffer[board]) = cmd_word;
 }
 
+void dac_cmd_zero(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool verbose) {
+  if (board > 7) {
+    fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
+    return;
+  }
+
+  uint32_t cmd_word = (DAC_CMD_ZERO << DAC_CMD_CMD_LSB);
+  if (verbose) {
+    printf("DAC[%d] ZERO command word: 0x%08X\n", board, cmd_word);
+  }
+  *(dac_ctrl->buffer[board]) = cmd_word;
+}
+
 void dac_cmd_cancel(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);

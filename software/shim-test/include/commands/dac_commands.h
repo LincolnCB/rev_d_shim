@@ -40,6 +40,7 @@ int cmd_do_dac_wr_ch(const char** args, int arg_count, const command_flag_t* fla
 int cmd_get_dac_cal(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_do_dac_get_cal(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_set_dac_cal(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+int cmd_dac_zero(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
 // DAC command streaming operations (streaming commands from files)
 int cmd_stream_dac_commands_from_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);

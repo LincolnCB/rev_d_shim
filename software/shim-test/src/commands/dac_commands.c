@@ -867,4 +867,137 @@ int cmd_stop_dac_cmd_stream(const char** args, int arg_count, const command_flag
   return 0;
 }
 
+// DAC zero command - set all DAC channels to calibrated zero
+int cmd_dac_zero(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  // Validate system is running
+  if (validate_system_running(ctx) != 0) {
+    return -1;
+  }
+  
+  // Validate arguments - must have exactly 1 argument (board number or "all")
+  if (arg_count != 1) {
+    printf("Error: dac_zero requires exactly one argument: board number (0-7) or 'all'\n");
+    return -1;
+  }
+  
+  // Check if --no_reset flag is present
+  bool skip_reset = has_flag(flags, flag_count, FLAG_NO_RESET);
+  
+  bool target_all = false;
+  bool target_boards[8] = {false};
+  int target_board = -1;
+  
+  // Parse the argument
+  if (strcasecmp(args[0], "all") == 0) {
+    target_all = true;
+    printf("Setting all DAC channels to calibrated zero on all connected boards...\n");
+  } else {
+    target_board = validate_board_number(args[0]);
+    if (target_board < 0) {
+      printf("Error: Invalid board number '%s'. Must be 0-7 or 'all'\n", args[0]);
+      return -1;
+    }
+    target_boards[target_board] = true;
+    printf("Setting all DAC channels to calibrated zero on board %d...\n", target_board);
+  }
+  
+  // Check which boards are connected and validate targets
+  bool connected_boards[8] = {false};
+  int connected_count = 0;
+  
+  if (*(ctx->verbose)) {
+    printf("Checking board connections...\n");
+  }
+  
+  for (int board = 0; board < 8; board++) {
+    // Check if DAC command stream is running for this board
+    if (ctx->dac_cmd_stream_running[board]) {
+      if (target_all || target_boards[board]) {
+        fprintf(stderr, "Cannot zero DAC channels on board %d: DAC command stream is currently running. Stop the stream first.\n", board);
+        return -1;
+      }
+    }
+    
+    uint32_t dac_cmd_fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    uint32_t dac_data_fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    
+    if (FIFO_PRESENT(dac_cmd_fifo_status) && FIFO_PRESENT(dac_data_fifo_status)) {
+      connected_boards[board] = true;
+      connected_count++;
+      if (*(ctx->verbose)) {
+        printf("  Board %d: Connected\n", board);
+      }
+    } else {
+      if (*(ctx->verbose)) {
+        printf("  Board %d: Not connected\n", board);
+      }
+      // If targeting a specific board that's not connected, error
+      if (!target_all && target_boards[board]) {
+        printf("Error: Board %d is not connected\n", board);
+        return -1;
+      }
+    }
+  }
+  
+  if (connected_count == 0) {
+    printf("No DAC boards are connected. Nothing to zero.\n");
+    return 0;
+  }
+  
+  printf("Found %d connected DAC board(s)\n", connected_count);
+  
+  // Reset buffers (unless --no_reset flag is used)
+  if (!skip_reset) {
+    if (*(ctx->verbose)) {
+      printf("Resetting DAC command and data buffers for target boards...\n");
+    }
+    safe_buffer_reset(ctx, *(ctx->verbose));
+    __sync_synchronize(); // Memory barrier
+    usleep(10000); // 10ms delay
+  } else {
+    if (*(ctx->verbose)) {
+      printf("Skipping buffer reset (--no_reset flag specified)\n");
+    }
+  }
+  
+  // Send cancel commands to target boards
+  if (*(ctx->verbose)) {
+    printf("Sending CANCEL commands to target boards...\n");
+  }
+  for (int board = 0; board < 8; board++) {
+    if (connected_boards[board] && (target_all || target_boards[board])) {
+      dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, *(ctx->verbose));
+    }
+  }
+  usleep(1000); // 1ms to let cancel commands complete
+  
+  // Zero all channels on target boards using the new ZERO command
+  int channels_zeroed = 0;
+  int boards_zeroed = 0;
+  
+  printf("Setting DAC channels to calibrated zero values...\n");
+  for (int board = 0; board < 8; board++) {
+    if (connected_boards[board] && (target_all || target_boards[board])) {
+      // Send DAC ZERO command - sets all channels to their calibrated midrange values
+      dac_cmd_zero(ctx->dac_ctrl, (uint8_t)board, *(ctx->verbose));
+      channels_zeroed += 8; // 8 channels per board
+      boards_zeroed++;
+      
+      if (*(ctx->verbose)) {
+        printf("  Board %d: All 8 channels set to calibrated zero\n", board);
+      } else {
+        printf("  Board %d: Zeroed\n", board);
+      }
+    }
+  }
+  
+  // Brief pause to let the DAC commands complete
+  usleep(1000); // 1ms delay
+  
+  printf("Successfully zeroed %d DAC channels on %d board(s) using calibrated zero values\n", 
+         channels_zeroed, boards_zeroed);
+  
+  return 0;
+}
+
 
