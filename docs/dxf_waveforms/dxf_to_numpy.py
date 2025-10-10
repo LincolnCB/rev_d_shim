@@ -2,13 +2,28 @@
 """
 DXF to Waveform Converter
 
-This script converts DXF files into waveform arrays with 1000 equidistant y samples scaled by 0.34.
+This script converts DXF files into waveform arrays with configurable number of equidistant y samples scaled by 0.34.
+Supports both single file processing and batch processing of entire directories.
 
 Usage:
-    python dxf_to_numpy.py <dxf_file> [--output OUTPUT_FILE]
+    # Single file mode
+    python dxf_to_numpy.py <dxf_file> [--output OUTPUT_FILE] [--num_samples NUM]
+    
+    # Batch mode
+    python dxf_to_numpy.py --batch <directory> [--output OUTPUT_DIR] [--num_samples NUM]
 
-Example:
+Examples:
+    # Process single file with default 1000 samples
     python dxf_to_numpy.py tmp/dxf_lines/line_1.dxf --output line_1.wfm.npy
+    
+    # Process single file with 500 samples
+    python dxf_to_numpy.py tmp/dxf_lines/line_1.dxf --num_samples 500 --output line_1.wfm.npy
+    
+    # Process all DXF files in directory with 2000 samples each
+    python dxf_to_numpy.py --batch tmp/dxf_lines/ --num_samples 2000 --output numpy_arrays/
+    
+    # Batch processing creates individual files plus a concatenated array
+    # The concatenated array has shape [samples, files] for easy plotting
 """
 
 import argparse
@@ -539,7 +554,7 @@ def create_single_line_waveform(y=0, num_samples=1000, y_scale=0.34):
     return np.full(num_samples, y * y_scale)
 
 
-def process_dxf_file(dxf_file, force_single_line=False, quiet=False):
+def process_dxf_file(dxf_file, force_single_line=False, quiet=False, num_samples=1000):
     """
     Process a DXF file and convert it to a waveform array.
     
@@ -547,12 +562,13 @@ def process_dxf_file(dxf_file, force_single_line=False, quiet=False):
         dxf_file (str): Path to the DXF file
         force_single_line (bool): If True, create a single line waveform
         quiet (bool): If True, suppress gap warnings
+        num_samples (int): Number of waveform samples (default: 1000)
         
     Returns:
-        numpy.ndarray: Array of 1000 waveform samples
+        numpy.ndarray: Array of waveform samples
     """
     if force_single_line:
-        return create_single_line_waveform()
+        return create_single_line_waveform(num_samples=num_samples)
     
     # Extract geometry from DXF file
     lines, arcs, ellipses = extract_geometry_from_dxf(dxf_file)
@@ -560,7 +576,7 @@ def process_dxf_file(dxf_file, force_single_line=False, quiet=False):
     if not lines and not arcs and not ellipses:
         if not quiet:
             print(f"No geometry found in {dxf_file}, creating default single line")
-        return create_single_line_waveform()
+        return create_single_line_waveform(num_samples=num_samples)
     
     if not quiet:
         print(f"Found {len(lines)} lines, {len(arcs)} arcs, and {len(ellipses)} ellipses in {dxf_file}")
@@ -571,10 +587,10 @@ def process_dxf_file(dxf_file, force_single_line=False, quiet=False):
     if not ordered_segments:
         if not quiet:
             print(f"Could not organize segments into a path, creating default single line")
-        return create_single_line_waveform()
+        return create_single_line_waveform(num_samples=num_samples)
     
     # Convert segments directly to waveform using mathematical evaluation
-    waveform_array = create_waveform_array_direct(ordered_segments)
+    waveform_array = create_waveform_array_direct(ordered_segments, num_samples=num_samples)
     
     return waveform_array
 
@@ -657,10 +673,94 @@ def create_waveform_array_direct(ordered_segments, num_samples=1000, y_scale=0.3
     return y_waveform
 
 
+def process_directory(dxf_dir, force_single_line=False, quiet=False, num_samples=1000):
+    """
+    Process all DXF files in a directory and convert to waveforms.
+    
+    Args:
+        dxf_dir (str): Directory containing DXF files
+        force_single_line (bool): Force single line generation for all files
+        quiet (bool): Suppress processing messages
+        num_samples (int): Number of waveform samples (default: 1000)
+    
+    Returns:
+        tuple: (filenames, waveforms) where:
+               filenames: List of DXF filenames (without extension)
+               waveforms: List of waveform arrays
+    """
+    dxf_path = Path(dxf_dir)
+    
+    if not dxf_path.exists() or not dxf_path.is_dir():
+        print(f"Error: Directory '{dxf_dir}' not found")
+        return [], []
+    
+    # Find all DXF files
+    dxf_files = list(dxf_path.glob("*.dxf"))
+    
+    if not dxf_files:
+        print(f"No DXF files found in {dxf_dir}")
+        return [], []
+    
+    if not quiet:
+        print(f"Found {len(dxf_files)} DXF files")
+    
+    filenames = []
+    waveforms = []
+    
+    # Process each DXF file
+    for dxf_file in sorted(dxf_files):
+        if not quiet:
+            print(f"Processing: {dxf_file.name}")
+        
+        # Process the DXF file
+        waveform_array = process_dxf_file(str(dxf_file), force_single_line, quiet, num_samples)
+        
+        if waveform_array.size == 0:
+            if not quiet:
+                print(f"  Warning: No waveform generated for {dxf_file.name}")
+            continue
+        
+        if not quiet:
+            print(f"  Generated waveform with {len(waveform_array)} samples")
+        
+        filenames.append(dxf_file.stem)
+        waveforms.append(waveform_array)
+    
+    return filenames, waveforms
+
+
+def create_concatenated_array(waveforms):
+    """
+    Concatenate waveforms into a 2D array for easy plotting.
+    
+    Args:
+        waveforms (list): List of 1D waveform arrays
+        
+    Returns:
+        numpy.ndarray: 2D array with shape [samples, batch_size] where each column
+                      represents one waveform. This allows plt.plot(array) to show
+                      all waveforms overlaid.
+    """
+    if not waveforms:
+        return np.array([])
+    
+    # Stack waveforms as columns (samples on rows, files on columns)
+    # This way plt.plot(concatenated_array) will plot all waveforms
+    return np.column_stack(waveforms)
+
+
 def main():
     parser = argparse.ArgumentParser(description='Convert DXF files to waveform arrays')
-    parser.add_argument('dxf_file', help='Path to the DXF file')
+    
+    # Create mutually exclusive group for single file vs batch processing
+    input_group = parser.add_mutually_exclusive_group(required=True)
+    input_group.add_argument('dxf_file', nargs='?', help='Path to a single DXF file')
+    input_group.add_argument('--batch', '-b', metavar='DIR', 
+                           help='Directory containing DXF files to process in batch mode')
+    
     parser.add_argument('--output', '-o', help='Output waveform file path (optional)')
+    parser.add_argument('--num_samples', '-n', type=int, default=1000,
+                       help='Number of waveform samples (default: 1000)')
     parser.add_argument('--single_line', '-s', action='store_true',
                        help='Force creation of single line waveform')
     parser.add_argument('--preview', '-p', action='store_true',
@@ -670,45 +770,100 @@ def main():
     
     args = parser.parse_args()
     
-    # Check if DXF file exists
-    if not Path(args.dxf_file).exists():
-        print(f"Error: DXF file '{args.dxf_file}' not found")
-        sys.exit(1)
-    
-    if not args.quiet:
-        print(f"Processing DXF file: {args.dxf_file}")
-    
-    # Process the DXF file
-    waveform_array = process_dxf_file(args.dxf_file, args.single_line, args.quiet)
-    
-    if waveform_array.size == 0:
-        print("Error: No waveform generated")
-        sys.exit(1)
-    
-    print(f"Generated waveform with {len(waveform_array)} samples")
-    print(f"Waveform array shape: {waveform_array.shape}")
-    
-    # Show preview if requested
-    if args.preview:
-        print("\nFirst 10 waveform samples:")
-        print(waveform_array[:10])
-        print("\nLast 10 waveform samples:")
-        print(waveform_array[-10:])
-        print(f"\nWaveform Y range: {waveform_array.min():.6f} to {waveform_array.max():.6f}")
-    
-    # Save waveform to file
-    if args.output:
-        # Use provided output path but ensure .wfm.npy extension
-        output_path = Path(args.output)
-        if not str(output_path).endswith('.wfm.npy'):
-            output_path = output_path.with_suffix('.wfm.npy')
+    # Handle batch processing mode
+    if args.batch:
+        # Validate batch directory
+        if not Path(args.batch).exists():
+            print(f"Error: Batch directory '{args.batch}' not found")
+            sys.exit(1)
+        
+        if not args.quiet:
+            print(f"Processing DXF files in directory: {args.batch}")
+        
+        # Process all DXF files in the directory
+        filenames, waveforms = process_directory(args.batch, args.single_line, args.quiet, args.num_samples)
+        
+        if not waveforms:
+            print("Error: No waveforms generated from batch processing")
+            sys.exit(1)
+        
+        print(f"\nBatch processing complete! Generated {len(waveforms)} waveforms")
+        
+        # Create concatenated array
+        concatenated_array = create_concatenated_array(waveforms)
+        print(f"Concatenated array shape: {concatenated_array.shape} [samples x files]")
+        
+        # Show preview if requested
+        if args.preview:
+            print(f"\nProcessed files: {filenames}")
+            print(f"Concatenated array Y range: {concatenated_array.min():.6f} to {concatenated_array.max():.6f}")
+            print(f"Individual waveform shapes: {[w.shape for w in waveforms]}")
+        
+        # Save files
+        batch_dir = Path(args.batch)
+        if args.output:
+            output_base = Path(args.output)
+        else:
+            output_base = batch_dir / "batch_waveforms"
+        
+        # Save individual waveforms
+        output_base.mkdir(exist_ok=True)
+        for filename, waveform in zip(filenames, waveforms):
+            individual_path = output_base / f"{filename}.wfm.npy"
+            np.save(individual_path, waveform)
+        
+        # Save concatenated array
+        concatenated_path = output_base / "concatenated_waveforms.npy"
+        np.save(concatenated_path, concatenated_array)
+        
+        print(f"Saved {len(waveforms)} individual waveforms to: {output_base}/")
+        print(f"Saved concatenated array to: {concatenated_path}")
+        
     else:
-        # Default waveform filename based on input
-        input_path = Path(args.dxf_file)
-        output_path = input_path.with_suffix('.wfm.npy')
-    
-    np.save(output_path, waveform_array)
-    print(f"Saved waveform array to: {output_path}")
+        # Single file processing mode
+        if not args.dxf_file:
+            print("Error: Either provide a DXF file or use --batch with a directory")
+            sys.exit(1)
+        
+        # Check if DXF file exists
+        if not Path(args.dxf_file).exists():
+            print(f"Error: DXF file '{args.dxf_file}' not found")
+            sys.exit(1)
+        
+        if not args.quiet:
+            print(f"Processing DXF file: {args.dxf_file}")
+        
+        # Process the DXF file
+        waveform_array = process_dxf_file(args.dxf_file, args.single_line, args.quiet, args.num_samples)
+        
+        if waveform_array.size == 0:
+            print("Error: No waveform generated")
+            sys.exit(1)
+        
+        print(f"Generated waveform with {len(waveform_array)} samples")
+        print(f"Waveform array shape: {waveform_array.shape}")
+        
+        # Show preview if requested
+        if args.preview:
+            print("\nFirst 10 waveform samples:")
+            print(waveform_array[:10])
+            print("\nLast 10 waveform samples:")
+            print(waveform_array[-10:])
+            print(f"\nWaveform Y range: {waveform_array.min():.6f} to {waveform_array.max():.6f}")
+        
+        # Save waveform to file
+        if args.output:
+            # Use provided output path but ensure .wfm.npy extension
+            output_path = Path(args.output)
+            if not str(output_path).endswith('.wfm.npy'):
+                output_path = output_path.with_suffix('.wfm.npy')
+        else:
+            # Default waveform filename based on input
+            input_path = Path(args.dxf_file)
+            output_path = input_path.with_suffix('.wfm.npy')
+        
+        np.save(output_path, waveform_array)
+        print(f"Saved waveform array to: {output_path}")
 
 
 if __name__ == "__main__":
