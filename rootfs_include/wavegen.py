@@ -57,8 +57,8 @@ def get_user_input():
     # Get channel scale factor
     if amplitude > 0:
         # Calculate acceptable range for channel_scale
-        # Max range: +/- (4.0 / amplitude)^(1/7)
-        max_scale = (4.0 / amplitude) ** (1.0/7.0)
+        # Max range: +/- (5.1 / amplitude)^(1/7)
+        max_scale = (5.1 / amplitude) ** (1.0/7.0)
         # Round towards 0 to the next mA (0.001 A)
         max_scale_rounded = int(max_scale * 1000) / 1000.0
         
@@ -236,7 +236,7 @@ def current_to_dac_value(current, channel_amplitude):
         Signed 16-bit integer DAC value
     """
     # Scale amplitude (0-4A) to DAC range (0-32767)
-    max_dac_value = int(channel_amplitude * 32767 / 4.0)
+    max_dac_value = int(channel_amplitude * 32767 / 5.1)
     
     # Apply sine wave value (-1 to +1) to get full +/- range
     dac_value = int(current * max_dac_value)

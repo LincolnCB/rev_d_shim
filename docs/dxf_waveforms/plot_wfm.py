@@ -60,7 +60,7 @@ def plot_waveform(wfm_file, output_file=None, ax=None, title=None, color='blue')
     
     ax.set_xlabel('Sample Index')
     ax.set_ylabel('Y (scaled)')
-    ax.set_ylim(-4.0, 4.0)  # Fixed y-axis range
+    ax.set_ylim(-5.1, 5.1)  # Fixed y-axis range
     ax.grid(True, alpha=0.3)
     
     if standalone:
@@ -121,7 +121,7 @@ def plot_batch_waveforms(directory, output_file=None):
     superimposed_ax.set_title('All Waveforms Superimposed')
     superimposed_ax.set_xlabel('Sample Index')
     superimposed_ax.set_ylabel('Y (scaled)')
-    superimposed_ax.set_ylim(-4.0, 4.0)
+    superimposed_ax.set_ylim(-5.1, 5.1)
     superimposed_ax.grid(True, alpha=0.3)
     
     # Plot all waveforms on the superimposed subplot

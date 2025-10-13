@@ -5,7 +5,7 @@
 # SPI clock frequency: 20 MHz
 # Number of samples: 25
 # Delay value: 20000 cycles
-# Value range: -4.0A to +4.0A maps to -32767 to +32767 DAC
+# Value range: -5.1A to +5.1A maps to -32767 to +32767 DAC
 # Format: T 1 <ch0-ch7> (first command - trigger) / D <delay> <ch0-ch7> (subsequent commands - delay)
 # Note: First command waits for trigger, subsequent commands use delay timing
 #

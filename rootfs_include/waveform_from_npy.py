@@ -6,7 +6,7 @@ This script generates waveform files for the DAC system from numpy array files.
 The numpy array should be in the format [samples]x[channels] where channels can
 be 1-8. If fewer than 8 channels, zeros are added to pad to 8 channels.
 
-The values in the numpy array should be between -4.0 and 4.0 representing 
+The values in the numpy array should be between -5.1 and 5.1 representing 
 current in amps. These are converted to signed 16-bit DAC values.
 
 The output file format consists of lines starting with 'T' (trigger mode) for
@@ -156,7 +156,7 @@ def load_and_validate_numpy_array(filename):
         filename: Path to numpy array file
         
     Returns:
-        Numpy array with shape [samples, 8] where values are between -4.0 and 4.0
+        Numpy array with shape [samples, 8] where values are between -5.1 and 5.1
     """
     try:
         # Load numpy array
@@ -179,8 +179,8 @@ def load_and_validate_numpy_array(filename):
         max_val = np.max(data)
         print(f"Value range: {min_val:.6f} to {max_val:.6f}")
         
-        if min_val < -4.0 or max_val > 4.0:
-            print(f"Warning: Values outside recommended range [-4.0, 4.0]")
+        if min_val < -5.1 or max_val > 5.1:
+            print(f"Warning: Values outside recommended range [-5.1, 5.1]")
             print(f"  Min: {min_val:.6f}, Max: {max_val:.6f}")
             
             # Ask user if they want to continue
@@ -209,16 +209,16 @@ def current_to_dac_value(current_amps):
     """
     Convert current value in amps to signed 16-bit DAC value.
     
-    The current range -4.0A to +4.0A maps to the full DAC range.
+    The current range -5.1A to +5.1A maps to the full DAC range.
     
     Args:
-        current_amps: Current value in amps (-4.0 to +4.0)
+        current_amps: Current value in amps (-5.1 to +5.1)
     
     Returns:
         Signed 16-bit integer DAC value (-32767 to +32767)
     """
-    # Scale current (-4.0A to +4.0A) to DAC range (-32767 to +32767)
-    dac_value = int(current_amps * 32767 / 4.0)
+    # Scale current (-5.1A to +5.1A) to DAC range (-32767 to +32767)
+    dac_value = int(current_amps * 32767 / 5.1)
     
     # Clamp to valid 16-bit signed range
     return max(-32767, min(32767, dac_value))
@@ -325,7 +325,7 @@ def write_waveform_file(filename, samples, sample_rate_ksps, spi_clock_freq_mhz,
             f.write(f"# Number of samples: {len(samples)}\n")
             f.write(f"# Delay value: {delay_value} cycles\n")
             if not is_zeroed:
-                f.write("# Value range: -4.0A to +4.0A maps to -32767 to +32767 DAC\n")
+                f.write("# Value range: -5.1A to +5.1A maps to -32767 to +32767 DAC\n")
             else:
                 f.write("# All values: 0 (zero current)\n")
             f.write("# Format: T 1 <ch0-ch7> (first command - trigger) / D <delay> <ch0-ch7> (subsequent commands - delay)\n")
@@ -457,7 +457,7 @@ def main():
             print("The numpy array should have shape [samples, channels] where:")
             print("  - samples: Number of time samples")
             print("  - channels: 1-8 channels (zeros added if < 8)")
-            print("  - values: -4.0 to +4.0 representing current in amps")
+            print("  - values: -5.1 to +5.1 representing current in amps")
             print()
             print("Options available during execution:")
             print("  - ADC readout file generation")

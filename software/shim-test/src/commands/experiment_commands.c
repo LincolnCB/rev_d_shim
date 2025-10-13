@@ -742,8 +742,8 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
       // Set new calibration value
       dac_cmd_set_cal(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, current_cal_value, *(ctx->verbose));
       
-      // Convert offset and slope to amps (range -4.0 to 4.0 for ±32767)
-      double offset_amps = intercept * 4.0 / 32767.0;
+      // Convert offset and slope to amps (range -5.1 to 5.1 for ±32767)
+      double offset_amps = intercept * 5.1 / 32767.0;
       
       // If NOT verbose, print this iteration's results with special slope formatting
       if (!*(ctx->verbose)) {
@@ -1803,7 +1803,7 @@ static void* fieldmap_thread(void* arg) {
         for (int ch_offset = 0; ch_offset < 8; ch_offset++) {
           int ch = board * 8 + ch_offset;
           if (channel_valid[ch]) {
-            double current_amps = (double)channel_data[ch] / 32767.0 * 4.0;
+            double current_amps = (double)channel_data[ch] / 32767.0 * 5.1;
             fprintf(file, ",%.3f", current_amps);
           } else {
             fprintf(file, ",0.000");  // Default value for channels on connected boards
@@ -1816,14 +1816,14 @@ static void* fieldmap_thread(void* arg) {
       // Find target channel data and max current from other channels
       double target_current = 0.0;
       if (channel_valid[current_channel]) {
-        target_current = (double)channel_data[current_channel] / 32767.0 * 4.0;
+        target_current = (double)channel_data[current_channel] / 32767.0 * 5.1;
       }
       
       double max_other_current = 0.0;
       int max_other_channel = -1;
       for (int ch = 0; ch < 64; ch++) {
         if (ch == current_channel || !channel_valid[ch]) continue;
-        double current_amps = (double)channel_data[ch] / 32767.0 * 4.0;
+        double current_amps = (double)channel_data[ch] / 32767.0 * 5.1;
         double abs_current = (current_amps < 0.0) ? -current_amps : current_amps;
         double abs_max = (max_other_current < 0.0) ? -max_other_current : max_other_current;
         if (abs_current > abs_max) {
@@ -1968,15 +1968,15 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   
   // Step 3: Prompt for remaining parameters
   double amplitude;
-  printf("Enter amplitude in amps (0.0 to 4.0): ");
+  printf("Enter amplitude in amps (0.0 to 5.1): ");
   fflush(stdout);
   if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
     fprintf(stderr, "Failed to read amplitude.\n");
     return -1;
   }
   amplitude = atof(input_buffer);
-  if (amplitude < 0.0 || amplitude > 4.0) {
-    fprintf(stderr, "Invalid amplitude. Must be 0.0 to 4.0 amps.\n");
+  if (amplitude < 0.0 || amplitude > 5.1) {
+    fprintf(stderr, "Invalid amplitude. Must be 0.0 to 5.1 amps.\n");
     return -1;
   }
   
@@ -2098,7 +2098,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   }
   
   // Calculate DAC values
-  int16_t dac_positive = (int16_t)(32767.0 * (amplitude / 4.0));
+  int16_t dac_positive = (int16_t)(32767.0 * (amplitude / 5.1));
   int16_t dac_negative = -dac_positive;
   
   printf("DAC values: +%d, %d (for %.3f amps)\n", dac_positive, dac_negative, amplitude);
