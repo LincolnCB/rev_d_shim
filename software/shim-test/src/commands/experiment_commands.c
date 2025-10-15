@@ -334,7 +334,7 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
     printf("    Reading ADC from board %d, channel %d\n", board, channel);
     fflush(stdout);
   }
-  adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, *(ctx->verbose));
+  adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, 0, *(ctx->verbose));
   // Wait a short moment to ensure ADC data is ready
   __sync_synchronize(); // Memory barrier
   usleep(1000); // 1ms delay
@@ -424,18 +424,13 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
 
 // Channel calibration command implementation
 int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  // Parse arguments - either a channel number (0-63) or --all flag
-  bool calibrate_all = has_flag(flags, flag_count, FLAG_ALL);
+  // Parse arguments - either a channel number (0-63) or "all"
+  bool calibrate_all = (strcmp(args[0], "all") == 0);
   int start_ch = 0, end_ch = 0;
   bool connected_boards[8] = {false}; // Track which boards are connected
   
-  if (calibrate_all && arg_count > 0) {
-    fprintf(stderr, "Error: Cannot specify both channel number and --all flag\n");
-    return -1;
-  }
-  
-  if (!calibrate_all && arg_count != 1) {
-    fprintf(stderr, "Usage: channel_cal <channel> [--no_reset] OR channel_cal --all [--no_reset]\n");
+  if (arg_count != 1) {
+    fprintf(stderr, "Usage: channel_cal <channel|all> [--no_reset] (channel 0-63, board=ch/8, ch=ch%%8)\n");
     return -1;
   }
   
@@ -619,7 +614,7 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
           usleep(delay_ms * 1000); // Wait fixed delay
           
           // Read ADC value
-          adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, *(ctx->verbose));
+          adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, 0, *(ctx->verbose));
           
           // Wait for ADC data to be available (similar to DAC data loop)
           int adc_tries = 0;
@@ -1239,7 +1234,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, true, false, false, 1, *(ctx->verbose)); // Wait for 1 trigger
     
     // Add ADC NOOP stopper  
-    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, *(ctx->verbose)); // Wait for 1 trigger
+    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, 0, *(ctx->verbose)); // Wait for 1 trigger
   }
 
   // Step 10a: Start command streaming for each connected board
@@ -2094,7 +2089,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
     if (!connected_boards[board]) continue;
     
     dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, true, false, false, 1, *(ctx->verbose));
-    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, *(ctx->verbose));
+    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, 0, *(ctx->verbose));
   }
   
   // Calculate DAC values
@@ -2163,10 +2158,10 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
       if (!connected_boards[board]) continue;
       
       // NOOP wait for trigger
-      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, true, 1, *(ctx->verbose));
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, true, 1, 0, *(ctx->verbose));
       // Delay then read for all connected boards
-      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, true, delay_cycles, *(ctx->verbose));
-      adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 0, *(ctx->verbose));
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, true, delay_cycles, 0, *(ctx->verbose));
+      adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 0, 0, *(ctx->verbose));
       total_adc_commands += 3;
     }
     
@@ -2175,10 +2170,10 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
       if (!connected_boards[board]) continue;
       
       // NOOP wait for trigger
-      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, true, 1, *(ctx->verbose));
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, true, 1, 0, *(ctx->verbose));
       // Delay then read for all connected boards
-      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, true, delay_cycles, *(ctx->verbose));
-      adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 0, *(ctx->verbose));
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, true, delay_cycles, 0, *(ctx->verbose));
+      adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 0, 0, *(ctx->verbose));
       total_adc_commands += 3;
     }
   }
@@ -2273,7 +2268,107 @@ int cmd_stop_fieldmap(const char** args, int arg_count, const command_flag_t* fl
   return 0;
 }
 
-// Helper function to validate Rev C DAC file format
+// Helper function to convert Amps to DAC units
+// Maps -5.1A -> 0, 0A -> 32767, 5.1A -> 65535
+static uint16_t amps_to_dac(float amps) {
+  // Clamp to valid range
+  if (amps < -5.1f) amps = -5.1f;
+  if (amps > 5.1f) amps = 5.1f;
+  
+  // Convert: -5.1 to 5.1 maps to 0 to 65535
+  // Formula: dac = ((amps + 5.1) / 10.2) * 65535
+  float normalized = (amps + 5.1f) / 10.2f;  // 0.0 to 1.0
+  uint16_t dac_value = (uint16_t)(normalized * 65535.0f + 0.5f);  // Round to nearest
+  return dac_value;
+}
+
+// Helper function to validate Rev C DAC file format (Amps)
+static int validate_rev_c_file_format_amps(const char* file_path, int* line_count) {
+  FILE* file = fopen(file_path, "r");
+  if (file == NULL) {
+    fprintf(stderr, "Failed to open Rev C DAC file (Amps) '%s': %s\n", file_path, strerror(errno));
+    return -1;
+  }
+  
+  char line[2048]; // Buffer for line (32 numbers * ~10 chars + spaces + newline)
+  int valid_lines = 0;
+  int line_num = 0;
+  
+  while (fgets(line, sizeof(line), file)) {
+    line_num++;
+    
+    // Skip empty lines and comments
+    char* trimmed = line;
+    while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
+    if (*trimmed == '\n' || *trimmed == '\r' || *trimmed == '\0' || *trimmed == '#') {
+      continue;
+    }
+    
+    // Parse exactly 32 space-separated floats
+    float values[32];
+    int parsed = 0;
+    char* token_start = trimmed;
+    char* endptr;
+    
+    for (int i = 0; i < 32; i++) {
+      // Skip leading whitespace
+      while (*token_start == ' ' || *token_start == '\t') token_start++;
+      
+      if (*token_start == '\n' || *token_start == '\r' || *token_start == '\0') {
+        break; // End of line
+      }
+      
+      // Parse float
+      float val = strtof(token_start, &endptr);
+      if (endptr == token_start) {
+        break; // No valid number found
+      }
+      
+      // Check range (-5.1 to 5.1)
+      if (val < -5.1f || val > 5.1f) {
+        fprintf(stderr, "Rev C DAC file (Amps) line %d, value %d: %.3f out of range (-5.1 to 5.1)\n", 
+                line_num, i+1, val);
+        fclose(file);
+        return -1;
+      }
+      
+      values[i] = val;
+      parsed++;
+      token_start = endptr;
+      
+      // Skip whitespace after number
+      while (*token_start == ' ' || *token_start == '\t') token_start++;
+    }
+    
+    if (parsed != 32) {
+      fprintf(stderr, "Rev C DAC file (Amps) line %d: Expected 32 values, got %d\n", line_num, parsed);
+      fclose(file);
+      return -1;
+    }
+    
+    // Check that we're at end of line
+    while (*token_start == ' ' || *token_start == '\t') token_start++;
+    if (*token_start != '\n' && *token_start != '\r' && *token_start != '\0') {
+      fprintf(stderr, "Rev C DAC file (Amps) line %d: Extra data after 32 values\n", line_num);
+      fclose(file);
+      return -1;
+    }
+    
+    valid_lines++;
+  }
+  
+  fclose(file);
+  
+  if (valid_lines == 0) {
+    fprintf(stderr, "Rev C DAC file (Amps) '%s' contains no valid data lines\n", file_path);
+    return -1;
+  }
+  
+  *line_count = valid_lines;
+  return 0;
+}
+
+// Helper function to validate Rev C DAC file format (DAC units)
 static int validate_rev_c_file_format(const char* file_path, int* line_count) {
   FILE* file = fopen(file_path, "r");
   if (file == NULL) {
@@ -2395,6 +2490,7 @@ typedef struct {
   int line_count;
   uint32_t delay_cycles;
   volatile bool* should_stop;
+  bool input_is_amps;  // true for Amps input, false for DAC units
 } rev_c_dac_stream_params_t;
 
 typedef struct {
@@ -2414,6 +2510,7 @@ static void* rev_c_dac_stream_thread(void* arg) {
   int line_count = stream_data->line_count;
   uint32_t delay_cycles = stream_data->delay_cycles;
   volatile bool* should_stop = stream_data->should_stop;
+  bool input_is_amps = stream_data->input_is_amps;
   bool verbose = *(ctx->verbose);
   
   printf("Rev C DAC Stream Thread: Starting streaming from file '%s' (%d lines, %d loops)\n", 
@@ -2447,10 +2544,21 @@ static void* rev_c_dac_stream_thread(void* arg) {
       char* token_start = trimmed;
       char* endptr;
       
-      for (int i = 0; i < 32; i++) {
-        while (*token_start == ' ' || *token_start == '\t') token_start++;
-        values[i] = (uint16_t)strtoul(token_start, &endptr, 10);
-        token_start = endptr;
+      if (input_is_amps) {
+        // Parse as floats and convert to DAC units
+        for (int i = 0; i < 32; i++) {
+          while (*token_start == ' ' || *token_start == '\t') token_start++;
+          float amp_value = strtof(token_start, &endptr);
+          values[i] = amps_to_dac(amp_value);
+          token_start = endptr;
+        }
+      } else {
+        // Parse as DAC units (integers)
+        for (int i = 0; i < 32; i++) {
+          while (*token_start == ' ' || *token_start == '\t') token_start++;
+          values[i] = (uint16_t)strtoul(token_start, &endptr, 10);
+          token_start = endptr;
+        }
       }
       
       // Convert values to signed format and send DAC write commands to each board
@@ -2571,9 +2679,9 @@ static void* rev_c_adc_cmd_stream_thread(void* arg) {
         }
         
         // Send 3 ADC commands per board per line
-        adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, verbose); // Trigger wait (value=1)
-        adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, false, delay_cycles, verbose); // Delay
-        adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 0, verbose); // ADC read with trigger wait (value=0)
+        adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, 0, verbose); // Trigger wait (value=1)
+        adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, false, delay_cycles, 0, verbose); // Delay
+        adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 0, 0, verbose); // ADC read with trigger wait (value=0)
         
         total_commands_sent += 3;
         
@@ -2750,8 +2858,39 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   // Check for binary mode flag
   bool binary_mode = has_flag(flags, flag_count, FLAG_BIN);
   
-  printf("Starting Rev C compatibility mode:\n");
+  // Prompt user for input units type
+  printf("Rev C compatibility mode - Input Units Selection:\n");
+  printf("  Choose input format for DAC file '%s':\n", dac_file);
+  printf("    1) DAC units (integers 0-65535)\n");
+  printf("    2) Amps (floats -5.1 to 5.1)\n");
+  printf("  Enter choice (1 or 2): ");
+  fflush(stdout);
+  
+  char input_buffer[32];
+  bool input_is_amps = false;
+  
+  if (fgets(input_buffer, sizeof(input_buffer), stdin) != NULL) {
+    char *endptr;
+    int choice = (int)strtol(input_buffer, &endptr, 10);
+    
+    if (choice == 1) {
+      input_is_amps = false;
+      printf("  Selected: DAC units (0-65535)\n");
+    } else if (choice == 2) {
+      input_is_amps = true;
+      printf("  Selected: Amps (-5.1 to 5.1)\n");
+    } else {
+      fprintf(stderr, "Invalid choice '%s'. Please enter 1 or 2.\n", input_buffer);
+      return -1;
+    }
+  } else {
+    fprintf(stderr, "Failed to read input choice.\n");
+    return -1;
+  }
+  
+  printf("\nStarting Rev C compatibility mode:\n");
   printf("  Input DAC file: %s\n", dac_file);
+  printf("  Input format: %s\n", input_is_amps ? "Amps (-5.1 to 5.1)" : "DAC units (0-65535)");
   printf("  Loops: %d\n", loops);
   printf("  ADC output file: %s\n", adc_output_file);
   printf("  Delay cycles: %u\n", delay_cycles);
@@ -2760,10 +2899,17 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   // Step 1: Validate file format
   printf("Step 1: Validating Rev C DAC file format...\n");
   int line_count;
-  if (validate_rev_c_file_format(dac_file, &line_count) != 0) {
-    return -1;
+  if (input_is_amps) {
+    if (validate_rev_c_file_format_amps(dac_file, &line_count) != 0) {
+      return -1;
+    }
+    printf("  Amps file validation passed: %d valid data lines\n", line_count);
+  } else {
+    if (validate_rev_c_file_format(dac_file, &line_count) != 0) {
+      return -1;
+    }
+    printf("  DAC units file validation passed: %d valid data lines\n", line_count);
   }
-  printf("  File validation passed: %d valid data lines\n", line_count);
   
   // Step 2: Check system is running
   if (validate_system_running(ctx) != 0) {
@@ -2807,7 +2953,8 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     .loops = loops,
     .line_count = line_count,
     .delay_cycles = delay_cycles,
-    .should_stop = &dac_stream_stop
+    .should_stop = &dac_stream_stop,
+    .input_is_amps = input_is_amps
   };
   
   // Prepare ADC command streaming thread data (reuse dac stream structure)
@@ -2817,7 +2964,8 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     .loops = loops,
     .line_count = line_count,
     .delay_cycles = delay_cycles,
-    .should_stop = &adc_cmd_stream_stop
+    .should_stop = &adc_cmd_stream_stop,
+    .input_is_amps = false  // Not used for ADC commands
   };
   
   // Prepare ADC data streaming thread data
@@ -3014,7 +3162,7 @@ int cmd_find_bias(const char** args, int arg_count, const command_flag_t* flags,
         usleep(delay_ms * 1000); // Wait fixed delay
         
         // Read ADC value
-        adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, false);
+        adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, 0, false);
         
         // Wait for ADC data to be available
         int adc_tries = 0;
@@ -3155,7 +3303,7 @@ int cmd_find_bias(const char** args, int arg_count, const command_flag_t* flags,
     // Collect samples
     for (int i = 0; i < bias_sample_count && !calibration_failed; i++) {
       // Read ADC value
-      adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, false);
+      adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, 0, false);
       
       // Wait for ADC data to be available
       int adc_tries = 0;

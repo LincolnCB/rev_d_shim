@@ -101,9 +101,6 @@ void adc_print_state(uint8_t state_code) {
     case ADC_STATE_ADC_RD_CH:
       printf("ADC Read Channel");
       break;
-    case ADC_STATE_LOOP_NEXT:
-      printf("Loop Next");
-      break;
     case ADC_STATE_ERROR:
       printf("ERROR");
       break;
@@ -113,7 +110,7 @@ void adc_print_state(uint8_t state_code) {
 }
 
 // ADC command word functions
-void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t value, bool verbose) {
+void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t value, uint32_t loop_count, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
     return;
@@ -125,15 +122,23 @@ void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool co
   uint32_t cmd_word = (ADC_CMD_NO_OP  << ADC_CMD_CMD_LSB ) |
                       ((trig ? 1 : 0) << ADC_CMD_TRIG_BIT) |
                       ((cont ? 1 : 0) << ADC_CMD_CONT_BIT) |
+                      (((loop_count > 0) ? 1 : 0) << ADC_CMD_LOOP_BIT) |
                       (value & 0x1FFFFFF);
   
   if (verbose) {
     printf("ADC[%d] NO_OP command word: 0x%08X\n", board, cmd_word);
   }
   *(adc_ctrl->buffer[board]) = cmd_word;
+
+  if (loop_count > 0) {
+    if (verbose) {
+      printf("ADC[%d] LOOP count: 0x%08X (loop count: %u)\n", board, loop_count, loop_count);
+    }
+    *(adc_ctrl->buffer[board]) = loop_count;
+  }
 }
 
-void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t value, bool verbose) {
+void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t value, uint32_t loop_count, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
     return;
@@ -145,15 +150,23 @@ void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool 
   uint32_t cmd_word = (ADC_CMD_ADC_RD << ADC_CMD_CMD_LSB ) |
                       ((trig ? 1 : 0) << ADC_CMD_TRIG_BIT) |
                       ((cont ? 1 : 0) << ADC_CMD_CONT_BIT) |
+                      (((loop_count > 0) ? 1 : 0) << ADC_CMD_LOOP_BIT) |
                       (value & 0x1FFFFFF);
   
   if (verbose) {
     printf("ADC[%d] ADC_RD command word: 0x%08X\n", board, cmd_word);
   }
   *(adc_ctrl->buffer[board]) = cmd_word;
+
+  if (loop_count > 0) {
+    if (verbose) {
+      printf("ADC[%d] LOOP count: 0x%08X (loop count: %u)\n", board, loop_count, loop_count);
+    }
+    *(adc_ctrl->buffer[board]) = loop_count;
+  }
 }
 
-void adc_cmd_adc_rd_ch(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t ch, bool verbose) {
+void adc_cmd_adc_rd_ch(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t ch, uint32_t loop_count, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
     return;
@@ -164,12 +177,20 @@ void adc_cmd_adc_rd_ch(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t ch, b
   }
   
   uint32_t cmd_word = (ADC_CMD_ADC_RD_CH << ADC_CMD_CMD_LSB ) |
+                      (((loop_count > 0) ? 1 : 0) << ADC_CMD_LOOP_BIT) |
                       ((ch & 0x7) << 0);
   
   if (verbose) {
     printf("ADC[%d] ADC_RD_CH command word: 0x%08X (channel: %d)\n", board, cmd_word, ch);
   }
   *(adc_ctrl->buffer[board]) = cmd_word;
+
+  if (loop_count > 0) {
+    if (verbose) {
+      printf("ADC[%d] LOOP count: 0x%08X (loop count: %u)\n", board, loop_count, loop_count);
+    }
+    *(adc_ctrl->buffer[board]) = loop_count;
+  }
 }
 
 void adc_cmd_set_ord(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t channel_order[8], bool verbose) {
@@ -213,25 +234,6 @@ void adc_cmd_cancel(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool verbose) {
   
   if (verbose) {
     printf("ADC[%d] CANCEL command word: 0x%08X\n", board, cmd_word);
-  }
-  *(adc_ctrl->buffer[board]) = cmd_word;
-}
-
-void adc_cmd_loop_next(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint32_t loop_count, bool verbose) {
-  if (board > 7) {
-    fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
-    return;
-  }
-  if (loop_count > 0x1FFFFFF) {
-    fprintf(stderr, "Invalid loop count: %u. Must be 0 to 33554431 (25-bit value).\n", loop_count);
-    return;
-  }
-  
-  uint32_t cmd_word = (ADC_CMD_LOOP << ADC_CMD_CMD_LSB) |
-                      (loop_count & 0x1FFFFFF);
-  
-  if (verbose) {
-    printf("ADC[%d] LOOP command word: 0x%08X (loop count: %u)\n", board, cmd_word, loop_count);
   }
   *(adc_ctrl->buffer[board]) = cmd_word;
 }

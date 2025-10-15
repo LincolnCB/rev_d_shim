@@ -206,7 +206,7 @@ int cmd_adc_noop(const char** args, int arg_count, const command_flag_t* flags, 
     for (int board = 0; board < 8; board++) {
       if (!connected_boards[board]) continue;
       
-      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, is_trigger, cont, value, *(ctx->verbose));
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, is_trigger, cont, value, 0, *(ctx->verbose));
       printf("  Board %d: ADC no-op command sent\n", board);
     }
   } else {
@@ -216,7 +216,7 @@ int cmd_adc_noop(const char** args, int arg_count, const command_flag_t* flags, 
       return -1;
     }
     
-    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, is_trigger, cont, value, *(ctx->verbose));
+    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, is_trigger, cont, value, 0, *(ctx->verbose));
     printf("ADC no-op command sent to board %d with %s mode, value %u%s.\n", 
            board, is_trigger ? "trigger" : "delay", value, cont ? ", continuous" : "");
   }
@@ -290,7 +290,7 @@ int cmd_do_adc_simple_read(const char** args, int arg_count, const command_flag_
   printf("Performing %ld simple ADC reads on board %d (delay mode, value %ld)...\n", loop_count, board, delay_cycles);
   
   for (long i = 0; i < loop_count; i++) {
-    adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, (uint32_t)delay_cycles, *(ctx->verbose));
+    adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, (uint32_t)delay_cycles, 0, *(ctx->verbose));
     if (*(ctx->verbose)) {
       printf("ADC read command %ld sent to board %d\n", i + 1, board);
     }
@@ -322,10 +322,9 @@ int cmd_do_adc_read(const char** args, int arg_count, const command_flag_t* flag
   
   printf("Performing ADC read on board %d using loop command (loop count: %ld, delay mode, value %ld)...\n", board, loop_count, delay_cycles);
   
-  adc_cmd_loop_next(ctx->adc_ctrl, (uint8_t)board, (uint32_t)loop_count, *(ctx->verbose));
-  adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, (uint32_t)delay_cycles, *(ctx->verbose));
+  adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, (uint32_t)delay_cycles, (uint32_t)loop_count, *(ctx->verbose));
   
-  printf("ADC read commands sent to board %d: loop_next(%ld) + adc_rd(delay, %ld).\n", board, loop_count, delay_cycles);
+  printf("ADC read commands sent to board %d: adc_rd(delay, %ld, loop_count=%ld).\n", board, delay_cycles, loop_count);
   return 0;
 }
 
@@ -342,7 +341,7 @@ int cmd_do_adc_rd_ch(const char** args, int arg_count, const command_flag_t* fla
   printf("Reading ADC channel %d (board %d, channel %d)...\n", atoi(args[0]), board, channel);
   
   // Read the specific ADC channel
-  adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, *(ctx->verbose));
+  adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, 0, *(ctx->verbose));
   
   printf("ADC read channel command sent for channel %d (board %d, channel %d).\n", atoi(args[0]), board, channel);
   return 0;
@@ -790,7 +789,7 @@ static void* adc_cmd_stream_thread(void* arg) {
         // Simple mode loop: words needed = loop count (each iteration is 1 word)
         words_needed = cmd->value;
       } else if (cmd->type == 'L' && !stream_data->simple_mode) {
-        // Hardware loop: 2 words (loop_next + next command)
+        // Hardware loop: 2 words (loop count + next command)
         words_needed = 2;
       }
       
@@ -818,11 +817,11 @@ static void* adc_cmd_stream_thread(void* arg) {
                     // Send the next command
                     switch (next_cmd->type) {
                       case 'T':
-                        adc_cmd_adc_rd(ctx->adc_ctrl, board, true, false, next_cmd->value, verbose);
+                        adc_cmd_adc_rd(ctx->adc_ctrl, board, true, false, next_cmd->value, 0, verbose);
                         total_commands_sent++;
                         break;
                       case 'D':
-                        adc_cmd_adc_rd(ctx->adc_ctrl, board, false, false, next_cmd->value, verbose);
+                        adc_cmd_adc_rd(ctx->adc_ctrl, board, false, false, next_cmd->value, 0, verbose);
                         total_commands_sent++;
                         break;
                       case 'O':
@@ -834,19 +833,35 @@ static void* adc_cmd_stream_thread(void* arg) {
                   i++; // Skip the next command since we already executed it
                 }
               } else {
-                // Use hardware loop command
-                adc_cmd_loop_next(ctx->adc_ctrl, board, cmd->value, verbose);
-                total_commands_sent++;
+                // Use hardware loop command - apply loop count to next command
+                if (i + 1 < stream_data->command_count) {
+                  adc_command_t* next_cmd = &stream_data->commands[i + 1];
+                  switch (next_cmd->type) {
+                    case 'T':
+                      adc_cmd_adc_rd(ctx->adc_ctrl, board, true, false, next_cmd->value, cmd->value, verbose);
+                      total_commands_sent++;
+                      break;
+                    case 'D':
+                      adc_cmd_adc_rd(ctx->adc_ctrl, board, false, false, next_cmd->value, cmd->value, verbose);
+                      total_commands_sent++;
+                      break;
+                    case 'O':
+                      adc_cmd_set_ord(ctx->adc_ctrl, board, next_cmd->order, verbose);
+                      total_commands_sent++;
+                      break;
+                  }
+                  i++; // Skip the next command since we already executed it with loop
+                }
               }
               break;
             
             case 'T':
-              adc_cmd_adc_rd(ctx->adc_ctrl, board, true, false, cmd->value, verbose);
+              adc_cmd_adc_rd(ctx->adc_ctrl, board, true, false, cmd->value, 0, verbose);
               total_commands_sent++;
               break;
             
             case 'D':
-              adc_cmd_adc_rd(ctx->adc_ctrl, board, false, false, cmd->value, verbose);
+              adc_cmd_adc_rd(ctx->adc_ctrl, board, false, false, cmd->value, 0, verbose);
               total_commands_sent++;
               break;
             

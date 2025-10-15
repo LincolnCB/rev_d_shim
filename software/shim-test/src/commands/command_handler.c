@@ -90,7 +90,7 @@ static command_entry_t command_table[] = {
   {"adc_cancel", cmd_adc_cancel, {1, 1, {-1}, "Send ADC cancel command to specified board (0-7)"}},
   {"adc_set_ord", cmd_adc_set_ord, {9, 9, {-1}, "Set ADC channel order: <board> <ord0> <ord1> <ord2> <ord3> <ord4> <ord5> <ord6> <ord7> (each order value must be 0-7)"}},
   {"do_adc_simple_read", cmd_do_adc_simple_read, {3, 3, {-1}, "Perform simple ADC reads: <board> <loop_count> <delay_cycles> (reads ADC with delay mode)"}},
-  {"do_adc_read", cmd_do_adc_read, {3, 3, {-1}, "Perform ADC read using loop command: <board> <loop_count> <delay_cycles> (sends loop_next command then single read command)"}},
+  {"do_adc_read", cmd_do_adc_read, {3, 3, {-1}, "Perform ADC read using integrated loop: <board> <loop_count> <delay_cycles> (sends single adc_rd command with loop count)"}},
   {"do_adc_rd_ch", cmd_do_adc_rd_ch, {1, 1, {-1}, "Read ADC single channel: <channel> (channel 0-63, board=ch/8, ch=ch%8)"}},
   {"stream_adc_data_to_file", cmd_stream_adc_data_to_file, {3, 3, {FLAG_BIN, -1}, "Start ADC data streaming to file: <board> <word_count> <file_path> [--bin]"}},
   {"stream_adc_commands_from_file", cmd_stream_adc_commands_from_file, {2, 3, {FLAG_SIMPLE, -1}, "Start ADC command streaming from file: <board> <file_path> [loop_count] [--simple] (supports * wildcards)"}},
@@ -114,7 +114,7 @@ static command_entry_t command_table[] = {
   
   // ===== EXPERIMENT COMMANDS (from experiment_commands.h) =====
   {"channel_test", cmd_channel_test, {2, 2, {FLAG_NO_RESET, -1}, "Set DAC and check ADC on individual channels: <channel> <value> (channel 0-63, value -32767 to 32767) [--no_reset]"}},
-  {"channel_cal", cmd_channel_cal, {0, 1, {FLAG_ALL, FLAG_NO_RESET, -1}, "Calibrate DAC/ADC channels: <channel> [--no_reset] OR --all [--no_reset] (channel 0-63)"}},
+  {"channel_cal", cmd_channel_cal, {1, 1, {FLAG_NO_RESET, -1}, "Calibrate DAC/ADC channels: <channel|all> [--no_reset] (channel 0-63, board=ch/8, ch=ch%8)"}},
   {"find_bias", cmd_find_bias, {0, 0, {FLAG_NO_RESET, -1}, "Find ADC bias calibration for all connected channels - verifies slope near zero and stores bias values [--no_reset]"}},
   {"print_adc_bias", cmd_print_adc_bias, {0, 0, {-1}, "Print current ADC bias values for all channels"}},
   {"save_adc_bias", cmd_save_adc_bias, {1, 1, {-1}, "Save ADC bias values to CSV file: <filename>"}},

@@ -52,6 +52,9 @@ void dac_print_data(uint32_t dac_value) {
     case DAC_DBG_SPI_BIT:
       printf("Debug: SPI Bit Counter = %d\n", dac_value & 0x1F);
       break;
+    case DAC_DBG_DAC_WRITE:
+      printf("Debug: DAC SPI Word Writing = 0x%06X\n", dac_value & 0xFFFFFF);
+      break;
     case DAC_CAL_DATA: {
       uint8_t channel = DAC_CAL_DATA_CH(dac_value);
       int16_t cal_value = DAC_CAL_DATA_VAL(dac_value);

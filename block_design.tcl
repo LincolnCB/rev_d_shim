@@ -30,7 +30,7 @@ if {$spi_clk_freq_mhz < 1.0 || $spi_clk_freq_mhz > 50.0} {
 # Larger FIFOs use more FPGA resources, but allow for longer bursts and more buffering.
 # This can hit the cap fast!
 set dac_cmd_fifo_addr_width 13
-set dac_data_fifo_addr_width 10
+set dac_data_fifo_addr_width 11
 set adc_cmd_fifo_addr_width 10
 set adc_data_fifo_addr_width 13
 set trig_cmd_fifo_addr_width 10

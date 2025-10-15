@@ -47,10 +47,10 @@ def get_user_input():
     # Get amplitude
     while True:
         try:
-            amplitude = float(input("Amplitude (amps, 0 to 4): "))
-            if 0 <= amplitude <= 4:
+            amplitude = float(input("Amplitude (amps, 0.0 to 5.1): "))
+            if 0.0 <= amplitude <= 5.1:
                 break
-            print("Amplitude must be between 0 and 4 amps")
+            print("Amplitude must be between 0.0 and 5.1 amps")
         except ValueError:
             print("Please enter a valid number")
     
@@ -97,6 +97,17 @@ def get_user_input():
             params['create_adc_readout'] = True
             adc_params = get_adc_readout_parameters(params)
             params.update(adc_params)
+            break
+        print("Please enter 'y' for yes or 'n' for no")
+    
+    # Ask about equivalent zeroed waveform
+    while True:
+        zero_input = input("Create equivalent zeroed waveform? [y/N]: ").strip().lower()
+        if zero_input in ['', 'n', 'no']:
+            params['create_zero_waveform'] = False
+            break
+        elif zero_input in ['y', 'yes']:
+            params['create_zero_waveform'] = True
             break
         print("Please enter 'y' for yes or 'n' for no")
     
@@ -225,17 +236,17 @@ def current_to_dac_value(current, channel_amplitude):
     """
     Convert sine wave value to signed 16-bit DAC value.
     
-    The channel_amplitude parameter (0-4A) scales to the full DAC range.
+    The channel_amplitude parameter (0-5.1A) scales to the full DAC range.
     The sine wave value (-1 to +1) then uses the full +/- range.
     
     Args:
         current: Sine wave value (-1 to +1)
-        channel_amplitude: Maximum amplitude for this channel (0 to 4A)
+        channel_amplitude: Maximum amplitude for this channel (0 to 5.1A)
     
     Returns:
         Signed 16-bit integer DAC value
     """
-    # Scale amplitude (0-4A) to DAC range (0-32767)
+    # Scale amplitude (0-5.1A) to DAC range (0-32767)
     max_dac_value = int(channel_amplitude * 32767 / 5.1)
     
     # Apply sine wave value (-1 to +1) to get full +/- range
@@ -257,7 +268,7 @@ def generate_sine_wave(params):
                 - duration: Duration in milliseconds
                 - sample_rate: Sample rate in kHz
                 - frequency: Sine wave frequency in kHz
-                - amplitude: Base amplitude in amps (0-4A)
+                - amplitude: Base amplitude in amps (0-5.1A)
                 - channel_scale: Scale factor for per-channel amplitude
     
     Returns:
@@ -308,7 +319,7 @@ def generate_trapezoid_wave(params):
     
     Args:
         params: Dictionary with waveform parameters including:
-                - amplitude: Base amplitude in amps (0-4A)
+                - amplitude: Base amplitude in amps (0-5.1A)
                 - channel_scale: Scale factor for per-channel amplitude
     
     Returns:
@@ -425,6 +436,32 @@ def generate_trapezoid_wave(params):
     
     return samples
 
+def create_zeroed_samples(original_samples):
+    """
+    Create zeroed samples with the same count and timing as the original waveform.
+    
+    Args:
+        original_samples: List of samples from generate_sine_wave() or generate_trapezoid_wave()
+        
+    Returns:
+        List of samples with same timing but all channels set to 0
+    """
+    zeroed_samples = []
+    
+    for sample in original_samples:
+        if isinstance(sample, tuple) and len(sample) == 3 and sample[0] == 'FLAT_SECTION':
+            # Handle flat section marker for trapezoid waves
+            _, _, flat_count = sample
+            # Create zero values for all 8 channels
+            zero_channel_values = [0, 0, 0, 0, 0, 0, 0, 0]
+            zeroed_samples.append(('FLAT_SECTION', zero_channel_values, flat_count))
+        else:
+            # Regular sample - create zero values for all 8 channels
+            zero_channel_values = [0, 0, 0, 0, 0, 0, 0, 0]
+            zeroed_samples.append(zero_channel_values)
+    
+    return zeroed_samples
+
 def calculate_sample_delay(sample_rate_khz, clock_freq_mhz):
     """
     Calculate the delay value for the given sample rate.
@@ -533,7 +570,7 @@ def write_adc_readout_file(filename, dac_duration_ms, adc_sample_rate_khz, extra
         print(f"Error writing ADC readout file {filename}: {e}")
         sys.exit(1)
 
-def write_waveform_file(filename, samples, sample_rate_khz, clock_freq_mhz, waveform_type, params=None):
+def write_waveform_file(filename, samples, sample_rate_khz, clock_freq_mhz, waveform_type, params=None, is_zeroed=False):
     """
     Write samples to a DAC waveform file.
     
@@ -544,15 +581,21 @@ def write_waveform_file(filename, samples, sample_rate_khz, clock_freq_mhz, wave
         clock_freq_mhz: System clock frequency in MHz
         waveform_type: Type of waveform (for comments)
         params: Optional waveform parameters for additional comment information
+        is_zeroed: Whether this is a zeroed equivalent waveform
     """
     delay_value = calculate_sample_delay(sample_rate_khz, clock_freq_mhz)
     
     try:
         with open(filename, 'w') as f:
             # Write header comment
-            f.write("# DAC Waveform File\n")
+            waveform_description = "Zeroed DAC Waveform" if is_zeroed else "DAC Waveform"
+            f.write(f"# {waveform_description} File\n")
             f.write(f"# Generated by wavegen.py\n")
-            f.write(f"# Waveform type: {waveform_type}\n")
+            if is_zeroed:
+                f.write(f"# Original waveform type: {waveform_type}\n")
+                f.write("# Note: This is an equivalent zeroed waveform (all channels = 0)\n")
+            else:
+                f.write(f"# Waveform type: {waveform_type}\n")
             
             # Round sample rate and clock frequency to nearest millionth
             sample_rate_str = f"{sample_rate_khz:.6g}" if isinstance(sample_rate_khz, (int, float)) else str(sample_rate_khz)
@@ -576,17 +619,29 @@ def write_waveform_file(filename, samples, sample_rate_khz, clock_freq_mhz, wave
                 
                 f.write(f"# Sine wave duration: {duration_str} ms\n")
                 f.write(f"# Sine wave frequency: {frequency_str} kHz\n")
-                f.write(f"# Sine wave amplitude: {amplitude_str} A\n")
-                f.write(f"# Channel scale factor: {channel_scale_str}\n")
+                if is_zeroed:
+                    f.write(f"# Original sine wave amplitude: {amplitude_str} A (zeroed to 0)\n")
+                    f.write(f"# Original channel scale factor: {channel_scale_str} (all channels = 0)\n")
+                else:
+                    f.write(f"# Sine wave amplitude: {amplitude_str} A\n")
+                    f.write(f"# Channel scale factor: {channel_scale_str}\n")
                 
                 # Calculate and display per-channel amplitudes
                 if isinstance(amplitude_a, (int, float)) and isinstance(channel_scale, (int, float)):
-                    f.write("# Per-channel amplitudes: ")
-                    channel_amps = []
-                    for ch in range(8):
-                        ch_amp = amplitude_a * (channel_scale ** ch)
-                        channel_amps.append(f"CH{ch}={ch_amp:.6g}A")
-                    f.write(" ".join(channel_amps) + "\n")
+                    if is_zeroed:
+                        f.write("# Original per-channel amplitudes (all zeroed): ")
+                        channel_amps = []
+                        for ch in range(8):
+                            ch_amp = amplitude_a * (channel_scale ** ch)
+                            channel_amps.append(f"CH{ch}={ch_amp:.6g}A→0A")
+                        f.write(" ".join(channel_amps) + "\n")
+                    else:
+                        f.write("# Per-channel amplitudes: ")
+                        channel_amps = []
+                        for ch in range(8):
+                            ch_amp = amplitude_a * (channel_scale ** ch)
+                            channel_amps.append(f"CH{ch}={ch_amp:.6g}A")
+                        f.write(" ".join(channel_amps) + "\n")
                 
                 if isinstance(duration_ms, (int, float)) and isinstance(sample_rate_khz, (int, float)):
                     total_samples = int(sample_rate_khz * duration_ms)
@@ -618,17 +673,29 @@ def write_waveform_file(filename, samples, sample_rate_khz, clock_freq_mhz, wave
                 f.write(f"# Trapezoid flat time: {flat_str} ms\n")
                 f.write(f"# Trapezoid fall time: {fall_str} ms\n")
                 f.write(f"# Trapezoid total duration: {total_str} ms\n")
-                f.write(f"# Trapezoid amplitude: {amplitude_str} A\n")
-                f.write(f"# Channel scale factor: {channel_scale_str}\n")
+                if is_zeroed:
+                    f.write(f"# Original trapezoid amplitude: {amplitude_str} A (zeroed to 0)\n")
+                    f.write(f"# Original channel scale factor: {channel_scale_str} (all channels = 0)\n")
+                else:
+                    f.write(f"# Trapezoid amplitude: {amplitude_str} A\n")
+                    f.write(f"# Channel scale factor: {channel_scale_str}\n")
                 
                 # Calculate and display per-channel amplitudes
                 if isinstance(amplitude_a, (int, float)) and isinstance(channel_scale, (int, float)):
-                    f.write("# Per-channel amplitudes: ")
-                    channel_amps = []
-                    for ch in range(8):
-                        ch_amp = amplitude_a * (channel_scale ** ch)
-                        channel_amps.append(f"CH{ch}={ch_amp:.6g}A")
-                    f.write(" ".join(channel_amps) + "\n")
+                    if is_zeroed:
+                        f.write("# Original per-channel amplitudes (all zeroed): ")
+                        channel_amps = []
+                        for ch in range(8):
+                            ch_amp = amplitude_a * (channel_scale ** ch)
+                            channel_amps.append(f"CH{ch}={ch_amp:.6g}A→0A")
+                        f.write(" ".join(channel_amps) + "\n")
+                    else:
+                        f.write("# Per-channel amplitudes: ")
+                        channel_amps = []
+                        for ch in range(8):
+                            ch_amp = amplitude_a * (channel_scale ** ch)
+                            channel_amps.append(f"CH{ch}={ch_amp:.6g}A")
+                        f.write(" ".join(channel_amps) + "\n")
             
             f.write(f"# Normal delay value: {delay_value}\n")
             f.write("# Format: T 1 <ch0-ch7> (update to values after trigger) / D <delay> <ch0-ch7> (update to values after delay)\n")
@@ -729,6 +796,15 @@ def main():
     
     # Write waveform file
     write_waveform_file(f"{filename}.wfm", samples, params['sample_rate'], params['clock_freq'], params['type'], params)
+    
+    # Generate equivalent zeroed waveform if requested
+    if params.get('create_zero_waveform', False):
+        # Create zeroed samples with same timing
+        zero_samples = create_zeroed_samples(samples)
+        
+        # Write zeroed waveform file
+        zero_filename = f"{filename}_zero.wfm"
+        write_waveform_file(zero_filename, zero_samples, params['sample_rate'], params['clock_freq'], params['type'], params, is_zeroed=True)
     
     # Generate ADC readout file if requested
     if params.get('create_adc_readout', False):

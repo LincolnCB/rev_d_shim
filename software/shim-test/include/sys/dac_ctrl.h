@@ -11,7 +11,7 @@
 
 // DAC FIFO depths
 #define DAC_CMD_FIFO_WORDCOUNT   (uint32_t)(1 << 13) // 8192 words (2^13)
-#define DAC_DATA_FIFO_WORDCOUNT  (uint32_t)(1 << 10) // 1024 words (2^10)
+#define DAC_DATA_FIFO_WORDCOUNT  (uint32_t)(1 << 11) // 2048 words (2^11)
 
 // DAC state codes
 #define DAC_STATE_RESET      0
@@ -48,6 +48,7 @@
 #define DAC_DBG_STATE_TRANSITION  2
 #define DAC_DBG_N_CS_TIMER        3
 #define DAC_DBG_SPI_BIT           4
+#define DAC_DBG_DAC_WRITE         5
 #define DAC_CAL_DATA              8
 #define DAC_CAL_DATA_CH(word)     (((word) >> 16) & 0x07) // Bits [18:16] for channel in cal data
 #define DAC_CAL_DATA_VAL(word)    ((int16_t)((word) & 0xFFFF)) // Bits [15:0] for cal value (signed)
