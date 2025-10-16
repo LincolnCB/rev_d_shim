@@ -30,45 +30,80 @@ uint32_t dac_read_data(struct dac_ctrl_t *dac_ctrl, uint8_t board) {
 }
 
 // Interpret and print DAC data word as calibration or debug information
-void dac_print_data(uint32_t dac_value) {
+void dac_print_data(uint32_t dac_value, bool verbose) {
+  if (verbose) {
+    printf("DAC Data word: 0x%08X\n", dac_value);
+  }
   uint8_t data_code = DAC_DATA_CODE(dac_value);
   switch (data_code) {
-    case DAC_DBG_MISO_DATA:
+    case DAC_DBG_MISO_DATA: {
       printf("Debug: MISO Data = 0x%04X\n", dac_value & 0xFFFF);
       break;
+    }
     case DAC_DBG_STATE_TRANSITION: {
       uint8_t from_state = (dac_value >> 4) & 0x0F;
       uint8_t to_state = dac_value & 0x0F;
       printf("Debug: State Transition from ");
-      dac_print_state(from_state);
+      dac_print_state(from_state, verbose);
       printf(" to ");
-      dac_print_state(to_state);
+      dac_print_state(to_state, verbose);
       printf("\n");
       break;
     }
-    case DAC_DBG_N_CS_TIMER:
+    case DAC_DBG_N_CS_TIMER: {
       printf("Debug: n_cs Timer = %d\n", dac_value & 0x0FFF);
       break;
-    case DAC_DBG_SPI_BIT:
+    }
+    case DAC_DBG_SPI_BIT: {
       printf("Debug: SPI Bit Counter = %d\n", dac_value & 0x1F);
       break;
-    case DAC_DBG_DAC_WRITE:
+    }
+    case DAC_DBG_DAC_WRITE: {
       printf("Debug: DAC SPI Word Writing = 0x%06X\n", dac_value & 0xFFFFFF);
+      printf("  Command: ");
+      switch (DAC_SPI_CMD_WORD(dac_value)) {
+        case DAC_SPI_CMD_NO_OP: {
+          printf("NO_OP");
+          break;
+        }
+        case DAC_SPI_CMD_DAC_WR_LDAC_WAIT: {
+          printf("DAC_WR_LDAC_WAIT");
+          break;
+        }
+        case DAC_SPI_CMD_DAC_WR_IMMEDIATE: {
+          printf("DAC_WR_IMMEDIATE");
+          break;
+        }
+        case DAC_SPI_CMD_REQ_RD: {
+          printf("REQ_RD");
+          break;
+        }
+        default: {
+          printf("Unknown Command");
+          break;
+        }
+      }
+      printf(" to Register: %1d, Data: %05d\n", DAC_SPI_REG_ADDR(dac_value), DAC_SPI_DATA(dac_value));
       break;
+    }
     case DAC_CAL_DATA: {
       uint8_t channel = DAC_CAL_DATA_CH(dac_value);
       int16_t cal_value = DAC_CAL_DATA_VAL(dac_value);
       printf("Calibration: Channel %d = %d\n", channel, cal_value);
       break;
     }
-    default:
+    default: {
       printf("Data: Unknown code %d with value 0x%X\n", data_code, dac_value);
       break;
+    }
   }
 }
 
 // Interpret and print the DAC state
-void dac_print_state(uint8_t state_code) {
+void dac_print_state(uint8_t state_code, bool verbose) {
+  if (verbose) {
+    printf("DAC State code: %d\n", state_code);
+  }
   switch (state_code) {
     case DAC_STATE_RESET:
       printf("RESET");

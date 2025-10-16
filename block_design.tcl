@@ -455,7 +455,7 @@ wire axi_spi_interface/trig_data_buf_underflow hw_manager/trig_data_buf_underflo
 
 ###############################################################################
 
-### Status register
+### Status register (2048 bits)
 cell pavel-demin:user:axi_sts_register status_reg {
   STS_DATA_WIDTH 2048
 } {
@@ -507,7 +507,7 @@ cell xilinx.com:ip:xlconstant:1.1 pad_17 {
 # Pad reserved bits
 cell xilinx.com:ip:xlconstant:1.1 pad_sts_reserved {
   CONST_VAL 0
-  CONST_WIDTH [expr {2048 - 1184}]
+  CONST_WIDTH [expr {2048 - 1216}]
 } {
   dout sts_concat/In6
 }

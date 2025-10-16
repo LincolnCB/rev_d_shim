@@ -40,36 +40,67 @@ uint32_t adc_read_word(struct adc_ctrl_t *adc_ctrl, uint8_t board) {
 }
 
 // Interpret and print ADC value as debug information
-void adc_print_debug(uint32_t adc_value) {
+void adc_print_debug(uint32_t adc_value, bool verbose) {
+  if (verbose) {
+    printf("ADC Debug word: 0x%08X\n", adc_value);
+  }
   uint8_t debug_code = ADC_DBG(adc_value);
   switch (debug_code) {
-    case ADC_DBG_MISO_DATA:
-      printf("Debug: MISO Data = 0x%04X\n", adc_value & 0xFFFF);
+    case ADC_DBG_MISO_DATA: {
+      printf("Debug: Startup test MISO Data = 0x%04X\n", adc_value & 0xFFFF);
       break;
+    }
     case ADC_DBG_STATE_TRANSITION: {
       uint8_t from_state = (adc_value >> 4) & 0x0F;
       uint8_t to_state = adc_value & 0x0F;
       printf("Debug: State Transition from ");
-      adc_print_state(from_state);
+      adc_print_state(from_state, verbose);
       printf(" to ");
-      adc_print_state(to_state);
+      adc_print_state(to_state, verbose);
       printf("\n");
       break;
     }
-    case ADC_DBG_N_CS_TIMER:
-      printf("Debug: n_cs Timer = %d\n", adc_value & 0x0FFF);
+    case ADC_DBG_REPEAT: {
+      printf("Debug: Repeat (Count = %d) command ", adc_value & 0xFFFF);
+      adc_print_command((uint8_t)(ADC_DBG_COMMAND(adc_value)), verbose);
+      if (ADC_DBG_REPEAT_BIT(adc_value)) {
+        printf(" with Repeat Bit set\n");
+      } else {
+        printf(" with Repeat Bit clear\n");
+      }
       break;
-    case ADC_DBG_SPI_BIT:
-      printf("Debug: SPI Bit Counter = %d\n", adc_value & 0x1F);
+    }
+    case ADC_DBG_N_CS_TIMER: {
+      printf("Debug: Starting ~CS timer with value = %d\n", adc_value & 0x0FFF);
       break;
-    default:
+    }
+    case ADC_DBG_SPI_BIT: {
+      printf("Debug: Starting SPI command at bit = %d\n", adc_value & 0x1F);
+      break;
+    }
+    case ADC_DBG_CMD_DONE: {
+      printf("Debug: Command Done");
+      if (ADC_DBG_NEXT_CMD_READY(adc_value)) {
+        printf(" with next command ready: ");
+        adc_print_command((uint8_t)(ADC_DBG_COMMAND(adc_value)), verbose);
+      } else {
+        printf(" with no next command ready\n");
+      }
+      printf(" -- Remaining repeat count: %d\n", adc_value & 0xFFFF);
+      break;
+    }
+    default: {
       printf("Debug: Unknown code %d with value 0x%X\n", debug_code, adc_value);
       break;
+    }
   }
 }
 
 // Interpret and print the ADC state
-void adc_print_state(uint8_t state_code) {
+void adc_print_state(uint8_t state_code, bool verbose) {
+  if (verbose) {
+    printf("ADC State code: %d\n", state_code);
+  }
   switch (state_code) {
     case ADC_STATE_RESET:
       printf("RESET");
@@ -109,8 +140,41 @@ void adc_print_state(uint8_t state_code) {
   }
 }
 
+// Interpret and print uint8_t command code as string
+void adc_print_command(uint8_t cmd_code, bool verbose) {
+  if (verbose) {
+    printf("ADC Command code: %d\n", cmd_code);
+  }
+  switch (cmd_code) {
+    case ADC_CMD_NO_OP: {
+      printf("NO_OP\n");
+      break;
+    }
+    case ADC_CMD_SET_ORD: {
+      printf("SET_ORD\n");
+      break;
+    }
+    case ADC_CMD_ADC_RD: {
+      printf("ADC_RD\n");
+      break;
+    }
+    case ADC_CMD_ADC_RD_CH: {
+      printf("ADC_RD_CH\n");
+      break;
+    }
+    case ADC_CMD_CANCEL: {
+      printf("CANCEL\n");
+      break;
+    }
+    default: {
+      printf("Unknown Command: %d\n", cmd_code);
+      break;
+    }
+  }
+}
+
 // ADC command word functions
-void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t value, uint32_t loop_count, bool verbose) {
+void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t value, uint32_t repeat_count, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
     return;
@@ -122,7 +186,7 @@ void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool co
   uint32_t cmd_word = (ADC_CMD_NO_OP  << ADC_CMD_CMD_LSB ) |
                       ((trig ? 1 : 0) << ADC_CMD_TRIG_BIT) |
                       ((cont ? 1 : 0) << ADC_CMD_CONT_BIT) |
-                      (((loop_count > 0) ? 1 : 0) << ADC_CMD_LOOP_BIT) |
+                      (((repeat_count > 0) ? 1 : 0) << ADC_CMD_REPEAT_BIT) |
                       (value & 0x1FFFFFF);
   
   if (verbose) {
@@ -130,15 +194,15 @@ void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool co
   }
   *(adc_ctrl->buffer[board]) = cmd_word;
 
-  if (loop_count > 0) {
+  if (repeat_count > 0) {
     if (verbose) {
-      printf("ADC[%d] LOOP count: 0x%08X (loop count: %u)\n", board, loop_count, loop_count);
+      printf("ADC[%d] LOOP count: 0x%08X (loop count: %u)\n", board, repeat_count, repeat_count);
     }
-    *(adc_ctrl->buffer[board]) = loop_count;
+    *(adc_ctrl->buffer[board]) = repeat_count;
   }
 }
 
-void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t value, uint32_t loop_count, bool verbose) {
+void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t value, uint32_t repeat_count, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
     return;
@@ -150,7 +214,7 @@ void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool 
   uint32_t cmd_word = (ADC_CMD_ADC_RD << ADC_CMD_CMD_LSB ) |
                       ((trig ? 1 : 0) << ADC_CMD_TRIG_BIT) |
                       ((cont ? 1 : 0) << ADC_CMD_CONT_BIT) |
-                      (((loop_count > 0) ? 1 : 0) << ADC_CMD_LOOP_BIT) |
+                      (((repeat_count > 0) ? 1 : 0) << ADC_CMD_REPEAT_BIT) |
                       (value & 0x1FFFFFF);
   
   if (verbose) {
@@ -158,15 +222,15 @@ void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool 
   }
   *(adc_ctrl->buffer[board]) = cmd_word;
 
-  if (loop_count > 0) {
+  if (repeat_count > 0) {
     if (verbose) {
-      printf("ADC[%d] LOOP count: 0x%08X (loop count: %u)\n", board, loop_count, loop_count);
+      printf("ADC[%d] LOOP count: 0x%08X (loop count: %u)\n", board, repeat_count, repeat_count);
     }
-    *(adc_ctrl->buffer[board]) = loop_count;
+    *(adc_ctrl->buffer[board]) = repeat_count;
   }
 }
 
-void adc_cmd_adc_rd_ch(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t ch, uint32_t loop_count, bool verbose) {
+void adc_cmd_adc_rd_ch(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t ch, uint32_t repeat_count, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
     return;
@@ -177,7 +241,7 @@ void adc_cmd_adc_rd_ch(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t ch, u
   }
   
   uint32_t cmd_word = (ADC_CMD_ADC_RD_CH << ADC_CMD_CMD_LSB ) |
-                      (((loop_count > 0) ? 1 : 0) << ADC_CMD_LOOP_BIT) |
+                      (((repeat_count > 0) ? 1 : 0) << ADC_CMD_REPEAT_BIT) |
                       ((ch & 0x7) << 0);
   
   if (verbose) {
@@ -185,11 +249,11 @@ void adc_cmd_adc_rd_ch(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t ch, u
   }
   *(adc_ctrl->buffer[board]) = cmd_word;
 
-  if (loop_count > 0) {
+  if (repeat_count > 0) {
     if (verbose) {
-      printf("ADC[%d] LOOP count: 0x%08X (loop count: %u)\n", board, loop_count, loop_count);
+      printf("ADC[%d] LOOP count: 0x%08X (loop count: %u)\n", board, repeat_count, repeat_count);
     }
-    *(adc_ctrl->buffer[board]) = loop_count;
+    *(adc_ctrl->buffer[board]) = repeat_count;
   }
 }
 
@@ -239,14 +303,20 @@ void adc_cmd_cancel(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool verbose) {
 }
 
 // Convert and print a single ADC sample from a 32-bit word (low 16 bits)
-void adc_print_single(uint32_t data_word) {
+void adc_print_single(uint32_t data_word, bool verbose) {
+  if (verbose) {
+    printf("ADC Data word: 0x%08X\n", data_word);
+  }
   uint16_t lower_16 = data_word & 0xFFFF;
   int16_t signed_value = offset_to_signed(lower_16);
   printf("%d", signed_value);
 }
 
 // Convert and print a pair of ADC samples from a 32-bit word
-void adc_print_pair(uint32_t data_word) {
+void adc_print_pair(uint32_t data_word, bool verbose) {
+  if (verbose) {
+    printf("ADC Data word: 0x%08X\n", data_word);
+  }
   uint16_t lower_16 = data_word & 0xFFFF;
   uint16_t upper_16 = (data_word >> 16) & 0xFFFF;
   

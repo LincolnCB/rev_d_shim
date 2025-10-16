@@ -28,7 +28,7 @@
 // Forward declarations for helper functions
 static int validate_system_running(command_context_t* ctx);
 static int count_trigger_lines_in_file(const char* file_path);
-static uint64_t calculate_expected_samples(const char* file_path, int loop_count, bool verbose);
+static uint64_t calculate_expected_samples(const char* file_path, int repeat_count, bool verbose);
 
 // Structure for trigger monitoring thread
 typedef struct {
@@ -87,7 +87,7 @@ static int count_trigger_lines_in_file(const char* file_path) {
 }
 
 // Helper function to calculate expected number of samples from an ADC command file
-static uint64_t calculate_expected_samples(const char* file_path, int loop_count, bool verbose) {
+static uint64_t calculate_expected_samples(const char* file_path, int repeat_count, bool verbose) {
   // Use the existing ADC command parser to get the parsed commands
   adc_command_t* commands = NULL;
   int command_count = 0;
@@ -215,10 +215,10 @@ static uint64_t calculate_expected_samples(const char* file_path, int loop_count
   
   free(commands);
   
-  uint64_t total_samples = samples_per_loop * loop_count;
+  uint64_t total_samples = samples_per_loop * (repeat_count + 1);
   if (verbose) {
-    printf("Calculated %llu samples per loop, %llu total samples (%d loops)\n", 
-           samples_per_loop, total_samples, loop_count);
+    printf("Calculated %llu samples per loop, %llu total samples (%d repeats + 1)\n", 
+           samples_per_loop, total_samples, repeat_count);
   }
   
   return total_samples;
@@ -960,12 +960,12 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     strcpy(previous_adc_file, resolved_adc_files[board]);
   }
   
-  // Step 4: Prompt for DAC and ADC loop counts for each connected board
-  int dac_loops[8] = {0};  // DAC loop counts for each board
-  int adc_loops[8] = {0};  // ADC loop counts for each board
+  // Step 4: Prompt for DAC and ADC repeat counts for each connected board
+  int dac_loops[8] = {0};  // DAC loop counts for each board  
+  int adc_repeats[8] = {0};  // ADC repeat counts for each board
   
   int previous_dac_loops = 0;
-  int previous_adc_loops = 0;
+  int previous_adc_repeats = 0;
   
   printf("\nLoop count configuration:\n");
   for (int board = 0; board < 8; board++) {
@@ -1003,17 +1003,15 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     }
     previous_dac_loops = dac_loops[board];
     
-    // Prompt for ADC loops with default handling
-    printf("Enter ADC loop count for board %d", board);
-    int default_adc_loops = (previous_adc_loops > 0) ? previous_adc_loops : previous_dac_loops;
-    if (default_adc_loops > 0) {
-      printf(" (default: %d)", default_adc_loops);
-    }
+    // Prompt for ADC repeats with default handling
+    printf("Enter ADC repeat count for board %d", board);
+    int default_adc_repeats = (previous_adc_repeats >= 0) ? previous_adc_repeats : 0;
+    printf(" (default: %d)", default_adc_repeats);
     printf(": ");
     fflush(stdout);
     
     if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
-      fprintf(stderr, "Failed to read ADC loop count input.\n");
+      fprintf(stderr, "Failed to read ADC repeat count input.\n");
       return -1;
     }
     
@@ -1024,16 +1022,16 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     }
     
     // Check for default (empty input or ".")
-    if ((strlen(input_buffer) == 0 || strcmp(input_buffer, ".") == 0) && default_adc_loops > 0) {
-      adc_loops[board] = default_adc_loops;
+    if (strlen(input_buffer) == 0 || strcmp(input_buffer, ".") == 0) {
+      adc_repeats[board] = default_adc_repeats;
     } else {
-      adc_loops[board] = atoi(input_buffer);
-      if (adc_loops[board] < 1) {
-        fprintf(stderr, "Invalid ADC loop count for board %d. Must be >= 1.\n", board);
+      adc_repeats[board] = atoi(input_buffer);
+      if (adc_repeats[board] < 0) {
+        fprintf(stderr, "Invalid ADC repeat count for board %d. Must be >= 0.\n", board);
         return -1;
       }
     }
-    previous_adc_loops = adc_loops[board];
+    previous_adc_repeats = adc_repeats[board];
   }
   
   // Step 5: Prompt for base output file name
@@ -1141,7 +1139,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     
     // Calculate total triggers for this board
     uint32_t dac_total_triggers = dac_trigger_count * dac_loops[board];
-    uint32_t adc_total_triggers = adc_trigger_count * adc_loops[board];
+    uint32_t adc_total_triggers = adc_trigger_count * (adc_repeats[board] + 1);
     
     // Validate that DAC and ADC have same trigger count for this board
     if (dac_total_triggers != adc_total_triggers) {
@@ -1150,7 +1148,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
       fprintf(stderr, "  DAC: %d triggers/file × %d loops = %u\n", 
               dac_trigger_count, dac_loops[board], dac_total_triggers);
       fprintf(stderr, "  ADC: %d triggers/file × %d loops = %u\n", 
-              adc_trigger_count, adc_loops[board], adc_total_triggers);
+              adc_trigger_count, adc_repeats[board] + 1, adc_total_triggers);
       return -1;
     }
     
@@ -1172,7 +1170,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     if (!connected_boards[board]) continue;
     
     // Calculate expected number of samples from ADC command file using board-specific ADC loops
-    sample_counts[board] = calculate_expected_samples(resolved_adc_files[board], adc_loops[board], *(ctx->verbose));
+    sample_counts[board] = calculate_expected_samples(resolved_adc_files[board], adc_repeats[board], *(ctx->verbose));
     if (sample_counts[board] == 0) {
       fprintf(stderr, "Failed to calculate expected sample count from ADC command file for board %d\n", board);
       return -1;
@@ -1182,7 +1180,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     
     if (*(ctx->verbose)) {
       printf("Board %d: DAC loops=%d, ADC loops=%d, triggers=%u, ADC samples=%llu\n", 
-             board, dac_loops[board], adc_loops[board], board_triggers[board], sample_counts[board]);
+             board, dac_loops[board], adc_repeats[board], board_triggers[board], sample_counts[board]);
     }
   }
   
@@ -1244,10 +1242,10 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   for (int board = 0; board < 8; board++) {
     if (!connected_boards[board]) continue;
     
-    char board_str[16], dac_loops_str[16], adc_loops_str[16];
+    char board_str[16], dac_loops_str[16], adc_repeats_str[16];
     snprintf(board_str, sizeof(board_str), "%d", board);
     snprintf(dac_loops_str, sizeof(dac_loops_str), "%d", dac_loops[board]);
-    snprintf(adc_loops_str, sizeof(adc_loops_str), "%d", adc_loops[board]);
+    snprintf(adc_repeats_str, sizeof(adc_repeats_str), "%d", adc_repeats[board]);
     
     // Start DAC command streaming with board-specific DAC loop count
     if (*(ctx->verbose)) {
@@ -1260,12 +1258,12 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
       return -1;
     }
     
-    // Start ADC command streaming with board-specific ADC loop count (using hardware loops)
+    // Start ADC command streaming with board-specific ADC repeat count (using hardware repeats)
     if (*(ctx->verbose)) {
-      printf("  Board %d: Starting ADC command streaming from '%s' (%d loops)\n", 
-             board, resolved_adc_files[board], adc_loops[board]);
+      printf("  Board %d: Starting ADC command streaming from '%s' (%d repeats)\n", 
+             board, resolved_adc_files[board], adc_repeats[board]);
     }
-    const char* adc_args[] = {board_str, resolved_adc_files[board], adc_loops_str};
+    const char* adc_args[] = {board_str, resolved_adc_files[board], adc_repeats_str};
     if (cmd_stream_adc_commands_from_file(adc_args, 3, NULL, 0, ctx) != 0) {
       fprintf(stderr, "Failed to start ADC command streaming for board %d\n", board);
       return -1;

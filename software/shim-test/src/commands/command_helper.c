@@ -101,16 +101,16 @@ int parse_trigger_mode(const char* mode_str, const char* value_str, bool* is_tri
     *is_trigger = true;
     char* endptr;
     *value = parse_value(value_str, &endptr);
-    if (*endptr != '\0' || *value == 0 || *value > 0x1FFFFFFF) {
-      printf("Error: Trigger value must be between 1 and 0x1FFFFFFF\n");
+    if (*endptr != '\0' || *value > 0x1FFFFFF) {
+      printf("Error: Trigger value must be between 0 and 0x1FFFFFF (33554431)\n");
       return -1;
     }
   } else if (strcmp(mode_str, "delay") == 0) {
     *is_trigger = false;
     char* endptr;
     *value = parse_value(value_str, &endptr);
-    if (*endptr != '\0' || *value > 0x1FFFFFFF) {
-      printf("Error: Delay value must be between 0 and 0x1FFFFFFF\n");
+    if (*endptr != '\0' || *value > 0x1FFFFFF) {
+      printf("Error: Delay value must be between 0 and 0x1FFFFFF (33554431)\n");
       return -1;
     }
   } else {

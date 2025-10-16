@@ -5,8 +5,9 @@
 
 // Structure for ADC command data (used for streaming commands from file)
 typedef struct {
-  char type;              // Command type: 'L' (Loop), 'T' (Trigger), 'D' (Delay), 'O' (Order)
-  uint32_t value;         // Command value (for L, T, D commands - loop count, trigger cycles, delay cycles)
+  char type;              // Command type: 'T' (Trigger), 'D' (Delay), 'O' (Order)
+  uint32_t value;         // Command value (for T, D commands - trigger cycles, delay cycles)
+  uint32_t repeat_count;  // Repeat count for T, D commands (0 = execute once)
   uint8_t order[8];       // Channel order array (for O commands - specifies sampling order 0-7)
 } adc_command_t;
 
@@ -28,7 +29,7 @@ typedef struct {
   volatile bool* should_stop;
   adc_command_t* commands;
   int command_count;
-  int loop_count;       // Number of times to loop through the commands (1 = play once)
+  int repeat_count;     // Number of times to repeat through the commands (0 = play once)
   bool simple_mode;     // Whether to unroll loops instead of using loop command
 } adc_command_stream_params_t;
 
@@ -47,8 +48,7 @@ int cmd_adc_cancel(const char** args, int arg_count, const command_flag_t* flags
 int cmd_adc_set_ord(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
 // ADC reading operations
-int cmd_do_adc_simple_read(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
-int cmd_do_adc_read(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+int cmd_do_adc_rd(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_do_adc_rd_ch(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
 // ADC data streaming operations (reading ADC data to files)

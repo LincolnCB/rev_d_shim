@@ -80,14 +80,14 @@ int cmd_read_adc_pair(const char** args, int arg_count, const command_flag_t* fl
     while (!FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
       uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
       if (*(ctx->verbose)) printf("Sample %d - ADC data from board %d: 0x%" PRIx32 "\n", ++count, board, data);
-      adc_print_pair(data);
+      adc_print_pair(data, *(ctx->verbose));
       printf("\n");
     }
     printf("Read %d samples total.\n", count);
   } else {
     uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
     if (*(ctx->verbose)) printf("Read ADC data from board %d: 0x%" PRIx32 "\n", board, data);
-    adc_print_pair(data);
+    adc_print_pair(data, *(ctx->verbose));
   }
   return 0;
 }
@@ -113,7 +113,7 @@ int cmd_read_adc_single(const char** args, int arg_count, const command_flag_t* 
       uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
       count++;
       if (*(ctx->verbose)) printf("Sample %d - ADC data from board %d: 0x%" PRIx32 "\n", count, board, data);
-      adc_print_single(data);
+      adc_print_single(data, *(ctx->verbose));
       printf("\n");
     }
     printf("Read %d samples total for board %d.\n", count, board);
@@ -125,7 +125,7 @@ int cmd_read_adc_single(const char** args, int arg_count, const command_flag_t* 
     
     uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
     if (*(ctx->verbose)) printf("Read ADC data from board %d: 0x%" PRIx32 "\n", board, data);
-    adc_print_single(data);
+    adc_print_single(data, *(ctx->verbose));
   }
   return 0;
 }
@@ -153,12 +153,12 @@ int cmd_read_adc_dbg(const char** args, int arg_count, const command_flag_t* fla
     printf("Reading all debug information from ADC FIFO for board %d...\n", board);
     while (!FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
       uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
-      adc_print_debug(data);
+      adc_print_debug(data, *(ctx->verbose));
     }
   } else {
     uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
     printf("Reading one debug sample from ADC FIFO for board %d...\n", board);
-    adc_print_debug(data);
+    adc_print_debug(data, *(ctx->verbose));
   }
   return 0;
 }
@@ -267,64 +267,43 @@ int cmd_adc_set_ord(const char** args, int arg_count, const command_flag_t* flag
 }
 
 // ADC reading operations
-int cmd_do_adc_simple_read(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+int cmd_do_adc_rd(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for adc_simple_read: '%s'. Must be 0-7.\n", args[0]);
+    fprintf(stderr, "Invalid board number for adc_rd: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
   
-  char* endptr;
-  long loop_count = strtol(args[1], &endptr, 0);
-  if (*endptr != '\0' || loop_count < 1) {
-    fprintf(stderr, "Invalid loop count for adc_simple_read: '%s'. Must be at least 1.\n", args[1]);
+  // Parse trigger mode (args[1]) and value (args[2])
+  bool is_trigger;
+  uint32_t value;
+  if (parse_trigger_mode(args[1], args[2], &is_trigger, &value) < 0) {
     return -1;
   }
   
-  long delay_cycles = strtol(args[2], &endptr, 0);
-  if (*endptr != '\0' || delay_cycles < 0 || delay_cycles > 0x1FFFFFFF) {
-    fprintf(stderr, "Invalid delay cycles for adc_simple_read: '%s'. Must be 0 to 536870911.\n", args[2]);
+  if (value > 0x1FFFFFFF) {
+    fprintf(stderr, "Invalid value for adc_rd: %u. Must be 0 to 536870911.\n", value);
     return -1;
   }
   
-  printf("Performing %ld simple ADC reads on board %d (delay mode, value %ld)...\n", loop_count, board, delay_cycles);
-  
-  for (long i = 0; i < loop_count; i++) {
-    adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, (uint32_t)delay_cycles, 0, *(ctx->verbose));
-    if (*(ctx->verbose)) {
-      printf("ADC read command %ld sent to board %d\n", i + 1, board);
+  // Parse optional repeat_count (default 0)
+  long repeat_count = 0;
+  if (arg_count >= 4) {
+    char* endptr;
+    repeat_count = strtol(args[3], &endptr, 0);
+    if (*endptr != '\0' || repeat_count < 0 || repeat_count > 0x1FFFFFF) {
+      fprintf(stderr, "Invalid repeat count for adc_rd: '%s'. Must be 0 to 33554431.\n", args[3]);
+      return -1;
     }
   }
   
-  printf("Completed %ld ADC read commands on board %d.\n", loop_count, board);
-  return 0;
-}
-
-int cmd_do_adc_read(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  int board = validate_board_number(args[0]);
-  if (board < 0) {
-    fprintf(stderr, "Invalid board number for adc_read: '%s'. Must be 0-7.\n", args[0]);
-    return -1;
-  }
+  printf("Performing ADC read on board %d (%s mode, value %u, repeat_count %ld)...\n", 
+         board, is_trigger ? "trigger" : "delay", value, repeat_count);
   
-  char* endptr;
-  long loop_count = strtol(args[1], &endptr, 0);
-  if (*endptr != '\0' || loop_count < 1 || loop_count > 0x1FFFFFF) {
-    fprintf(stderr, "Invalid loop count for adc_read: '%s'. Must be 1 to 33554431.\n", args[1]);
-    return -1;
-  }
+  adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, is_trigger, false, value, (uint32_t)repeat_count, *(ctx->verbose));
   
-  long delay_cycles = strtol(args[2], &endptr, 0);
-  if (*endptr != '\0' || delay_cycles < 0 || delay_cycles > 0x1FFFFFFF) {
-    fprintf(stderr, "Invalid delay cycles for adc_read: '%s'. Must be 0 to 536870911.\n", args[2]);
-    return -1;
-  }
-  
-  printf("Performing ADC read on board %d using loop command (loop count: %ld, delay mode, value %ld)...\n", board, loop_count, delay_cycles);
-  
-  adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, (uint32_t)delay_cycles, (uint32_t)loop_count, *(ctx->verbose));
-  
-  printf("ADC read commands sent to board %d: adc_rd(delay, %ld, loop_count=%ld).\n", board, delay_cycles, loop_count);
+  printf("ADC read command sent to board %d: adc_rd(%s, %u, repeat_count=%ld).\n", 
+         board, is_trigger ? "trigger" : "delay", value, repeat_count);
   return 0;
 }
 
@@ -334,16 +313,25 @@ int cmd_do_adc_rd_ch(const char** args, int arg_count, const command_flag_t* fla
     return -1;
   }
   
-  if (validate_system_running(ctx) < 0) {
-    return -1;
+  // Parse optional repeat_count (default 0)
+  long repeat_count = 0;
+  if (arg_count >= 2) {
+    char* endptr;
+    repeat_count = strtol(args[1], &endptr, 0);
+    if (*endptr != '\0' || repeat_count < 0 || repeat_count > 0x1FFFFFF) {
+      fprintf(stderr, "Invalid repeat count for adc_rd_ch: '%s'. Must be 0 to 33554431.\n", args[1]);
+      return -1;
+    }
   }
   
-  printf("Reading ADC channel %d (board %d, channel %d)...\n", atoi(args[0]), board, channel);
+  printf("Reading ADC channel %d (board %d, channel %d, repeat_count %ld)...\n", 
+         atoi(args[0]), board, channel, repeat_count);
   
-  // Read the specific ADC channel
-  adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, 0, *(ctx->verbose));
+  // Read the specific ADC channel with repeat count
+  adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, (uint32_t)repeat_count, *(ctx->verbose));
   
-  printf("ADC read channel command sent for channel %d (board %d, channel %d).\n", atoi(args[0]), board, channel);
+  printf("ADC read channel command sent for channel %d (board %d, channel %d, repeat_count=%ld).\n", 
+         atoi(args[0]), board, channel, repeat_count);
   return 0;
 }
 
@@ -659,16 +647,16 @@ static int parse_adc_command_file(const char* file_path, adc_command_t** command
       continue;
     }
     
-    // Check if line starts with L, T, D, or O
-    if (*trimmed != 'L' && *trimmed != 'T' && *trimmed != 'D' && *trimmed != 'O') {
-      fprintf(stderr, "Invalid line %d: must start with 'L', 'T', 'D', or 'O'\n", line_num);
+    // Check if line starts with T, D, or O (removed L support)
+    if (*trimmed != 'T' && *trimmed != 'D' && *trimmed != 'O') {
+      fprintf(stderr, "Invalid line %d: must start with 'T', 'D', or 'O'\n", line_num);
       fclose(file);
       return -1;
     }
     
     // Parse the line to validate format
     char mode;
-    uint32_t value;
+    uint32_t value, repeat_count;
     uint8_t s1, s2, s3, s4, s5, s6, s7, s8;
     
     if (*trimmed == 'O') {
@@ -687,17 +675,27 @@ static int parse_adc_command_file(const char* file_path, adc_command_t** command
         return -1;
       }
     } else {
-      // L, T, D commands: <cmd> <value>
-      int parsed = sscanf(trimmed, "%c %u", &mode, &value);
-      if (parsed != 2) {
+      // T, D commands: <cmd> <value> [repeat_count]
+      int parsed = sscanf(trimmed, "%c %u %u", &mode, &value, &repeat_count);
+      if (parsed < 2) {
         fprintf(stderr, "Invalid line %d: must have command and value\n", line_num);
         fclose(file);
         return -1;
+      }
+      if (parsed == 2) {
+        repeat_count = 0; // Default repeat count
       }
       
       // Validate value range
       if (value > 0x1FFFFFF) {
         fprintf(stderr, "Invalid line %d: value %u out of range (max 0x1FFFFFF or 33554431)\n", line_num, value);
+        fclose(file);
+        return -1;
+      }
+      
+      // Validate repeat_count range  
+      if (repeat_count > 0x1FFFFFF) {
+        fprintf(stderr, "Invalid line %d: repeat_count %u out of range (max 0x1FFFFFF or 33554431)\n", line_num, repeat_count);
         fclose(file);
         return -1;
       }
@@ -745,8 +743,16 @@ static int parse_adc_command_file(const char* file_path, adc_command_t** command
       cmd->order[0] = s1; cmd->order[1] = s2; cmd->order[2] = s3; cmd->order[3] = s4;
       cmd->order[4] = s5; cmd->order[5] = s6; cmd->order[6] = s7; cmd->order[7] = s8;
       cmd->value = 0; // Not used for order commands
+      cmd->repeat_count = 0; // Not used for order commands
     } else {
-      sscanf(trimmed, "%c %u", &cmd->type, &cmd->value);
+      // Parse T, D commands with optional repeat_count
+      uint32_t repeat_count;
+      int parsed = sscanf(trimmed, "%c %u %u", &cmd->type, &cmd->value, &repeat_count);
+      if (parsed >= 3) {
+        cmd->repeat_count = repeat_count;
+      } else {
+        cmd->repeat_count = 0; // Default repeat count
+      }
       // Initialize order array (not used for non-O commands)
       for (int i = 0; i < 8; i++) {
         cmd->order[i] = 0;
@@ -769,14 +775,14 @@ static void* adc_cmd_stream_thread(void* arg) {
   int total_commands_sent = 0;
   
   if (verbose) {
-    printf("ADC Command Stream Thread[%d]: Starting (%d commands, %d loops)\n", 
-           board, stream_data->command_count, stream_data->loop_count);
+    printf("ADC Command Stream Thread[%d]: Starting (%d commands, %d repeats)\n", 
+           board, stream_data->command_count, stream_data->repeat_count);
   }
   
-  // Stream commands for each loop iteration
-  for (int loop = 0; loop < stream_data->loop_count && !*(stream_data->should_stop); loop++) {
+  // Stream commands for each repeat iteration (repeat_count + 1 total)
+  for (int loop = 0; loop <= stream_data->repeat_count && !*(stream_data->should_stop); loop++) {
     if (verbose) {
-      printf("ADC command stream loop %d/%d for board %d\n", loop + 1, stream_data->loop_count, board);
+      printf("ADC command stream loop %d/%d for board %d\n", loop + 1, stream_data->repeat_count + 1, board);
     }
     
     // Stream each command
@@ -784,14 +790,7 @@ static void* adc_cmd_stream_thread(void* arg) {
       adc_command_t* cmd = &stream_data->commands[i];
       
       // Calculate words needed for this command
-      uint32_t words_needed = 1; // Default for most commands
-      if (cmd->type == 'L' && stream_data->simple_mode && i + 1 < stream_data->command_count) {
-        // Simple mode loop: words needed = loop count (each iteration is 1 word)
-        words_needed = cmd->value;
-      } else if (cmd->type == 'L' && !stream_data->simple_mode) {
-        // Hardware loop: 2 words (loop count + next command)
-        words_needed = 2;
-      }
+      uint32_t words_needed = 1; // Default for T, D, O commands
       
       // Check command FIFO status and ensure we have enough space
       bool command_sent = false;
@@ -808,60 +807,13 @@ static void* adc_cmd_stream_thread(void* arg) {
         if (words_available >= words_needed) {
           // Send command based on type
           switch (cmd->type) {
-            case 'L':
-              if (stream_data->simple_mode) {
-                // Simple mode: unroll the loop by sending the next command multiple times
-                if (i + 1 < stream_data->command_count) {
-                  adc_command_t* next_cmd = &stream_data->commands[i + 1];
-                  for (uint32_t j = 0; j < cmd->value && !*(stream_data->should_stop); j++) {
-                    // Send the next command
-                    switch (next_cmd->type) {
-                      case 'T':
-                        adc_cmd_adc_rd(ctx->adc_ctrl, board, true, false, next_cmd->value, 0, verbose);
-                        total_commands_sent++;
-                        break;
-                      case 'D':
-                        adc_cmd_adc_rd(ctx->adc_ctrl, board, false, false, next_cmd->value, 0, verbose);
-                        total_commands_sent++;
-                        break;
-                      case 'O':
-                        adc_cmd_set_ord(ctx->adc_ctrl, board, next_cmd->order, verbose);
-                        total_commands_sent++;
-                        break;
-                    }
-                  }
-                  i++; // Skip the next command since we already executed it
-                }
-              } else {
-                // Use hardware loop command - apply loop count to next command
-                if (i + 1 < stream_data->command_count) {
-                  adc_command_t* next_cmd = &stream_data->commands[i + 1];
-                  switch (next_cmd->type) {
-                    case 'T':
-                      adc_cmd_adc_rd(ctx->adc_ctrl, board, true, false, next_cmd->value, cmd->value, verbose);
-                      total_commands_sent++;
-                      break;
-                    case 'D':
-                      adc_cmd_adc_rd(ctx->adc_ctrl, board, false, false, next_cmd->value, cmd->value, verbose);
-                      total_commands_sent++;
-                      break;
-                    case 'O':
-                      adc_cmd_set_ord(ctx->adc_ctrl, board, next_cmd->order, verbose);
-                      total_commands_sent++;
-                      break;
-                  }
-                  i++; // Skip the next command since we already executed it with loop
-                }
-              }
-              break;
-            
             case 'T':
-              adc_cmd_adc_rd(ctx->adc_ctrl, board, true, false, cmd->value, 0, verbose);
+              adc_cmd_adc_rd(ctx->adc_ctrl, board, true, false, cmd->value, cmd->repeat_count, verbose);
               total_commands_sent++;
               break;
             
             case 'D':
-              adc_cmd_adc_rd(ctx->adc_ctrl, board, false, false, cmd->value, 0, verbose);
+              adc_cmd_adc_rd(ctx->adc_ctrl, board, false, false, cmd->value, cmd->repeat_count, verbose);
               total_commands_sent++;
               break;
             
@@ -892,8 +844,8 @@ cleanup:
   if (*(stream_data->should_stop)) {
     printf("ADC Command Stream Thread[%d]: Stopping (user requested), sent %d total commands\n", board, total_commands_sent);
   } else {
-    printf("ADC Command Stream Thread[%d]: Completed, sent %d total commands (%d complete loops)\n", 
-           board, total_commands_sent, stream_data->loop_count);
+    printf("ADC Command Stream Thread[%d]: Completed, sent %d total commands (%d repeats + 1)\n", 
+           board, total_commands_sent, stream_data->repeat_count);
   }
   
   // Mark stream as not running and clean up
@@ -911,13 +863,13 @@ int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const co
     return -1;
   }
   
-  // Parse optional loop count (default is 1 - play once)
-  int loop_count = 1;
+  // Parse optional repeat count (default is 0 - play once)
+  int repeat_count = 0;
   if (arg_count >= 3) {
     char* endptr;
-    loop_count = (int)parse_value(args[2], &endptr);
-    if (*endptr != '\0' || loop_count < 1) {
-      fprintf(stderr, "Invalid loop count for stream_adc_commands_from_file: '%s'. Must be a positive integer.\n", args[2]);
+    repeat_count = (int)parse_value(args[2], &endptr);
+    if (*endptr != '\0' || repeat_count < 0) {
+      fprintf(stderr, "Invalid repeat count for stream_adc_commands_from_file: '%s'. Must be a non-negative integer.\n", args[2]);
       return -1;
     }
   }
@@ -976,7 +928,7 @@ int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const co
   stream_data->should_stop = &(ctx->adc_cmd_stream_stop[board]);
   stream_data->commands = commands;
   stream_data->command_count = command_count;
-  stream_data->loop_count = loop_count;
+  stream_data->repeat_count = repeat_count;
   stream_data->simple_mode = simple_mode;
   
   // Initialize stop flag and mark stream as running
@@ -993,8 +945,8 @@ int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const co
   }
   
   if (*(ctx->verbose)) {
-    printf("Started ADC command streaming for board %d from file '%s' (looping %d time%s)%s\n", 
-           board, full_path, loop_count, loop_count == 1 ? "" : "s",
+    printf("Started ADC command streaming for board %d from file '%s' (repeating %d time%s)%s\n", 
+           board, full_path, repeat_count, repeat_count == 1 ? "" : "s",
            simple_mode ? " in simple mode" : "");
   }
   return 0;

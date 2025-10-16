@@ -73,12 +73,15 @@ int cmd_read_dac_data(const char** args, int arg_count, const command_flag_t* fl
     printf("Reading all data from DAC FIFO for board %d...\n", board);
     while (!FIFO_STS_EMPTY(sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
       uint32_t data = dac_read_data(ctx->dac_ctrl, (uint8_t)board);
-      dac_print_data(data);
+      if (*(ctx->verbose)) {
+        printf("  Raw DAC Data word: 0x%08X\n", data);
+      }
+      dac_print_data(data, *(ctx->verbose));
     }
   } else {
     uint32_t data = dac_read_data(ctx->dac_ctrl, (uint8_t)board);
     printf("Reading one data sample from DAC FIFO for board %d...\n", board);
-    dac_print_data(data);
+    dac_print_data(data, *(ctx->verbose));
   }
   return 0;
 }
@@ -406,7 +409,7 @@ int cmd_get_dac_cal(const char** args, int arg_count, const command_flag_t* flag
     if (!get_all && *(ctx->verbose)) {
       printf("  ");
     }
-    dac_print_data(cal_data_word);
+    dac_print_data(cal_data_word, *(ctx->verbose));
   }
   
   if (*(ctx->verbose)) {
@@ -946,12 +949,43 @@ int cmd_dac_zero(const char** args, int arg_count, const command_flag_t* flags, 
   
   printf("Found %d connected DAC board(s)\n", connected_count);
   
-  // Reset buffers (unless --no_reset flag is used)
+  // Reset only DAC command buffers for connected target boards that have commands (unless --no_reset flag is used)
   if (!skip_reset) {
     if (*(ctx->verbose)) {
-      printf("Resetting DAC command and data buffers for target boards...\n");
+      printf("Resetting DAC command buffers for target boards with commands...\n");
     }
-    safe_buffer_reset(ctx, *(ctx->verbose));
+    
+    uint32_t cmd_reset_mask = 0;
+    
+    // Check DAC command buffers for target boards and build reset mask
+    for (int board = 0; board < 8; board++) {
+      if (connected_boards[board] && (target_all || target_boards[board])) {
+        uint32_t dac_cmd_fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+        if (FIFO_PRESENT(dac_cmd_fifo_status) && FIFO_STS_WORD_COUNT(dac_cmd_fifo_status) > 0) {
+          uint32_t dac_bit = board * 2;  // DAC command buffers: bits 0, 2, 4, 6, 8, 10, 12, 14
+          cmd_reset_mask |= (1U << dac_bit);
+          if (*(ctx->verbose)) {
+            printf("  Board %d DAC command buffer: has %d entries - will reset\n", 
+                   board, FIFO_STS_WORD_COUNT(dac_cmd_fifo_status));
+          }
+        } else if (*(ctx->verbose)) {
+          printf("  Board %d DAC command buffer: empty - skipping reset\n", board);
+        }
+      }
+    }
+    
+    // Apply DAC command buffer resets if any are needed
+    if (cmd_reset_mask != 0) {
+      if (*(ctx->verbose)) {
+        printf("Setting DAC command buffer reset mask: 0x%05X\n", cmd_reset_mask);
+      }
+      sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, cmd_reset_mask, *(ctx->verbose));
+      usleep(1000); // 1ms delay
+      sys_ctrl_set_cmd_buf_reset(ctx->sys_ctrl, 0, *(ctx->verbose));
+    } else if (*(ctx->verbose)) {
+      printf("No DAC command buffers need resetting\n");
+    }
+    
     __sync_synchronize(); // Memory barrier
     usleep(10000); // 10ms delay
   } else {

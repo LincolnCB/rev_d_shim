@@ -53,6 +53,16 @@
 #define DAC_CAL_DATA_CH(word)     (((word) >> 16) & 0x07) // Bits [18:16] for channel in cal data
 #define DAC_CAL_DATA_VAL(word)    ((int16_t)((word) & 0xFFFF)) // Bits [15:0] for cal value (signed)
 
+// SPI DAC commands
+#define DAC_SPI_CMD_WORD(word) ((word >> 20) & 0x0F) // Top 4 bits [23:20] for 24-bit SPI word
+#define DAC_SPI_CMD_NO_OP            0x0
+#define DAC_SPI_CMD_DAC_WR_LDAC_WAIT 0x1
+#define DAC_SPI_CMD_DAC_WR_IMMEDIATE 0x3
+#define DAC_SPI_CMD_REQ_RD           0x9
+#define DAC_SPI_REG_ADDR(word) ((word >> 16) & 0x0F) // Bits [19:16] for 24-bit SPI word
+#define DAC_SPI_DATA(word) (word & 0xFFFF) // Bits [15:0] for 24-bit SPI word
+
+
 //////////////////////////////////////////////////////////////////
 
 // DAC control structure
@@ -66,9 +76,9 @@ struct dac_ctrl_t create_dac_ctrl(bool verbose);
 // Read DAC data from a specific board
 uint32_t dac_read_data(struct dac_ctrl_t *dac_ctrl, uint8_t board);
 // Interpret and print DAC data word as calibration or debug information
-void dac_print_data(uint32_t dac_value);
+void dac_print_data(uint32_t dac_value, bool verbose);
 // Interpret and print the DAC state
-void dac_print_state(uint8_t state_code);
+void dac_print_state(uint8_t state_code, bool verbose);
 
 // DAC command word functions
 void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool trig, bool cont, bool ldac, uint32_t value, bool verbose);
