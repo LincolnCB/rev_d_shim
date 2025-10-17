@@ -255,7 +255,7 @@ void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool 
 
   if (repeat_count > 0) {
     if (verbose) {
-      printf("ADC[%d] LOOP count: 0x%08X (loop count: %u)\n", board, repeat_count, repeat_count);
+      printf("ADC[%d] REPEAT count: 0x%08X (repeat count: %u)\n", board, repeat_count, repeat_count);
     }
     *(adc_ctrl->buffer[board]) = repeat_count;
   }
@@ -282,7 +282,7 @@ void adc_cmd_adc_rd_ch(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t ch, u
 
   if (repeat_count > 0) {
     if (verbose) {
-      printf("ADC[%d] LOOP count: 0x%08X (loop count: %u)\n", board, repeat_count, repeat_count);
+      printf("ADC[%d] REPEAT count: 0x%08X (repeat count: %u)\n", board, repeat_count, repeat_count);
     }
     *(adc_ctrl->buffer[board]) = repeat_count;
   }

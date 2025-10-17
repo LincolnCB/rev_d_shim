@@ -20,7 +20,7 @@ typedef struct {
   volatile bool* should_stop;
   waveform_command_t* commands;
   int command_count;
-  int loop_count;       // Number of times to loop through the waveform (1 = play once)
+  int iterations;       // Number of times to iterate through the waveform
 } dac_command_stream_params_t;
 
 // Structure to pass data to the DAC debug streaming thread

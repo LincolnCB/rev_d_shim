@@ -77,7 +77,7 @@ static command_entry_t command_table[] = {
   {"get_dac_cal", cmd_get_dac_cal, {0, 1, {FLAG_ALL, FLAG_NO_RESET, -1}, "Get DAC calibration value: <channel> [--no_reset] OR --all [--no_reset] (channel 0-63, board=ch/8, ch=ch%8)"}},
   {"do_dac_get_cal", cmd_do_dac_get_cal, {1, 1, {-1}, "Send DAC GET_CAL command for single channel: <channel> (channel 0-63, board=ch/8, ch=ch%8)"}},
   {"set_dac_cal", cmd_set_dac_cal, {2, 2, {-1}, "Set DAC calibration value for single channel: <channel> <cal_value> (channel 0-63, cal_value -32768 to 32767)"}},
-  {"stream_dac_commands_from_file", cmd_stream_dac_commands_from_file, {2, 3, {-1}, "Start DAC command streaming from waveform file: <board> <file_path> [loop_count] (supports * wildcards)"}},
+  {"stream_dac_commands_from_file", cmd_stream_dac_commands_from_file, {2, 3, {-1}, "Start DAC command streaming from waveform file: <board> <file_path> [iterations] (supports * wildcards)"}},
   {"stop_dac_cmd_stream", cmd_stop_dac_cmd_stream, {1, 1, {-1}, "Stop DAC command streaming for specified board (0-7)"}},
   {"stream_dac_debug", cmd_stream_dac_debug, {2, 2, {-1}, "Start DAC debug data streaming to file: <board> <file_path> (streams DAC debug data to file)"}},
   {"stop_dac_debug_stream", cmd_stop_dac_debug_stream, {1, 1, {-1}, "Stop DAC debug data streaming for specified board (0-7)"}},
@@ -94,7 +94,7 @@ static command_entry_t command_table[] = {
   {"do_adc_rd", cmd_do_adc_rd, {3, 4, {-1}, "Perform ADC read: <board> <\"trig\"|\"delay\"> <value> [repeat_count] (sends adc_rd command with repeat count, defaults to 0)"}},
   {"do_adc_rd_ch", cmd_do_adc_rd_ch, {1, 2, {-1}, "Read ADC single channel: <channel> [repeat_count] (channel 0-63, board=ch/8, ch=ch%8, repeat_count defaults to 0)"}},
   {"stream_adc_data_to_file", cmd_stream_adc_data_to_file, {3, 3, {FLAG_BIN, -1}, "Start ADC data streaming to file: <board> <word_count> <file_path> [--bin]"}},
-  {"stream_adc_commands_from_file", cmd_stream_adc_commands_from_file, {2, 3, {FLAG_SIMPLE, -1}, "Start ADC command streaming from file: <board> <file_path> [repeat_count] [--simple] (supports * wildcards, repeat_count defaults to 0)"}},
+  {"stream_adc_commands_from_file", cmd_stream_adc_commands_from_file, {2, 3, {FLAG_SIMPLE, -1}, "Start ADC command streaming from file: <board> <file_path> [iterations] [--simple] (supports * wildcards, iterations defaults to 1)"}},
   {"stop_adc_data_stream", cmd_stop_adc_data_stream, {1, 1, {-1}, "Stop ADC data streaming for specified board (0-7)"}},
   {"stop_adc_cmd_stream", cmd_stop_adc_cmd_stream, {1, 1, {-1}, "Stop ADC command streaming for specified board (0-7)"}},
   
@@ -120,12 +120,12 @@ static command_entry_t command_table[] = {
   {"print_adc_bias", cmd_print_adc_bias, {0, 0, {-1}, "Print current ADC bias values for all channels"}},
   {"save_adc_bias", cmd_save_adc_bias, {1, 1, {-1}, "Save ADC bias values to CSV file: <filename>"}},
   {"load_adc_bias", cmd_load_adc_bias, {1, 1, {-1}, "Load ADC bias values from CSV file: <filename>"}},
-  {"waveform_test", cmd_waveform_test, {0, 0, {FLAG_NO_RESET, FLAG_NO_CAL, -1}, "Interactive waveform test: prompts for DAC/ADC files, loops, output file, and trigger lockout [--no_reset] [--no_cal]"}},
+  {"waveform_test", cmd_waveform_test, {0, 0, {FLAG_NO_RESET, FLAG_NO_CAL, -1}, "Interactive waveform test: prompts for DAC/ADC files, iterations, output file, and trigger lockout [--no_reset] [--no_cal]"}},
   {"fieldmap", cmd_fieldmap, {0, 0, {FLAG_NO_RESET, FLAG_NO_CAL, -1}, "Interactive fieldmap data collection: prompts for channel range, amplitude, delay, and log file [--no_reset] [--no_cal]"}},
   {"stop_fieldmap", cmd_stop_fieldmap, {0, 0, {-1}, "Stop fieldmap data collection"}},
   {"stop_trigger_monitor", cmd_stop_trigger_monitor, {0, 0, {-1}, "Stop trigger monitoring thread"}},
   {"stop_waveform", cmd_stop_waveform, {0, 0, {-1}, "Stop waveform test - stops all streaming and monitoring"}},
-  {"rev_c_compat", cmd_rev_c_compat, {0, 0, {FLAG_BIN, FLAG_NO_RESET, -1}, "Interactive Rev C compatibility mode: prompts for DAC file, loops, output file, and delay [--bin] [--no_reset]"}},
+  {"rev_c_compat", cmd_rev_c_compat, {0, 0, {FLAG_BIN, FLAG_NO_RESET, -1}, "Interactive Rev C compatibility mode: prompts for DAC file, iterations, output file, and delay [--bin] [--no_reset]"}},
   {"dac_zero", cmd_dac_zero, {1, 1, {FLAG_NO_RESET, -1}, "Set DAC channels to calibrated zero: <board_num|all> [--no_reset]"}},
   
   // ===== COMMAND LOGGING/PLAYBACK (from command_handler.c) =====

@@ -710,21 +710,21 @@ void* dac_cmd_stream_thread(void* arg) {
   volatile bool* should_stop = stream_data->should_stop;
   waveform_command_t* commands = stream_data->commands;
   int command_count = stream_data->command_count;
-  int loop_count = stream_data->loop_count;
+  int iterations = stream_data->iterations;
   
   if (*(ctx->verbose)) {
-    printf("DAC Command Stream Thread[%d]: Started streaming from file '%s' (%d commands, %d loop%s)\n", 
-           board, file_path, command_count, loop_count, loop_count == 1 ? "" : "s");
+    printf("DAC Command Stream Thread[%d]: Started streaming from file '%s' (%d commands, %d iteration%s)\n", 
+           board, file_path, command_count, iterations, iterations == 1 ? "" : "s");
   }
   
   int total_commands_sent = 0;
-  int current_loop = 0;
+  int current_iteration = 0;
   
-  while (!(*should_stop) && current_loop < loop_count) {
+  while (!(*should_stop) && current_iteration < iterations) {
     int cmd_index = 0;
-    int commands_sent_this_loop = 0;
+    int commands_sent_this_iteration = 0;
     
-    // Process all commands in the current loop
+    // Process all commands in the current iteration
     while (!(*should_stop) && cmd_index < command_count) {
       // Check DAC command FIFO status
       uint32_t fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, board, false);
@@ -742,10 +742,10 @@ void* dac_cmd_stream_thread(void* arg) {
       uint32_t words_needed = cmd->has_ch_vals ? 5 : 1; // dac_wr needs 5 words, noop needs 1
       
       if (words_available >= words_needed) {
-        // For looping, we need to adjust the 'cont' flag:
-        // - Set cont=true for all commands except the last command of the last loop
-        bool is_last_command_of_last_loop = (current_loop == loop_count - 1) && (cmd_index == command_count - 1);
-        bool cont_flag = !is_last_command_of_last_loop;
+        // For iterating, we need to adjust the 'cont' flag:
+        // - Set cont=true for all commands except the last command of the last iteration
+        bool is_last_command_of_last_it = (current_iteration == iterations - 1) && (cmd_index == command_count - 1);
+        bool cont_flag = !is_last_command_of_last_it;
         
         // Send the command
         if (cmd->has_ch_vals) {
@@ -754,13 +754,13 @@ void* dac_cmd_stream_thread(void* arg) {
           dac_cmd_noop(ctx->dac_ctrl, board, cmd->is_trigger, cont_flag, false, cmd->value, false);
         }
         
-        commands_sent_this_loop++;
+        commands_sent_this_iteration++;
         total_commands_sent++;
         cmd_index++;
         
         if (*(ctx->verbose)) {
-          printf("DAC Command Stream Thread[%d]: Loop %d/%d, Sent command %d/%d (%s, value=%u, %s, cont=%s) [FIFO: %u/%u words]\n", 
-                 board, current_loop + 1, loop_count, commands_sent_this_loop, command_count, 
+          printf("DAC Command Stream Thread[%d]: Iteration %d/%d, Sent command %d/%d (%s, value=%u, %s, cont=%s) [FIFO: %u/%u words]\n", 
+                 board, current_iteration + 1, iterations, commands_sent_this_iteration, command_count, 
                  cmd->is_trigger ? "trigger" : "delay", cmd->value,
                  cmd->has_ch_vals ? "with ch_vals" : "noop",
                  cont_flag ? "true" : "false", words_used + words_needed + 1, DAC_CMD_FIFO_WORDCOUNT);
@@ -771,20 +771,20 @@ void* dac_cmd_stream_thread(void* arg) {
       }
     }
     
-    current_loop++;
-    if (current_loop < loop_count && *(ctx->verbose)) {
-      printf("DAC Command Stream Thread[%d]: Completed loop %d/%d, starting next loop\n", 
-             board, current_loop, loop_count);
+    current_iteration++;
+    if (current_iteration < iterations && *(ctx->verbose)) {
+      printf("DAC Command Stream Thread[%d]: Completed iteration %d/%d, starting next iteration\n", 
+             board, current_iteration, iterations);
     }
   }
 
 cleanup:
   if (*should_stop) {
-    printf("DAC Command Stream Thread[%d]: Stopping stream (user requested), sent %d total commands (%d complete loops)\n", 
-           board, total_commands_sent, current_loop);
+    printf("DAC Command Stream Thread[%d]: Stopping stream (user requested), sent %d total commands (%d complete iteration%s)\n", 
+           board, total_commands_sent, current_iteration, iterations == 1 ? "" : "s");
   } else {
-    printf("DAC Command Stream Thread[%d]: Stream completed, sent %d total commands from file '%s' (%d loops)\n", 
-           board, total_commands_sent, file_path, loop_count);
+    printf("DAC Command Stream Thread[%d]: Stream completed, sent %d total commands from file '%s' (%d iteration%s)\n", 
+           board, total_commands_sent, file_path, iterations, iterations == 1 ? "" : "s");
   }
   
   ctx->dac_cmd_stream_running[board] = false;
@@ -801,13 +801,13 @@ int cmd_stream_dac_commands_from_file(const char** args, int arg_count, const co
     return -1;
   }
   
-  // Parse optional loop count (default is 1 - play once)
-  int loop_count = 1;
+  // Parse optional iteration count (default is 1 - play once)
+  int iterations = 1;
   if (arg_count >= 3) {
     char* endptr;
-    loop_count = (int)parse_value(args[2], &endptr);
-    if (*endptr != '\0' || loop_count < 1) {
-      fprintf(stderr, "Invalid loop count for stream_dac_from_file: '%s'. Must be a positive integer.\n", args[2]);
+    iterations = (int)parse_value(args[2], &endptr);
+    if (*endptr != '\0' || iterations < 1) {
+      fprintf(stderr, "Invalid iteration count for stream_dac_from_file: '%s'. Must be a positive integer.\n", args[2]);
       return -1;
     }
   }
@@ -907,7 +907,7 @@ int cmd_stream_dac_commands_from_file(const char** args, int arg_count, const co
   stream_data->should_stop = &(ctx->dac_cmd_stream_stop[board]);
   stream_data->commands = commands;
   stream_data->command_count = command_count;
-  stream_data->loop_count = loop_count;
+  stream_data->iterations = iterations;
   
   // Initialize stop flag and mark stream as running
   ctx->dac_cmd_stream_stop[board] = false;
@@ -923,8 +923,8 @@ int cmd_stream_dac_commands_from_file(const char** args, int arg_count, const co
   }
   
   if (*(ctx->verbose)) {
-    printf("Started DAC command streaming for board %d from file '%s' (looping %d time%s)\n", 
-           board, full_path, loop_count, loop_count == 1 ? "" : "s");
+    printf("Started DAC command streaming for board %d from file '%s' (iterating %d time%s)\n", 
+           board, full_path, iterations, iterations == 1 ? "" : "s");
   }
   return 0;
 }

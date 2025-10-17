@@ -29,8 +29,8 @@ typedef struct {
   volatile bool* should_stop;
   adc_command_t* commands;
   int command_count;
-  int repeat_count;     // Number of times to repeat through the commands (0 = play once)
-  bool simple_mode;     // Whether to unroll loops instead of using loop command
+  int iterations;  // Total number of iterations to perform
+  bool simple_mode;     // Whether to unroll repeats instead of using repeat count in commands
 } adc_command_stream_params_t;
 
 // ADC FIFO status commands

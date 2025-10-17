@@ -286,7 +286,7 @@ int cmd_do_adc_rd(const char** args, int arg_count, const command_flag_t* flags,
     return -1;
   }
   
-  // Parse optional repeat_count (default 0)
+  // Parse optional repeat_count (default 0, meaning it plays once)
   long repeat_count = 0;
   if (arg_count >= 4) {
     char* endptr;
@@ -775,14 +775,14 @@ static void* adc_cmd_stream_thread(void* arg) {
   int total_commands_sent = 0;
   
   if (verbose) {
-    printf("ADC Command Stream Thread[%d]: Starting (%d commands, %d repeats)\n", 
-           board, stream_data->command_count, stream_data->repeat_count);
+    printf("ADC Command Stream Thread[%d]: Starting (%d commands, %d iterations)\n", 
+           board, stream_data->command_count, stream_data->iterations);
   }
   
-  // Stream commands for each repeat iteration (repeat_count + 1 total)
-  for (int loop = 0; loop <= stream_data->repeat_count && !*(stream_data->should_stop); loop++) {
+  // Stream commands for each iteration 
+  for (int it = 0; it < stream_data->iterations && !*(stream_data->should_stop); it++) {
     if (verbose) {
-      printf("ADC command stream loop %d/%d for board %d\n", loop + 1, stream_data->repeat_count + 1, board);
+      printf("ADC command stream iteration %d/%d for board %d\n", it + 1, stream_data->iterations, board);
     }
     
     // Stream each command
@@ -814,7 +814,11 @@ static void* adc_cmd_stream_thread(void* arg) {
             
             case 'D':
               adc_cmd_adc_rd(ctx->adc_ctrl, board, false, false, cmd->value, cmd->repeat_count, verbose);
-              total_commands_sent++;
+              if (cmd->repeat_count > 0) {
+                total_commands_sent += 2; // Two command words if repeat_count > 0
+              } else {
+                total_commands_sent++;
+              }
               break;
             
             case 'O':
@@ -844,8 +848,8 @@ cleanup:
   if (*(stream_data->should_stop)) {
     printf("ADC Command Stream Thread[%d]: Stopping (user requested), sent %d total commands\n", board, total_commands_sent);
   } else {
-    printf("ADC Command Stream Thread[%d]: Completed, sent %d total commands (%d repeats + 1)\n", 
-           board, total_commands_sent, stream_data->repeat_count);
+    printf("ADC Command Stream Thread[%d]: Completed, sent %d total commands (%d iterations)\n", 
+           board, total_commands_sent, stream_data->iterations);
   }
   
   // Mark stream as not running and clean up
@@ -863,13 +867,13 @@ int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const co
     return -1;
   }
   
-  // Parse optional repeat count (default is 0 - play once)
-  int repeat_count = 0;
+  // Parse optional iteration count for command (default is 1)
+  int iterations = 1;
   if (arg_count >= 3) {
     char* endptr;
-    repeat_count = (int)parse_value(args[2], &endptr);
-    if (*endptr != '\0' || repeat_count < 0) {
-      fprintf(stderr, "Invalid repeat count for stream_adc_commands_from_file: '%s'. Must be a non-negative integer.\n", args[2]);
+    iterations = (int)parse_value(args[2], &endptr);
+    if (*endptr != '\0' || iterations < 1) {
+      fprintf(stderr, "Invalid iteration count for stream_adc_commands_from_file: '%s'. Must be a positive integer.\n", args[2]);
       return -1;
     }
   }
@@ -910,7 +914,7 @@ int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const co
   if (*(ctx->verbose)) {
     printf("Parsed %d commands from ADC command file '%s'\n", command_count, full_path);
     if (simple_mode) {
-      printf("Using simple mode (unrolling loops)\n");
+      printf("Using simple mode (unrolling repeats)\n");
     }
   }
   
@@ -928,7 +932,7 @@ int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const co
   stream_data->should_stop = &(ctx->adc_cmd_stream_stop[board]);
   stream_data->commands = commands;
   stream_data->command_count = command_count;
-  stream_data->repeat_count = repeat_count;
+  stream_data->iterations = iterations;
   stream_data->simple_mode = simple_mode;
   
   // Initialize stop flag and mark stream as running
@@ -945,8 +949,8 @@ int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const co
   }
   
   if (*(ctx->verbose)) {
-    printf("Started ADC command streaming for board %d from file '%s' (repeating %d time%s)%s\n", 
-           board, full_path, repeat_count, repeat_count == 1 ? "" : "s",
+    printf("Started ADC command streaming for board %d from file '%s' (%d iteration%s)%s\n", 
+           board, full_path, iterations, iterations == 1 ? "" : "s",
            simple_mode ? " in simple mode" : "");
   }
   return 0;

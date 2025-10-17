@@ -543,7 +543,7 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
           // Read ADC value
           adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, 0, *(ctx->verbose));
           
-          // Wait for ADC data to be available (similar to DAC data loop)
+          // Wait for ADC data to be available
           int adc_tries = 0;
           uint32_t adc_data_fifo_status;
           while (adc_tries < 100) {
@@ -1175,7 +1175,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     char board_str[16], dac_iterations_str[16], adc_iterations_str[16];
     snprintf(board_str, sizeof(board_str), "%d", board);
     snprintf(dac_iterations_str, sizeof(dac_iterations_str), "%d", dac_iterations[board]);
-    snprintf(adc_iterations_str, sizeof(adc_iterations_str), "%d", adc_iterations[board] - 1); // Convert back to repeat count for hardware
+    snprintf(adc_iterations_str, sizeof(adc_iterations_str), "%d", adc_iterations[board]);
     
     // Start DAC command streaming with board-specific DAC iteration count
     if (*(ctx->verbose)) {
@@ -1188,7 +1188,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
       return -1;
     }
     
-    // Start ADC command streaming with board-specific ADC iteration count (using hardware repeats)
+    // Start ADC command streaming with board-specific ADC iteration count
     if (*(ctx->verbose)) {
       printf("  Board %d: Starting ADC command streaming from '%s' (%d iterations)\n", 
              board, resolved_adc_files[board], adc_iterations[board]);
@@ -1789,7 +1789,7 @@ static void* fieldmap_thread(void* arg) {
   }
   
   if (verbose) {
-    printf("Fieldmap Thread [VERBOSE]: Loop ended - samples_collected=%d, total_expected=%d, should_stop=%s\n",
+    printf("Fieldmap Thread [VERBOSE]: Fieldmap ended - samples_collected=%d, total_expected=%d, should_stop=%s\n",
            samples_collected, total_samples_expected, *should_stop ? "true" : "false");
   }
   
