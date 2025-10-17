@@ -782,11 +782,11 @@ void* dac_cmd_stream_thread(void* arg) {
 
 cleanup:
   if (*should_stop) {
-    printf("DAC Command Stream Thread[%d]: Stopping stream (user requested), sent %d total commands (%d total words, %d complete iteration%s)\n", 
-           board, total_commands_sent, total_words_sent, current_iteration, iterations == 1 ? "" : "s");
+    printf("DAC Command Stream Thread[%d]: Stopping (user requested), sent %d total commands (%d total words)\n",
+           board, total_commands_sent, total_words_sent);
   } else {
-    printf("DAC Command Stream Thread[%d]: Stream completed, sent %d total commands from file '%s' (%d total words, %d iteration%s)\n", 
-           board, total_commands_sent, total_words_sent, file_path, iterations, iterations == 1 ? "" : "s");
+    printf("DAC Command Stream Thread[%d]: Completed, sent %d total commands (%d total words, %d iteration%s)\n", 
+           board, total_commands_sent, total_words_sent, iterations, iterations == 1 ? "" : "s");
   }
   
   ctx->dac_cmd_stream_running[board] = false;
@@ -905,7 +905,7 @@ int cmd_stream_dac_commands_from_file(const char** args, int arg_count, const co
   
   stream_data->ctx = ctx;
   stream_data->board = (uint8_t)board;
-  strcpy(stream_data->file_path, full_path);
+  snprintf(stream_data->file_path, sizeof(stream_data->file_path), "%s", full_path);
   stream_data->should_stop = &(ctx->dac_cmd_stream_stop[board]);
   stream_data->commands = commands;
   stream_data->command_count = command_count;
@@ -1168,7 +1168,7 @@ int cmd_stream_dac_debug(const char** args, int arg_count, const command_flag_t*
   
   stream_data->ctx = ctx;
   stream_data->board = (uint8_t)board;
-  strcpy(stream_data->file_path, full_path);
+  snprintf(stream_data->file_path, sizeof(stream_data->file_path), "%s", full_path);
   stream_data->should_stop = &(ctx->dac_debug_stream_stop[board]);
   
   // Initialize stop flag and mark stream as running

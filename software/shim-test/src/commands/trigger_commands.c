@@ -311,7 +311,7 @@ int cmd_stream_trig_data_to_file(const char** args, int arg_count, const command
   }
   
   stream_data->ctx = ctx;
-  strcpy(stream_data->file_path, final_path);
+  snprintf(stream_data->file_path, sizeof(stream_data->file_path), "%s", final_path);
   stream_data->sample_count = sample_count;
   stream_data->should_stop = &(ctx->trig_data_stream_stop);
   stream_data->binary_mode = binary_mode;

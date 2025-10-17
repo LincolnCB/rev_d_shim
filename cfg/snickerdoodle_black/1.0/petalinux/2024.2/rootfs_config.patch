@@ -49,6 +49,15 @@
  # CONFIG_libstdcPLUSPLUS-dev is not set
  
  #
+@@ -2215,7 +2215,7 @@
+ #
+ # gdb 
+ #
+-# CONFIG_gdb is not set
++CONFIG_gdb=y
+ # CONFIG_gdb-dbg is not set
+ # CONFIG_gdb-dev is not set
+ # CONFIG_gdbserver is not set
 @@ -2586,33 +2586,33 @@
  #
  # python3 

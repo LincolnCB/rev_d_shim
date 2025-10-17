@@ -2580,8 +2580,8 @@ cleanup:
     printf("Rev C DAC Stream Thread: Stopping stream (user requested), sent %d total commands (%d total words)\n",
             total_commands_sent, total_words_sent);
   } else {
-    printf("Rev C DAC Stream Thread: Stream completed, sent %d total commands (%d total words, %d iterations%s)\n", 
-           total_commands_sent, total_words_sent, iterations, final_zero_trigger ? " + final zero" : "");
+    printf("Rev C DAC Stream Thread: Stream completed, sent %d total commands (%d total words, %d iteration%s%s)\n", 
+           total_commands_sent, total_words_sent, iterations, iterations == 1 ? "" : "s", final_zero_trigger ? " + final zero" : "");
   }
   
   return NULL;
@@ -2741,8 +2741,8 @@ static void* rev_c_adc_cmd_stream_thread(void* arg) {
     printf("Rev C ADC Command Stream Thread: Stopping stream (user requested), sent %d total commands (%d total words)\n",
            total_commands_sent, total_words_sent);
   } else {
-    printf("Rev C ADC Command Stream Thread: Stream completed, sent %d total commands (%d total words, %d iterations%s)\n", 
-           total_commands_sent, total_words_sent, iterations, final_zero_trigger ? " + final zero" : "");
+    printf("Rev C ADC Command Stream Thread: Stream completed, sent %d total commands (%d total words, %d iteration%s%s)\n", 
+           total_commands_sent, total_words_sent, iterations, iterations == 1 ? "" : "s", final_zero_trigger ? " + final zero" : "");
   }
   
   return NULL;

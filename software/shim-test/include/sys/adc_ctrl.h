@@ -44,7 +44,7 @@
 #define ADC_DBG_MISO_DATA            1
 #define ADC_DBG_STATE_TRANSITION     2
 #define ADC_DBG_REPEAT               3
-#define ADC_DBG_COMMAND(word)        (((word) >> 19) & 0x7) // Bits [21:19] for command (used in repeat or cmd_done)
+#define ADC_DBG_COMMAND(word)        (((word) >> 19) & 0x7) // Bits [21:19] for command (used in dbg_repeat or cmd_done)
 #define ADC_DBG_REPEAT_BIT(word)     (((word) >> 16) & 0x1) // Bit 16 for repeat bit
 #define ADC_DBG_N_CS_TIMER           4
 #define ADC_DBG_SPI_BIT              5

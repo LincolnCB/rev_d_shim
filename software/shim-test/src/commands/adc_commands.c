@@ -558,7 +558,7 @@ int cmd_stream_adc_data_to_file(const char** args, int arg_count, const command_
   
   stream_data->ctx = ctx;
   stream_data->board = (uint8_t)board;
-  strcpy(stream_data->file_path, final_path);
+  snprintf(stream_data->file_path, sizeof(stream_data->file_path), "%s", final_path);
   stream_data->word_count = word_count;
   stream_data->should_stop = &(ctx->adc_data_stream_stop[board]);
   stream_data->binary_mode = binary_mode;
@@ -771,85 +771,93 @@ static void* adc_cmd_stream_thread(void* arg) {
   adc_command_stream_params_t* stream_data = (adc_command_stream_params_t*)arg;
   command_context_t* ctx = stream_data->ctx;
   uint8_t board = stream_data->board;
+  const char* file_path = stream_data->file_path;
+  volatile bool* should_stop = stream_data->should_stop;
+  adc_command_t* commands = stream_data->commands;
+  int command_count = stream_data->command_count;
+  int iterations = stream_data->iterations;
+  bool simple_mode = stream_data->simple_mode;
   bool verbose = *(ctx->verbose);
+
+  if (verbose) {
+    printf("ADC Command Stream Thread[%d]: Started streaming from file '%s' (%d commands, %d iteration%s)\n",
+           board, file_path, command_count, iterations, iterations == 1 ? "" : "s");
+  }
+
   int total_commands_sent = 0;
   int total_words_sent = 0;
-  
-  if (verbose) {
-    printf("ADC Command Stream Thread[%d]: Starting (%d commands, %d iterations)\n", 
-           board, stream_data->command_count, stream_data->iterations);
-  }
-  
-  // Stream commands for each iteration 
-  for (int it = 0; it < stream_data->iterations && !*(stream_data->should_stop); it++) {
-    if (verbose) {
-      printf("ADC command stream iteration %d/%d for board %d\n", it + 1, stream_data->iterations, board);
-    }
-    
-    // Stream each command
-    for (int i = 0; i < stream_data->command_count && !*(stream_data->should_stop); i++) {
-      adc_command_t* cmd = &stream_data->commands[i];
-      
+  int current_iteration = 0;
+
+  while (!(*should_stop) && current_iteration < iterations) {
+    int cmd_index = 0;
+    int commands_sent_this_iteration = 0;
+
+    while (!(*should_stop) && cmd_index < command_count) {
+      adc_command_t* cmd = &commands[cmd_index];
+
       // Calculate words needed for this command
       uint32_t words_needed = ((cmd->type == 'D') && (cmd->repeat_count > 0)) ? 2 : 1;
-      
-      // Check command FIFO status and ensure we have enough space
-      bool command_sent = false;
-      while (!command_sent && !*(stream_data->should_stop)) {
-        uint32_t cmd_status = sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, board, false);
-        if (!FIFO_PRESENT(cmd_status)) {
-          fprintf(stderr, "ADC command FIFO for board %d is not present\n", board);
-          goto cleanup;
-        }
-        
-        uint32_t words_used = FIFO_STS_WORD_COUNT(cmd_status) + 1; // +1 for safety margin
-        uint32_t words_available = ADC_CMD_FIFO_WORDCOUNT - words_used;
-        
-        if (words_available >= words_needed) {
-          // Send command based on type
-          switch (cmd->type) {
-            case 'T':
-              adc_cmd_noop(ctx->adc_ctrl, board, true, false, cmd->value, verbose);
-              break;
-            
-            case 'D':
-              adc_cmd_adc_rd(ctx->adc_ctrl, board, false, false, cmd->value, cmd->repeat_count, verbose);
-              break;
-            
-            case 'O':
-              adc_cmd_set_ord(ctx->adc_ctrl, board, cmd->order, verbose);
-              break;
-            default:
-              fprintf(stderr, "Invalid ADC command type: %c\n", cmd->type);
-              break;
-          }
-          
-          command_sent = true;
-          total_commands_sent++;
-          total_words_sent += words_needed;
-          
-          if (verbose) {
-            printf("ADC Command Stream Thread[%d]: Sent command %c for board %d [FIFO: %u/%u words, needed %u]\n", 
-                   board, cmd->type, board, words_used + words_needed + 1, ADC_CMD_FIFO_WORDCOUNT, words_needed);
-          }
-        } else {
-          // Not enough space in FIFO, sleep and try again
-          usleep(1000); // 1ms
-        }
+
+      // Check ADC command FIFO status
+      uint32_t fifo_status = sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, board, false);
+
+      if (FIFO_PRESENT(fifo_status) == 0) {
+        fprintf(stderr, "ADC Command Stream Thread[%d]: FIFO not present, stopping stream\n", board);
+        goto cleanup;
       }
+
+      uint32_t words_used = FIFO_STS_WORD_COUNT(fifo_status) + 1; // +1 for safety margin
+      uint32_t words_available = ADC_CMD_FIFO_WORDCOUNT - words_used;
+
+      if (words_available >= words_needed) {
+        // Send the command
+        switch (cmd->type) {
+          case 'T':
+            adc_cmd_noop(ctx->adc_ctrl, board, true, false, cmd->value, false);
+            break;
+          case 'D':
+            adc_cmd_adc_rd(ctx->adc_ctrl, board, false, false, cmd->value, cmd->repeat_count, false);
+            break;
+          case 'O':
+            adc_cmd_set_ord(ctx->adc_ctrl, board, cmd->order, false);
+            break;
+          default:
+            fprintf(stderr, "ADC Command Stream Thread[%d]: Invalid command type '%c'\n", board, cmd->type);
+            break;
+        }
+
+        commands_sent_this_iteration++;
+        total_commands_sent++;
+        total_words_sent += words_needed;
+        cmd_index++;
+
+        if (verbose) {
+          printf("ADC Command Stream Thread[%d]: Iteration %d/%d, Sent command %d/%d (type=%c, value=%u, repeat=%u) [FIFO: %u/%u words, %d needed]\n",
+                 board, current_iteration + 1, iterations, commands_sent_this_iteration, command_count,
+                 cmd->type, cmd->value, cmd->repeat_count, words_used, ADC_CMD_FIFO_WORDCOUNT, words_needed);
+        }
+      } else {
+        // Not enough space in FIFO, sleep and try again
+        usleep(1000); // 1ms
+      }
+    }
+
+    current_iteration++;
+    if (current_iteration < iterations && verbose) {
+      printf("ADC Command Stream Thread[%d]: Completed iteration %d/%d, starting next iteration\n",
+             board, current_iteration, iterations);
     }
   }
 
 cleanup:
-  if (*(stream_data->should_stop)) {
+  if (*should_stop) {
     printf("ADC Command Stream Thread[%d]: Stopping (user requested), sent %d total commands (%d total words)\n",
            board, total_commands_sent, total_words_sent);
   } else {
-    printf("ADC Command Stream Thread[%d]: Completed, sent %d total commands (%d total words, %d iterations)\n", 
-           board, total_commands_sent, total_words_sent, stream_data->iterations);
+    printf("ADC Command Stream Thread[%d]: Completed, sent %d total commands (%d total words, %d iteration%s)\n",
+           board, total_commands_sent, total_words_sent, iterations, iterations == 1 ? "" : "s");
   }
-  
-  // Mark stream as not running and clean up
+
   ctx->adc_cmd_stream_running[board] = false;
   free(stream_data->commands);
   free(stream_data);
@@ -925,7 +933,7 @@ int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const co
   
   stream_data->ctx = ctx;
   stream_data->board = (uint8_t)board;
-  strcpy(stream_data->file_path, full_path);
+  snprintf(stream_data->file_path, sizeof(stream_data->file_path), "%s", full_path);
   stream_data->should_stop = &(ctx->adc_cmd_stream_stop[board]);
   stream_data->commands = commands;
   stream_data->command_count = command_count;
