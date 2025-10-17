@@ -30,7 +30,7 @@ if {$spi_clk_freq_mhz < 1.0 || $spi_clk_freq_mhz > 50.0} {
 # Larger FIFOs use more FPGA resources, but allow for longer bursts and more buffering.
 # This can hit the cap fast!
 set dac_cmd_fifo_addr_width 13
-set dac_data_fifo_addr_width 11
+set dac_data_fifo_addr_width 12
 set adc_cmd_fifo_addr_width 10
 set adc_data_fifo_addr_width 13
 set trig_cmd_fifo_addr_width 10
@@ -65,8 +65,8 @@ create_bd_port -dir I Manual_Enable
 create_bd_port -dir O -from 2 -to 0 -type data Shutdown_Sense_Sel
 # (~Shutdown_Force)
 create_bd_port -dir O n_Shutdown_Force
-# (~Shutdown_Reset)
-create_bd_port -dir O n_Shutdown_Reset
+# (Shutdown_Reset)
+create_bd_port -dir O Shutdown_Reset
 
 
 
@@ -238,7 +238,7 @@ cell lcb:user:shim_hw_manager hw_manager {} {
   dac_cal_init_oob axi_sys_ctrl/dac_cal_init_oob
   unlock_cfg axi_sys_ctrl/unlock
   n_shutdown_force n_Shutdown_Force
-  n_shutdown_rst n_Shutdown_Reset
+  shutdown_rst Shutdown_Reset
 }
 
 ## Shutdown sense

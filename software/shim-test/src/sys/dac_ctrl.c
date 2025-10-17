@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "dac_ctrl.h"
 #include "map_memory.h"
 
@@ -29,121 +30,143 @@ uint32_t dac_read_data(struct dac_ctrl_t *dac_ctrl, uint8_t board) {
   return *(dac_ctrl->buffer[board]);
 }
 
-// Interpret and print DAC data word as calibration or debug information
-void dac_print_data(uint32_t dac_value, bool verbose) {
+// Interpret and format DAC data word as calibration or debug information
+char* dac_format_data(uint32_t dac_value, bool verbose) {
+  static char buffer[512];  // Static buffer for return string
+  char temp_buffer[256];
+  buffer[0] = '\0';  // Initialize as empty string
+  
   if (verbose) {
-    printf("DAC Data word: 0x%08X\n", dac_value);
+    snprintf(temp_buffer, sizeof(temp_buffer), "DAC Data word: 0x%08X\n", dac_value);
+    strcat(buffer, temp_buffer);
   }
+  
   uint8_t data_code = DAC_DATA_CODE(dac_value);
   switch (data_code) {
     case DAC_DBG_MISO_DATA: {
-      printf("Debug: MISO Data = 0x%04X\n", dac_value & 0xFFFF);
+      snprintf(temp_buffer, sizeof(temp_buffer), "Debug: MISO Data = 0x%04X", dac_value & 0xFFFF);
+      strcat(buffer, temp_buffer);
       break;
     }
     case DAC_DBG_STATE_TRANSITION: {
       uint8_t from_state = (dac_value >> 4) & 0x0F;
       uint8_t to_state = dac_value & 0x0F;
-      printf("Debug: State Transition from ");
-      dac_print_state(from_state, verbose);
-      printf(" to ");
-      dac_print_state(to_state, verbose);
-      printf("\n");
+      char from_state_str[64];  // Local copy to avoid static buffer overwrite
+      strcpy(from_state_str, dac_format_state(from_state, verbose));  // Copy the first result
+      char to_state_str[64];  // Local copy to avoid static buffer overwrite
+      strcpy(to_state_str, dac_format_state(to_state, verbose));  // Copy the second result
+      snprintf(temp_buffer, sizeof(temp_buffer), "Debug: State Transition from %s to %s", from_state_str, to_state_str);
+      strcat(buffer, temp_buffer);
       break;
     }
     case DAC_DBG_N_CS_TIMER: {
-      printf("Debug: n_cs Timer = %d\n", dac_value & 0x0FFF);
+      snprintf(temp_buffer, sizeof(temp_buffer), "Debug: n_cs Timer = %d", dac_value & 0x0FFF);
+      strcat(buffer, temp_buffer);
       break;
     }
     case DAC_DBG_SPI_BIT: {
-      printf("Debug: SPI Bit Counter = %d\n", dac_value & 0x1F);
+      snprintf(temp_buffer, sizeof(temp_buffer), "Debug: SPI Bit Counter = %d", dac_value & 0x1F);
+      strcat(buffer, temp_buffer);
       break;
     }
     case DAC_DBG_DAC_WRITE: {
-      printf("Debug: DAC SPI Word Writing = 0x%06X\n", dac_value & 0xFFFFFF);
-      printf("  Command: ");
+      char cmd_str[32];
       switch (DAC_SPI_CMD_WORD(dac_value)) {
-        case DAC_SPI_CMD_NO_OP: {
-          printf("NO_OP");
+        case DAC_SPI_CMD_NO_OP:
+          strcpy(cmd_str, "NO_OP");
           break;
-        }
-        case DAC_SPI_CMD_DAC_WR_LDAC_WAIT: {
-          printf("DAC_WR_LDAC_WAIT");
+        case DAC_SPI_CMD_DAC_WR_LDAC_WAIT:
+          strcpy(cmd_str, "DAC_WR_LDAC_WAIT");
           break;
-        }
-        case DAC_SPI_CMD_DAC_WR_IMMEDIATE: {
-          printf("DAC_WR_IMMEDIATE");
+        case DAC_SPI_CMD_DAC_WR_IMMEDIATE:
+          strcpy(cmd_str, "DAC_WR_IMMEDIATE");
           break;
-        }
-        case DAC_SPI_CMD_REQ_RD: {
-          printf("REQ_RD");
+        case DAC_SPI_CMD_REQ_RD:
+          strcpy(cmd_str, "REQ_RD");
           break;
-        }
-        default: {
-          printf("Unknown Command");
+        default:
+          strcpy(cmd_str, "Unknown Command");
           break;
-        }
       }
-      printf(" to Register: %1d, Data: %05d\n", DAC_SPI_REG_ADDR(dac_value), DAC_SPI_DATA(dac_value));
+      snprintf(temp_buffer, sizeof(temp_buffer), "Debug: DAC SPI Word Writing = 0x%06X\n  Command: %s to Register: %1d, Data: %05d", 
+               dac_value & 0xFFFFFF, cmd_str, DAC_SPI_REG_ADDR(dac_value), DAC_SPI_DATA(dac_value));
+      strcat(buffer, temp_buffer);
       break;
     }
     case DAC_CAL_DATA: {
       uint8_t channel = DAC_CAL_DATA_CH(dac_value);
       int16_t cal_value = DAC_CAL_DATA_VAL(dac_value);
-      printf("Calibration: Channel %d = %d\n", channel, cal_value);
+      snprintf(temp_buffer, sizeof(temp_buffer), "Calibration: Channel %d = %d", channel, cal_value);
+      strcat(buffer, temp_buffer);
       break;
     }
     default: {
-      printf("Data: Unknown code %d with value 0x%X\n", data_code, dac_value);
+      snprintf(temp_buffer, sizeof(temp_buffer), "Data: Unknown code %d with value 0x%X", data_code, dac_value);
+      strcat(buffer, temp_buffer);
       break;
     }
   }
+  
+  return buffer;
 }
 
-// Interpret and print the DAC state
-void dac_print_state(uint8_t state_code, bool verbose) {
+// Interpret and format the DAC state
+char* dac_format_state(uint8_t state_code, bool verbose) {
+  static char buffer[64];  // Static buffer for return string
+  buffer[0] = '\0';  // Initialize as empty string
+  
   if (verbose) {
-    printf("DAC State code: %d\n", state_code);
+    char temp[32];
+    snprintf(temp, sizeof(temp), "DAC State code: %d\n", state_code);
+    strcat(buffer, temp);
   }
+  
   switch (state_code) {
     case DAC_STATE_RESET:
-      printf("RESET");
+      strcat(buffer, "RESET");
       break;
     case DAC_STATE_INIT:
-      printf("Init");
+      strcat(buffer, "Init");
       break;
     case DAC_STATE_TEST_WR:
-      printf("Test Write");
+      strcat(buffer, "Test Write");
       break;
     case DAC_STATE_REQ_RD:
-      printf("Request Read");
+      strcat(buffer, "Request Read");
       break;
     case DAC_STATE_TEST_RD:
-      printf("Test Read");
+      strcat(buffer, "Test Read");
       break;
     case DAC_STATE_SET_MID:
-      printf("Set Midrange");
+      strcat(buffer, "Set Midrange");
       break;
     case DAC_STATE_IDLE:
-      printf("Idle");
+      strcat(buffer, "Idle");
       break;
     case DAC_STATE_DELAY:
-      printf("Delay Wait");
+      strcat(buffer, "Delay Wait");
       break;
     case DAC_STATE_TRIG_WAIT:
-      printf("Trigger Wait");
+      strcat(buffer, "Trigger Wait");
       break;
     case DAC_STATE_DAC_WR:
-      printf("DAC Write");
+      strcat(buffer, "DAC Write");
       break;
     case DAC_STATE_DAC_WR_CH:
-      printf("DAC Write Channel");
+      strcat(buffer, "DAC Write Channel");
       break;
     case DAC_STATE_ERROR:
-      printf("ERROR");
+      strcat(buffer, "ERROR");
       break;
-    default:
-      printf("Unknown State: %d", state_code);
+    default: {
+      char temp[32];
+      snprintf(temp, sizeof(temp), "Unknown State: %d", state_code);
+      strcat(buffer, temp);
+      break;
+    }
   }
+  
+  return buffer;
 }
 
 // DAC command word functions

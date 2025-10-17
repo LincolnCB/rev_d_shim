@@ -160,12 +160,12 @@ static void* trigger_data_stream_thread(void* arg) {
   volatile bool* should_stop = stream_data->should_stop;
   bool binary_mode = stream_data->binary_mode;
   bool verbose = *(ctx->verbose);
-  
+
   if (verbose) {
     printf("Trigger Stream Thread: Starting to write %llu samples to file '%s' (%s format)\n", 
            sample_count, file_path, binary_mode ? "binary" : "ASCII");
   }
-  
+
   // Open file for writing (binary or text mode based on format)
   FILE* file = fopen(file_path, binary_mode ? "wb" : "w");
   if (file == NULL) {
@@ -173,22 +173,24 @@ static void* trigger_data_stream_thread(void* arg) {
            file_path, strerror(errno));
     goto cleanup;
   }
-  
+
   uint64_t samples_written = 0;
-  
+
   while (samples_written < sample_count && !(*should_stop)) {
     // Check trigger data FIFO status
     uint32_t data_status = sys_sts_get_trig_data_fifo_status(ctx->sys_sts, false);
-    
+
     if (FIFO_PRESENT(data_status) == 0) {
       fprintf(stderr, "Trigger Stream Thread: Data FIFO not present, stopping stream\n");
       break;
     }
-    
-    if (!FIFO_STS_EMPTY(data_status)) {
-      // Read 64-bit trigger data
+
+    // Check if there are at least 2 words available for a sample
+    uint32_t fifo_count = FIFO_STS_WORD_COUNT(data_status);
+    if (fifo_count >= 2) {
+      // Read 64-bit trigger data (2 words)
       uint64_t trigger_data = trigger_read(ctx->trigger_ctrl);
-      
+
       // Write data based on format mode
       if (binary_mode) {
         // Binary mode: write raw 64-bit value directly
@@ -201,27 +203,27 @@ static void* trigger_data_stream_thread(void* arg) {
         // ASCII mode: write one trigger sample per line
         fprintf(file, "0x%016" PRIx64 "\n", trigger_data);
       }
-      
+
       // Flush the file to ensure data is written
       fflush(file);
-      
+
       samples_written++;
-      
+
       if (verbose && samples_written % 1000 == 0) {
         printf("Trigger Stream Thread: Written %llu/%llu samples (%.1f%%)\n",
                samples_written, sample_count,
                (double)samples_written / sample_count * 100.0);
       }
     } else {
-      // No data available, sleep briefly
-      usleep(100);
+      // Not enough data available, sleep briefly
+      usleep(10000); // 10ms
     }
   }
-  
+
   if (file) {
     fclose(file);
   }
-  
+
   if (*should_stop) {
     printf("Trigger Stream Thread: Stream stopped by user after writing %llu samples\n",
            samples_written);
@@ -229,7 +231,7 @@ static void* trigger_data_stream_thread(void* arg) {
     printf("Trigger Stream Thread: Stream completed, wrote %llu samples to file '%s'\n",
            samples_written, file_path);
   }
-  
+
 cleanup:
   ctx->trig_data_stream_running = false;
   free(stream_data);

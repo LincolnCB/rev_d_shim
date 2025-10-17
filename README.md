@@ -107,8 +107,6 @@
 	- Sends:
 		- RST signal to everything on SPI clock domain
 		- Interrupt to software
-		- Shutdown_Force pin on activation
-		- ~Shutdown_Reset on deactivation
 - Rst/En core
 	- Does a buffer drain/reset
 	- Resets the E-stop core

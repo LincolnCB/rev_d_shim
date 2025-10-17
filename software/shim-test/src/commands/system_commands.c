@@ -81,6 +81,16 @@ int cmd_hard_reset(const char** args, int arg_count, const command_flag_t* flags
       ctx->dac_cmd_stream_running[board] = false;
     }
     
+    // Stop DAC debug streams
+    if (ctx->dac_debug_stream_running[board]) {
+      printf("    Stopping DAC debug stream for board %d\n", board);
+      ctx->dac_debug_stream_stop[board] = true;
+      if (pthread_join(ctx->dac_debug_stream_threads[board], NULL) != 0) {
+        fprintf(stderr, "Warning: Failed to join DAC debug streaming thread for board %d\n", board);
+      }
+      ctx->dac_debug_stream_running[board] = false;
+    }
+    
     // Stop ADC streams
     if (ctx->adc_data_stream_running[board]) {
       printf("    Stopping ADC data stream for board %d\n", board);

@@ -11,7 +11,7 @@
 
 // DAC FIFO depths
 #define DAC_CMD_FIFO_WORDCOUNT   (uint32_t)(1 << 13) // 8192 words (2^13)
-#define DAC_DATA_FIFO_WORDCOUNT  (uint32_t)(1 << 11) // 2048 words (2^11)
+#define DAC_DATA_FIFO_WORDCOUNT  (uint32_t)(1 << 12) // 4096 words (2^12)
 
 // DAC state codes
 #define DAC_STATE_RESET      0
@@ -75,10 +75,10 @@ struct dac_ctrl_t {
 struct dac_ctrl_t create_dac_ctrl(bool verbose);
 // Read DAC data from a specific board
 uint32_t dac_read_data(struct dac_ctrl_t *dac_ctrl, uint8_t board);
-// Interpret and print DAC data word as calibration or debug information
-void dac_print_data(uint32_t dac_value, bool verbose);
-// Interpret and print the DAC state
-void dac_print_state(uint8_t state_code, bool verbose);
+// Interpret and format DAC data word as calibration or debug information
+char* dac_format_data(uint32_t dac_value, bool verbose);
+// Interpret and format the DAC state
+char* dac_format_state(uint8_t state_code, bool verbose);
 
 // DAC command word functions
 void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool trig, bool cont, bool ldac, uint32_t value, bool verbose);

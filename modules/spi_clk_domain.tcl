@@ -172,6 +172,7 @@ cell lcb:user:shim_spi_sts_sync spi_sts_sync {} {
   adc_cmd_buf_underflow_sync adc_cmd_buf_underflow
   adc_data_buf_overflow_sync adc_data_buf_overflow
   unexp_adc_trig_sync unexp_adc_trig
+  adc_delay_too_short_sync adc_delay_too_short
 }
 ## SPI system reset
 # Create proc_sys_reset for SPI-system-wide reset

@@ -28,7 +28,7 @@
 // Forward declarations for helper functions
 static int validate_system_running(command_context_t* ctx);
 static int count_trigger_lines_in_file(const char* file_path);
-static uint64_t calculate_expected_samples(const char* file_path, int repeat_count, bool verbose);
+static uint64_t calculate_expected_adc_words(const char* file_path, int iterations, bool verbose);
 
 // Structure for trigger monitoring thread
 typedef struct {
@@ -57,11 +57,12 @@ static int validate_system_running(command_context_t* ctx) {
   return 0;
 }
 
-// Helper function to count trigger lines in a DAC file
+// Helper function to count trigger lines in a DAC/ADC file 
+// (sum trigger counts from T lines, formatted similarly enough in both files to be fine)
 static int count_trigger_lines_in_file(const char* file_path) {
   FILE* file = fopen(file_path, "r");
   if (file == NULL) {
-    fprintf(stderr, "Failed to open DAC file '%s': %s\n", file_path, strerror(errno));
+    fprintf(stderr, "Failed to open DAC/ADC file '%s': %s\n", file_path, strerror(errno));
     return -1;
   }
   
@@ -78,7 +79,13 @@ static int count_trigger_lines_in_file(const char* file_path) {
     
     // Check if line starts with T (trigger)
     if (*trimmed == 'T') {
-      trigger_count++;
+      int t_count = 1;
+      // Try to parse the trigger count after 'T'
+      if (sscanf(trimmed + 1, " %d", &t_count) == 1 && t_count > 0) {
+        trigger_count += t_count;
+      } else {
+        trigger_count += 1;
+      }
     }
   }
   
@@ -86,52 +93,19 @@ static int count_trigger_lines_in_file(const char* file_path) {
   return trigger_count;
 }
 
-// Helper function to calculate expected number of samples from an ADC command file
-static uint64_t calculate_expected_samples(const char* file_path, int repeat_count, bool verbose) {
-  // Use the existing ADC command parser to get the parsed commands
-  adc_command_t* commands = NULL;
-  int command_count = 0;
+// Helper function to calculate expected number of ADC words from an ADC command file
+static uint64_t calculate_expected_adc_words(const char* file_path, int iterations, bool verbose) {
+  // Parse the ADC command file to count D commands (only these generate ADC words)
   
-  // Parse the ADC command file using the existing function
   FILE* file = fopen(file_path, "r");
   if (file == NULL) {
     fprintf(stderr, "Failed to open ADC command file '%s': %s\n", file_path, strerror(errno));
     return 0;
   }
   
-  // First pass: count valid lines (excluding comments and empty lines)
+  // Count D commands (these generate ADC words)
   char line[512];
-  int valid_lines = 0;
-  
-  while (fgets(line, sizeof(line), file)) {
-    // Skip empty lines and comments (same logic as parse_adc_command_file)
-    char* trimmed = line;
-    while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
-    if (*trimmed == '\n' || *trimmed == '\r' || *trimmed == '\0' || *trimmed == '#') {
-      continue;
-    }
-    
-    // Check if line starts with valid command
-    if (*trimmed == 'L' || *trimmed == 'T' || *trimmed == 'D' || *trimmed == 'O') {
-      valid_lines++;
-    }
-  }
-  
-  if (valid_lines == 0) {
-    fclose(file);
-    return 0;
-  }
-  
-  // Allocate memory for commands
-  commands = malloc(valid_lines * sizeof(adc_command_t));
-  if (commands == NULL) {
-    fclose(file);
-    return 0;
-  }
-  
-  // Second pass: parse commands (same logic as parse_adc_command_file)
-  rewind(file);
-  command_count = 0;
+  uint64_t adc_words_per_execution = 0;
   
   while (fgets(line, sizeof(line), file)) {
     // Skip empty lines and comments
@@ -141,87 +115,40 @@ static uint64_t calculate_expected_samples(const char* file_path, int repeat_cou
       continue;
     }
     
-    adc_command_t* cmd = &commands[command_count];
-    cmd->type = *trimmed;
-    
-    if (cmd->type == 'L') {
-      if (sscanf(trimmed, "L %u", &cmd->value) != 1) {
-        free(commands);
-        fclose(file);
-        return 0;
-      }
-    } else if (cmd->type == 'T') {
-      if (sscanf(trimmed, "T %u", &cmd->value) != 1) {
-        free(commands);
-        fclose(file);
-        return 0;
-      }
-    } else if (cmd->type == 'D') {
-      if (sscanf(trimmed, "D %u", &cmd->value) != 1) {
-        free(commands);
-        fclose(file);
-        return 0;
-      }
-    } else if (cmd->type == 'O') {
-      int order_vals[8];
-      if (sscanf(trimmed, "O %d %d %d %d %d %d %d %d", 
-                 &order_vals[0], &order_vals[1], &order_vals[2], &order_vals[3],
-                 &order_vals[4], &order_vals[5], &order_vals[6], &order_vals[7]) != 8) {
-        free(commands);
-        fclose(file);
-        return 0;
-      }
-      for (int j = 0; j < 8; j++) {
-        cmd->order[j] = (uint8_t)order_vals[j];
+    // Check command type - only D commands generate ADC words
+    if (*trimmed == 'D') {
+      // D commands generate 4 ADC words per execution (one per ADC channel read)
+      uint32_t delay_value = 0;
+      uint32_t repeat_value = 0;
+      
+      // Parse the delay and repeat values from the command
+      // Format: D <delay> <repeats> where repeats is the number of EXTRA times it runs
+      int parsed = sscanf(trimmed + 1, " %u %u", &delay_value, &repeat_value);
+      if (parsed >= 2) {
+        // Second parameter is the repeat count (extra executions)
+        adc_words_per_execution += (repeat_value + 1) * 4;
+      } else if (parsed == 1) {
+        // Only delay specified, runs once
+        adc_words_per_execution += 4;
+      } else {
+        // Default to runs once
+        adc_words_per_execution += 4;
       }
     }
-    
-    command_count++;
+    // T and O commands don't generate ADC words, just ignore them
   }
   
   fclose(file);
   
-  // Now simulate the execution in simple mode to count samples
-  uint64_t samples_per_loop = 0;
+  // Calculate total ADC words: adc_words_per_execution * total_iterations
+  uint64_t total_adc_words = adc_words_per_execution * iterations;
   
-  for (int i = 0; i < command_count; i++) {
-    adc_command_t* cmd = &commands[i];
-    
-    switch (cmd->type) {
-      case 'L':
-        // In simple mode, this repeats the next command cmd->value times
-        if (i + 1 < command_count) {
-          adc_command_t* next_cmd = &commands[i + 1];
-          if (next_cmd->type == 'T' || next_cmd->type == 'D') {
-            // T and D commands generate 4 words each
-            samples_per_loop += cmd->value * 4;
-          }
-          // Skip the next command since loop consumes it
-          i++;
-        }
-        break;
-      
-      case 'T':
-      case 'D':
-        // These generate 4 words each (if not consumed by a loop)
-        samples_per_loop += 4;
-        break;
-      
-      case 'O':
-        // Order commands don't generate samples
-        break;
-    }
-  }
-  
-  free(commands);
-  
-  uint64_t total_samples = samples_per_loop * (repeat_count + 1);
   if (verbose) {
-    printf("Calculated %llu samples per loop, %llu total samples (%d repeats + 1)\n", 
-           samples_per_loop, total_samples, repeat_count);
+    printf("Calculated %llu ADC words per execution, %llu total ADC words (%d iterations)\n", 
+           adc_words_per_execution, total_adc_words, iterations);
   }
   
-  return total_samples;
+  return total_adc_words;
 }
 
 // Channel test command implementation
@@ -897,15 +824,16 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   printf("Step 2: Checking connected boards...\n");
   
   for (int board = 0; board < 8; board++) {
-    uint32_t adc_data_fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
     uint32_t dac_cmd_fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
-    uint32_t adc_cmd_fifo_status = sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
     uint32_t dac_data_fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    uint32_t adc_cmd_fifo_status = sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
+    uint32_t adc_data_fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
     
-    if (FIFO_PRESENT(adc_data_fifo_status) && 
-        FIFO_PRESENT(dac_cmd_fifo_status) && 
-        FIFO_PRESENT(adc_cmd_fifo_status) && 
-        FIFO_PRESENT(dac_data_fifo_status)) {
+    if (
+      FIFO_PRESENT(dac_cmd_fifo_status)  && 
+      FIFO_PRESENT(dac_data_fifo_status) &&
+      FIFO_PRESENT(adc_cmd_fifo_status)  && 
+      FIFO_PRESENT(adc_data_fifo_status)) {
       connected_boards[board] = true;
       connected_count++;
       printf("  Board %d: Connected\n", board);
@@ -960,28 +888,28 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     strcpy(previous_adc_file, resolved_adc_files[board]);
   }
   
-  // Step 4: Prompt for DAC and ADC repeat counts for each connected board
-  int dac_loops[8] = {0};  // DAC loop counts for each board  
-  int adc_repeats[8] = {0};  // ADC repeat counts for each board
+  // Step 4: Prompt for DAC and ADC iteration counts for each connected board
+  int dac_iterations[8] = {0};  // DAC iteration counts for each board  
+  int adc_iterations[8] = {0};  // ADC iteration counts for each board
   
-  int previous_dac_loops = 0;
-  int previous_adc_repeats = 0;
+  int previous_dac_iterations = 0;
+  int previous_adc_iterations = 0;
   
-  printf("\nLoop count configuration:\n");
+  printf("\nIteration count configuration:\n");
   for (int board = 0; board < 8; board++) {
     if (!connected_boards[board]) continue;
     
-    // Prompt for DAC loops with default handling
+    // Prompt for DAC iterations with default handling
     char input_buffer[64];
-    printf("Enter DAC loop count for board %d", board);
-    if (previous_dac_loops > 0) {
-      printf(" (default: %d)", previous_dac_loops);
+    printf("Enter DAC iteration count for board %d", board);
+    if (previous_dac_iterations > 0) {
+      printf(" (default: %d)", previous_dac_iterations);
     }
     printf(": ");
     fflush(stdout);
     
     if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
-      fprintf(stderr, "Failed to read DAC loop count input.\n");
+      fprintf(stderr, "Failed to read DAC iteration count input.\n");
       return -1;
     }
     
@@ -992,26 +920,28 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     }
     
     // Check for default (empty input or ".")
-    if ((strlen(input_buffer) == 0 || strcmp(input_buffer, ".") == 0) && previous_dac_loops > 0) {
-      dac_loops[board] = previous_dac_loops;
+    if ((strlen(input_buffer) == 0 || strcmp(input_buffer, ".") == 0) && previous_dac_iterations > 0) {
+      dac_iterations[board] = previous_dac_iterations;
     } else {
-      dac_loops[board] = atoi(input_buffer);
-      if (dac_loops[board] < 1) {
-        fprintf(stderr, "Invalid DAC loop count for board %d. Must be >= 1.\n", board);
+      dac_iterations[board] = atoi(input_buffer);
+      if (dac_iterations[board] < 1) {
+        fprintf(stderr, "Invalid DAC iteration count for board %d. Must be >= 1.\n", board);
         return -1;
       }
     }
-    previous_dac_loops = dac_loops[board];
+    previous_dac_iterations = dac_iterations[board];
     
-    // Prompt for ADC repeats with default handling
-    printf("Enter ADC repeat count for board %d", board);
-    int default_adc_repeats = (previous_adc_repeats >= 0) ? previous_adc_repeats : 0;
-    printf(" (default: %d)", default_adc_repeats);
+    // Prompt for ADC iterations with default handling
+    printf("Enter ADC iteration count for board %d", board);
+    int default_adc_iterations = (previous_adc_iterations > 0) ? previous_adc_iterations : previous_dac_iterations;
+    if (default_adc_iterations > 0) {
+      printf(" (default: %d)", default_adc_iterations);
+    }
     printf(": ");
     fflush(stdout);
     
     if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
-      fprintf(stderr, "Failed to read ADC repeat count input.\n");
+      fprintf(stderr, "Failed to read ADC iteration count input.\n");
       return -1;
     }
     
@@ -1023,15 +953,15 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     
     // Check for default (empty input or ".")
     if (strlen(input_buffer) == 0 || strcmp(input_buffer, ".") == 0) {
-      adc_repeats[board] = default_adc_repeats;
+      adc_iterations[board] = default_adc_iterations;
     } else {
-      adc_repeats[board] = atoi(input_buffer);
-      if (adc_repeats[board] < 0) {
-        fprintf(stderr, "Invalid ADC repeat count for board %d. Must be >= 0.\n", board);
+      adc_iterations[board] = atoi(input_buffer);
+      if (adc_iterations[board] < 1) {
+        fprintf(stderr, "Invalid ADC iteration count for board %d. Must be >= 1.\n", board);
         return -1;
       }
     }
-    previous_adc_repeats = adc_repeats[board];
+    previous_adc_iterations = adc_iterations[board];
   }
   
   // Step 5: Prompt for base output file name
@@ -1111,8 +1041,8 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   printf("Calculated lockout: %u cycles (%.3f ms at %.3f MHz)\n", 
          lockout_time, lockout_ms, spi_freq_mhz);
   
-  // Step 7: Calculate expected samples and triggers for each connected board
-  uint64_t sample_counts[8] = {0};  // Expected samples per board
+  // Step 7: Calculate expected ADC words and triggers for each connected board
+  uint64_t adc_word_counts[8] = {0};  // Expected ADC words per board
   uint32_t board_triggers[8] = {0};  // Triggers per board
   uint32_t total_expected_triggers = 0;
   
@@ -1138,17 +1068,17 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     }
     
     // Calculate total triggers for this board
-    uint32_t dac_total_triggers = dac_trigger_count * dac_loops[board];
-    uint32_t adc_total_triggers = adc_trigger_count * (adc_repeats[board] + 1);
+    uint32_t dac_total_triggers = dac_trigger_count * dac_iterations[board];
+    uint32_t adc_total_triggers = adc_trigger_count * adc_iterations[board];
     
     // Validate that DAC and ADC have same trigger count for this board
     if (dac_total_triggers != adc_total_triggers) {
       fprintf(stderr, "Error: Board %d DAC triggers (%u) != ADC triggers (%u)\n", 
               board, dac_total_triggers, adc_total_triggers);
-      fprintf(stderr, "  DAC: %d triggers/file × %d loops = %u\n", 
-              dac_trigger_count, dac_loops[board], dac_total_triggers);
-      fprintf(stderr, "  ADC: %d triggers/file × %d loops = %u\n", 
-              adc_trigger_count, adc_repeats[board] + 1, adc_total_triggers);
+      fprintf(stderr, "  DAC: %d triggers/file × %d iterations = %u\n", 
+              dac_trigger_count, dac_iterations[board], dac_total_triggers);
+      fprintf(stderr, "  ADC: %d triggers/file × %d iterations = %u\n", 
+              adc_trigger_count, adc_iterations[board], adc_total_triggers);
       return -1;
     }
     
@@ -1165,22 +1095,22 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     }
   }
   
-  // Second pass: calculate sample counts now that triggers are validated
+  // Second pass: calculate ADC word counts now that triggers are validated
   for (int board = 0; board < 8; board++) {
     if (!connected_boards[board]) continue;
     
-    // Calculate expected number of samples from ADC command file using board-specific ADC loops
-    sample_counts[board] = calculate_expected_samples(resolved_adc_files[board], adc_repeats[board], *(ctx->verbose));
-    if (sample_counts[board] == 0) {
-      fprintf(stderr, "Failed to calculate expected sample count from ADC command file for board %d\n", board);
+    // Calculate expected number of ADC words from ADC command file using board-specific ADC iterations
+    adc_word_counts[board] = calculate_expected_adc_words(resolved_adc_files[board], adc_iterations[board], *(ctx->verbose));
+    if (adc_word_counts[board] == 0) {
+      fprintf(stderr, "Failed to calculate expected ADC word count from ADC command file for board %d\n", board);
       return -1;
     }
     
     total_expected_triggers = board_triggers[board]; // All boards have same count
     
     if (*(ctx->verbose)) {
-      printf("Board %d: DAC loops=%d, ADC loops=%d, triggers=%u, ADC samples=%llu\n", 
-             board, dac_loops[board], adc_repeats[board], board_triggers[board], sample_counts[board]);
+      printf("Board %d: DAC iterations=%d, ADC iterations=%d, triggers=%u, ADC words=%llu\n", 
+             board, dac_iterations[board], adc_iterations[board], board_triggers[board], adc_word_counts[board]);
     }
   }
   
@@ -1232,7 +1162,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, true, false, false, 1, *(ctx->verbose)); // Wait for 1 trigger
     
     // Add ADC NOOP stopper  
-    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, 0, *(ctx->verbose)); // Wait for 1 trigger
+    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, *(ctx->verbose)); // Wait for 1 trigger
   }
 
   // Step 10a: Start command streaming for each connected board
@@ -1242,28 +1172,28 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   for (int board = 0; board < 8; board++) {
     if (!connected_boards[board]) continue;
     
-    char board_str[16], dac_loops_str[16], adc_repeats_str[16];
+    char board_str[16], dac_iterations_str[16], adc_iterations_str[16];
     snprintf(board_str, sizeof(board_str), "%d", board);
-    snprintf(dac_loops_str, sizeof(dac_loops_str), "%d", dac_loops[board]);
-    snprintf(adc_repeats_str, sizeof(adc_repeats_str), "%d", adc_repeats[board]);
+    snprintf(dac_iterations_str, sizeof(dac_iterations_str), "%d", dac_iterations[board]);
+    snprintf(adc_iterations_str, sizeof(adc_iterations_str), "%d", adc_iterations[board] - 1); // Convert back to repeat count for hardware
     
-    // Start DAC command streaming with board-specific DAC loop count
+    // Start DAC command streaming with board-specific DAC iteration count
     if (*(ctx->verbose)) {
-      printf("  Board %d: Starting DAC command streaming from '%s' (%d loops)\n", 
-             board, resolved_dac_files[board], dac_loops[board]);
+      printf("  Board %d: Starting DAC command streaming from '%s' (%d iterations)\n", 
+             board, resolved_dac_files[board], dac_iterations[board]);
     }
-    const char* dac_args[] = {board_str, resolved_dac_files[board], dac_loops_str};
+    const char* dac_args[] = {board_str, resolved_dac_files[board], dac_iterations_str};
     if (cmd_stream_dac_commands_from_file(dac_args, 3, NULL, 0, ctx) != 0) {
       fprintf(stderr, "Failed to start DAC command streaming for board %d\n", board);
       return -1;
     }
     
-    // Start ADC command streaming with board-specific ADC repeat count (using hardware repeats)
+    // Start ADC command streaming with board-specific ADC iteration count (using hardware repeats)
     if (*(ctx->verbose)) {
-      printf("  Board %d: Starting ADC command streaming from '%s' (%d repeats)\n", 
-             board, resolved_adc_files[board], adc_repeats[board]);
+      printf("  Board %d: Starting ADC command streaming from '%s' (%d iterations)\n", 
+             board, resolved_adc_files[board], adc_iterations[board]);
     }
-    const char* adc_args[] = {board_str, resolved_adc_files[board], adc_repeats_str};
+    const char* adc_args[] = {board_str, resolved_adc_files[board], adc_iterations_str};
     if (cmd_stream_adc_commands_from_file(adc_args, 3, NULL, 0, ctx) != 0) {
       fprintf(stderr, "Failed to start ADC command streaming for board %d\n", board);
       return -1;
@@ -1290,15 +1220,15 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
       snprintf(board_output_file, sizeof(board_output_file), "%s_bd_%d", base_output_file, board);
     }
     
-    char board_str[16], sample_count_str[32];
+    char board_str[16], word_count_str[32];
     snprintf(board_str, sizeof(board_str), "%d", board);
-    snprintf(sample_count_str, sizeof(sample_count_str), "%llu", sample_counts[board]);
+    snprintf(word_count_str, sizeof(word_count_str), "%llu", adc_word_counts[board]);
     
     if (*(ctx->verbose)) {
-      printf("  Board %d: Starting ADC data streaming to '%s' (%llu samples)\n", 
-             board, board_output_file, sample_counts[board]);
+      printf("  Board %d: Starting ADC data streaming to '%s' (%llu ADC words)\n", 
+             board, board_output_file, adc_word_counts[board]);
     }
-    const char* adc_data_args[] = {board_str, sample_count_str, board_output_file};
+    const char* adc_data_args[] = {board_str, word_count_str, board_output_file};
     if (cmd_stream_adc_data_to_file(adc_data_args, 3, NULL, 0, ctx) != 0) {
       fprintf(stderr, "Failed to start ADC data streaming for board %d\n", board);
       return -1;
@@ -1507,7 +1437,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     printf("Expected data collection:\n");
     for (int board = 0; board < 8; board++) {
       if (!connected_boards[board]) continue;
-      printf("  - Board %d: %llu ADC samples\n", board, sample_counts[board]);
+      printf("  - Board %d: %llu ADC words\n", board, adc_word_counts[board]);
     }
     if (total_expected_triggers > 0) {
       printf("  - Trigger data: %u samples\n", total_expected_triggers);
@@ -2087,7 +2017,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
     if (!connected_boards[board]) continue;
     
     dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, true, false, false, 1, *(ctx->verbose));
-    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, 0, *(ctx->verbose));
+    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, *(ctx->verbose));
   }
   
   // Calculate DAC values
@@ -2156,9 +2086,9 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
       if (!connected_boards[board]) continue;
       
       // NOOP wait for trigger
-      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, true, 1, 0, *(ctx->verbose));
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, true, 1, *(ctx->verbose));
       // Delay then read for all connected boards
-      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, true, delay_cycles, 0, *(ctx->verbose));
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, true, delay_cycles, *(ctx->verbose));
       adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 0, 0, *(ctx->verbose));
       total_adc_commands += 3;
     }
@@ -2168,9 +2098,9 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
       if (!connected_boards[board]) continue;
       
       // NOOP wait for trigger
-      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, true, 1, 0, *(ctx->verbose));
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, true, 1, *(ctx->verbose));
       // Delay then read for all connected boards
-      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, true, delay_cycles, 0, *(ctx->verbose));
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, true, delay_cycles, *(ctx->verbose));
       adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 0, 0, *(ctx->verbose));
       total_adc_commands += 3;
     }
@@ -2480,51 +2410,32 @@ static int check_boards_connected(command_context_t* ctx) {
   return 0;
 }
 
-// Structures and thread functions for Rev C compatibility streaming
-typedef struct {
-  command_context_t* ctx;
-  const char* dac_file;
-  int loops;
-  int line_count;
-  uint32_t delay_cycles;
-  volatile bool* should_stop;
-  bool input_is_amps;  // true for Amps input, false for DAC units
-} rev_c_dac_stream_params_t;
-
-typedef struct {
-  command_context_t* ctx;
-  const char* adc_output_file;
-  uint64_t expected_samples;
-  bool binary_mode;
-  volatile bool* should_stop;
-} rev_c_adc_stream_params_t;
-
-// New data structure for updated rev_c streaming with final zero trigger support
+// Data structure for rev_c streaming
 typedef struct {
   command_context_t* ctx;
   char* dac_file;
-  int loops;
+  int iterations;
   int line_count;
   uint32_t delay_cycles;
   volatile bool* should_stop;
   bool input_is_amps;
   bool final_zero_trigger;
-} rev_c_new_params_t;
+} rev_c_params_t;
 
-// Thread function for Rev C DAC command streaming to all 4 boards (new implementation)
-static void* rev_c_new_dac_stream_thread(void* arg) {
-  rev_c_new_params_t* stream_data = (rev_c_new_params_t*)arg;
+// Thread function for Rev C DAC command streaming to all 4 boards
+static void* rev_c_dac_stream_thread(void* arg) {
+  rev_c_params_t* stream_data = (rev_c_params_t*)arg;
   command_context_t* ctx = stream_data->ctx;
   const char* dac_file = stream_data->dac_file;
-  int loops = stream_data->loops;
+  int iterations = stream_data->iterations;
   int line_count = stream_data->line_count;
   volatile bool* should_stop = stream_data->should_stop;
   bool input_is_amps = stream_data->input_is_amps;
   bool final_zero_trigger = stream_data->final_zero_trigger;
   bool verbose = *(ctx->verbose);
   
-  printf("Rev C DAC Stream Thread: Starting streaming from file '%s' (%d lines, %d loops, final_zero=%s)\n", 
-         dac_file, line_count, loops, final_zero_trigger ? "yes" : "no");
+  printf("Rev C DAC Stream Thread: Starting streaming from file '%s' (%d lines, %d iterations, final_zero=%s)\n", 
+         dac_file, line_count, iterations, final_zero_trigger ? "yes" : "no");
   
   FILE* file = fopen(dac_file, "r");
   if (file == NULL) {
@@ -2534,8 +2445,8 @@ static void* rev_c_new_dac_stream_thread(void* arg) {
   
   int total_commands_sent = 0;
   
-  // Process all loops
-  for (int loop = 0; loop < loops && !(*should_stop); loop++) {
+  // Process all iterations
+  for (int iteration = 0; iteration < iterations && !(*should_stop); iteration++) {
     rewind(file);
     char line[2048];
     int line_num = 0;
@@ -2599,13 +2510,18 @@ static void* rev_c_new_dac_stream_thread(void* arg) {
           ch_vals[ch] = offset_to_signed(offset_val);
         }
         
-        // Send DAC write command with trigger wait (trig=true, cont=true, ldac=true, 1 trigger)
-        dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, true, true, true, 1, verbose);
+        // For the last dac_wr command of the last line, cont should be false
+        bool is_last_iteration = (iteration == iterations - 1);
+        bool is_last_line = (line_num == line_count);
+        bool cont = !(is_last_iteration && is_last_line);
+
+        // Send DAC write command with trigger wait (trig=true, cont=cont, ldac=true, 1 trigger)
+        dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, true, cont, true, 1, verbose);
         total_commands_sent++;
         
         if (verbose && line_num <= 3) { // Only show first few lines to avoid spam
-          printf("Rev C DAC Stream Thread: Board %d, Line %d, Loop %d, sent DAC write (channels %d-%d)\n", 
-                 board, line_num, loop + 1, board * 8, board * 8 + 7);
+          printf("Rev C DAC Stream Thread: Board %d, Line %d, Iteration %d, sent DAC write (channels %d-%d)\n", 
+                 board, line_num, iteration + 1, board * 8, board * 8 + 7);
         }
       }
       
@@ -2614,7 +2530,7 @@ static void* rev_c_new_dac_stream_thread(void* arg) {
     }
     
     if (verbose) {
-      printf("Rev C DAC Stream Thread: Completed loop %d/%d\n", loop + 1, loops);
+      printf("Rev C DAC Stream Thread: Completed iteration %d/%d\n", iteration + 1, iterations);
     }
   }
   
@@ -2644,8 +2560,8 @@ static void* rev_c_new_dac_stream_thread(void* arg) {
         usleep(1000); // 1ms delay before checking again
       }
       
-      // Send DAC write command with trigger wait (trig=true, cont=true, ldac=true, 1 trigger)
-      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, zero_vals, true, true, true, 1, verbose);
+      // Send DAC write command with trigger wait (trig=true, cont=false, ldac=true, 1 trigger)
+      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, zero_vals, true, false, true, 1, verbose);
       total_commands_sent++;
       
       if (verbose) {
@@ -2660,26 +2576,26 @@ cleanup:
   if (*should_stop) {
     printf("Rev C DAC Stream Thread: Stopping stream (user requested), sent %d total commands\n", total_commands_sent);
   } else {
-    printf("Rev C DAC Stream Thread: Stream completed, sent %d total commands (%d loops%s)\n", 
-           total_commands_sent, loops, final_zero_trigger ? " + final zero" : "");
+    printf("Rev C DAC Stream Thread: Stream completed, sent %d total commands (%d iterations%s)\n", 
+           total_commands_sent, iterations, final_zero_trigger ? " + final zero" : "");
   }
   
   return NULL;
 }
 
-// Thread function for Rev C ADC command streaming to all 4 boards (new implementation)
-static void* rev_c_new_adc_cmd_stream_thread(void* arg) {
-  rev_c_new_params_t* stream_data = (rev_c_new_params_t*)arg;
+// Thread function for Rev C ADC command streaming to all 4 boards
+static void* rev_c_adc_cmd_stream_thread(void* arg) {
+  rev_c_params_t* stream_data = (rev_c_params_t*)arg;
   command_context_t* ctx = stream_data->ctx;
-  int loops = stream_data->loops;
+  int iterations = stream_data->iterations;
   int line_count = stream_data->line_count;
   uint32_t delay_cycles = stream_data->delay_cycles;
   volatile bool* should_stop = stream_data->should_stop;
   bool final_zero_trigger = stream_data->final_zero_trigger;
   bool verbose = *(ctx->verbose);
   
-  printf("Rev C ADC Command Stream Thread: Starting (%d lines, %d loops, delay=%u cycles, final_zero=%s)\n", 
-         line_count, loops, delay_cycles, final_zero_trigger ? "yes" : "no");
+  printf("Rev C ADC Command Stream Thread: Starting (%d lines, %d iterations, delay=%u cycles, final_zero=%s)\n", 
+         line_count, iterations, delay_cycles, final_zero_trigger ? "yes" : "no");
   
   int total_commands_sent = 0;
   
@@ -2713,8 +2629,8 @@ static void* rev_c_new_adc_cmd_stream_thread(void* arg) {
     }
   }
   
-  // Process all loops
-  for (int loop = 0; loop < loops && !(*should_stop); loop++) {
+  // Process all iterations
+  for (int iteration = 0; iteration < iterations && !(*should_stop); iteration++) {
     for (int line_num = 1; line_num <= line_count && !(*should_stop); line_num++) {
       
       // For each line, send 3 ADC commands per board:
@@ -2742,20 +2658,20 @@ static void* rev_c_new_adc_cmd_stream_thread(void* arg) {
         }
         
         // Command 1: NOOP with trigger wait for 1 trigger
-        adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, 0, verbose);
+        adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, verbose);
         total_commands_sent++;
         
         // Command 2: NOOP with delay wait for delay_cycles
-        adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, false, delay_cycles, 0, verbose);
+        adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, false, delay_cycles, verbose);
         total_commands_sent++;
         
-        // Command 3: ADC read with no trigger wait (0 triggers)
-        adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, 0, 0, verbose);
+        // Command 3: ADC read with trigger wait for no triggers (0 triggers)
+        adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 0, 0, verbose);
         total_commands_sent++;
         
         if (verbose && line_num <= 3) { // Only show first few lines to avoid spam
-          printf("Rev C ADC Command Stream Thread: Board %d, Line %d, Loop %d, sent 3 ADC commands\n", 
-                 board, line_num, loop + 1);
+          printf("Rev C ADC Command Stream Thread: Board %d, Line %d, Iteration %d, sent 3 ADC commands\n", 
+                 board, line_num, iteration + 1);
         }
       }
       
@@ -2764,11 +2680,11 @@ static void* rev_c_new_adc_cmd_stream_thread(void* arg) {
     }
     
     if (verbose) {
-      printf("Rev C ADC Command Stream Thread: Completed loop %d/%d\n", loop + 1, loops);
+      printf("Rev C ADC Command Stream Thread: Completed iteration %d/%d\n", iteration + 1, iterations);
     }
   }
   
-  // Send final zero ADC commands if requested
+  // Send final ADC commands if final zero line is requested
   if (final_zero_trigger && !(*should_stop)) {
     printf("Rev C ADC Command Stream Thread: Sending final zero ADC commands...\n");
     
@@ -2792,11 +2708,11 @@ static void* rev_c_new_adc_cmd_stream_thread(void* arg) {
       }
       
       // Command 1: NOOP with trigger wait for 1 trigger
-      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, 0, verbose);
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, verbose);
       total_commands_sent++;
       
       // Command 2: NOOP with delay wait for delay_cycles
-      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, false, delay_cycles, 0, verbose);
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, false, delay_cycles, verbose);
       total_commands_sent++;
       
       // Command 3: ADC read with no trigger wait (0 triggers)
@@ -2812,324 +2728,8 @@ static void* rev_c_new_adc_cmd_stream_thread(void* arg) {
   if (*should_stop) {
     printf("Rev C ADC Command Stream Thread: Stopping stream (user requested), sent %d total commands\n", total_commands_sent);
   } else {
-    printf("Rev C ADC Command Stream Thread: Stream completed, sent %d total commands (%d loops%s)\n", 
-           total_commands_sent, loops, final_zero_trigger ? " + final zero" : "");
-  }
-  
-  return NULL;
-}
-
-// Thread function for Rev C DAC command streaming to all 4 boards
-static void* rev_c_dac_stream_thread(void* arg) {
-  rev_c_dac_stream_params_t* stream_data = (rev_c_dac_stream_params_t*)arg;
-  command_context_t* ctx = stream_data->ctx;
-  const char* dac_file = stream_data->dac_file;
-  int loops = stream_data->loops;
-  int line_count = stream_data->line_count;
-  uint32_t delay_cycles = stream_data->delay_cycles;
-  volatile bool* should_stop = stream_data->should_stop;
-  bool input_is_amps = stream_data->input_is_amps;
-  bool verbose = *(ctx->verbose);
-  
-  printf("Rev C DAC Stream Thread: Starting streaming from file '%s' (%d lines, %d loops)\n", 
-         dac_file, line_count, loops);
-  
-  FILE* file = fopen(dac_file, "r");
-  if (file == NULL) {
-    fprintf(stderr, "Rev C DAC Stream Thread: Failed to open file '%s': %s\n", dac_file, strerror(errno));
-    return NULL;
-  }
-  
-  int total_commands_sent = 0;
-  
-  for (int loop = 0; loop < loops && !(*should_stop); loop++) {
-    rewind(file);
-    char line[2048];
-    int line_num = 0;
-    
-    while (fgets(line, sizeof(line), file) && !(*should_stop)) {
-      // Skip empty lines and comments
-      char* trimmed = line;
-      while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
-      if (*trimmed == '\n' || *trimmed == '\r' || *trimmed == '\0' || *trimmed == '#') {
-        continue;
-      }
-      
-      line_num++;
-      
-      // Parse 32 values from the line (already validated in main function)
-      uint16_t values[32];
-      char* token_start = trimmed;
-      char* endptr;
-      
-      if (input_is_amps) {
-        // Parse as floats and convert to DAC units
-        for (int i = 0; i < 32; i++) {
-          while (*token_start == ' ' || *token_start == '\t') token_start++;
-          float amp_value = strtof(token_start, &endptr);
-          values[i] = amps_to_dac(amp_value);
-          token_start = endptr;
-        }
-      } else {
-        // Parse as DAC units (integers)
-        for (int i = 0; i < 32; i++) {
-          while (*token_start == ' ' || *token_start == '\t') token_start++;
-          values[i] = (uint16_t)strtoul(token_start, &endptr, 10);
-          token_start = endptr;
-        }
-      }
-      
-      // Convert values to signed format and send DAC write commands to each board
-      for (int board = 0; board < 4; board++) {
-        // Wait for FIFO space
-        while (!(*should_stop)) {
-          uint32_t fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
-          
-          if (FIFO_PRESENT(fifo_status) == 0) {
-            fprintf(stderr, "Rev C DAC Stream Thread: Board %d FIFO not present, stopping\n", board);
-            goto cleanup;
-          }
-          
-          uint32_t words_used = FIFO_STS_WORD_COUNT(fifo_status);
-          uint32_t available_words = DAC_CMD_FIFO_WORDCOUNT - words_used;
-          if (available_words >= 5) { // Need space for 1 command + 4 data words
-            break; // Space available, proceed with command
-          }
-          
-          usleep(1000); // 1ms delay before checking again
-        }
-        
-        // Convert offset values to signed format for this board's 8 channels
-        int16_t ch_vals[8];
-        for (int ch = 0; ch < 8; ch++) {
-          uint16_t offset_val = values[board * 8 + ch];
-          ch_vals[ch] = offset_to_signed(offset_val);
-        }
-        
-        // Determine cont flag: true for all commands except the final one at the last loop for each board
-        bool is_final_command = (loop == loops - 1) && (line_num == line_count);
-        bool cont_flag = !is_final_command;
-        
-        // Send DAC write command with trigger wait (trig=true, cont=cont_flag, ldac=true, value=0)
-        dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, true, cont_flag, true, 0, verbose);
-        total_commands_sent++;
-        
-        if (verbose && line_num <= 3) { // Only show first few lines to avoid spam
-          printf("Rev C DAC Stream Thread: Board %d, Line %d, Loop %d, sent DAC write (channels %d-%d)\n", 
-                 board, line_num, loop + 1, board * 8, board * 8 + 7);
-        }
-      }
-      
-      // Small delay between lines to prevent overwhelming the system
-      usleep(100); // 100μs delay
-    }
-    
-    if (verbose) {
-      printf("Rev C DAC Stream Thread: Completed loop %d/%d\n", loop + 1, loops);
-    }
-  }
-  
-cleanup:
-  fclose(file);
-  
-  if (*should_stop) {
-    printf("Rev C DAC Stream Thread: Stopping stream (user requested), sent %d total commands\n", total_commands_sent);
-  } else {
-    printf("Rev C DAC Stream Thread: Stream completed, sent %d total commands (%d loops)\n", total_commands_sent, loops);
-  }
-  
-  return NULL;
-}
-
-// Thread function for Rev C ADC command streaming to all 4 boards
-static void* rev_c_adc_cmd_stream_thread(void* arg) {
-  rev_c_dac_stream_params_t* stream_data = (rev_c_dac_stream_params_t*)arg;
-  command_context_t* ctx = stream_data->ctx;
-  int loops = stream_data->loops;
-  int line_count = stream_data->line_count;
-  uint32_t delay_cycles = stream_data->delay_cycles;
-  volatile bool* should_stop = stream_data->should_stop;
-  bool verbose = *(ctx->verbose);
-  
-  printf("Rev C ADC Command Stream Thread: Starting (%d lines, %d loops)\n", line_count, loops);
-  
-  int total_commands_sent = 0;
-  
-  for (int loop = 0; loop < loops && !(*should_stop); loop++) {
-    for (int line = 0; line < line_count && !(*should_stop); line++) {
-      // For each line, send 3 ADC commands to each board
-      for (int board = 0; board < 4; board++) {
-        // Command 1: No-op with trigger wait (value = 1)
-        // Wait for FIFO space for all 3 commands
-        while (!(*should_stop)) {
-          uint32_t fifo_status = sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
-          
-          if (FIFO_PRESENT(fifo_status) == 0) {
-            fprintf(stderr, "Rev C ADC Command Stream Thread: Board %d FIFO not present, stopping\n", board);
-            return NULL;
-          }
-          
-          uint32_t words_used = FIFO_STS_WORD_COUNT(fifo_status);
-          uint32_t available_words = ADC_CMD_FIFO_WORDCOUNT - words_used;
-          if (available_words >= 3) { // Need space for 3 commands
-            break; // Space available, proceed with commands
-          }
-          
-          usleep(1000); // 1ms delay before checking again
-        }
-        
-        // Send 3 ADC commands per board per line
-        adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, 0, verbose); // Trigger wait (value=1)
-        adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, false, delay_cycles, 0, verbose); // Delay
-        adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 0, 0, verbose); // ADC read with trigger wait (value=0)
-        
-        total_commands_sent += 3;
-        
-        if (verbose && line <= 2 && loop == 0) { // Show first few lines of first loop
-          printf("Rev C ADC Command Stream Thread: Board %d, Line %d, sent 3 commands\n", board, line + 1);
-        }
-      }
-      
-      // Small delay between lines
-      usleep(100); // 100μs delay
-    }
-    
-    if (verbose) {
-      printf("Rev C ADC Command Stream Thread: Completed loop %d/%d\n", loop + 1, loops);
-    }
-  }
-  
-  if (*should_stop) {
-    printf("Rev C ADC Command Stream Thread: Stopping (user requested), sent %d total commands\n", total_commands_sent);
-  } else {
-    printf("Rev C ADC Command Stream Thread: Completed, sent %d total commands\n", total_commands_sent);
-  }
-  
-  return NULL;
-}
-
-// Thread function for Rev C ADC data streaming from all 4 boards
-static void* rev_c_adc_data_stream_thread(void* arg) {
-  rev_c_adc_stream_params_t* stream_data = (rev_c_adc_stream_params_t*)arg;
-  command_context_t* ctx = stream_data->ctx;
-  const char* adc_output_file = stream_data->adc_output_file;
-  uint64_t expected_samples = stream_data->expected_samples;
-  bool binary_mode = stream_data->binary_mode;
-  volatile bool* should_stop = stream_data->should_stop;
-  bool verbose = *(ctx->verbose);
-  
-  printf("Rev C ADC Data Stream Thread: Starting to write %llu samples to file '%s' (%s format)\n", 
-         expected_samples, adc_output_file, binary_mode ? "binary" : "ASCII");
-  
-  // Open output file
-  FILE* file = fopen(adc_output_file, binary_mode ? "wb" : "w");
-  if (file == NULL) {
-    fprintf(stderr, "Rev C ADC Data Stream Thread: Failed to open output file '%s': %s\n", 
-           adc_output_file, strerror(errno));
-    return NULL;
-  }
-  
-  uint64_t samples_written = 0;
-  uint32_t read_buffer[4]; // Buffer for reading one sample from each board
-  
-  while (samples_written < expected_samples && !(*should_stop)) {
-    // Read one sample from each board (4 boards = 32 channels total)
-    bool all_boards_have_data = true;
-    
-    // Check that all boards have data available
-    for (int board = 0; board < 4; board++) {
-      uint32_t fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
-      
-      if (FIFO_PRESENT(fifo_status) == 0) {
-        fprintf(stderr, "Rev C ADC Data Stream Thread: Board %d FIFO not present, stopping\n", board);
-        all_boards_have_data = false;
-        break;
-      }
-      
-      if (FIFO_STS_WORD_COUNT(fifo_status) == 0) {
-        all_boards_have_data = false;
-        break;
-      }
-    }
-    
-    if (!all_boards_have_data) {
-      usleep(1000); // Wait 1ms and try again
-      continue;
-    }
-    
-    // Read one sample from each board
-    for (int board = 0; board < 4; board++) {
-      read_buffer[board] = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
-    }
-    
-    if (binary_mode) {
-      // Binary mode: write raw 32-bit words directly
-      size_t written = fwrite(read_buffer, sizeof(uint32_t), 4, file);
-      if (written != 4) {
-        fprintf(stderr, "Rev C ADC Data Stream Thread: Failed to write binary data: %s\n", strerror(errno));
-        break;
-      }
-    } else {
-      // ASCII mode: convert to signed values and write as space-separated text
-      bool first_sample = true;
-      for (int board = 0; board < 4; board++) {
-        uint32_t word = read_buffer[board];
-        
-        // Extract two 16-bit samples from the 32-bit word
-        uint16_t sample1_offset = (uint16_t)(word & 0xFFFF);        // Bits 15:0
-        uint16_t sample2_offset = (uint16_t)((word >> 16) & 0xFFFF); // Bits 31:16
-        
-        // Convert to signed format
-        int16_t sample1_raw = offset_to_signed(sample1_offset);
-        int16_t sample2_raw = offset_to_signed(sample2_offset);
-        
-        // Apply bias correction if available (Rev C mode reads one word per board)
-        // Each word contains 2 samples, so we get channels in pairs
-        // Board 0: channels 0-1, Board 1: channels 8-9, etc.
-        int ch1 = board * 8;     // First channel for this board 
-        int ch2 = ch1 + 1;       // Second channel for this board
-        
-        int16_t sample1_signed = sample1_raw;
-        if (ch1 < 64 && ctx->adc_bias_valid[ch1]) {
-          double corrected = (double)sample1_raw - ctx->adc_bias[ch1];
-          sample1_signed = (int16_t)(corrected + (corrected >= 0 ? 0.5 : -0.5));
-        }
-        
-        int16_t sample2_signed = sample2_raw;
-        if (ch2 < 64 && ctx->adc_bias_valid[ch2]) {
-          double corrected = (double)sample2_raw - ctx->adc_bias[ch2];
-          sample2_signed = (int16_t)(corrected + (corrected >= 0 ? 0.5 : -0.5));
-        }
-        
-        // Write samples with spaces between them
-        if (!first_sample) {
-          fprintf(file, " ");
-        }
-        fprintf(file, "%d %d", sample1_signed, sample2_signed);
-        first_sample = false;
-      }
-      fprintf(file, "\n"); // End the line with 32 samples
-    }
-    
-    samples_written++;
-    
-    // Flush periodically
-    if (samples_written % 100 == 0) {
-      fflush(file);
-      
-      if (verbose && samples_written % 1000 == 0) {
-        printf("Rev C ADC Data Stream Thread: Written %llu/%llu samples\n", samples_written, expected_samples);
-      }
-    }
-  }
-  
-  fclose(file);
-  
-  if (*should_stop) {
-    printf("Rev C ADC Data Stream Thread: Stopping (user requested), wrote %llu samples\n", samples_written);
-  } else {
-    printf("Rev C ADC Data Stream Thread: Completed, wrote %llu samples to file '%s'\n", 
-           samples_written, adc_output_file);
+    printf("Rev C ADC Command Stream Thread: Stream completed, sent %d total commands (%d iterations%s)\n", 
+           total_commands_sent, iterations, final_zero_trigger ? " + final zero" : "");
   }
   
   return NULL;
@@ -3137,6 +2737,8 @@ static void* rev_c_adc_data_stream_thread(void* arg) {
 
 // Rev C compatibility command implementation
 int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  (void)args; (void)arg_count; // Suppress unused parameter warnings
+  
   printf("Starting Rev C compatibility mode...\n");
 
   // Step 1: Make sure the system IS running
@@ -3251,12 +2853,12 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     printf("  DAC units file validation passed: %d valid data lines\n", line_count);
   }
   
-  // Step 7: Prompt for number of loops
-  printf("Enter number of loops: ");
+  // Step 7: Prompt for number of iterations
+  printf("Enter number of iterations: ");
   fflush(stdout);
   
   if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
-    fprintf(stderr, "Failed to read loop count.\n");
+    fprintf(stderr, "Failed to read iteration count.\n");
     return -1;
   }
   
@@ -3266,9 +2868,9 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     input_buffer[len - 1] = '\0';
   }
   
-  int loops = atoi(input_buffer);
-  if (loops < 1) {
-    fprintf(stderr, "Invalid loop count. Must be >= 1.\n");
+  int iterations = atoi(input_buffer);
+  if (iterations < 1) {
+    fprintf(stderr, "Invalid iteration count. Must be >= 1.\n");
     return -1;
   }
   
@@ -3320,6 +2922,33 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   printf("Calculated ADC delay: %u cycles (%.3f ms at %.3f MHz)\n", 
          delay_cycles, adc_delay_ms, spi_freq_mhz);
   
+  // Prompt for trigger lockout time
+  double lockout_ms;
+  printf("Enter trigger lockout time (milliseconds): ");
+  fflush(stdout);
+  
+  if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+    fprintf(stderr, "Failed to read trigger lockout time.\n");
+    return -1;
+  }
+  
+  // Remove newline
+  len = strlen(input_buffer);
+  if (len > 0 && input_buffer[len - 1] == '\n') {
+    input_buffer[len - 1] = '\0';
+  }
+  
+  lockout_ms = atof(input_buffer);
+  if (lockout_ms <= 0) {
+    fprintf(stderr, "Invalid trigger lockout time. Must be > 0 milliseconds.\n");
+    return -1;
+  }
+  
+  // Calculate lockout cycles from milliseconds and SPI frequency
+  uint32_t lockout_time = (uint32_t)(lockout_ms * spi_freq_mhz * 1000.0);
+  printf("Calculated lockout: %u cycles (%.3f ms at %.3f MHz)\n", 
+         lockout_time, lockout_ms, spi_freq_mhz);
+  
   // Step 9: Prompt for final zero trigger
   bool final_zero_trigger = false;
   printf("Add final zero trigger? (y/n): ");
@@ -3366,8 +2995,8 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   printf("  Trigger data: <base>_trig.<ext>\n");
   printf("  Extensions: .csv (ASCII) or .dat (binary)\n");
   
-  // Calculate expected sample count: 3 ADC reads per board per line * loops (plus final zero if enabled)
-  uint64_t total_lines = (uint64_t)line_count * loops;
+  // Calculate expected sample count: 3 ADC reads per board per line * iterations (plus final zero if enabled)
+  uint64_t total_lines = (uint64_t)line_count * iterations;
   if (final_zero_trigger) {
     total_lines++; // Add one more line for final zero
   }
@@ -3375,8 +3004,8 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   uint32_t expected_triggers = (uint32_t)total_lines; // 1 trigger per line
   
   printf("\nCalculated expected data counts:\n");
-  printf("  Lines per loop: %d\n", line_count);
-  printf("  Total loops: %d\n", loops);
+  printf("  Lines per iteration: %d\n", line_count);
+  printf("  Total iterations: %d\n", iterations);
   printf("  Final zero trigger: %s\n", final_zero_trigger ? "Yes" : "No");
   printf("  Total lines to process: %llu\n", total_lines);
   printf("  Expected triggers: %u\n", expected_triggers);
@@ -3385,7 +3014,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   printf("\nStarting Rev C compatibility mode with:\n");
   printf("  Input DAC file: %s\n", resolved_dac_file);
   printf("  Input format: %s\n", input_is_amps ? "Amps (-4.0 to 4.0)" : "DAC units (0-65535)");
-  printf("  Loops: %d\n", loops);
+  printf("  Iterations: %d\n", iterations);
   printf("  ADC delay: %.3f ms (%u cycles)\n", adc_delay_ms, delay_cycles);
   printf("  Output format: %s\n", binary_mode ? "binary" : "ASCII");
   printf("  Final zero trigger: %s\n", final_zero_trigger ? "enabled" : "disabled");
@@ -3401,7 +3030,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, true, false, false, 1, *(ctx->verbose)); // Wait for 1 trigger
     
     // Add ADC NOOP stopper  
-    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, 0, *(ctx->verbose)); // Wait for 1 trigger
+    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, *(ctx->verbose)); // Wait for 1 trigger
   }
 
   // Step 12: Start ADC data streaming for each board
@@ -3476,10 +3105,10 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   adc_cmd_stream_stop = false;
   
   // Prepare DAC streaming thread data
-  rev_c_new_params_t dac_stream_data = {
+  rev_c_params_t dac_stream_data = {
     .ctx = ctx,
     .dac_file = resolved_dac_file,
-    .loops = loops,
+    .iterations = iterations,
     .line_count = line_count,
     .delay_cycles = delay_cycles,
     .should_stop = &dac_stream_stop,
@@ -3488,10 +3117,10 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   };
   
   // Prepare ADC command streaming thread data
-  rev_c_new_params_t adc_cmd_stream_data = {
+  rev_c_params_t adc_cmd_stream_data = {
     .ctx = ctx,
     .dac_file = NULL, // Not used for ADC commands
-    .loops = loops,
+    .iterations = iterations,
     .line_count = line_count,
     .delay_cycles = delay_cycles,
     .should_stop = &adc_cmd_stream_stop,
@@ -3520,7 +3149,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   // Step 9: Start DAC and ADC command streaming threads
   printf("Starting DAC command streaming thread...\n");
   pthread_t dac_thread;
-  if (pthread_create(&dac_thread, NULL, rev_c_new_dac_stream_thread, &dac_stream_data) != 0) {
+  if (pthread_create(&dac_thread, NULL, rev_c_dac_stream_thread, &dac_stream_data) != 0) {
     fprintf(stderr, "Failed to create DAC command streaming thread: %s\n", strerror(errno));
     g_trigger_monitor_should_stop = true;
     if (g_trigger_monitor_active) {
@@ -3530,12 +3159,14 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     return -1;
   }
   
+  // Detach the DAC thread so it can clean up automatically
+  pthread_detach(dac_thread);
+  
   printf("Starting ADC command streaming thread...\n");
   pthread_t adc_cmd_thread;
-  if (pthread_create(&adc_cmd_thread, NULL, rev_c_new_adc_cmd_stream_thread, &adc_cmd_stream_data) != 0) {
+  if (pthread_create(&adc_cmd_thread, NULL, rev_c_adc_cmd_stream_thread, &adc_cmd_stream_data) != 0) {
     fprintf(stderr, "Failed to create ADC command streaming thread: %s\n", strerror(errno));
     dac_stream_stop = true;
-    pthread_join(dac_thread, NULL);
     g_trigger_monitor_should_stop = true;
     if (g_trigger_monitor_active) {
       pthread_join(g_trigger_monitor_tid, NULL);
@@ -3543,6 +3174,9 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     }
     return -1;
   }
+  
+  // Detach the ADC command thread so it can clean up automatically
+  pthread_detach(adc_cmd_thread);
   
   // Wait for command buffers to preload before sending sync trigger
   printf("Step 10: Waiting for command buffers to preload (at least 10 words)...\n");
@@ -3602,8 +3236,6 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
       printf("Aborting Rev C compatibility mode.\n");
       dac_stream_stop = true;
       adc_cmd_stream_stop = true;
-      pthread_join(dac_thread, NULL);
-      pthread_join(adc_cmd_thread, NULL);
       g_trigger_monitor_should_stop = true;
       if (g_trigger_monitor_active) {
         pthread_join(g_trigger_monitor_tid, NULL);
@@ -3626,6 +3258,12 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   }
   trigger_cmd_reset_count(ctx->trigger_ctrl, *(ctx->verbose));
   
+  // Set trigger lockout
+  if (*(ctx->verbose)) {
+    printf("Rev C [VERBOSE]: Setting trigger lockout time to %u cycles\n", lockout_time);
+  }
+  trigger_cmd_set_lockout(ctx->trigger_ctrl, lockout_time, *(ctx->verbose));
+  
   // Set up trigger system after sync
   printf("Setting up trigger system for %u triggers...\n", expected_triggers);
   
@@ -3634,25 +3272,19 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   }
   trigger_cmd_expect_ext(ctx->trigger_ctrl, expected_triggers, true, *(ctx->verbose));
   
-  printf("\nRev C compatibility mode: All streaming started successfully!\n");
+  printf("\nRev C compatibility mode started - streams running in background, trigger monitoring active.\n");
   printf("Data collection is running. Commands are being sent to all 4 boards.\n");
   printf("ADC data will be saved to separate files for each board.\n");
   printf("Trigger data will be saved to the trigger file.\n");
   printf("Use 'stop_waveform' command to stop data collection.\n");
   
-  // Wait for all threads to complete
-  printf("Waiting for streaming threads to complete...\n");
-  pthread_join(dac_thread, NULL);
-  pthread_join(adc_cmd_thread, NULL);
-  
-  // Wait for trigger monitor to complete
-  if (g_trigger_monitor_active) {
-    printf("Waiting for trigger monitor to complete...\n");
-    pthread_join(g_trigger_monitor_tid, NULL);
-    g_trigger_monitor_active = false;
+  if (*(ctx->verbose)) {
+    printf("Expected data collection:\n");
+    printf("  Total triggers: %u\n", expected_triggers);
+    printf("  ADC samples per board: %llu\n", expected_samples_per_board);
+    printf("Rev C compatibility mode started successfully. Streams running in background.\n");
   }
   
-  printf("Rev C compatibility mode completed successfully\n");
   return 0;
 }
 

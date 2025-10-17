@@ -80,14 +80,14 @@ int cmd_read_adc_pair(const char** args, int arg_count, const command_flag_t* fl
     while (!FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
       uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
       if (*(ctx->verbose)) printf("Sample %d - ADC data from board %d: 0x%" PRIx32 "\n", ++count, board, data);
-      adc_print_pair(data, *(ctx->verbose));
+      printf("%s\n", adc_format_pair(data, *(ctx->verbose)));
       printf("\n");
     }
     printf("Read %d samples total.\n", count);
   } else {
     uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
     if (*(ctx->verbose)) printf("Read ADC data from board %d: 0x%" PRIx32 "\n", board, data);
-    adc_print_pair(data, *(ctx->verbose));
+    printf("%s\n", adc_format_pair(data, *(ctx->verbose)));
   }
   return 0;
 }
@@ -113,7 +113,7 @@ int cmd_read_adc_single(const char** args, int arg_count, const command_flag_t* 
       uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
       count++;
       if (*(ctx->verbose)) printf("Sample %d - ADC data from board %d: 0x%" PRIx32 "\n", count, board, data);
-      adc_print_single(data, *(ctx->verbose));
+      printf("%s\n", adc_format_single(data, *(ctx->verbose)));
       printf("\n");
     }
     printf("Read %d samples total for board %d.\n", count, board);
@@ -125,7 +125,7 @@ int cmd_read_adc_single(const char** args, int arg_count, const command_flag_t* 
     
     uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
     if (*(ctx->verbose)) printf("Read ADC data from board %d: 0x%" PRIx32 "\n", board, data);
-    adc_print_single(data, *(ctx->verbose));
+    printf("%s\n", adc_format_single(data, *(ctx->verbose)));
   }
   return 0;
 }
@@ -153,12 +153,12 @@ int cmd_read_adc_dbg(const char** args, int arg_count, const command_flag_t* fla
     printf("Reading all debug information from ADC FIFO for board %d...\n", board);
     while (!FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
       uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
-      adc_print_debug(data, *(ctx->verbose));
+      printf("%s\n", adc_format_debug(data, *(ctx->verbose)));
     }
   } else {
     uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
     printf("Reading one debug sample from ADC FIFO for board %d...\n", board);
-    adc_print_debug(data, *(ctx->verbose));
+    printf("%s\n", adc_format_debug(data, *(ctx->verbose)));
   }
   return 0;
 }
@@ -206,7 +206,7 @@ int cmd_adc_noop(const char** args, int arg_count, const command_flag_t* flags, 
     for (int board = 0; board < 8; board++) {
       if (!connected_boards[board]) continue;
       
-      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, is_trigger, cont, value, 0, *(ctx->verbose));
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, is_trigger, cont, value, *(ctx->verbose));
       printf("  Board %d: ADC no-op command sent\n", board);
     }
   } else {
@@ -216,7 +216,7 @@ int cmd_adc_noop(const char** args, int arg_count, const command_flag_t* flags, 
       return -1;
     }
     
-    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, is_trigger, cont, value, 0, *(ctx->verbose));
+    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, is_trigger, cont, value, *(ctx->verbose));
     printf("ADC no-op command sent to board %d with %s mode, value %u%s.\n", 
            board, is_trigger ? "trigger" : "delay", value, cont ? ", continuous" : "");
   }
@@ -808,7 +808,7 @@ static void* adc_cmd_stream_thread(void* arg) {
           // Send command based on type
           switch (cmd->type) {
             case 'T':
-              adc_cmd_adc_rd(ctx->adc_ctrl, board, true, false, cmd->value, cmd->repeat_count, verbose);
+              adc_cmd_noop(ctx->adc_ctrl, board, true, false, cmd->value, verbose);
               total_commands_sent++;
               break;
             

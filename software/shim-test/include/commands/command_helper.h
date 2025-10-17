@@ -53,6 +53,9 @@ typedef struct command_context {
   pthread_t dac_cmd_stream_threads[8];      // Thread handles for DAC command streaming
   bool dac_cmd_stream_running[8];           // Status of each DAC command stream thread
   volatile bool dac_cmd_stream_stop[8];     // Stop signals for each DAC command stream thread
+  pthread_t dac_debug_stream_threads[8];    // Thread handles for DAC debug data streaming (reading to file)
+  bool dac_debug_stream_running[8];         // Status of each DAC debug data stream thread
+  volatile bool dac_debug_stream_stop[8];   // Stop signals for each DAC debug data stream thread
   
   // Trigger streaming management
   pthread_t trig_data_stream_thread;        // Thread handle for trigger data streaming

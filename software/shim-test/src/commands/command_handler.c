@@ -79,6 +79,8 @@ static command_entry_t command_table[] = {
   {"set_dac_cal", cmd_set_dac_cal, {2, 2, {-1}, "Set DAC calibration value for single channel: <channel> <cal_value> (channel 0-63, cal_value -32768 to 32767)"}},
   {"stream_dac_commands_from_file", cmd_stream_dac_commands_from_file, {2, 3, {-1}, "Start DAC command streaming from waveform file: <board> <file_path> [loop_count] (supports * wildcards)"}},
   {"stop_dac_cmd_stream", cmd_stop_dac_cmd_stream, {1, 1, {-1}, "Stop DAC command streaming for specified board (0-7)"}},
+  {"stream_dac_debug", cmd_stream_dac_debug, {2, 2, {-1}, "Start DAC debug data streaming to file: <board> <file_path> (streams DAC debug data to file)"}},
+  {"stop_dac_debug_stream", cmd_stop_dac_debug_stream, {1, 1, {-1}, "Stop DAC debug data streaming for specified board (0-7)"}},
   
   // ===== ADC COMMANDS (from adc_commands.h) =====
   {"adc_cmd_fifo_sts", cmd_adc_cmd_fifo_sts, {1, 1, {-1}, "Show ADC command FIFO status for specified board (0-7)"}},
@@ -123,7 +125,7 @@ static command_entry_t command_table[] = {
   {"stop_fieldmap", cmd_stop_fieldmap, {0, 0, {-1}, "Stop fieldmap data collection"}},
   {"stop_trigger_monitor", cmd_stop_trigger_monitor, {0, 0, {-1}, "Stop trigger monitoring thread"}},
   {"stop_waveform", cmd_stop_waveform, {0, 0, {-1}, "Stop waveform test - stops all streaming and monitoring"}},
-  {"rev_c_compat", cmd_rev_c_compat, {4, 4, {FLAG_BIN, -1}, "Rev C compatibility: <dac_file> <loops> <adc_output_file> <delay_cycles> [--bin] - Convert Rev C 32-channel DAC files to Rev D format"}},
+  {"rev_c_compat", cmd_rev_c_compat, {0, 0, {FLAG_BIN, FLAG_NO_RESET, -1}, "Interactive Rev C compatibility mode: prompts for DAC file, loops, output file, and delay [--bin] [--no_reset]"}},
   {"dac_zero", cmd_dac_zero, {1, 1, {FLAG_NO_RESET, -1}, "Set DAC channels to calibrated zero: <board_num|all> [--no_reset]"}},
   
   // ===== COMMAND LOGGING/PLAYBACK (from command_handler.c) =====
