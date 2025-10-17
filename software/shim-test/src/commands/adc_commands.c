@@ -845,8 +845,8 @@ cleanup:
     printf("ADC Command Stream Thread[%d]: Stopping (user requested), sent %d total commands (%d total words)\n",
            board, total_commands_sent, total_words_sent);
   } else {
-    printf("ADC Command Stream Thread[%d]: Completed, sent %d total commands (%d iterations)\n", 
-           board, total_commands_sent, stream_data->iterations);
+    printf("ADC Command Stream Thread[%d]: Completed, sent %d total commands (%d total words, %d iterations)\n", 
+           board, total_commands_sent, total_words_sent, stream_data->iterations);
   }
   
   // Mark stream as not running and clean up
