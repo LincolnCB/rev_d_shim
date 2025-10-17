@@ -718,6 +718,7 @@ void* dac_cmd_stream_thread(void* arg) {
   }
   
   int total_commands_sent = 0;
+  int total_words_sent = 0;
   int current_iteration = 0;
   
   while (!(*should_stop) && current_iteration < iterations) {
@@ -756,14 +757,15 @@ void* dac_cmd_stream_thread(void* arg) {
         
         commands_sent_this_iteration++;
         total_commands_sent++;
+        total_words_sent += words_needed;
         cmd_index++;
         
         if (*(ctx->verbose)) {
-          printf("DAC Command Stream Thread[%d]: Iteration %d/%d, Sent command %d/%d (%s, value=%u, %s, cont=%s) [FIFO: %u/%u words]\n", 
+          printf("DAC Command Stream Thread[%d]: Iteration %d/%d, Sent command %d/%d (%s, value=%u, %s, cont=%s) [FIFO: %u/%u words, %d needed]\n", 
                  board, current_iteration + 1, iterations, commands_sent_this_iteration, command_count, 
                  cmd->is_trigger ? "trigger" : "delay", cmd->value,
                  cmd->has_ch_vals ? "with ch_vals" : "noop",
-                 cont_flag ? "true" : "false", words_used + words_needed + 1, DAC_CMD_FIFO_WORDCOUNT);
+                 cont_flag ? "true" : "false", words_used, DAC_CMD_FIFO_WORDCOUNT, words_needed);
         }
       } else {
         // Not enough space in FIFO, sleep and try again
@@ -780,11 +782,11 @@ void* dac_cmd_stream_thread(void* arg) {
 
 cleanup:
   if (*should_stop) {
-    printf("DAC Command Stream Thread[%d]: Stopping stream (user requested), sent %d total commands (%d complete iteration%s)\n", 
-           board, total_commands_sent, current_iteration, iterations == 1 ? "" : "s");
+    printf("DAC Command Stream Thread[%d]: Stopping stream (user requested), sent %d total commands (%d total words, %d complete iteration%s)\n", 
+           board, total_commands_sent, total_words_sent, current_iteration, iterations == 1 ? "" : "s");
   } else {
-    printf("DAC Command Stream Thread[%d]: Stream completed, sent %d total commands from file '%s' (%d iteration%s)\n", 
-           board, total_commands_sent, file_path, iterations, iterations == 1 ? "" : "s");
+    printf("DAC Command Stream Thread[%d]: Stream completed, sent %d total commands from file '%s' (%d total words, %d iteration%s)\n", 
+           board, total_commands_sent, total_words_sent, file_path, iterations, iterations == 1 ? "" : "s");
   }
   
   ctx->dac_cmd_stream_running[board] = false;

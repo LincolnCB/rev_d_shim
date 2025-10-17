@@ -773,6 +773,7 @@ static void* adc_cmd_stream_thread(void* arg) {
   uint8_t board = stream_data->board;
   bool verbose = *(ctx->verbose);
   int total_commands_sent = 0;
+  int total_words_sent = 0;
   
   if (verbose) {
     printf("ADC Command Stream Thread[%d]: Starting (%d commands, %d iterations)\n", 
@@ -790,7 +791,7 @@ static void* adc_cmd_stream_thread(void* arg) {
       adc_command_t* cmd = &stream_data->commands[i];
       
       // Calculate words needed for this command
-      uint32_t words_needed = 1; // Default for T, D, O commands
+      uint32_t words_needed = ((cmd->type == 'D') && (cmd->repeat_count > 0)) ? 2 : 1;
       
       // Check command FIFO status and ensure we have enough space
       bool command_sent = false;
@@ -809,21 +810,14 @@ static void* adc_cmd_stream_thread(void* arg) {
           switch (cmd->type) {
             case 'T':
               adc_cmd_noop(ctx->adc_ctrl, board, true, false, cmd->value, verbose);
-              total_commands_sent++;
               break;
             
             case 'D':
               adc_cmd_adc_rd(ctx->adc_ctrl, board, false, false, cmd->value, cmd->repeat_count, verbose);
-              if (cmd->repeat_count > 0) {
-                total_commands_sent += 2; // Two command words if repeat_count > 0
-              } else {
-                total_commands_sent++;
-              }
               break;
             
             case 'O':
               adc_cmd_set_ord(ctx->adc_ctrl, board, cmd->order, verbose);
-              total_commands_sent++;
               break;
             default:
               fprintf(stderr, "Invalid ADC command type: %c\n", cmd->type);
@@ -831,6 +825,8 @@ static void* adc_cmd_stream_thread(void* arg) {
           }
           
           command_sent = true;
+          total_commands_sent++;
+          total_words_sent += words_needed;
           
           if (verbose) {
             printf("ADC Command Stream Thread[%d]: Sent command %c for board %d [FIFO: %u/%u words, needed %u]\n", 
@@ -846,7 +842,8 @@ static void* adc_cmd_stream_thread(void* arg) {
 
 cleanup:
   if (*(stream_data->should_stop)) {
-    printf("ADC Command Stream Thread[%d]: Stopping (user requested), sent %d total commands\n", board, total_commands_sent);
+    printf("ADC Command Stream Thread[%d]: Stopping (user requested), sent %d total commands (%d total words)\n",
+           board, total_commands_sent, total_words_sent);
   } else {
     printf("ADC Command Stream Thread[%d]: Completed, sent %d total commands (%d iterations)\n", 
            board, total_commands_sent, stream_data->iterations);

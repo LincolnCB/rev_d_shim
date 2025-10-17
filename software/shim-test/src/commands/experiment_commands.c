@@ -2444,6 +2444,7 @@ static void* rev_c_dac_stream_thread(void* arg) {
   }
   
   int total_commands_sent = 0;
+  int total_words_sent = 0;
   
   // Process all iterations
   for (int iteration = 0; iteration < iterations && !(*should_stop); iteration++) {
@@ -2518,9 +2519,10 @@ static void* rev_c_dac_stream_thread(void* arg) {
         // Send DAC write command with trigger wait (trig=true, cont=cont, ldac=true, 1 trigger)
         dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, true, cont, true, 1, verbose);
         total_commands_sent++;
+        total_words_sent += 5; // 1 command + 4 data words
         
         if (verbose && line_num <= 3) { // Only show first few lines to avoid spam
-          printf("Rev C DAC Stream Thread: Board %d, Line %d, Iteration %d, sent DAC write (channels %d-%d)\n", 
+          printf("Rev C DAC Stream Thread: Board %d, Line %d, Iteration %d, sent DAC write (5 words, channels %d-%d)\n", 
                  board, line_num, iteration + 1, board * 8, board * 8 + 7);
         }
       }
@@ -2563,6 +2565,7 @@ static void* rev_c_dac_stream_thread(void* arg) {
       // Send DAC write command with trigger wait (trig=true, cont=false, ldac=true, 1 trigger)
       dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, zero_vals, true, false, true, 1, verbose);
       total_commands_sent++;
+      total_words_sent += 5; // 1 command + 4 data words
       
       if (verbose) {
         printf("Rev C DAC Stream Thread: Board %d, sent final zero DAC write\n", board);
@@ -2574,10 +2577,11 @@ cleanup:
   fclose(file);
   
   if (*should_stop) {
-    printf("Rev C DAC Stream Thread: Stopping stream (user requested), sent %d total commands\n", total_commands_sent);
+    printf("Rev C DAC Stream Thread: Stopping stream (user requested), sent %d total commands (%d total words)\n",
+            total_commands_sent, total_words_sent);
   } else {
-    printf("Rev C DAC Stream Thread: Stream completed, sent %d total commands (%d iterations%s)\n", 
-           total_commands_sent, iterations, final_zero_trigger ? " + final zero" : "");
+    printf("Rev C DAC Stream Thread: Stream completed, sent %d total commands (%d total words, %d iterations%s)\n", 
+           total_commands_sent, total_words_sent, iterations, final_zero_trigger ? " + final zero" : "");
   }
   
   return NULL;
@@ -2598,6 +2602,7 @@ static void* rev_c_adc_cmd_stream_thread(void* arg) {
          line_count, iterations, delay_cycles, final_zero_trigger ? "yes" : "no");
   
   int total_commands_sent = 0;
+  int total_words_sent = 0;
   
   // First, send set_ord commands to all boards (order: 01234567)
   printf("Rev C ADC Command Stream Thread: Sending set_ord commands to all boards...\n");
@@ -2623,6 +2628,7 @@ static void* rev_c_adc_cmd_stream_thread(void* arg) {
     
     adc_cmd_set_ord(ctx->adc_ctrl, (uint8_t)board, channel_order, verbose);
     total_commands_sent++;
+    total_words_sent ++;
     
     if (verbose) {
       printf("Rev C ADC Command Stream Thread: Board %d, sent set_ord command\n", board);
@@ -2660,14 +2666,17 @@ static void* rev_c_adc_cmd_stream_thread(void* arg) {
         // Command 1: NOOP with trigger wait for 1 trigger
         adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, verbose);
         total_commands_sent++;
+        total_words_sent++;
         
         // Command 2: NOOP with delay wait for delay_cycles
         adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, false, delay_cycles, verbose);
         total_commands_sent++;
+        total_words_sent++;
         
         // Command 3: ADC read with trigger wait for no triggers (0 triggers)
         adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 0, 0, verbose);
         total_commands_sent++;
+        total_words_sent++;
         
         if (verbose && line_num <= 3) { // Only show first few lines to avoid spam
           printf("Rev C ADC Command Stream Thread: Board %d, Line %d, Iteration %d, sent 3 ADC commands\n", 
@@ -2710,14 +2719,17 @@ static void* rev_c_adc_cmd_stream_thread(void* arg) {
       // Command 1: NOOP with trigger wait for 1 trigger
       adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, verbose);
       total_commands_sent++;
+      total_words_sent++;
       
       // Command 2: NOOP with delay wait for delay_cycles
       adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, false, delay_cycles, verbose);
       total_commands_sent++;
+      total_words_sent++;
       
       // Command 3: ADC read with no trigger wait (0 triggers)
       adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, 0, 0, verbose);
       total_commands_sent++;
+      total_words_sent++;
       
       if (verbose) {
         printf("Rev C ADC Command Stream Thread: Board %d, sent final zero ADC commands\n", board);
@@ -2726,10 +2738,11 @@ static void* rev_c_adc_cmd_stream_thread(void* arg) {
   }
   
   if (*should_stop) {
-    printf("Rev C ADC Command Stream Thread: Stopping stream (user requested), sent %d total commands\n", total_commands_sent);
+    printf("Rev C ADC Command Stream Thread: Stopping stream (user requested), sent %d total commands (%d total words)\n",
+           total_commands_sent, total_words_sent);
   } else {
-    printf("Rev C ADC Command Stream Thread: Stream completed, sent %d total commands (%d iterations%s)\n", 
-           total_commands_sent, iterations, final_zero_trigger ? " + final zero" : "");
+    printf("Rev C ADC Command Stream Thread: Stream completed, sent %d total commands (%d total words, %d iterations%s)\n", 
+           total_commands_sent, total_words_sent, iterations, final_zero_trigger ? " + final zero" : "");
   }
   
   return NULL;
