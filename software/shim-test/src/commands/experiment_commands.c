@@ -2726,8 +2726,8 @@ static void* rev_c_adc_cmd_stream_thread(void* arg) {
       total_commands_sent++;
       total_words_sent++;
       
-      // Command 3: ADC read with no trigger wait (0 triggers)
-      adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, 0, 0, verbose);
+      // Command 3: ADC read with trigger wait for no triggers (0 triggers)
+      adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 0, 0, verbose);
       total_commands_sent++;
       total_words_sent++;
       
