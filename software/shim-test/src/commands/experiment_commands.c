@@ -3013,7 +3013,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   if (final_zero_trigger) {
     total_lines++; // Add one more line for final zero
   }
-  uint64_t expected_samples_per_board = total_lines * 3; // 3 ADC reads per line per board
+  uint64_t expected_samples_per_board = total_lines * 4; // 4 ADC samples per line per board
   uint32_t expected_triggers = (uint32_t)total_lines; // 1 trigger per line
   
   printf("\nCalculated expected data counts:\n");
