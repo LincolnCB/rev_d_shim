@@ -2197,15 +2197,15 @@ int cmd_stop_fieldmap(const char** args, int arg_count, const command_flag_t* fl
 }
 
 // Helper function to convert Amps to DAC units
-// Maps -4.0A -> 0, 0A -> 32767, 4.0A -> 65535
+// Maps -5.1A -> 0, 0A -> 32767, 5.1A -> 65535
 static uint16_t amps_to_dac(float amps) {
   // Clamp to valid range
-  if (amps < -4.0f) amps = -4.0f;
-  if (amps > 4.0f) amps = 4.0f;
+  if (amps < -5.1f) amps = -5.1f;
+  if (amps > 5.1f) amps = 5.1f;
   
-  // Convert: -4.0 to 4.0 maps to 0 to 65535
-  // Formula: dac = ((amps + 4.0) / 8.0) * 65535
-  float normalized = (amps + 4.0f) / 8.0f;  // 0.0 to 1.0
+  // Convert: -5.1 to 5.1 maps to 0 to 65535
+  // Formula: dac = ((amps + 5.1) / (5.1 * 2)) * 65535
+  float normalized = (amps + 5.1f) / (5.1f * 2.0f);  // 0.0 to 1.0
   uint16_t dac_value = (uint16_t)(normalized * 65535.0f + 0.5f);  // Round to nearest
   return dac_value;
 }
@@ -2252,9 +2252,9 @@ static int validate_rev_c_file_format_amps(const char* file_path, int* line_coun
         break; // No valid number found
       }
       
-      // Check range (-4.0 to 4.0)
-      if (val < -4.0f || val > 4.0f) {
-        fprintf(stderr, "Rev C DAC file (Amps) line %d, value %d: %.3f out of range (-4.0 to 4.0)\n", 
+      // Check range (-5.1 to 5.1)
+      if (val < -5.1f || val > 5.1f) {
+        fprintf(stderr, "Rev C DAC file (Amps) line %d, value %d: %.3f out of range (-5.1 to 5.1)\n", 
                 line_num, i+1, val);
         fclose(file);
         return -1;
@@ -2824,7 +2824,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   
   printf("\nInput units selection:\n");
   printf("  1) Unsigned DAC units (integers 0-65535)\n");
-  printf("  2) Amps (floats -4.0 to 4.0)\n");
+  printf("  2) Amps (floats -5.1 to 5.1)\n");
   printf("Enter choice (1 or 2): ");
   fflush(stdout);
   
@@ -2845,7 +2845,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     printf("Selected: Unsigned DAC units (0-65535)\n");
   } else if (choice == 2) {
     input_is_amps = true;
-    printf("Selected: Amps (-4.0 to 4.0)\n");
+    printf("Selected: Amps (-5.1 to 5.1)\n");
   } else {
     fprintf(stderr, "Invalid choice '%s'. Please enter 1 or 2.\n", input_buffer);
     return -1;
@@ -3026,7 +3026,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   
   printf("\nStarting Rev C compatibility mode with:\n");
   printf("  Input DAC file: %s\n", resolved_dac_file);
-  printf("  Input format: %s\n", input_is_amps ? "Amps (-4.0 to 4.0)" : "DAC units (0-65535)");
+  printf("  Input format: %s\n", input_is_amps ? "Amps (-5.1 to 5.1)" : "DAC units (0-65535)");
   printf("  Iterations: %d\n", iterations);
   printf("  ADC delay: %.3f ms (%u cycles)\n", adc_delay_ms, delay_cycles);
   printf("  Output format: %s\n", binary_mode ? "binary" : "ASCII");

@@ -379,8 +379,7 @@ def write_adc_readout_file(filename, dac_duration_ms, adc_sample_rate_ksps, extr
     
     The file format follows the ADC command structure:
     - T <value>: Trigger command (waits for trigger)
-    - L <count>: Loop command (repeats next command)
-    - D <delay>: Delay command (reads with delay timing)
+    - D <delay> <repeat_count>: Delay command (reads with delay timing, repeating additional times)
     - O <ch0> <ch1> ... <ch7>: Order command (sets channel order)
     
     Args:
@@ -413,7 +412,7 @@ def write_adc_readout_file(filename, dac_duration_ms, adc_sample_rate_ksps, extr
             f.write(f"# SPI clock frequency: {spi_clock_freq_mhz:.6g} MHz\n")
             f.write(f"# ADC delay value: {adc_delay_value}\n")
             f.write(f"# Total samples: {total_samples}\n")
-            f.write("# Format: T <value> (trigger) / L <count> (loop) / D <delay> (delay/read) / O <ch0> <ch1> ... <ch7> (order)\n")
+            f.write("# Format: T <value> (trigger) / D <delay> <repeat_count> (delay/read) / O <ch0> <ch1> ... <ch7> (order)\n")
             f.write("#\n")
             
             # Write channel order command (sets ADC channel order to 0 1 2 3 4 5 6 7)
@@ -424,11 +423,10 @@ def write_adc_readout_file(filename, dac_duration_ms, adc_sample_rate_ksps, extr
             f.write("# Trigger command: wait for 1 trigger to start sampling\n")
             f.write("T 1\n")
             
-            # Write loop command and delay command
-            f.write(f"# Loop command: repeat next command {total_samples} times\n")
-            f.write(f"L {total_samples}\n")
-            f.write(f"# Delay command: read ADC with {adc_delay_value} cycle delay\n")
-            f.write(f"D {adc_delay_value}\n")
+            # Write delay command with repeat count
+            repeat_count = total_samples - 1  # First execution doesn't count as repeat
+            f.write(f"# Delay command: read ADC with {adc_delay_value} cycle delay, repeating an additional {repeat_count} times\n")
+            f.write(f"D {adc_delay_value} {repeat_count}\n")
         
         print(f"ADC readout file written to: {filename}")
         print(f"Total samples: {total_samples}")
