@@ -50,6 +50,8 @@ The SETUP
 - Make sure we have a file at path /etc/ppp/peers/IPaddrOfFPGA with
   the right contents on the Host OS
 
+- Run pppd client on the Host OS
+
 After the above overview, let us give a detailed walk-through.
 
 Since, we initially do not have a TCP/IP link established, we need to
@@ -112,6 +114,8 @@ nocrtscts
 # local
 nodetach
 asyncmap 0
+
+Host> pppd call 192.168.1.10 /dev/ttyUSBn
 
 If you are running rsync, rcp, telnet, there is probably no need to
 install anything special on Petalinux. However, scp and sftp require
