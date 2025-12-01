@@ -1122,9 +1122,9 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   if (!skip_cal) {
     printf("\nRunning channel calibration for all connected boards...\n");
     
-    // Use --all flag to calibrate all channels on all connected boards
-    command_flag_t all_flag = FLAG_ALL;
-    int cal_result = cmd_channel_cal(NULL, 0, &all_flag, 1, ctx);
+    // Use "all" argument to calibrate all channels on all connected boards
+    const char* cal_args[] = {"all"};
+    int cal_result = cmd_channel_cal(cal_args, 1, NULL, 0, ctx);
     
     if (cal_result != 0) {
       printf("\nSome channels may have calibration issues (see output above).\n");
@@ -1991,9 +1991,9 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   if (!skip_cal) {
     printf("\nRunning channel calibration for all connected boards...\n");
     
-    // Use --all flag to calibrate all channels on all connected boards
-    command_flag_t all_flag = FLAG_ALL;
-    int cal_result = cmd_channel_cal(NULL, 0, &all_flag, 1, ctx);
+    // Use "all" argument to calibrate all channels on all connected boards
+    const char* cal_args[] = {"all"};
+    int cal_result = cmd_channel_cal(cal_args, 1, NULL, 0, ctx);
     if (cal_result != 0) {
       fprintf(stderr, "Calibration failed\n");
       return -1;

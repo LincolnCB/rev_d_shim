@@ -10,6 +10,11 @@ Handles optional time vector in the input file.
 
 Author: Consolidated from waveform_from_npy.py, waveform_from_csv.py, waveform_from_mat.py
 """
+
+# --- User Option: Dump time+channelA as .npy for import_npy ---
+DUMP_NPY = False  # Set True to enable dumping time+channelA as .npy
+DUMP_NPY_FILENAME = None  # Set to None for auto-naming, or provide a string
+
 import sys
 import os
 import numpy as np
@@ -375,7 +380,7 @@ def main():
   has_time = prompt_yes_no("Does the file include a time vector column?", default=True)
 
   # Get SPI clock and sample rate
-  spi_clock_freq = prompt("SPI clock frequency (MHz, default 20): ", default=20, type_=float)
+  spi_clock_freq = prompt("SPI clock frequency (MHz, default 50): ", default=50, type_=float)
   if not has_time:
     sample_rate = prompt("Sample rate (ksps): ", type_=float)
   else:
@@ -407,6 +412,7 @@ def main():
     print(f"Unsupported file extension: {ext}")
     sys.exit(1)
   
+
   # If zero_at_end, append a final zero sample if not already present
   if zero_at_end:
     # Check if last sample is already all zeros
@@ -424,13 +430,22 @@ def main():
           print("Please enter a valid number")
       # Set the final time entry
       time = np.append(time, time[-1] + extra_zero_time_ms / 1e3)
-  
-  print(f"Final line of samples:\n{samples_A[-1]}")
+
+  # --- Dump time+channelA as .npy if enabled ---
+  if DUMP_NPY:
+    # Compose array: first column is time, rest are channel A values
+    arr = np.column_stack((time, samples_A))
+    if DUMP_NPY_FILENAME:
+      npy_out = DUMP_NPY_FILENAME
+    else:
+      base = os.path.splitext(os.path.basename(filename))[0]
+      npy_out = f"{base}_dump.npy"
+    np.save(npy_out, arr)
+    print(f"[DUMP_NPY] Saved time+channelA as: {npy_out}")
 
   # Convert and trim channels and time
   bd_samples_A = trim_and_zero_channels(samples_A)
   bd_samples_DAC = current_to_dac_value(bd_samples_A)
-  print(f"Final line of DAC samples:\n{bd_samples_DAC[0, :, -1]}")
 
   # Convert time vector to integer clock cycles after trimming
   spi_clock_freq = params['spi_clock_freq']
@@ -457,13 +472,30 @@ def main():
     write_waveform_file(wfm_filename, time_cycles, bd_samples_DAC[bd], params['spi_clock_freq'], filename, is_zeroed=False)
 
   if params.get('create_zero_waveform', False):
+    # Make zero waveform: one trigger and one D per duration, D delay = duration
     zero_samples = np.zeros_like(bd_samples_DAC[0])
     zero_filename = f"{outname}_zero.wfm"
-    write_waveform_file(zero_filename, time, zero_samples, params['spi_clock_freq'], filename, is_zeroed=True)
+    durations_cycles = calculate_dac_durations(time_cycles)
+    try:
+      with open(zero_filename, 'w') as f:
+        f.write("# Zeroed DAC Waveform File (trigger and D per duration)\n")
+        f.write(f"# Source file: {filename}\n")
+        f.write(f"# SPI clock frequency: {params['spi_clock_freq']:.6g} MHz\n")
+        f.write(f"# Board: {zero_filename}\n")
+        f.write(f"# Channels: 8\n")
+        f.write("# Format: T 1 <ch0-ch7> (trigger) / D <delay> <ch0-ch7> (delay)\n")
+        for dur in durations_cycles:
+          f.write("T 1" + ''.join(f" 0" for _ in range(zero_samples.shape[0])) + "\n")
+          f.write(f"D {dur}" + ''.join(f" 0" for _ in range(zero_samples.shape[0])) + "\n")
+      print(f"Zeroed waveform file written to: {zero_filename}")
+    except IOError as e:
+      print(f"Error writing zeroed waveform file {zero_filename}: {e}")
+      sys.exit(1)
   
   # Write ADC readout file if requested
   if params.get('create_adc_readout', False):
-    durations_cycles = calculate_dac_durations(time)
+    # Use trigger/duration segmentation based on time_cycles
+    durations_cycles = calculate_dac_durations(time_cycles)
     rdout_filename = outname if outname.endswith('.rdout') else f"{outname}.rdout"
     write_adc_readout_file(
       rdout_filename,
