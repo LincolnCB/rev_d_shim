@@ -38,6 +38,13 @@ typedef struct {
   bool verbose;
 } trigger_monitor_params_t;
 
+// Linearity status for channel calibration
+typedef enum {
+    LINEARITY_LINEAR = 0,     // Good linearity, calibration successful
+    LINEARITY_ZERO = 1,       // Slope is constant near zero (likely disconnected)
+    LINEARITY_NONLINEAR = 2   // Slope outside acceptable range (likely oscillations)
+} linearity_status_t;
+
 // Thread function for trigger monitoring
 static void* trigger_monitor_thread(void* arg);
 
@@ -549,10 +556,10 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
     
     // Perform calibration iterations
     bool calibration_failed = false;
-    bool poor_linearity = false;
+    linearity_status_t cal_sts = LINEARITY_LINEAR;
     int completed_iterations = 0;
     
-    for (int iter = 0; iter < calibration_iterations && !calibration_failed && !poor_linearity; iter++) {
+    for (int iter = 0; iter < calibration_iterations && !calibration_failed && (cal_sts == LINEARITY_LINEAR); iter++) {
       // Arrays to store DAC values and corresponding averaged ADC readings
       double dac_vals[num_dac_values];
       double avg_adc_vals[num_dac_values];
@@ -632,6 +639,14 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
         sum_xy += dac_vals[i] * avg_adc_vals[i];
         sum_x2 += dac_vals[i] * dac_vals[i];
       }
+
+      // Calculate the variance in y samples (averaged) to detect oscillations even with 0 slope
+      double mean_y = sum_y / num_dac_values;
+      double variance_y = 0.0;
+      for (int i = 0; i < num_dac_values; i++) {
+        double diff = avg_adc_vals[i] - mean_y;
+        variance_y += diff * diff;
+      }
       
       // Check for division by zero before calculating slope
       double denominator = num_dac_values * sum_x2 - sum_x * sum_x;
@@ -647,20 +662,21 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
         intercept = (sum_y - slope * sum_x) / num_dac_values;
       }
       
-      // Check for poor linearity conditions
-      bool this_iter_poor_linearity = false;
-      
       // Check for division by zero (infinite slope)
       if (division_by_zero) {
-        this_iter_poor_linearity = true;
+        cal_sts = LINEARITY_NONLINEAR;
       }
-      // Check for slope outside acceptable range (< 0.99 or > 1.01)
-      else if (slope < 0.95 || slope > 1.05) {
-        this_iter_poor_linearity = true;
+      // Check if the slope is close to zero AND variance is low (disconnected)
+      else if (slope > -0.02 && slope < 0.02 && variance_y < 100.0) {
+        cal_sts = LINEARITY_ZERO;
       }
-      // Check for negative slope
-      else if (slope < 0) {
-        this_iter_poor_linearity = true;
+      // Check if slope is inside acceptable range
+      else if (slope > 0.95 && slope < 1.05) {
+        cal_sts = LINEARITY_LINEAR;
+      }
+      // Otherwise, non-linear (likely oscillations)
+      else {
+        cal_sts = LINEARITY_NONLINEAR;
       }
 
       // If verbose, print the updates to the calibration value
@@ -716,11 +732,6 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
       
       completed_iterations++;
       
-      // Set poor linearity flag if this iteration has issues
-      if (this_iter_poor_linearity) {
-        poor_linearity = true;
-      }
-      
       fflush(stdout);
     }
 
@@ -749,19 +760,41 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
     if (*(ctx->verbose)) {
       if (calibration_failed) {
         printf(" Calibration FAILED (code bug)");
-      } else if (poor_linearity) {
-        printf(" Poor linearity (check connections)");
       } else {
-        printf(" Calibration OK");
+        switch (cal_sts) {
+          case LINEARITY_LINEAR:
+            printf(" Calibration OK");
+            break;
+          case LINEARITY_ZERO:
+            printf(" Poor linearity (check connections)");
+            break;
+          case LINEARITY_NONLINEAR:
+            printf(" Nonlinear (possible oscillations)");
+            break;
+          default:
+            printf(" Unknown calibration status");
+            break;
+        }
       }
     }
     else {
       if (calibration_failed) {
         printf("-F- |");
-      } else if (poor_linearity) {
-        printf("-X- |");
       } else {
-        printf("--- |");
+        switch (cal_sts) {
+          case LINEARITY_LINEAR:
+            printf("--- |");
+            break;
+          case LINEARITY_ZERO:
+            printf("-X- |");
+            break;
+          case LINEARITY_NONLINEAR:
+            printf("~E~ |");
+            break;
+          default:
+            printf("??? |");
+            break;
+        }
       }
     }
     
