@@ -11,8 +11,6 @@ Format: [D|T] <value> [ch0 ch1 ch2 ch3 ch4 ch5 ch6 ch7]
 - D/T: Delay or Trigger mode
 - value: 32-bit unsigned integer (max 33554431)
 - ch0-ch7: Optional signed 16-bit integers (-32767 to 32767)
-
-Author: Generated for rev_d_shim project
 """
 
 import math

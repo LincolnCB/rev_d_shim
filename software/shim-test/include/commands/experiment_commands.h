@@ -20,6 +20,10 @@ int cmd_load_adc_bias(const char** args, int arg_count, const command_flag_t* fl
 // Waveform test command - easily load, run, and log waveforms
 int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
+// Helper for waveform_test DAC file default selection
+// (static in .c, but prototype here if needed elsewhere)
+// static void get_next_bd_wfm_if_exists(const char* filename, char* out_filename, size_t out_size);
+
 // Rev C compatibility command - convert Rev C DAC files and stream to ADC output
 int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 

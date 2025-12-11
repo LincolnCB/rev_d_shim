@@ -93,6 +93,40 @@ static int count_trigger_lines_in_file(const char* file_path) {
   return trigger_count;
 }
 
+// Checks if a file exists
+static bool file_exists(const char* filename) {
+  struct stat buffer;
+  return (stat(filename, &buffer) == 0);
+}
+
+// If the filename ends with _bdX.wfm, check for _bd(X+1).wfm
+// If it exists, return it in out_filename, else copy original
+static void get_next_bd_wfm_if_exists(const char* filename, char* out_filename, size_t out_size) {
+  size_t len = strlen(filename);
+  if (len < 8) { // Minimum length for _bdX.wfm
+    strncpy(out_filename, filename, out_size);
+    out_filename[out_size-1] = '\0';
+    return;
+  }
+  // Look for pattern _bdX.wfm at the end
+  const char* suffix = strstr(filename, "_bd");
+  if (suffix && strlen(suffix) == 8 && strncmp(suffix+5, ".wfm", 4) == 0) {
+    int bd_num = suffix[3] - '0';
+    if (bd_num >= 0 && bd_num <= 7) {
+      char next_filename[1024];
+      snprintf(next_filename, sizeof(next_filename), "%.*s_bd%d.wfm", (int)(suffix-filename), filename, bd_num+1);
+      if (file_exists(next_filename)) {
+        strncpy(out_filename, next_filename, out_size);
+        out_filename[out_size-1] = '\0';
+        return;
+      }
+    }
+  }
+  // Default: keep original
+  strncpy(out_filename, filename, out_size);
+  out_filename[out_size-1] = '\0';
+}
+
 // Helper function to calculate expected number of ADC words from an ADC command file
 static uint64_t calculate_expected_adc_words(const char* file_path, int iterations, bool verbose) {
   // Parse the ADC command file to count D commands (only these generate ADC words)
@@ -854,6 +888,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   char resolved_adc_files[8][1024] = {0};  // Resolved ADC file paths
   
   char previous_dac_file[1024] = "";
+  char previous_dac_file_checked[1024] = "";
   char previous_adc_file[1024] = "";
   
   for (int board = 0; board < 8; board++) {
@@ -864,10 +899,17 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     // Prompt for DAC command file using helper function
     char dac_prompt[128];
     snprintf(dac_prompt, sizeof(dac_prompt), "Enter DAC command file for board %d", board);
-    
-    if (prompt_file_selection(dac_prompt, 
-                             strlen(previous_dac_file) > 0 ? previous_dac_file : NULL,
-                             resolved_dac_files[board], 
+
+    // Check if previous_dac_file ends with _bdX.wfm and if _bd(X+1).wfm exists
+    if (strlen(previous_dac_file) > 0) {
+      get_next_bd_wfm_if_exists(previous_dac_file, previous_dac_file_checked, sizeof(previous_dac_file_checked));
+    } else {
+      previous_dac_file_checked[0] = '\0';
+    }
+
+    if (prompt_file_selection(dac_prompt,
+                             strlen(previous_dac_file_checked) > 0 ? previous_dac_file_checked : NULL,
+                             resolved_dac_files[board],
                              sizeof(resolved_dac_files[board])) != 0) {
       fprintf(stderr, "Failed to get DAC file for board %d\n", board);
       return -1;

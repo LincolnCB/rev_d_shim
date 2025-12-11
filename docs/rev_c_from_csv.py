@@ -19,8 +19,6 @@ DAC/ADC Command File Generator from CSV (Rev C style)
 Prompts for:
 - SPI clock frequency (MHz)
 - ADC delay (ms)
-
-Author: Generated for rev_c_shim project
 """
 
 

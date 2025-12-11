@@ -7,8 +7,6 @@ Handles optional time vector in the input file.
 
 - For .mat: Prompts for variable names for channels and (optionally) time.
 - For .csv/.npy: Prompts if the first column is a time vector.
-
-Author: Consolidated from waveform_from_npy.py, waveform_from_csv.py, waveform_from_mat.py
 """
 
 # --- User Option: Dump time+channelA as .npy for import_npy ---
@@ -115,56 +113,107 @@ def trim_and_zero_channels(samples_A):
   print(f"Final array shape: {bd_samples_A.shape}")
   return bd_samples_A
 
-def write_waveform_file(filename, time, samples, spi_clock_freq_mhz, src_filename, is_zeroed=False):
-  # samples: [8, n_samples], time: [n_samples] in clock cycles
-  n_samples = samples.shape[1]
+def write_all_waveform_files(outname, time_cycles, bd_samples_DAC, spi_clock_freq, filename, enable_compression=True, is_zeroed=False):
+  """Write waveform files for all boards with optional cross-board compression."""
+  n_bd = bd_samples_DAC.shape[0]
+  n_samples = bd_samples_DAC.shape[2]
   max_delay = MAX_DELAY
+  
+  # Create file handles for all boards
+  file_handles = []
+  wfm_filenames = []
+  
   try:
-    with open(filename, 'w') as f:
+    for bd in range(n_bd):
+      wfm_filename = f"{outname}_bd{bd}.wfm" if n_bd > 1 else (outname if outname.endswith('.wfm') else f"{outname}.wfm")
+      wfm_filenames.append(wfm_filename)
+      f = open(wfm_filename, 'w')
+      file_handles.append(f)
+      
+      # Write headers
       waveform_type = "Zeroed DAC Waveform" if is_zeroed else "DAC Waveform"
       f.write(f"# {waveform_type} File\n")
-      f.write(f"# Source file: {src_filename}\n")
-      f.write(f"# SPI clock frequency: {spi_clock_freq_mhz:.6g} MHz\n")
+      f.write(f"# Source file: {filename}\n")
+      f.write(f"# SPI clock frequency: {spi_clock_freq:.6g} MHz\n")
       f.write(f"# Number of samples: {n_samples}\n")
-      f.write(f"# Board: {filename}\n")
+      f.write(f"# Board: {wfm_filename}\n")
       f.write(f"# Channels: 8\n")
       f.write("# Format: T 1 <ch0-ch7> (trigger) / D <delay> <ch0-ch7> (delay)\n")
-
-      prev_time = None
-      prev_vals = None
-      for i in range(n_samples):
-        t = time[i]
-        vals = samples[:, i]
-        if i == 0 or t == 0:
-          f.write(f"T 1" + ''.join(f" {v}" for v in vals) + "\n")
-          prev_time = t
-          prev_vals = vals.copy()
-          continue
-        if prev_time is None:
-          raise ValueError("First sample must have time == 0")
-        if t < prev_time:
-          raise ValueError(f"Time decreased at sample {i}: {t} < {prev_time}")
-        delay = t - prev_time
-        if delay <= 0:
-          raise ValueError(f"Non-positive delay at sample {i}: {delay}")
-        # If values are the same as previous, skip (accumulate delay)
-        if prev_vals is not None and np.array_equal(vals, prev_vals) and i != n_samples - 1:
-          # Only skip if not the final sample
-          continue
-        delay_left = delay
-        # If delay > max_delay, emit D commands with max_delay-1000 until delay fits
-        while delay_left > max_delay:
-          emit_delay = max_delay - 1000
-          f.write(f"D {emit_delay}" + ''.join(f" {v}" for v in vals) + "\n")
-          prev_time += emit_delay
-          delay_left = t - prev_time
-        f.write(f"D {delay_left}" + ''.join(f" {v}" for v in vals) + "\n")
+    
+    prev_time = None
+    prev_all_vals = None
+    
+    for i in range(n_samples):
+      t = time_cycles[i]
+      # Get values for all boards at this time point
+      all_vals = bd_samples_DAC[:, :, i]  # Shape: [n_bd, 8]
+      
+      if i == 0 or t == 0:
+        # Write trigger commands for all boards
+        for bd in range(n_bd):
+          vals = all_vals[bd]
+          file_handles[bd].write(f"T 1" + ''.join(f" {v}" for v in vals) + "\n")
         prev_time = t
-        prev_vals = vals.copy()
-    print(f"Waveform file written to: {filename}")
+        prev_all_vals = all_vals.copy()
+        continue
+      
+      if prev_time is None:
+        raise ValueError("First sample must have time == 0")
+      if t < prev_time:
+        raise ValueError(f"Time decreased at sample {i}: {t} < {prev_time}")
+      
+      delay = t - prev_time
+      if delay <= 0:
+        raise ValueError(f"Non-positive delay at sample {i}: {delay}")
+      
+      # Apply compression logic based on enable_compression setting
+      should_skip = False
+      if enable_compression and prev_all_vals is not None and i != n_samples - 1:
+        # For compression enabled: skip only if ALL boards have same values (cross-board compression)
+        should_skip = np.array_equal(all_vals, prev_all_vals)
+      
+      if should_skip:
+        # Skip this sample (accumulate delay)
+        continue
+      
+      # Write delay commands for all boards
+      delay_left = delay
+      
+      # Handle delays larger than max_delay
+      while delay_left > max_delay:
+        emit_delay = max_delay - 1000
+        for bd in range(n_bd):
+          vals = all_vals[bd]
+          file_handles[bd].write(f"D {emit_delay}" + ''.join(f" {v}" for v in vals) + "\n")
+        prev_time += emit_delay
+        delay_left = t - prev_time
+      
+      # Write final delay command for all boards
+      for bd in range(n_bd):
+        vals = all_vals[bd]
+        file_handles[bd].write(f"D {delay_left}" + ''.join(f" {v}" for v in vals) + "\n")
+      
+      prev_time = t
+      prev_all_vals = all_vals.copy()
+    
+    # Close all files and print success messages
+    for bd in range(n_bd):
+      file_handles[bd].close()
+      print(f"Waveform file written to: {wfm_filenames[bd]}")
+    
   except IOError as e:
-    print(f"Error writing file {filename}: {e}")
+    # Close any open files on error
+    for f in file_handles:
+      if not f.closed:
+        f.close()
+    print(f"Error writing waveform files: {e}")
     sys.exit(1)
+  except Exception as e:
+    # Close any open files on error
+    for f in file_handles:
+      if not f.closed:
+        f.close()
+    raise e
 
 def calculate_dac_durations(time):
   """
@@ -387,12 +436,14 @@ def main():
     sample_rate = None
   
   # Get additional options
+  enable_compression = prompt_yes_no("Enable sample compression (skip duplicate samples)?", default=True)
   create_adc_readout = prompt_yes_no("Create ADC readout command file?", default=True)
   create_zero_waveform = prompt_yes_no("Create equivalent zeroed waveform?", default=True)
   zero_at_end = prompt_yes_no("Zero at the end?", default=True)
   params = {
     'sample_rate': sample_rate,
     'spi_clock_freq': spi_clock_freq,
+    'enable_compression': enable_compression,
     'create_adc_readout': create_adc_readout,
     'create_zero_waveform': create_zero_waveform,
     'zero_at_end': zero_at_end
@@ -465,11 +516,7 @@ def main():
     outname = default_filename
 
   # Write waveform files
-  n_bd = bd_samples_DAC.shape[0]
-  n_samples = bd_samples_DAC.shape[2]
-  for bd in range(n_bd):
-    wfm_filename = f"{outname}_bd{bd}.wfm" if n_bd > 1 else (outname if outname.endswith('.wfm') else f"{outname}.wfm")
-    write_waveform_file(wfm_filename, time_cycles, bd_samples_DAC[bd], params['spi_clock_freq'], filename, is_zeroed=False)
+  write_all_waveform_files(outname, time_cycles, bd_samples_DAC, params['spi_clock_freq'], filename, params['enable_compression'])
 
   if params.get('create_zero_waveform', False):
     # Make zero waveform: one trigger and one D per duration, D delay = duration
