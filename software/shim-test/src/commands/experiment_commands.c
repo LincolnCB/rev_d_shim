@@ -216,7 +216,6 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
     return -1;
   }
   
-  // Step 1: Check that the system is on
   // Validate system is running
   if (validate_system_running(ctx) != 0) {
     fflush(stdout);
@@ -243,7 +242,7 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
     return -1;
   }
   if (*(ctx->verbose)) {
-    printf("  Step 1: System is running\n");
+    printf("  System is running\n");
     fflush(stdout);
   }
   
@@ -254,15 +253,14 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
   // Check if --no_reset flag is present
   bool skip_reset = has_flag(flags, flag_count, FLAG_NO_RESET);
   
-  // Step 2: Reset the ADC and DAC buffers for all boards (unless --no_reset flag is used)
   if (skip_reset) {
     if (*(ctx->verbose)) {
-      printf("  Step 2: Skipping buffer reset (--no_reset flag specified)\n");
+      printf("  Skipping buffer reset (--no_reset flag specified)\n");
       fflush(stdout);
     }
   } else {
     if (*(ctx->verbose)) {
-      printf("  Step 2: Resetting ADC and DAC buffers for all boards\n");
+      printf("  Resetting ADC and DAC buffers for all boards\n");
       fflush(stdout);
     }
     safe_buffer_reset(ctx, *(ctx->verbose));
@@ -274,9 +272,9 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
     }
   }
 
-  // Step 3: Send cancel command to DAC and ADC for that board
+  // Send cancel command to DAC and ADC for that board
   if (*(ctx->verbose)) {
-    printf("  Step 3: Sending CANCEL command to DAC and ADC for board %d\n", board);
+    printf("  Sending CANCEL command to DAC and ADC for board %d\n", board);
     fflush(stdout);
   }
   dac_cmd_cancel(ctx->dac_ctrl, (uint8_t)board, *(ctx->verbose));
@@ -288,9 +286,9 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
     fflush(stdout);
   }
   
-  // Step 4: Send wr_ch command to DAC, 100ms delay, then and rd_ch command to ADC
+  // Send wr_ch command to DAC, 100ms delay, then and rd_ch command to ADC
   if (*(ctx->verbose)) {
-    printf("  Step 4: Sending commands to DAC and ADC\n");
+    printf("  Sending commands to DAC and ADC\n");
     fflush(stdout);
     printf("    Writing DAC value %d to board %d, channel %d\n", dac_value, board, channel);
     fflush(stdout);
@@ -311,9 +309,9 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
     fflush(stdout);
   }
 
-  // Step 6: Send wr_ch command to DAC to set channel back to 0
+  // Send wr_ch command to DAC to set channel back to 0
   if (*(ctx->verbose)) {
-    printf("  Step 5: Resetting DAC to 0\n");
+    printf("  Resetting DAC to 0\n");
     fflush(stdout);
   }
   dac_cmd_dac_wr_ch(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, 0, *(ctx->verbose));
@@ -326,9 +324,9 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
     fflush(stdout);
   }
   
-  // Step 7: Read single from ADC
+  // Read single from ADC
   if (*(ctx->verbose)) {
-    printf("  Step 6: Reading ADC value\n");
+    printf("  Reading ADC value\n");
     fflush(stdout);
   
     // Add some debug info before attempting to read
@@ -363,9 +361,9 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
   // Simple rounding without math library: add 0.5 and truncate
   int16_t adc_reading = (int16_t)(adc_reading_corrected + (adc_reading_corrected >= 0 ? 0.5 : -0.5));
   
-  // Step 8: Calculate and print error
+  // Calculate and print error
   if (*(ctx->verbose)) {
-    printf("  Step 7: Calculating error\n");
+    printf("  Calculating error\n");
     fflush(stdout);
   }
   printf("    DAC value set: %d\n", dac_value);
@@ -876,19 +874,19 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
            skip_reset ? "true" : "false", skip_cal ? "true" : "false", flag_count);
   }
   
-  // Step 1: Reset all buffers (unless --no_reset flag is used)
+  // Reset all buffers (unless --no_reset flag is used)
   if (skip_reset) {
-    printf("Step 1: Skipping buffer reset (--no_reset flag specified)\n");
+    printf("Skipping buffer reset (--no_reset flag specified)\n");
   } else {
-    printf("Step 1: Resetting all buffers\n");
+    printf("Resetting all buffers\n");
     safe_buffer_reset(ctx, *(ctx->verbose));
     usleep(10000); // 10ms
   }
   
-  // Step 2: Check which boards are connected
+  // Check which boards are connected
   bool connected_boards[8] = {false}; // Track which boards are connected
   int connected_count = 0;
-  printf("Step 2: Checking connected boards...\n");
+  printf("Checking connected boards...\n");
   
   for (int board = 0; board < 8; board++) {
     uint32_t dac_cmd_fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
@@ -916,7 +914,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   
   printf("Found %d connected board(s)\n", connected_count);
   
-  // Step 3: Prompt for DAC and ADC command files for each connected board
+  // Prompt for DAC and ADC command files for each connected board
   char resolved_dac_files[8][1024] = {0};  // Resolved DAC file paths
   char resolved_adc_files[8][1024] = {0};  // Resolved ADC file paths
   
@@ -963,7 +961,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     strcpy(previous_adc_file, resolved_adc_files[board]);
   }
   
-  // Step 4: Prompt for DAC and ADC iteration counts for each connected board
+  // Prompt for DAC and ADC iteration counts for each connected board
   int dac_iterations[8] = {0};  // DAC iteration counts for each board  
   int adc_iterations[8] = {0};  // ADC iteration counts for each board
   
@@ -1039,7 +1037,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     previous_adc_iterations = adc_iterations[board];
   }
   
-  // Step 5: Prompt for base output file name
+  // Prompt for base output file name
   char base_output_file[1024];
   char input_buffer[1024];
   printf("Enter base output file path: ");
@@ -1068,7 +1066,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   printf("  Trigger data: <base>_trig.<ext>\n");
   printf("  Extensions: .csv (ASCII) or .dat (binary)\n");
   
-  // Step 6: Prompt for SPI frequency and trigger lockout time
+  // Prompt for SPI frequency and trigger lockout time
   double spi_freq_mhz;
   printf("Enter SPI clock frequency in MHz: ");
   fflush(stdout);
@@ -1116,7 +1114,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   printf("Calculated lockout: %u cycles (%.3f ms at %.3f MHz)\n", 
          lockout_time, lockout_ms, spi_freq_mhz);
   
-  // Step 7: Calculate expected ADC words and triggers for each connected board
+  // Calculate expected ADC words and triggers for each connected board
   uint64_t adc_word_counts[8] = {0};  // Expected ADC words per board
   uint32_t board_triggers[8] = {0};  // Triggers per board
   uint32_t total_expected_triggers = 0;
@@ -1193,7 +1191,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     printf("Total expected external triggers (consistent across all boards): %u\n", total_expected_triggers);
   }
   
-  // Step 8: Run calibration for all boards unless --no_cal flag is set
+  // Run calibration for all boards unless --no_cal flag is set
   if (!skip_cal) {
     printf("\nRunning channel calibration for all connected boards...\n");
     
@@ -1224,7 +1222,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     printf("\nSkipping calibration (--no_cal flag set)\n");
   }
   
-  // Step 9: Add buffer stoppers (NOOP commands waiting for 1 trigger) to all buffers BEFORE starting streams
+  // Add buffer stoppers (NOOP commands waiting for 1 trigger) to all buffers BEFORE starting streams
   printf("Adding buffer stoppers before starting streams...\n");
   for (int board = 0; board < 8; board++) {
     if (!connected_boards[board]) continue;
@@ -1310,7 +1308,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     }
   }
   
-  // Step 11: Start trigger data streaming if we expect triggers
+  // Start trigger data streaming if we expect triggers
   if (total_expected_triggers > 0) {
     // Create trigger output file name
     char trigger_output_file[1024];
@@ -1896,7 +1894,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
     return -1;
   }
   
-  // Step 1: Prompt for start and end channels
+  // Prompt for start and end channels
   char input_buffer[256];
   int start_channel, end_channel;
   
@@ -1929,7 +1927,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
     return -1;
   }
   
-  // Step 2: Check which boards are connected and validate channels
+  // Check which boards are connected and validate channels
   bool connected_boards[8] = {false};
   int connected_count = 0;
   printf("Checking connected boards...\n");
@@ -1964,7 +1962,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
     }
   }
   
-  // Step 3: Prompt for remaining parameters
+  // Prompt for remaining parameters
   double amplitude;
   printf("Enter amplitude in amps (0.0 to 5.1): ");
   fflush(stdout);
@@ -2062,7 +2060,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   printf("  Log file: %s\n", final_log_path);
   printf("  SPI frequency: %.3f MHz\n", spi_freq_mhz);
   
-  // Step 4: Run calibration for all connected boards unless --no_cal flag is set
+  // Run calibration for all connected boards unless --no_cal flag is set
   if (!skip_cal) {
     printf("\nRunning channel calibration for all connected boards...\n");
     
@@ -2077,7 +2075,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
     printf("\nSkipping calibration (--no_cal flag set)\n");
   }
   
-  // Step 5: Reset buffers unless --no_reset flag is set
+  // Reset buffers unless --no_reset flag is set
   if (!skip_reset) {
     printf("Resetting buffers...\n");
     safe_buffer_reset(ctx, false);
@@ -2086,7 +2084,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
     printf("Skipping buffer reset (--no_reset flag set)\n");
   }
   
-  // Step 6: Add buffer stoppers
+  // Add buffer stoppers
   printf("Adding buffer stoppers...\n");
   for (int board = 0; board < 8; board++) {
     if (!connected_boards[board]) continue;
@@ -2101,7 +2099,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   
   printf("DAC values: +%d, %d (for %.3f amps)\n", dac_positive, dac_negative, amplitude);
   
-  // Step 7: Queue DAC commands
+  // Queue DAC commands
   printf("Queueing DAC commands...\n");
   int total_dac_commands = 0;
   for (int ch = start_channel; ch <= end_channel; ch++) {
@@ -2144,7 +2142,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
     printf("Fieldmap [VERBOSE]: Queued %d total DAC commands\n", total_dac_commands);
   }
   
-  // Step 8: Queue ADC commands
+  // Queue ADC commands
   printf("Queueing ADC commands...\n");
   int total_adc_commands = 0;
   for (int ch = start_channel; ch <= end_channel; ch++) {
@@ -2185,7 +2183,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
     printf("Fieldmap [VERBOSE]: Queued %d total ADC commands\n", total_adc_commands);
   }
   
-  // Step 9: Start data collection thread
+  // Start data collection thread
   printf("Starting data collection thread...\n");
   
   fieldmap_params_t thread_params = {
@@ -2215,7 +2213,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
     return -1;
   }
   
-  // Step 10: Send sync trigger to start
+  // Send sync trigger to start
   printf("Sending sync trigger to start fieldmap...\n");
   if (*(ctx->verbose)) {
     printf("Fieldmap [VERBOSE]: Sending sync trigger\n");
@@ -2228,7 +2226,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   }
   trigger_cmd_reset_count(ctx->trigger_ctrl, *(ctx->verbose));
   
-  // Step 11: Set up trigger system after sync
+  // Set up trigger system after sync
   int total_triggers = (end_channel - start_channel + 1) * 2; // 2 per channel
   printf("Setting up trigger system for %d triggers...\n", total_triggers);
   
@@ -2829,7 +2827,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   
   printf("Starting Rev C compatibility mode...\n");
 
-  // Step 1: Make sure the system IS running
+  // Make sure the system IS running
   uint32_t hw_status = sys_sts_get_hw_status(ctx->sys_sts, *(ctx->verbose));
   uint32_t state = HW_STS_STATE(hw_status);
   if (state != S_RUNNING) {
@@ -2846,17 +2844,17 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
            skip_reset ? "true" : "false", binary_mode ? "true" : "false", flag_count);
   }
   
-  // Step 2: Reset all buffers (unless --no_reset flag is used)
+  // Reset all buffers (unless --no_reset flag is used)
   if (skip_reset) {
-    printf("Step 1: Skipping buffer reset (--no_reset flag specified)\n");
+    printf("Skipping buffer reset (--no_reset flag specified)\n");
   } else {
-    printf("Step 1: Resetting all buffers\n");
+    printf("Resetting all buffers\n");
     safe_buffer_reset(ctx, *(ctx->verbose));
     usleep(10000); // 10ms
   }
   
-  // Step 3: Check that boards 0-3 are connected
-  printf("Step 2: Checking board connections (boards 0-3)...\n");
+  // Check that boards 0-3 are connected
+  printf("Checking board connections (boards 0-3)...\n");
   bool connected_boards[4] = {false}; // Only check first 4 boards
   int connected_count = 0;
   
@@ -2885,7 +2883,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   
   printf("All 4 boards (0-3) are connected\n");
   
-  // Step 4: Prompt for DAC command file
+  // Prompt for DAC command file
   char resolved_dac_file[1024];
   if (prompt_file_selection("Enter DAC command file (32 space-separated values per line)", 
                            NULL, resolved_dac_file, sizeof(resolved_dac_file)) != 0) {
@@ -2893,7 +2891,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     return -1;
   }
   
-  // Step 5: Prompt for input units type
+  // Prompt for input units type
   char input_buffer[64];
   bool input_is_amps = false;
   
@@ -2926,8 +2924,8 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     return -1;
   }
   
-  // Step 6: Validate file format
-  printf("Step 3: Validating DAC file format...\n");
+  // Validate file format
+  printf("Validating DAC file format...\n");
   int line_count;
   if (input_is_amps) {
     if (validate_rev_c_file_format_amps(resolved_dac_file, &line_count) != 0) {
@@ -2941,7 +2939,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     printf("  DAC units file validation passed: %d valid data lines\n", line_count);
   }
   
-  // Step 7: Prompt for number of iterations
+  // Prompt for number of iterations
   printf("Enter number of iterations: ");
   fflush(stdout);
   
@@ -2962,7 +2960,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     return -1;
   }
   
-  // Step 8: Prompt for SPI frequency and ADC sample delay
+  // Prompt for SPI frequency and ADC sample delay
   double spi_freq_mhz;
   printf("Enter SPI clock frequency in MHz: ");
   fflush(stdout);
@@ -3037,7 +3035,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   printf("Calculated lockout: %u cycles (%.3f ms at %.3f MHz)\n", 
          lockout_time, lockout_ms, spi_freq_mhz);
   
-  // Step 9: Prompt for final zero trigger
+  // Prompt for final zero trigger
   bool final_zero_trigger = false;
   printf("Add final zero trigger? (y/n): ");
   fflush(stdout);
@@ -3055,7 +3053,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     printf("Final zero trigger disabled\n");
   }
   
-  // Step 10: Prompt for base output file name
+  // Prompt for base output file name
   char base_output_file[1024];
   printf("Enter base output file path: ");
   fflush(stdout);
@@ -3107,8 +3105,8 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   printf("  Output format: %s\n", binary_mode ? "binary" : "ASCII");
   printf("  Final zero trigger: %s\n", final_zero_trigger ? "enabled" : "disabled");
   
-  // Step 11: Add buffer stoppers before starting streams
-  printf("Step 4: Adding buffer stoppers before starting streams...\n");
+  // Add buffer stoppers before starting streams
+  printf("Adding buffer stoppers before starting streams...\n");
   for (int board = 0; board < 4; board++) {
     if (*(ctx->verbose)) {
       printf("  Board %d: Adding DAC and ADC buffer stoppers\n", board);
@@ -3121,8 +3119,8 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, *(ctx->verbose)); // Wait for 1 trigger
   }
 
-  // Step 12: Start ADC data streaming for each board
-  printf("Step 5: Starting ADC data streaming for all 4 boards...\n");
+  // Start ADC data streaming for each board
+  printf("Starting ADC data streaming for all 4 boards...\n");
   for (int board = 0; board < 4; board++) {
     // Create board-specific output file name
     char board_output_file[1024];
@@ -3152,7 +3150,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     }
   }
   
-  // Step 13: Start trigger data streaming
+  // Start trigger data streaming
   if (expected_triggers > 0) {
     // Create trigger output file name
     char trigger_output_file[1024];
@@ -3171,7 +3169,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     snprintf(trigger_count_str, sizeof(trigger_count_str), "%u", expected_triggers);
     
     if (*(ctx->verbose)) {
-      printf("Step 6: Starting trigger data streaming to '%s' (%u samples)\n", 
+      printf("Starting trigger data streaming to '%s' (%u samples)\n", 
              trigger_output_file, expected_triggers);
     }
     const char* trig_args[] = {trigger_count_str, trigger_output_file};
@@ -3181,8 +3179,8 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     }
   }
   
-  // Step 14: Start command streaming threads
-  printf("Step 7: Starting command streaming...\n");
+  // Start command streaming threads
+  printf("Starting command streaming...\n");
   
   // Prepare streaming thread data structures
   static volatile bool dac_stream_stop = false;
@@ -3217,7 +3215,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   };
   
   // Start trigger monitoring similar to waveform_test
-  printf("Step 8: Starting trigger monitoring...\n");
+  printf("Starting trigger monitoring...\n");
   trigger_monitor_params_t trigger_monitor_data = {
     .sys_sts = ctx->sys_sts,
     .expected_total_triggers = expected_triggers,
@@ -3234,7 +3232,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     return -1;
   }
   
-  // Step 9: Start DAC and ADC command streaming threads
+  // Start DAC and ADC command streaming threads
   printf("Starting DAC command streaming thread...\n");
   pthread_t dac_thread;
   if (pthread_create(&dac_thread, NULL, rev_c_dac_stream_thread, &dac_stream_data) != 0) {
@@ -3267,7 +3265,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   pthread_detach(adc_cmd_thread);
   
   // Wait for command buffers to preload before sending sync trigger
-  printf("Step 10: Waiting for command buffers to preload (at least 10 words)...\n");
+  printf("Waiting for command buffers to preload (at least 10 words)...\n");
   bool buffers_ready = false;
   int check_count = 0;
   const int max_checks = 500; // Max 5 seconds at 10ms per check
@@ -3333,8 +3331,8 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     }
   }
   
-  // Step 11: Send sync trigger to start the process
-  printf("Step 11: Sending sync trigger to start Rev C compatibility mode...\n");
+  // Send sync trigger to start the process
+  printf("  Sending sync trigger to start Rev C compatibility mode...\n");
   if (*(ctx->verbose)) {
     printf("Rev C [VERBOSE]: Sending sync trigger\n");
   }
