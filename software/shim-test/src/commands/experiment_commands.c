@@ -645,6 +645,7 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
         double diff = avg_adc_vals[i] - mean_y;
         variance_y += diff * diff;
       }
+      variance_y /= num_dac_values;
       
       // Check for division by zero before calculating slope
       double denominator = num_dac_values * sum_x2 - sum_x * sum_x;
@@ -665,7 +666,7 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
         cal_sts = LINEARITY_NONLINEAR;
       }
       // Check if the slope is close to zero AND variance is low (disconnected)
-      else if (slope > -0.02 && slope < 0.02 && variance_y < 100.0) {
+      else if (slope > -0.02 && slope < 0.02 && variance_y < 10000.0) {
         cal_sts = LINEARITY_ZERO;
       }
       // Check if slope is inside acceptable range
@@ -679,8 +680,8 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
 
       // If verbose, print the updates to the calibration value
       if (*(ctx->verbose)) {
-        printf("  Iteration %d: Current cal=%d, Slope=%.4f, Intercept=%.2f\n", 
-               iter + 1, current_cal_value, slope, intercept);
+        printf("  Iteration %d: Current cal=%d, Slope=%.4f, Intercept=%.2f, Variance=%.2f\n", 
+               iter + 1, current_cal_value, slope, intercept, variance_y);
         fflush(stdout);
       }
       
@@ -719,10 +720,12 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
       if (!*(ctx->verbose)) {
         if (division_by_zero) {
           printf("%+.4f A ( inf.) | ", offset_amps);
+        } else if (slope < -9.99) {
+          printf("%+.4f A (neg.) | ", offset_amps);
         } else if (slope < 0) {
-          printf("%+.4f A ( neg.) | ", offset_amps);
+          printf("%+.4f A (%.2f) | ", offset_amps, slope);
         } else if (slope > 9.99) {
-          printf("%+.4f A (9.999) | ", offset_amps);
+          printf("%+.4f A (10.0+) | ", offset_amps);
         } else {
           printf("%+.4f A (%.3f) | ", offset_amps, slope);
         }
@@ -2488,6 +2491,8 @@ typedef struct {
   command_context_t* ctx;
   char* dac_file;
   int iterations;
+  int ramp_samples;
+  int ramp_delay_cycles;
   int line_count;
   uint32_t delay_cycles;
   volatile bool* should_stop;
@@ -2501,6 +2506,8 @@ static void* rev_c_dac_stream_thread(void* arg) {
   command_context_t* ctx = stream_data->ctx;
   const char* dac_file = stream_data->dac_file;
   int iterations = stream_data->iterations;
+  int ramp_samples = stream_data->ramp_samples;
+  int ramp_delay_cycles = stream_data->ramp_delay_cycles;
   int line_count = stream_data->line_count;
   volatile bool* should_stop = stream_data->should_stop;
   bool input_is_amps = stream_data->input_is_amps;
@@ -2524,6 +2531,8 @@ static void* rev_c_dac_stream_thread(void* arg) {
     rewind(file);
     char line[2048];
     int line_num = 0;
+
+    int16_t prev_ch_vals[32] = {0}; // To store previous values for ramping
     
     while (fgets(line, sizeof(line), file) && !(*should_stop)) {
       // Skip empty lines and comments
@@ -2559,7 +2568,7 @@ static void* rev_c_dac_stream_thread(void* arg) {
       
       // Send DAC write commands to each of the 4 boards
       for (int board = 0; board < 4; board++) {
-        // Wait for FIFO space
+        // Wait for FIFO space (for whole ramp including final sample)
         while (!(*should_stop)) {
           uint32_t fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
           
@@ -2570,33 +2579,43 @@ static void* rev_c_dac_stream_thread(void* arg) {
           
           uint32_t words_used = FIFO_STS_WORD_COUNT(fifo_status);
           uint32_t available_words = DAC_CMD_FIFO_WORDCOUNT - words_used;
-          if (available_words >= 5) { // Need space for 1 command + 4 data words
+          if (available_words >= 5 * (ramp_samples + 1)) { // Need space for 1 command + 4 data words
             break; // Space available, proceed with command
           }
           
           usleep(1000); // 1ms delay before checking again
         }
         
-        // Convert values to signed format for this board's 8 channels (ch 0-7, 8-15, 16-23, 24-31)
-        int16_t ch_vals[8];
-        for (int ch = 0; ch < 8; ch++) {
-          uint16_t offset_val = values[board * 8 + ch];
-          ch_vals[ch] = offset_to_signed(offset_val);
-        }
+        // Handle ramping if requested
+        for (int ramp_step = 0; ramp_step <= ramp_samples; ramp_step++) {
+          float ramp_fraction = (float)(ramp_step + 1) / (float)(ramp_samples + 1);
+          int16_t ch_vals[8];
+          for (int ch = 0; ch < 8; ch++) {
+            uint16_t target_val = values[board * 8 + ch];
+            int16_t target_signed = offset_to_signed(target_val);
+            int16_t start_signed = prev_ch_vals[board * 8 + ch];
+            int16_t ramped_val = start_signed + (int16_t)((target_signed - start_signed) * ramp_fraction);
+            ch_vals[ch] = ramped_val;
+          }
         
-        // For the last dac_wr command of the last line, cont should be false
-        bool is_last_iteration = (iteration == iterations - 1);
-        bool is_last_line = (line_num == line_count);
-        bool cont = !(is_last_iteration && is_last_line);
+          // For the last dac_wr command at the end of the ramp of the last line, cont should be false
+          bool is_last_iteration = (iteration == iterations - 1);
+          bool is_last_line = (line_num == line_count);
+          bool is_last_ramp_step = (ramp_step == ramp_samples);
+          bool cont = !(is_last_iteration && is_last_line && is_last_ramp_step);
 
-        // Send DAC write command with trigger wait (trig=true, cont=cont, ldac=true, 1 trigger)
-        dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, true, cont, true, 1, verbose);
-        total_commands_sent++;
-        total_words_sent += 5; // 1 command + 4 data words
+          bool trig = (ramp_step == 0); // Only wait for trigger on first ramp step
+          int count = trig ? 1 : ramp_delay_cycles; // 1 trigger or delay cycles
+
+          // Send DAC write command with trigger wait (trig=trig, cont=cont, ldac=true, 1 trigger OR delay)
+          dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, trig, cont, true, count, verbose);
+          total_commands_sent++;
+          total_words_sent += 5; // 1 command + 4 data words
         
-        if (verbose && line_num <= 3) { // Only show first few lines to avoid spam
-          printf("Rev C DAC Stream Thread: Board %d, Line %d, Iteration %d, sent DAC write (5 words, channels %d-%d)\n", 
-                 board, line_num, iteration + 1, board * 8, board * 8 + 7);
+          if (verbose && line_num <= 10) { // Only show first few lines to avoid spam
+            printf("Rev C DAC Stream Thread: Board %d, Line %d, Iteration %d, sent DAC write (5 words, channels %d-%d)\n", 
+                  board, line_num, iteration + 1, board * 8, board * 8 + 7);
+          }
         }
       }
       
@@ -2665,6 +2684,8 @@ static void* rev_c_adc_cmd_stream_thread(void* arg) {
   rev_c_params_t* stream_data = (rev_c_params_t*)arg;
   command_context_t* ctx = stream_data->ctx;
   int iterations = stream_data->iterations;
+  int ramp_samples = stream_data->ramp_samples;
+  int ramp_delay_cycles = stream_data->ramp_delay_cycles;
   int line_count = stream_data->line_count;
   uint32_t delay_cycles = stream_data->delay_cycles;
   volatile bool* should_stop = stream_data->should_stop;
@@ -2947,7 +2968,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     fprintf(stderr, "Failed to read iteration count.\n");
     return -1;
   }
-  
+
   // Remove newline
   len = strlen(input_buffer);
   if (len > 0 && input_buffer[len - 1] == '\n') {
@@ -2960,7 +2981,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     return -1;
   }
   
-  // Prompt for SPI frequency and ADC sample delay
+  // Prompt for SPI frequency
   double spi_freq_mhz;
   printf("Enter SPI clock frequency in MHz: ");
   fflush(stdout);
@@ -2982,6 +3003,57 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     return -1;
   }
   
+  // Prompt for the number of ramp samples
+  printf("Enter number of ramp samples: ");
+  fflush(stdout);
+  
+  if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+    fprintf(stderr, "Failed to read ramp samples.\n");
+    return -1;
+  }
+  // Remove newline
+  len = strlen(input_buffer);
+  if (len > 0 && input_buffer[len - 1] == '\n') {
+    input_buffer[len - 1] = '\0';
+  }
+
+  int ramp_samples = atoi(input_buffer);
+  if (ramp_samples < 0) {
+    fprintf(stderr, "Invalid ramp samples. Must be >= 0.\n");
+    return -1;
+  }
+
+  // Prompt for the ramp time in milliseconds if ramp samples > 0
+  int ramp_delay_cycles = 0;
+  if (ramp_samples > 0) {
+    printf("Enter ramp time in milliseconds: ");
+    fflush(stdout);
+
+    if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+      fprintf(stderr, "Failed to read ramp time.\n");
+      return -1;
+    }
+    
+    // Remove newline
+    len = strlen(input_buffer);
+    if (len > 0 && input_buffer[len - 1] == '\n') {
+      input_buffer[len - 1] = '\0';
+    }
+
+    double ramp_time_ms = atof(input_buffer);
+    if (ramp_time_ms < 0.02 * ramp_samples) {
+      fprintf(stderr, "Invalid ramp time. Must be >= %.2f ms for %d samples (20μs per sample).\n", 
+              0.02 * ramp_samples, ramp_samples);
+      return -1;
+    }
+
+    // Calculate ramp delay cycles from milliseconds and SPI frequency
+    ramp_delay_cycles = (int)(ramp_time_ms * spi_freq_mhz * 1000.0 / ramp_samples);
+    printf("Calculated ramp delay: %d cycles per sample (%.3f ms total for %d samples at %.3f MHz)\n", 
+           ramp_delay_cycles, ramp_time_ms, ramp_samples, spi_freq_mhz);
+  }
+    
+  // Prompt for ADC sample delay in milliseconds
   double adc_delay_ms;
   printf("Enter ADC sample delay (milliseconds): ");
   fflush(stdout);
@@ -3101,6 +3173,10 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   printf("  Input DAC file: %s\n", resolved_dac_file);
   printf("  Input format: %s\n", input_is_amps ? "Amps (-5.1 to 5.1)" : "DAC units (0-65535)");
   printf("  Iterations: %d\n", iterations);
+  printf("  Ramp samples: %d\n", ramp_samples);
+  if (ramp_samples > 0) {
+    printf("  Ramp delay: %d cycles\n", ramp_delay_cycles);
+  }
   printf("  ADC delay: %.3f ms (%u cycles)\n", adc_delay_ms, delay_cycles);
   printf("  Output format: %s\n", binary_mode ? "binary" : "ASCII");
   printf("  Final zero trigger: %s\n", final_zero_trigger ? "enabled" : "disabled");
@@ -3195,6 +3271,8 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     .ctx = ctx,
     .dac_file = resolved_dac_file,
     .iterations = iterations,
+    .ramp_samples = ramp_samples,
+    .ramp_delay_cycles = ramp_delay_cycles,
     .line_count = line_count,
     .delay_cycles = delay_cycles,
     .should_stop = &dac_stream_stop,
@@ -3207,6 +3285,8 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     .ctx = ctx,
     .dac_file = NULL, // Not used for ADC commands
     .iterations = iterations,
+    .ramp_samples = ramp_samples,
+    .ramp_delay_cycles = ramp_delay_cycles,
     .line_count = line_count,
     .delay_cycles = delay_cycles,
     .should_stop = &adc_cmd_stream_stop,
