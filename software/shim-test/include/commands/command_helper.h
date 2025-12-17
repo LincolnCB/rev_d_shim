@@ -78,6 +78,11 @@ typedef struct command_context {
   bool adc_bias_previous_valid[64];     // Whether each previous ADC bias value is valid
 } command_context_t;
 
+// Helper function to convert Amps to signed DAC units
+// Maps -5.0A -> -32767, 0A -> 0, 5.0A -> 32767
+int16_t amps_to_dac(float amps);
+// Helper function to convert signed DAC units to Amps
+float dac_to_amps(int16_t dac_value);
 // Basic parsing and validation utilities
 uint32_t parse_value(const char* str, char** endptr);
 int parse_board_number(const char* str);

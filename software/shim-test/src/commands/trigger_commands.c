@@ -9,13 +9,20 @@
 #include <errno.h>
 #include <pthread.h>
 #include <glob.h>
+#include <time.h>
 #include "trigger_commands.h"
 #include "command_helper.h"
 #include "sys_sts.h"
 #include "trigger_ctrl.h"
 
-// Forward declaration for helper function
+// Global trigger monitor control
+static volatile bool g_trigger_monitor_should_stop = false;
+static pthread_t g_trigger_monitor_tid;
+static bool g_trigger_monitor_active = false;
+
+// Forward declarations for helper functions
 static void* trigger_data_stream_thread(void* arg);
+static void* trigger_monitor_thread(void* arg);
 
 // Trigger FIFO status commands
 int cmd_trig_cmd_fifo_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
@@ -367,4 +374,112 @@ int cmd_stop_trig_data_stream(const char** args, int arg_count, const command_fl
   
   printf("Trigger data streaming has been stopped.\n");
   return 0;
+}
+
+// Thread function for trigger monitoring
+static void* trigger_monitor_thread(void* arg) {
+  trigger_monitor_params_t* params = (trigger_monitor_params_t*)arg;
+  time_t last_display = time(NULL);
+  uint32_t last_trigger_count = 0;  // Since we reset count after sync, start from 0
+  bool completed_message_shown = false;
+  
+  if (params->verbose) {
+    printf("Trigger monitor thread started. Expected: %u triggers\n",
+           params->expected_total_triggers);
+  }
+  
+  while (!*(params->should_stop)) {
+    usleep(500000); // 500ms polling interval
+    
+    uint32_t current_trigger_count = sys_sts_get_trig_counter(params->sys_sts, false);
+    // Since we reset the count after sync_ch, current_trigger_count is the actual triggers received
+    
+    // Check if 3 seconds have passed since last display
+    time_t current_time = time(NULL);
+    if (current_time - last_display >= 3) {
+      printf("Trigger count: %u/%u\n", 
+             current_trigger_count, params->expected_total_triggers);
+      fflush(stdout);
+      last_display = current_time;
+    }
+    
+    // Check if we've reached the expected trigger count
+    if (current_trigger_count >= params->expected_total_triggers) {
+      if (!completed_message_shown) {
+        printf("\nExpected trigger count reached: %u/%u\n", 
+               current_trigger_count, params->expected_total_triggers);
+        fflush(stdout);
+        completed_message_shown = true;
+        
+        // Auto-stop monitoring after reaching expected count
+        printf("Trigger monitoring auto-stopping after reaching expected count.\n");
+        break;
+      }
+    }
+    
+    last_trigger_count = current_trigger_count;
+  }
+  
+  if (params->verbose) {
+    printf("Trigger monitor thread stopping\n");
+  }
+  
+  pthread_exit(NULL);
+}
+
+// Start trigger monitor function
+int start_trigger_monitor(struct sys_sts_t* sys_sts, uint32_t expected_triggers, bool verbose) {
+  // Stop existing monitor if running
+  if (g_trigger_monitor_active) {
+    g_trigger_monitor_should_stop = true;
+    pthread_join(g_trigger_monitor_tid, NULL);
+    g_trigger_monitor_active = false;
+  }
+  
+  g_trigger_monitor_should_stop = false;
+  
+  static trigger_monitor_params_t monitor_params;
+  monitor_params.sys_sts = sys_sts;
+  monitor_params.expected_total_triggers = expected_triggers;
+  monitor_params.should_stop = &g_trigger_monitor_should_stop;
+  monitor_params.verbose = verbose;
+  
+  int thread_result = pthread_create(&g_trigger_monitor_tid, NULL, trigger_monitor_thread, &monitor_params);
+  
+  if (thread_result != 0) {
+    printf("Failed to create trigger monitor thread: %s\n", strerror(thread_result));
+    return -1;
+  }
+  
+  pthread_detach(g_trigger_monitor_tid);
+  g_trigger_monitor_active = true;
+  
+  return 0;
+}
+
+// Stop trigger monitor function
+int stop_trigger_monitor(void) {
+  if (g_trigger_monitor_active) {
+    printf("Stopping trigger monitor...\n");
+    g_trigger_monitor_should_stop = true;
+    usleep(100000); // Give it 100ms to stop
+    g_trigger_monitor_active = false;
+    printf("Trigger monitor stopped.\n");
+    return 0;
+  } else {
+    printf("No trigger monitor is currently running.\n");
+    return -1;
+  }
+}
+
+// Check if trigger monitor is active
+bool is_trigger_monitor_active(void) {
+  return g_trigger_monitor_active;
+}
+
+// Command function to stop trigger monitor
+int cmd_stop_trigger_monitor(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  (void)args; (void)arg_count; (void)flags; (void)flag_count; (void)ctx; // Suppress unused parameter warnings
+  
+  return stop_trigger_monitor();
 }

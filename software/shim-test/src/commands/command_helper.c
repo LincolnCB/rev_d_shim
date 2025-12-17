@@ -11,7 +11,23 @@
 #include <glob.h>
 #include "command_helper.h"
 
-// Utility function implementations
+// Helper function to convert Amps to signed DAC units
+// Maps -5.0A -> -32767, 0A -> 0, 5.0A -> 32767
+int16_t amps_to_dac(float amps) {
+  // Clamp to valid range
+  if (amps < -5.0f) amps = -5.0f;
+  if (amps > 5.0f) amps = 5.0f;
+  // Convert: dac = amps * (32767 / 5.0)
+  int16_t dac_value = (int16_t)(amps * (32767.0f / 5.0f));
+  return dac_value;
+}
+// Helper function to convert signed DAC units to Amps
+// Maps -32767 -> -5.0A, 0 -> 0A, 32767 -> 5.0A
+float dac_to_amps(int16_t dac_value) {
+  float amps = ((float)dac_value) * (5.0f / 32767.0f);
+  return amps;
+}
+// Parse numeric value from string, supporting decimal, hex (0x), octal (0), binary (0b)
 uint32_t parse_value(const char* str, char** endptr) {
   const char* arg = str;
   while (*arg == ' ' || *arg == '\t') arg++; // Skip leading whitespace
@@ -22,7 +38,7 @@ uint32_t parse_value(const char* str, char** endptr) {
     return (uint32_t)strtol(arg, endptr, 0); // Handles 0x, decimal, octal
   }
 }
-
+// Validate and parse board number (0-7)
 int parse_board_number(const char* str) {
   int board = atoi(str);
   if (board < 0 || board > 7) {
@@ -30,7 +46,7 @@ int parse_board_number(const char* str) {
   }
   return board;
 }
-
+// Check if a specific flag is present in the flags array
 int has_flag(const command_flag_t* flags, int flag_count, command_flag_t target_flag) {
   for (int i = 0; i < flag_count; i++) {
     if (flags[i] == target_flag) {

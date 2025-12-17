@@ -215,8 +215,8 @@ void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[
   // Write channel values
   for (int i = 0; i < 8; i += 2) {
     // Each word contains two channels: [31:16] = ch N+1, [15:0] = ch N
-    uint16_t val0 = signed_to_offset(ch_vals[i]);
-    uint16_t val1 = signed_to_offset(ch_vals[i + 1]);
+    int16_t val0 = (ch_vals[i]);
+    int16_t val1 = (ch_vals[i + 1]);
     uint32_t word = ((uint32_t)val1 << 16) | val0;
     if (verbose) {
       printf("DAC[%d] Channel data word %d: 0x%08X (ch%d=0x%04X, ch%d=0x%04X)\n", 
@@ -238,32 +238,32 @@ void dac_cmd_dac_wr_ch(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t ch, i
 
   uint32_t cmd_word = (DAC_CMD_DAC_WR_CH << DAC_CMD_CMD_LSB) |
                       ((ch & 0x7) << 16) | // Channel index
-                      ((uint16_t)signed_to_offset(ch_val) & 0xFFFF);
+                      (ch_val & 0xFFFF);   // Channel value
 
   if (verbose) {
-    printf("DAC[%d] DAC_WR_CH command word: 0x%08X (channel %d, value=0x%04X)\n", 
-           board, cmd_word, ch, (uint16_t)signed_to_offset(ch_val) & 0xFFFF);
+    printf("DAC[%d] DAC_WR_CH command word: 0x%08X (channel %d, value=0x%d, bits=0x%04X)\n", 
+           board, cmd_word, ch, ch_val, (uint16_t)ch_val & 0xFFFF);
   }
   *(dac_ctrl->buffer[board]) = cmd_word;
 }
 
-void dac_cmd_set_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel, int16_t cal, bool verbose) {
+void dac_cmd_set_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t ch, int16_t cal, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
     return;
   }
-  if (channel > 7) {
-    fprintf(stderr, "Invalid channel: %d. Must be 0-7.\n", channel);
+  if (ch > 7) {
+    fprintf(stderr, "Invalid channel: %d. Must be 0-7.\n", ch);
     return;
   }
 
   uint32_t cmd_word = (DAC_CMD_SET_CAL << DAC_CMD_CMD_LSB) |
-                      (channel << 16) | // Channel index
-                      ((uint16_t)cal & 0xFFFF);
+                      ((ch & 0x7) << 16) | // Channel index
+                      (cal & 0xFFFF);      // Calibration value
 
   if (verbose) {
-    printf("DAC[%d] SET_CAL command word: 0x%08X (channel %d, cal=0x%04X)\n", 
-           board, cmd_word, channel, (uint16_t)cal & 0xFFFF);
+    printf("DAC[%d] SET_CAL command word: 0x%08X (channel %d, cal=%d, bits=0x%04X)\n", 
+           board, cmd_word, ch, cal, (uint16_t)cal & 0xFFFF);
   }
   *(dac_ctrl->buffer[board]) = cmd_word;
 }

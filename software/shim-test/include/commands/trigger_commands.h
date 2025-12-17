@@ -12,6 +12,14 @@ typedef struct {
   bool binary_mode;                // true for binary format, false for ASCII format
 } trigger_data_stream_params_t;
 
+// Structure for trigger monitoring thread
+typedef struct {
+  struct sys_sts_t* sys_sts;
+  uint32_t expected_total_triggers;
+  volatile bool* should_stop;
+  bool verbose;
+} trigger_monitor_params_t;
+
 // Trigger FIFO status commands
 int cmd_trig_cmd_fifo_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_trig_data_fifo_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
@@ -34,5 +42,11 @@ int cmd_trig_expect_ext(const char** args, int arg_count, const command_flag_t* 
 // Trigger data streaming commands
 int cmd_stream_trig_data_to_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_stop_trig_data_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+
+// Trigger monitoring API functions
+int start_trigger_monitor(struct sys_sts_t* sys_sts, uint32_t expected_triggers, bool verbose);
+int stop_trigger_monitor(void);
+bool is_trigger_monitor_active(void);
+int cmd_stop_trigger_monitor(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
 #endif // TRIGGER_COMMANDS_H

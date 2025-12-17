@@ -404,18 +404,14 @@ static void* adc_data_stream_thread(void* arg) {
           uint32_t word = write_buffer[i];
           
           // Extract two 16-bit samples from the 32-bit word
-          uint16_t sample1_offset = (uint16_t)(word & 0xFFFF);        // Bits 15:0
-          uint16_t sample2_offset = (uint16_t)((word >> 16) & 0xFFFF); // Bits 31:16
-          
-          // Convert from offset format to signed using the offset_to_signed function
-          int16_t sample1_signed = offset_to_signed(sample1_offset);
-          int16_t sample2_signed = offset_to_signed(sample2_offset);
+          int16_t sample1 = (int16_t)(word & 0xFFFF);        // Bits 15:0
+          int16_t sample2 = (int16_t)((word >> 16) & 0xFFFF); // Bits 31:16
           
           // Write sample1
           if (samples_on_line > 0) {
             fprintf(file, " ");
           }
-          fprintf(file, "%d", sample1_signed);
+          fprintf(file, "%d", sample1);
           samples_on_line++;
           
           // Check if we need a new line
@@ -428,7 +424,7 @@ static void* adc_data_stream_thread(void* arg) {
           if (samples_on_line > 0) {
             fprintf(file, " ");
           }
-          fprintf(file, "%d", sample2_signed);
+          fprintf(file, "%d", sample2);
           samples_on_line++;
           
           // Check if we need a new line

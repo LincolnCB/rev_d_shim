@@ -20,24 +20,11 @@ int cmd_load_adc_bias(const char** args, int arg_count, const command_flag_t* fl
 // Waveform test command - easily load, run, and log waveforms
 int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
-// Helper for waveform_test DAC file default selection
-// (static in .c, but prototype here if needed elsewhere)
-// static void get_next_bd_wfm_if_exists(const char* filename, char* out_filename, size_t out_size);
-
-// Rev C compatibility command - convert Rev C DAC files and stream to ADC output
-int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
-
-// Zero all DAC channels command - set all channels to 0 on all connected boards
-
-
 // Fieldmap data collection command - automated field mapping with current sweep
 int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
 // Stop fieldmap data collection command
 int cmd_stop_fieldmap(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
-
-// Stop trigger monitor command
-int cmd_stop_trigger_monitor(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
 // Stop waveform test command - stops all streaming and monitoring
 int cmd_stop_waveform(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);

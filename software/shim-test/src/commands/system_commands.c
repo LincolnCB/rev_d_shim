@@ -157,7 +157,7 @@ int cmd_set_boot_test_skip(const char** args, int arg_count, const command_flag_
   }
   
   if (value > 0xFFFF) {
-    fprintf(stderr, "Value out of range: %u (valid range: 0 - 65535)\n", value);
+    fprintf(stderr, "Value out of range: %u (valid range: 0 - 65535 or 0x0 - 0xFFFF)\n", value);
     return -1;
   }
   

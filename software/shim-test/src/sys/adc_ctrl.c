@@ -344,8 +344,7 @@ char* adc_format_single(uint32_t data_word, bool verbose) {
     strcat(buffer, temp_buffer);
   }
   
-  uint16_t lower_16 = data_word & 0xFFFF;
-  int16_t signed_value = offset_to_signed(lower_16);
+  int16_t signed_value = (int16_t)(data_word & 0xFFFF);
   snprintf(temp_buffer, sizeof(temp_buffer), "%d", signed_value);
   strcat(buffer, temp_buffer);
   
@@ -363,11 +362,8 @@ char* adc_format_pair(uint32_t data_word, bool verbose) {
     strcat(buffer, temp_buffer);
   }
   
-  uint16_t lower_16 = data_word & 0xFFFF;
-  uint16_t upper_16 = (data_word >> 16) & 0xFFFF;
-  
-  int16_t first_value = offset_to_signed(lower_16);
-  int16_t second_value = offset_to_signed(upper_16);
+  int16_t first_value = (int16_t)(data_word & 0xFFFF);
+  int16_t second_value = (int16_t)((data_word >> 16) & 0xFFFF);
   
   snprintf(temp_buffer, sizeof(temp_buffer), "%d, %d", first_value, second_value);
   strcat(buffer, temp_buffer);
