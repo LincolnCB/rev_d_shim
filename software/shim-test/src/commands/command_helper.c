@@ -13,18 +13,18 @@
 
 // Helper function to convert Amps to signed DAC units
 // Maps -5.0A -> -32767, 0A -> 0, 5.0A -> 32767
-int16_t amps_to_dac(float amps) {
+int16_t amps_to_dac(double amps) {
   // Clamp to valid range
-  if (amps < -5.0f) amps = -5.0f;
-  if (amps > 5.0f) amps = 5.0f;
+  if (amps < -5.0) amps = -5.0;
+  if (amps > 5.0) amps = 5.0;
   // Convert: dac = amps * (32767 / 5.0)
-  int16_t dac_value = (int16_t)(amps * (32767.0f / 5.0f));
+  int16_t dac_value = (int16_t)(amps * (32767.0 / 5.0));
   return dac_value;
 }
 // Helper function to convert signed DAC units to Amps
 // Maps -32767 -> -5.0A, 0 -> 0A, 32767 -> 5.0A
-float dac_to_amps(int16_t dac_value) {
-  float amps = ((float)dac_value) * (5.0f / 32767.0f);
+double dac_to_amps(int16_t dac_value) {
+  double amps = ((double)dac_value) * (5.0 / 32767.0);
   return amps;
 }
 // Parse numeric value from string, supporting decimal, hex (0x), octal (0), binary (0b)

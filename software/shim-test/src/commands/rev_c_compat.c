@@ -61,8 +61,8 @@ static int validate_rev_c_file_format_amps(const char* file_path, int* line_coun
       continue;
     }
     
-    // Parse exactly 32 space-separated floats
-    float amp_vals[32];
+    // Parse exactly 32 space-separated doubles
+    double amp_vals[32];
     int parsed = 0;
     char* token_start = trimmed;
     char* endptr;
@@ -75,14 +75,14 @@ static int validate_rev_c_file_format_amps(const char* file_path, int* line_coun
         break; // End of line
       }
       
-      // Parse float
-      float val = strtof(token_start, &endptr);
+      // Parse double
+      double val = strtof(token_start, &endptr);
       if (endptr == token_start) {
         break; // No valid number found
       }
       
       // Check range (-5.0 to 5.0)
-      if (val < -5.0f || val > 5.0f) {
+      if (val < -5.0 || val > 5.0) {
         fprintf(stderr, "Rev C DAC file (Amps) line %d, value %d: %.3f out of range (-5.0 to 5.0)\n", 
                 line_num, i+1, val);
         fclose(file);
@@ -173,10 +173,10 @@ static void* rev_c_dac_cmd_stream_thread(void* arg) {
       char* token_start = trimmed;
       char* endptr;
       
-      // Parse as floats and convert to DAC units
+      // Parse as doubles and convert to DAC units
       for (int i = 0; i < 32; i++) {
         while (*token_start == ' ' || *token_start == '\t') token_start++;
-        float amp_val = strtof(token_start, &endptr);
+        double amp_val = strtof(token_start, &endptr);
         line_dac_vals[i] = amps_to_dac(amp_val);
         token_start = endptr;
       }
@@ -203,7 +203,7 @@ static void* rev_c_dac_cmd_stream_thread(void* arg) {
         
         // Handle ramping if requested
         for (int ramp_step = 0; ramp_step <= ramp_samples; ramp_step++) {
-          float ramp_fraction = (float)(ramp_step + 1) / (float)(ramp_samples + 1);
+          double ramp_fraction = (double)(ramp_step + 1) / (double)(ramp_samples + 1);
           int16_t cmd_ch_vals[8];
           for (int ch = 0; ch < 8; ch++) {
             int16_t target_val = line_dac_vals[board * 8 + ch];

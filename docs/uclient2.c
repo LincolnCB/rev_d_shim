@@ -11,7 +11,7 @@ int read_adc() {
 
 int main(int argc, char *argv[]) {
     if (argc != 4) {
-        fprintf(stderr, "Usage: %s <int port> <string server_ip> <float delay_ms>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <int port> <string server_ip> <double delay_ms>\n", argv[0]);
         return 1;
     }
 

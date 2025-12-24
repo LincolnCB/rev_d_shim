@@ -145,7 +145,7 @@ int main()
         uint32_t int_mult = (*spi_clk_cfg_0 >> 8) & 0xFF;
         uint32_t frac_mult = (*spi_clk_cfg_0 >> 16) & 0x3FF;
         printf("Current clk_mult values: int_val = %u, frac_val = %u\n", int_mult, frac_mult);
-        printf("Equivalent multiplier: %f\n", (float)int_mult + (float)frac_mult / 1000.0);
+        printf("Equivalent multiplier: %f\n", (double)int_mult + (double)frac_mult / 1000.0);
         printf("To change the multiplier, use the same command but specify int_val and optionally frac_val.\n");
         continue;
       }
@@ -199,7 +199,7 @@ int main()
         uint32_t int_div = *spi_clk_cfg_1 & 0xFF;
         uint32_t frac_div = (*spi_clk_cfg_1 >> 8) & 0x3FF;
         printf("Current clk_div1 values: int_val = %u, frac_val = %u\n", int_div, frac_div);
-        printf("Equivalent divider: %f\n", (float)int_div + (float)frac_div / 1000.0);
+        printf("Equivalent divider: %f\n", (double)int_div + (double)frac_div / 1000.0);
         printf("To change the divider, use the same command but specify int_val and optionally frac_val.\n");
         continue;
       }
@@ -232,7 +232,7 @@ int main()
       if(token == NULL) {
         int32_t val = *spi_clk_phase;
         printf("Current clk_phase value: %d\n", val);
-        printf("Equivalent phase: %f degrees\n", (float)val / 1000.0);
+        printf("Equivalent phase: %f degrees\n", (double)val / 1000.0);
         printf("To change the phase, use the same command but specify val.\n");
         continue;
       }
@@ -254,7 +254,7 @@ int main()
       if(token == NULL) {
         uint32_t val = *spi_clk_duty;
         printf("Current clk_duty value: %u\n", val);
-        printf("Equivalent duty cycle: %f%%\n", (float)val / 1000.0);
+        printf("Equivalent duty cycle: %f%%\n", (double)val / 1000.0);
         continue;
       }
       uint32_t val = strtoul(token, &num_endptr, 10);
