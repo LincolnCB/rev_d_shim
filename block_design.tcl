@@ -195,14 +195,14 @@ cell xilinx.com:ip:smartconnect:1.0 sys_cfg_axi_intercon {
 ###############################################################################
 
 ### Configuration register
-## 32-bit offsets (see shim_axi_sys_ctrl.v)
+## 32-bit offsets (see axi_sys_ctrl.v)
 # +0 System enable (1b cap)
 # +1 Buffer reset (26b)
 # +2 Integrator threshold average (unsigned, 15b, min 1, max 32767)
 # +3 Integrator window (unsigned, 32b, min 2048)
 # +4 Integrator enable (1b cap)
 # +5 Boot test skip (16b cap)
-cell lcb:user:shim_axi_sys_ctrl axi_sys_ctrl {
+cell rev_d_shim:user:axi_sys_ctrl axi_sys_ctrl {
   INTEG_THRESHOLD_AVERAGE_DEFAULT 16384
   INTEG_WINDOW_DEFAULT 5000000
   INTEG_EN_DEFAULT 1
@@ -220,7 +220,7 @@ addr 0x40000000 128 axi_sys_ctrl/S_AXI ps/M_AXI_GP0
 ###############################################################################
 
 ### Hardware manager
-cell lcb:user:shim_hw_manager hw_manager {} {
+cell rev_d_shim:user:hw_manager hw_manager {} {
   clk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
   sys_en axi_sys_ctrl/sys_en
@@ -253,7 +253,7 @@ for {set i $board_count} {$i < 8} {incr i} {
   wire shutdown_sense_connected/In${i} const_0/dout
 }
 # Shutdown sense module
-cell lcb:user:shim_shutdown_sense shutdown_sense {} {
+cell rev_d_shim:user:shutdown_sense shutdown_sense {} {
   clk ps/FCLK_CLK0
   shutdown_sense_en hw_manager/shutdown_sense_en
   shutdown_sense_connected shutdown_sense_connected/dout
@@ -320,13 +320,13 @@ cell xilinx.com:ip:util_vector_logic n_unlock_cfg {
   Op1 axi_sys_ctrl/unlock
 }
 ## Timing calculation cores
-cell lcb:user:shim_ad5676_dac_timing_calc dac_timing_calc {} {
+cell rev_d_shim:user:ad5676_dac_timing_calc dac_timing_calc {} {
   clk ps/FCLK_CLK0
   resetn ps_rst/peripheral_aresetn
   spi_clk_freq_hz spi_clk_freq_hz_const/dout
   calc n_unlock_cfg/Res
 }
-cell lcb:user:shim_ads816x_adc_timing_calc adc_timing_calc {
+cell rev_d_shim:user:ads816x_adc_timing_calc adc_timing_calc {
   ADS_MODEL_ID 8
 } {
   clk ps/FCLK_CLK0
@@ -523,11 +523,11 @@ cell xilinx.com:ip:xlconcat:2.1 irq_concat {
 ###############################################################################
 
 ### Gate the SPI clocks (MISO and MOSI SCK)
-cell lcb:user:clock_gate spi_mosi_sck_gate {} {
+cell base:user:clock_gate spi_mosi_sck_gate {} {
   clk spi_clk/clk_out1
   en hw_manager/spi_clk_gate
 }
-cell lcb:user:clock_gate spi_miso_sck_gate {} {
+cell base:user:clock_gate spi_miso_sck_gate {} {
   en hw_manager/spi_clk_gate
 }
 ## Potentially invert the clocks based on register settings

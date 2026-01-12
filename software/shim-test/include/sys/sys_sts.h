@@ -51,7 +51,7 @@
 #define S_HALTED              (uint32_t) 9
 
 // Status codes (matches hardware manager core status codes)
-// 25 bits wide, see hardware shim_hw_manager.v for details
+// 25 bits wide, see hardware hw_manager.v for details
 #define STS_EMPTY                    (uint32_t) 0x0000 // Empty status.
 #define STS_OK                       (uint32_t) 0x0001 // System is operating normally.
 #define STS_PS_SHUTDOWN              (uint32_t) 0x0002 // Processing system shutdown.

@@ -94,7 +94,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 miso_rst {} {
   slowest_sync_clk miso_sck
 }
 ## DAC SPI core
-cell lcb:user:shim_ad5676_dac_ctrl dac_spi {
+cell rev_d_shim:user:ad5676_dac_ctrl dac_spi {
   ABS_CAL_MAX 4096
 } {
   clk spi_clk
@@ -134,7 +134,7 @@ cell lcb:user:shim_ad5676_dac_ctrl dac_spi {
 ### Integrator
 
 # Instantiate the threshold integrator module
-cell lcb:user:shim_threshold_integrator threshold_core {} {
+cell rev_d_shim:user:threshold_integrator threshold_core {} {
   clk spi_clk
   resetn resetn
   enable integ_en

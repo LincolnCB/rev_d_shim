@@ -173,7 +173,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     slowest_sync_clk aclk
   }
   # DAC command FIFO
-  cell lcb:user:fifo_async dac_cmd_fifo_$i {
+  cell base:user:fifo_async dac_cmd_fifo_$i {
     DATA_WIDTH 32
     ADDR_WIDTH $dac_cmd_fifo_addr_width
   } {
@@ -222,7 +222,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     slowest_sync_clk aclk
   }
   # DAC data FIFO
-  cell lcb:user:fifo_async dac_data_fifo_$i {
+  cell base:user:fifo_async dac_data_fifo_$i {
     DATA_WIDTH 32
     ADDR_WIDTH $dac_data_fifo_addr_width
   } {
@@ -248,7 +248,7 @@ for {set i 0} {$i < $board_count} {incr i} {
   }
 
   ## DAC FIFO AXI interface
-  cell lcb:user:axi_fifo_bridge dac_fifo_${i}_axi_bridge {
+  cell base:user:axi_fifo_bridge dac_fifo_${i}_axi_bridge {
     AXI_ADDR_WIDTH 32
     AXI_DATA_WIDTH 32
   } {
@@ -289,7 +289,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     slowest_sync_clk aclk
   }
   # ADC command FIFO
-  cell lcb:user:fifo_async adc_cmd_fifo_$i {
+  cell base:user:fifo_async adc_cmd_fifo_$i {
     DATA_WIDTH 32
     ADDR_WIDTH $adc_cmd_fifo_addr_width
   } {
@@ -338,7 +338,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     slowest_sync_clk aclk
   }
   # ADC data FIFO
-  cell lcb:user:fifo_async adc_data_fifo_$i {
+  cell base:user:fifo_async adc_data_fifo_$i {
     DATA_WIDTH 32
     ADDR_WIDTH $adc_data_fifo_addr_width
   } {
@@ -364,7 +364,7 @@ for {set i 0} {$i < $board_count} {incr i} {
   }
 
   ## ADC FIFO AXI interface
-  cell lcb:user:axi_fifo_bridge adc_fifo_${i}_axi_bridge {
+  cell base:user:axi_fifo_bridge adc_fifo_${i}_axi_bridge {
     AXI_ADDR_WIDTH 32
     AXI_DATA_WIDTH 32
   } {
@@ -405,7 +405,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 trig_cmd_fifo_aclk_rst {} {
   slowest_sync_clk aclk
 }
 # Trigger command FIFO
-cell lcb:user:fifo_async trig_cmd_fifo {
+cell base:user:fifo_async trig_cmd_fifo {
   DATA_WIDTH 32
   ADDR_WIDTH $trig_cmd_fifo_addr_width
 } {
@@ -454,7 +454,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 trig_data_fifo_aclk_rst {} {
   slowest_sync_clk aclk
 }
 # Trigger data FIFO
-cell lcb:user:fifo_async trig_data_fifo {
+cell base:user:fifo_async trig_data_fifo {
   DATA_WIDTH 32
   ADDR_WIDTH $trig_data_fifo_addr_width
 } {
@@ -481,7 +481,7 @@ cell xilinx.com:ip:xlconcat:2.1 trig_data_fifo_sts_word {
 }
 
 ## Trigger FIFO AXI interface
-cell lcb:user:axi_fifo_bridge trig_fifo_axi_bridge {
+cell base:user:axi_fifo_bridge trig_fifo_axi_bridge {
   AXI_ADDR_WIDTH 32
   AXI_DATA_WIDTH 32
 } {
