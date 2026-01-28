@@ -97,32 +97,43 @@ static bool file_exists(const char* filename) {
   return (stat(filename, &buffer) == 0);
 }
 
-// If the filename ends with _bdX.wfm, check for _bd(X+1).wfm
-// If it exists, return it in out_filename, else copy original
-static void get_next_bd_wfm_if_exists(const char* filename, char* out_filename, size_t out_size) {
-  size_t len = strlen(filename);
-  if (len < 8) { // Minimum length for _bdX.wfm
-    strncpy(out_filename, filename, out_size);
-    out_filename[out_size-1] = '\0';
-    return;
-  }
-  // Look for pattern _bdX.wfm at the end
-  const char* suffix = strstr(filename, "_bd");
-  if (suffix && strlen(suffix) == 8 && strncmp(suffix+5, ".wfm", 4) == 0) {
-    int bd_num = suffix[3] - '0';
-    if (bd_num >= 0 && bd_num <= 7) {
-      char next_filename[1024];
-      snprintf(next_filename, sizeof(next_filename), "%.*s_bd%d.wfm", (int)(suffix-filename), filename, bd_num+1);
-      if (file_exists(next_filename)) {
-        strncpy(out_filename, next_filename, out_size);
-        out_filename[out_size-1] = '\0';
-        return;
+// If the filename ends with _bdX.wfm (where "X" is 0-7), check for the same filename but replacing X with X+1
+// If it exists, return it in out_filename, otherwise copy the original filename to out_filename
+static void get_next_bd_wfm_if_exists(const char* filename, char* out_filename) {
+  // Copy original filename to output first
+  strcpy(out_filename, filename);
+
+  // Check if filename matches the pattern _bdX.wfm where X is 0-7
+  const char* bd_pattern = "_bd";
+  char* bd_pos = strstr(filename, bd_pattern);
+
+  // If we found "_bd" in the filename
+  if (bd_pos != NULL) {
+    // Check if it's followed by a digit 0-7 and then ".wfm"
+    char* digit_pos = bd_pos + strlen(bd_pattern);
+    if (*digit_pos >= '0' && *digit_pos <= '7') {
+      char* wfm_pos = digit_pos + 1;
+      if (strcmp(wfm_pos, ".wfm") == 0) {
+        // Found pattern _bdX.wfm where X is 0-7
+        int current_bd = *digit_pos - '0';
+        int next_bd = current_bd + 1;
+        
+        // Only check for next file if current is 0-6 (next would be 1-7)
+        if (next_bd <= 7) {
+          // Build the next filename by replacing X with X+1
+          char next_filename[1024];
+          size_t prefix_len = bd_pos + strlen(bd_pattern) - filename;
+          snprintf(next_filename, sizeof(next_filename), "%.*s%d.wfm", 
+                   (int)prefix_len, filename, next_bd);
+          
+          // Check if next file exists
+          if (file_exists(next_filename)) {
+            strcpy(out_filename, next_filename);
+          }
+        }
       }
     }
   }
-  // Default: keep original
-  strncpy(out_filename, filename, out_size);
-  out_filename[out_size-1] = '\0';
 }
 
 // Helper function to calculate expected number of ADC words from an ADC command file
@@ -865,7 +876,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   char resolved_adc_files[8][1024] = {0};  // Resolved ADC file paths
   
   char previous_dac_file[1024] = "";
-  char previous_dac_file_checked[1024] = "";
+  char default_dac_file[1024] = "";
   char previous_adc_file[1024] = "";
   
   for (int board = 0; board < 8; board++) {
@@ -879,13 +890,13 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
 
     // Check if previous_dac_file ends with _bdX.wfm and if _bd(X+1).wfm exists
     if (strlen(previous_dac_file) > 0) {
-      get_next_bd_wfm_if_exists(previous_dac_file, previous_dac_file_checked, sizeof(previous_dac_file_checked));
+      get_next_bd_wfm_if_exists(previous_dac_file, default_dac_file);
     } else {
-      previous_dac_file_checked[0] = '\0';
+      default_dac_file[0] = '\0';
     }
 
     if (prompt_file_selection(dac_prompt,
-                             strlen(previous_dac_file_checked) > 0 ? previous_dac_file_checked : NULL,
+                             strlen(default_dac_file) > 0 ? default_dac_file : NULL,
                              resolved_dac_files[board],
                              sizeof(resolved_dac_files[board])) != 0) {
       fprintf(stderr, "Failed to get DAC file for board %d\n", board);
