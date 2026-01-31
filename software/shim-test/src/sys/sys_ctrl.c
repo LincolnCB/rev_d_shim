@@ -15,7 +15,8 @@ struct sys_ctrl_t create_sys_ctrl(bool verbose) {
   }
 
   // Initialize the system control structure with the mapped memory addresses
-  sys_ctrl.system_enable           = sys_ctrl_ptr + SYSTEM_ENABLE_OFFSET;
+  sys_ctrl.ctrl_enable             = sys_ctrl_ptr + CTRL_ENABLE_OFFSET;
+  sys_ctrl.power_enable            = sys_ctrl_ptr + POWER_ENABLE_OFFSET;
   sys_ctrl.cmd_buf_reset           = sys_ctrl_ptr + CMD_BUF_RESET_OFFSET;
   sys_ctrl.data_buf_reset          = sys_ctrl_ptr + DATA_BUF_RESET_OFFSET;
   sys_ctrl.integ_threshold_average = sys_ctrl_ptr + INTEG_THRESHOLD_AVERAGE_OFFSET;
@@ -29,12 +30,20 @@ struct sys_ctrl_t create_sys_ctrl(bool verbose) {
   return sys_ctrl;
 }
 
-// Turn the system on
-void sys_ctrl_turn_on(struct sys_ctrl_t *sys_ctrl, bool verbose) {
+// Turn the control board on
+void sys_ctrl_turn_ctrl_on(struct sys_ctrl_t *sys_ctrl, bool verbose) {
   if (verbose) {
-    printf("Turning on the system...\n");
+    printf("Turning on the control board...\n");
   }
-  *(sys_ctrl->system_enable) = 1; // Set the system enable register to 1
+  *(sys_ctrl->ctrl_enable) = 1; // Set the system enable register to 1
+}
+
+// Turn the power board on
+void sys_ctrl_turn_pow_on(struct sys_ctrl_t *sys_ctrl, bool verbose) {
+  if (verbose) {
+    printf("Turning on the power board...\n");
+  }
+  *(sys_ctrl->power_enable) = 1; // Set the power enable register to 1
 }
 
 // Turn the system off
@@ -42,7 +51,8 @@ void sys_ctrl_turn_off(struct sys_ctrl_t *sys_ctrl, bool verbose) {
   if (verbose) {
     printf("Turning off the system...\n");
   }
-  *(sys_ctrl->system_enable) = 0; // Set the system enable register to 0
+  *(sys_ctrl->ctrl_enable) = 0; // Set the system enable register to 0
+  *(sys_ctrl->power_enable) = 0;  // Set the power enable register to 0
 }
 
 // Set the boot_test_skip register to a 16-bit value

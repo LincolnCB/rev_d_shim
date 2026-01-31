@@ -12,22 +12,24 @@
 #define SYS_CTRL_BASE                  (uint32_t) 0x40000000
 #define SYS_CTRL_WORDCOUNT             (uint32_t) 10 // Size in 32-bit words
 // 32-bit offsets within the system control and configuration register 
-#define SYSTEM_ENABLE_OFFSET           (uint32_t) 0
-#define CMD_BUF_RESET_OFFSET           (uint32_t) 1
-#define DATA_BUF_RESET_OFFSET          (uint32_t) 2
-#define INTEG_THRESHOLD_AVERAGE_OFFSET (uint32_t) 3
-#define INTEG_WINDOW_OFFSET            (uint32_t) 4
-#define INTEG_ENABLE_OFFSET            (uint32_t) 5
-#define BOOT_TEST_SKIP_OFFSET          (uint32_t) 6
-#define DEBUG_OFFSET                   (uint32_t) 7
-#define MOSI_SCK_POL_OFFSET            (uint32_t) 8
-#define MISO_SCK_POL_OFFSET            (uint32_t) 9
+#define CTRL_ENABLE_OFFSET             (uint32_t) 0
+#define POWER_ENABLE_OFFSET            (uint32_t) 1
+#define CMD_BUF_RESET_OFFSET           (uint32_t) 2
+#define DATA_BUF_RESET_OFFSET          (uint32_t) 3
+#define INTEG_THRESHOLD_AVERAGE_OFFSET (uint32_t) 4
+#define INTEG_WINDOW_OFFSET            (uint32_t) 5
+#define INTEG_ENABLE_OFFSET            (uint32_t) 6
+#define BOOT_TEST_SKIP_OFFSET          (uint32_t) 7
+#define DEBUG_OFFSET                   (uint32_t) 8
+#define MOSI_SCK_POL_OFFSET            (uint32_t) 9
+#define MISO_SCK_POL_OFFSET            (uint32_t) 10
 
 //////////////////////////////////////////////////////////////////
 
 // System control structure
 struct sys_ctrl_t {
-  volatile uint32_t *system_enable;           // System enable
+  volatile uint32_t *ctrl_enable;             // Ctrl enable
+  volatile uint32_t *power_enable;            // Power enable
   volatile uint32_t *cmd_buf_reset;           // Command buffer reset
   volatile uint32_t *data_buf_reset;          // Data buffer reset
   volatile uint32_t *integ_threshold_average; // Integrator threshold average
@@ -41,8 +43,10 @@ struct sys_ctrl_t {
 
 // Create a system control structure
 struct sys_ctrl_t create_sys_ctrl(bool verbose);
-// Turn the system on
-void sys_ctrl_turn_on(struct sys_ctrl_t *sys_ctrl, bool verbose);
+// Turn the control board on
+void sys_ctrl_turn_ctrl_on(struct sys_ctrl_t *sys_ctrl, bool verbose);
+// Turn the power board on
+void sys_ctrl_turn_pow_on(struct sys_ctrl_t *sys_ctrl, bool verbose);
 // Turn the system off
 void sys_ctrl_turn_off(struct sys_ctrl_t *sys_ctrl, bool verbose);
 // Set the boot_test_skip register to a 16-bit value

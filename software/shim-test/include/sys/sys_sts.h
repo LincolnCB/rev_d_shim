@@ -44,11 +44,12 @@
 #define S_CONFIRM_SPI_RST     (uint32_t) 2
 #define S_POWER_ON_CRTL_BRD   (uint32_t) 3
 #define S_CONFIRM_SPI_START   (uint32_t) 4
-#define S_POWER_ON_AMP_BRD    (uint32_t) 5
-#define S_AMP_POWER_WAIT      (uint32_t) 6
-#define S_RUNNING             (uint32_t) 7
-#define S_HALTING             (uint32_t) 8
-#define S_HALTED              (uint32_t) 9
+#define S_WAIT_FOR_POW_EN     (uint32_t) 5
+#define S_POWER_ON_AMP_BRD    (uint32_t) 6
+#define S_AMP_POWER_WAIT      (uint32_t) 7
+#define S_RUNNING             (uint32_t) 8
+#define S_HALTING             (uint32_t) 9
+#define S_HALTED              (uint32_t) 10
 
 // Status codes (matches hardware manager core status codes)
 // 25 bits wide, see hardware hw_manager.v for details
@@ -60,16 +61,17 @@
 #define STS_SPI_START_TIMEOUT        (uint32_t) 0x0101 // SPI start timeout.
 // Pre-start configuration values
 #define STS_LOCK_VIOL                (uint32_t) 0x0200 // Configuration lock violation.
-#define STS_SYS_EN_OOB               (uint32_t) 0x0201 // System enable register out of bounds.
-#define STS_CMD_BUF_RESET_OOB        (uint32_t) 0x0202 // Command buffer reset out of bounds.
-#define STS_DATA_BUF_RESET_OOB       (uint32_t) 0x0203 // Data buffer reset out of bounds.
-#define STS_INTEG_THRESH_AVG_OOB     (uint32_t) 0x0204 // Integrator threshold average out of bounds.
-#define STS_INTEG_WINDOW_OOB         (uint32_t) 0x0205 // Integrator window out of bounds.
-#define STS_INTEG_EN_OOB             (uint32_t) 0x0206 // Integrator enable register out of bounds.
-#define STS_BOOT_TEST_SKIP_OOB       (uint32_t) 0x0207 // Boot test skip out of bounds.
-#define STS_DEBUG_OOB                (uint32_t) 0x0208 // Debug out of bounds.
-#define STS_MOSI_SCK_POL_OOB         (uint32_t) 0x0209 // MOSI SCK polarity out of bounds.
-#define STS_MISO_SCK_POL_OOB         (uint32_t) 0x020A // MISO SCK polarity out of bounds.
+#define STS_CTRL_EN_OOB              (uint32_t) 0x0201 // Control board enable register out of bounds.
+#define STS_POW_EN_OOB               (uint32_t) 0x0202 // Power board enable register out of bounds.
+#define STS_CMD_BUF_RESET_OOB        (uint32_t) 0x0203 // Command buffer reset out of bounds.
+#define STS_DATA_BUF_RESET_OOB       (uint32_t) 0x0204 // Data buffer reset out of bounds.
+#define STS_INTEG_THRESH_AVG_OOB     (uint32_t) 0x0205 // Integrator threshold average out of bounds.
+#define STS_INTEG_WINDOW_OOB         (uint32_t) 0x0206 // Integrator window out of bounds.
+#define STS_INTEG_EN_OOB             (uint32_t) 0x0207 // Integrator enable register out of bounds.
+#define STS_BOOT_TEST_SKIP_OOB       (uint32_t) 0x0208 // Boot test skip out of bounds.
+#define STS_DEBUG_OOB                (uint32_t) 0x0209 // Debug out of bounds.
+#define STS_MOSI_SCK_POL_OOB         (uint32_t) 0x020A // MOSI SCK polarity out of bounds.
+#define STS_MISO_SCK_POL_OOB         (uint32_t) 0x020B // MISO SCK polarity out of bounds.
 // Shutdown sense
 #define STS_SHUTDOWN_SENSE           (uint32_t) 0x0300 // Shutdown sense detected.
 #define STS_EXT_SHUTDOWN             (uint32_t) 0x0301 // External shutdown triggered.

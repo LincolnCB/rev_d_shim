@@ -50,7 +50,8 @@ static command_entry_t command_table[] = {
   // ===== SYSTEM COMMANDS (from system_commands.h) =====
   {"help", cmd_help, {0, 0, {-1}, "Show this help message"}},
   {"verbose", cmd_verbose, {0, 0, {-1}, "Toggle verbose mode"}},
-  {"on", cmd_on, {0, 0, {-1}, "Turn the system on"}},
+  {"ctrl_on", cmd_ctrl_on, {0, 0, {-1}, "Turn the control board on"}},
+  {"pow_on", cmd_pow_on, {0, 0, {-1}, "Turn the power board on"}},
   {"off", cmd_off, {0, 0, {-1}, "Turn the system off"}},
   {"sts", cmd_sts, {0, 0, {-1}, "Show hardware manager status"}},
   {"dbg", cmd_dbg, {0, 0, {-1}, "Show debug register"}},

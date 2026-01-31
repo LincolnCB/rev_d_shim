@@ -23,9 +23,20 @@ int cmd_verbose(const char** args, int arg_count, const command_flag_t* flags, i
   return 0;
 }
 
-int cmd_on(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  printf("Turning the system on...\n");
-  sys_ctrl_turn_on(ctx->sys_ctrl, *(ctx->verbose));
+int cmd_ctrl_on(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  printf("Turning the control board on...\n");
+  sys_ctrl_turn_ctrl_on(ctx->sys_ctrl, *(ctx->verbose));
+  
+  // Wait a bit and check status
+  usleep(100000); // 100ms
+  uint32_t hw_status = sys_sts_get_hw_status(ctx->sys_sts, *(ctx->verbose));
+  print_hw_status(hw_status, *(ctx->verbose));
+  return 0;
+}
+
+int cmd_pow_on(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  printf("Turning the power board on...\n");
+  sys_ctrl_turn_pow_on(ctx->sys_ctrl, *(ctx->verbose));
   
   // Wait a bit and check status
   usleep(100000); // 100ms

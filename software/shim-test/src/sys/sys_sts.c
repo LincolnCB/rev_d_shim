@@ -79,7 +79,7 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
   if (verbose) printf("Raw hardware state code: 0x%" PRIx32 "\n", HW_STS_STATE(hw_status));
   switch (HW_STS_STATE(hw_status)) {
     case S_IDLE:
-      printf("State: Idle\n");
+      printf("State: Idle (Waiting For Control Board Enable)\n");
       break;
     case S_CONFIRM_SPI_RST:
       printf("State: Confirm SPI Reset\n");
@@ -89,6 +89,9 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
       break;
     case S_CONFIRM_SPI_START:
       printf("State: Confirm SPI Start\n");
+      break;
+    case S_WAIT_FOR_POW_EN:
+      printf("State: Waiting For Power Board Enable\n");
       break;
     case S_POWER_ON_AMP_BRD:
       printf("State: Power On Amplifier Board\n");
@@ -132,8 +135,11 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
       case STS_LOCK_VIOL:
         printf("Status: Configuration lock violation\n");
         break;
-      case STS_SYS_EN_OOB:
-        printf("Status: System enable register out of bounds\n");
+      case STS_CTRL_EN_OOB:
+        printf("Status: Control board enable register out of bounds\n");
+        break;
+      case STS_POW_EN_OOB:
+        printf("Status: Power board enable register out of bounds\n");
         break;
       case STS_CMD_BUF_RESET_OOB:
         printf("Status: Command buffer reset out of bounds\n");

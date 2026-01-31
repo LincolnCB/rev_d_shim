@@ -223,9 +223,11 @@ addr 0x40000000 128 axi_sys_ctrl/S_AXI ps/M_AXI_GP0
 cell rev_d_shim:user:hw_manager hw_manager {} {
   clk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
-  sys_en axi_sys_ctrl/sys_en
+  ctrl_en axi_sys_ctrl/ctrl_en
+  pow_en axi_sys_ctrl/pow_en
   ext_en Manual_Enable
-  sys_en_oob axi_sys_ctrl/sys_en_oob
+  ctrl_en_oob axi_sys_ctrl/ctrl_en_oob
+  pow_en_oob axi_sys_ctrl/pow_en_oob
   cmd_buf_reset_oob axi_sys_ctrl/cmd_buf_reset_oob
   data_buf_reset_oob axi_sys_ctrl/data_buf_reset_oob
   integ_thresh_avg_oob axi_sys_ctrl/integ_thresh_avg_oob
@@ -302,6 +304,11 @@ if {$use_ext_clk} {
   }
 }
 addr 0x40200000 2048 spi_clk/s_axi_lite ps/M_AXI_GP0
+
+## SPI clock output slowdown divider for DAC boot test
+cell rev_d_shim:user:clock_divider spi_clk_divider {} {
+  clk_i spi_clk/clk_out1
+}
   
 
 ###############################################################################
@@ -365,7 +372,7 @@ cell xilinx.com:ip:util_vector_logic lock_viol_or {
 module spi_clk_domain spi_clk_domain {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
-  spi_clk spi_clk/clk_out1
+  spi_clk spi_clk_divider/clk_o
   spi_en hw_manager/spi_en
   integ_thresh_avg axi_sys_ctrl/integ_thresh_avg
   integ_window axi_sys_ctrl/integ_window
@@ -376,6 +383,7 @@ module spi_clk_domain spi_clk_domain {
   debug axi_sys_ctrl/debug
   dac_cal_init axi_sys_ctrl/dac_cal_init
   spi_off hw_manager/spi_off
+  spi_off spi_clk_divider/slow_en
   over_thresh hw_manager/over_thresh
   thresh_underflow hw_manager/thresh_underflow
   thresh_overflow hw_manager/thresh_overflow
@@ -408,7 +416,7 @@ module axi_spi_interface axi_spi_interface {
   aresetn ps_rst/peripheral_aresetn
   cmd_buf_reset axi_sys_ctrl/cmd_buf_reset
   data_buf_reset axi_sys_ctrl/data_buf_reset
-  spi_clk spi_clk/clk_out1
+  spi_clk spi_clk_divider/clk_o
   S_AXI ps/M_AXI_GP1
 }
 ## Wire channel pins for the module
@@ -524,7 +532,7 @@ cell xilinx.com:ip:xlconcat:2.1 irq_concat {
 
 ### Gate the SPI clocks (MISO and MOSI SCK)
 cell base:user:clock_gate spi_mosi_sck_gate {} {
-  clk spi_clk/clk_out1
+  clk spi_clk_divider/clk_o
   en hw_manager/spi_clk_gate
 }
 cell base:user:clock_gate spi_miso_sck_gate {} {
