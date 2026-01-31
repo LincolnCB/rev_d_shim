@@ -11,23 +11,23 @@ module axi_fifo_bridge #(
   input  wire                       rd_resetn,
 
   // AXI4-Lite subordinate interface
-  input  wire [AXI_ADDR_WIDTH-1:0]   s_axi_awaddr,  // AXI4-Lite slave: Write address
-  input  wire                        s_axi_awvalid, // AXI4-Lite slave: Write address valid
-  output wire                        s_axi_awready, // AXI4-Lite slave: Write address ready
-  input  wire [AXI_DATA_WIDTH-1:0]   s_axi_wdata,   // AXI4-Lite slave: Write data
-  input  wire [AXI_DATA_WIDTH/8-1:0] s_axi_wstrb,   // AXI4-Lite slave: Write strobe
-  input  wire                        s_axi_wvalid,  // AXI4-Lite slave: Write data valid
-  output wire                        s_axi_wready,  // AXI4-Lite slave: Write data ready
-  output reg  [1:0]                  s_axi_bresp,   // AXI4-Lite slave: Write response
-  output reg                         s_axi_bvalid,  // AXI4-Lite slave: Write response valid
-  input  wire                        s_axi_bready,  // AXI4-Lite slave: Write response ready
-  input  wire [AXI_ADDR_WIDTH-1:0]   s_axi_araddr,  // AXI4-Lite slave: Read address
-  input  wire                        s_axi_arvalid, // AXI4-Lite slave: Read address valid
-  output wire                        s_axi_arready, // AXI4-Lite slave: Read address ready
-  output reg  [AXI_DATA_WIDTH-1:0]   s_axi_rdata,   // AXI4-Lite slave: Read data
-  output reg  [1:0]                  s_axi_rresp,   // AXI4-Lite slave: Read data response
-  output reg                         s_axi_rvalid,  // AXI4-Lite slave: Read data valid
-  input  wire                        s_axi_rready,  // AXI4-Lite slave: Read data ready
+  input  wire [AXI_ADDR_WIDTH-1:0]   s_axi_awaddr,  // AXI4-Lite subordinate: Write address
+  input  wire                        s_axi_awvalid, // AXI4-Lite subordinate: Write address valid
+  output wire                        s_axi_awready, // AXI4-Lite subordinate: Write address ready
+  input  wire [AXI_DATA_WIDTH-1:0]   s_axi_wdata,   // AXI4-Lite subordinate: Write data
+  input  wire [AXI_DATA_WIDTH/8-1:0] s_axi_wstrb,   // AXI4-Lite subordinate: Write strobe
+  input  wire                        s_axi_wvalid,  // AXI4-Lite subordinate: Write data valid
+  output wire                        s_axi_wready,  // AXI4-Lite subordinate: Write data ready
+  output reg  [1:0]                  s_axi_bresp,   // AXI4-Lite subordinate: Write response
+  output reg                         s_axi_bvalid,  // AXI4-Lite subordinate: Write response valid
+  input  wire                        s_axi_bready,  // AXI4-Lite subordinate: Write response ready
+  input  wire [AXI_ADDR_WIDTH-1:0]   s_axi_araddr,  // AXI4-Lite subordinate: Read address
+  input  wire                        s_axi_arvalid, // AXI4-Lite subordinate: Read address valid
+  output wire                        s_axi_arready, // AXI4-Lite subordinate: Read address ready
+  output reg  [AXI_DATA_WIDTH-1:0]   s_axi_rdata,   // AXI4-Lite subordinate: Read data
+  output reg  [1:0]                  s_axi_rresp,   // AXI4-Lite subordinate: Read data response
+  output reg                         s_axi_rvalid,  // AXI4-Lite subordinate: Read data valid
+  input  wire                        s_axi_rready,  // AXI4-Lite subordinate: Read data ready
 
   // FIFO write side
   output wire [AXI_DATA_WIDTH-1:0]  fifo_wr_data,
