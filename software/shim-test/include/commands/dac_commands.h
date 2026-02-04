@@ -3,13 +3,21 @@
 
 #include "command_helper.h"
 
+// Enum for DAC command types
+typedef enum {
+  DAC_DELAY_CMD,         // Delay-based DAC write command
+  DAC_TRIGGER_CMD,       // Trigger-based DAC write command
+  DAC_NOOP_TRIGGER_CMD,  // No-op with trigger mode
+  DAC_NOOP_DELAY_CMD     // No-op with delay mode
+} dac_command_type_t;
+
 // Structure to hold a parsed waveform command
 typedef struct {
-  bool is_trigger;     // true for T, false for D
-  uint32_t value;      // command value
-  bool has_ch_vals;    // whether channel values are present
-  int16_t ch_vals[8];  // channel values (if present)
-  bool cont;           // continue flag
+  dac_command_type_t type;  // Command type
+  uint32_t value;           // Command value
+  bool has_ch_vals;         // Whether channel values are present
+  int16_t ch_vals[8];       // Channel values (if present)
+  bool cont;                // Continue flag
 } waveform_command_t;
 
 // Structure to pass data to the DAC streaming thread

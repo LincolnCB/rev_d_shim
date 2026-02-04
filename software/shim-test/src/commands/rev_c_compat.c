@@ -222,7 +222,7 @@ static void* rev_c_dac_cmd_stream_thread(void* arg) {
           int count = trig ? 1 : ramp_delay_cycles; // 1 trigger or delay cycles
 
           // Send DAC write command with trigger wait (trig=trig, cont=cont, ldac=true, 1 trigger OR delay)
-          dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, cmd_ch_vals, trig, cont, true, count, verbose);
+          dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, cmd_ch_vals, trig ? DAC_TRIGGER_WAIT : DAC_DELAY_WAIT, cont ? DAC_CONTINUE : DAC_NO_CONTINUE, DAC_LDAC, count, verbose);
           total_commands_sent++;
           total_words_sent += 5; // 1 command + 4 data words
         
@@ -269,7 +269,7 @@ static void* rev_c_dac_cmd_stream_thread(void* arg) {
       }
       
       // Send DAC write command with trigger wait (trig=true, cont=false, ldac=true, 1 trigger)
-      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, zero_vals, true, false, true, 1, verbose);
+      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, zero_vals, DAC_TRIGGER_WAIT, DAC_NO_CONTINUE, DAC_LDAC, 1, verbose);
       total_commands_sent++;
       total_words_sent += 5; // 1 command + 4 data words
       
@@ -382,18 +382,18 @@ static void* rev_c_adc_cmd_stream_thread(void* arg) {
         if (ramp_samples > 0) {
           // If ramping, repeatedly sample until the delay_cycles have passed
           // Command 1: ADC read with trigger wait for 1 triggers
-          adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 1, 0, verbose);
+          adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, ADC_TRIGGER_WAIT, ADC_NO_CONTINUE, 1, 0, verbose);
           total_commands_sent++;
           total_words_sent++;
           
           // Repeat ramp samples
           for (int ramp_step = 1; ramp_step < ramp_samples - 1; ramp_step++) {
-            adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, ramp_delay_cycles, 0, verbose);
+            adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, ADC_DELAY_WAIT, ADC_NO_CONTINUE, ramp_delay_cycles, 0, verbose);
             total_commands_sent++;
             total_words_sent++;
           }
           // Final ADC read with remaining delay cycles
-          adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, ramp_delay_cycles + delay_cycles, 0, verbose);
+          adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, ADC_DELAY_WAIT, ADC_NO_CONTINUE, ramp_delay_cycles + delay_cycles, 0, verbose);
           total_commands_sent++;
           total_words_sent++;
 
@@ -403,17 +403,17 @@ static void* rev_c_adc_cmd_stream_thread(void* arg) {
           }
         } else {
           // Command 1: NOOP with trigger wait for 1 trigger
-          adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, verbose);
+          adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, ADC_TRIGGER_WAIT, ADC_NO_CONTINUE, 1, verbose);
           total_commands_sent++;
           total_words_sent++;
           
           // Command 2: NOOP with delay wait for delay_cycles
-          adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, false, delay_cycles, verbose);
+          adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, ADC_DELAY_WAIT, ADC_NO_CONTINUE, delay_cycles, verbose);
           total_commands_sent++;
           total_words_sent++;
           
           // Command 3: ADC read with trigger wait for no triggers (0 triggers)
-          adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 0, 0, verbose);
+          adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, ADC_TRIGGER_WAIT, ADC_NO_CONTINUE, 0, 0, verbose);
           total_commands_sent++;
           total_words_sent++;
           
@@ -459,33 +459,33 @@ static void* rev_c_adc_cmd_stream_thread(void* arg) {
       if (ramp_samples > 0) {
         // If ramping, repeatedly sample until the delay_cycles have passed
         // Command 1: ADC read with trigger wait for 1 triggers
-        adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 1, 0, verbose);
+        adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, ADC_TRIGGER_WAIT, ADC_NO_CONTINUE, 1, 0, verbose);
         total_commands_sent++;
         total_words_sent++;
 
         // Repeat ramp samples
         for (int ramp_step = 1; ramp_step < ramp_samples - 1; ramp_step++) {
-          adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, ramp_delay_cycles, 0, verbose);
+          adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, ADC_DELAY_WAIT, ADC_NO_CONTINUE, ramp_delay_cycles, 0, verbose);
           total_commands_sent++;
           total_words_sent++;
         }
         // Final ADC read with remaining delay cycles
-        adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, false, false, ramp_delay_cycles + delay_cycles, 0, verbose);
+        adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, ADC_DELAY_WAIT, ADC_NO_CONTINUE, ramp_delay_cycles + delay_cycles, 0, verbose);
         total_commands_sent++;
         total_words_sent++;
       } else {
         // Command 1: NOOP with trigger wait for 1 trigger
-        adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, verbose);
+        adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, ADC_TRIGGER_WAIT, ADC_NO_CONTINUE, 1, verbose);
         total_commands_sent++;
         total_words_sent++;
         
         // Command 2: NOOP with delay wait for delay_cycles
-        adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, false, delay_cycles, verbose);
+        adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, ADC_DELAY_WAIT, ADC_NO_CONTINUE, delay_cycles, verbose);
         total_commands_sent++;
         total_words_sent++;
         
         // Command 3: ADC read with trigger wait for no triggers (0 triggers)
-        adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 0, 0, verbose);
+        adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, ADC_TRIGGER_WAIT, ADC_NO_CONTINUE, 0, 0, verbose);
         total_commands_sent++;
         total_words_sent++;
       }
@@ -821,10 +821,10 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
     }
     
     // Add DAC NOOP stopper
-    dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, true, false, false, 1, *(ctx->verbose)); // Wait for 1 trigger
+    dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, DAC_TRIGGER_WAIT, DAC_NO_CONTINUE, DAC_NO_LDAC, 1, *(ctx->verbose)); // Wait for 1 trigger
     
     // Add ADC NOOP stopper  
-    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, *(ctx->verbose)); // Wait for 1 trigger
+    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, ADC_TRIGGER_WAIT, ADC_NO_CONTINUE, 1, *(ctx->verbose)); // Wait for 1 trigger
   }
 
   // Start ADC data streaming for each board

@@ -17,7 +17,7 @@ if {$use_ext_clk != 0 && $use_ext_clk != 1} {
 }
 
 ## Variably define the default SPI clock frequency (MHz)
-set spi_clk_freq_mhz 20.000
+set spi_clk_freq_mhz 50.000
 
 # If the default SPI clock frequency is not between 1 and 50 MHz, then error out
 if {$spi_clk_freq_mhz < 1.0 || $spi_clk_freq_mhz > 50.0} {

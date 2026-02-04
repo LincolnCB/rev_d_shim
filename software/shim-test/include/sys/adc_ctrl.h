@@ -5,6 +5,18 @@
 #include <stdbool.h>
 #include "map_memory.h"
 
+// ADC wait mode flags for ADC commands
+typedef enum {
+  ADC_DELAY_WAIT = 0,
+  ADC_TRIGGER_WAIT = 1
+} adc_wait_mode_t;
+
+// ADC continue mode flags for ADC commands
+typedef enum {
+  ADC_NO_CONTINUE = 0,
+  ADC_CONTINUE = 1
+} adc_continue_mode_t;
+
 //////////////////// ADC Control Definitions ////////////////////
 // ADC FIFO address
 #define ADC_FIFO(board)    (0x80001000 + (board) * 0x10000)
@@ -75,8 +87,8 @@ char* adc_format_pair(uint32_t data_word, bool verbose);
 char* adc_format_single(uint32_t data_word, bool verbose);
 
 // ADC command word functions
-void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t value, bool verbose);
-void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t value, uint32_t repeat_count, bool verbose);
+void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, adc_wait_mode_t trig, adc_continue_mode_t cont, uint32_t value, bool verbose);
+void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, adc_wait_mode_t trig, adc_continue_mode_t cont, uint32_t value, uint32_t repeat_count, bool verbose);
 void adc_cmd_adc_rd_ch(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t ch, uint32_t repeat_count, bool verbose);
 void adc_cmd_set_ord(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t channel_order[8], bool verbose);
 void adc_cmd_cancel(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool verbose);

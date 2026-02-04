@@ -3,12 +3,21 @@
 
 #include "command_helper.h"
 
+// Enum for ADC command types
+typedef enum {
+  ADC_DELAY_CMD,         // Delay-based ADC read command
+  ADC_TRIGGER_CMD,       // Trigger-based ADC read command
+  ADC_ORDER_CMD,         // Set channel order command
+  ADC_NOOP_TRIGGER_CMD,  // No-op with trigger mode
+  ADC_NOOP_DELAY_CMD     // No-op with delay mode
+} adc_command_type_t;
+
 // Structure for ADC command data (used for streaming commands from file)
 typedef struct {
-  char type;              // Command type: 'T' (Trigger), 'D' (Delay), 'O' (Order)
-  uint32_t value;         // Command value (for T, D commands - trigger cycles, delay cycles)
-  uint32_t repeat_count;  // Repeat count for T, D commands (0 = execute once)
-  uint8_t order[8];       // Channel order array (for O commands - specifies sampling order 0-7)
+  adc_command_type_t type;  // Command type
+  uint32_t value;           // Command value (for trigger cycles, delay cycles, etc.)
+  uint32_t repeat_count;    // Repeat count for commands (0 = execute once)
+  uint8_t order[8];         // Channel order array (for ADC_ORDER_CMD commands - specifies sampling order 0-7)
 } adc_command_t;
 
 // Structure to pass data to the ADC data streaming thread (for reading ADC data to file)
@@ -58,5 +67,8 @@ int cmd_stop_adc_data_stream(const char** args, int arg_count, const command_fla
 // ADC command streaming operations (streaming commands from files)
 int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_stop_adc_cmd_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+
+// Helper function to calculate expected number of ADC words from an ADC command file
+uint64_t calculate_expected_adc_words(const char* file_path, int iterations, bool verbose);
 
 #endif // ADC_COMMANDS_H

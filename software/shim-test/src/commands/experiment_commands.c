@@ -28,7 +28,6 @@
 // Forward declarations for helper functions
 static int validate_system_running(command_context_t* ctx);
 static int count_trigger_lines_in_file(const char* file_path);
-static uint64_t calculate_expected_adc_words(const char* file_path, int iterations, bool verbose);
 
 // Linearity status for channel calibration
 typedef enum {
@@ -56,7 +55,7 @@ static int validate_system_running(command_context_t* ctx) {
 }
 
 // Helper function to count trigger lines in a DAC/ADC file 
-// (sum trigger counts from T lines, formatted similarly enough in both files to be fine)
+// (sum trigger counts from T and NT lines, formatted similarly enough in both files to be fine)
 static int count_trigger_lines_in_file(const char* file_path) {
   FILE* file = fopen(file_path, "r");
   if (file == NULL) {
@@ -75,11 +74,13 @@ static int count_trigger_lines_in_file(const char* file_path) {
       continue;
     }
     
-    // Check if line starts with T (trigger)
-    if (*trimmed == 'T') {
+    // Check if line starts with T (trigger) or NT (noop-trigger)
+    if (*trimmed == 'T' || (trimmed[0] == 'N' && trimmed[1] == 'T')) {
       int t_count = 1;
-      // Try to parse the trigger count after 'T'
-      if (sscanf(trimmed + 1, " %d", &t_count) == 1 && t_count > 0) {
+      // For NT, skip past 'NT', for T, skip past 'T'
+      const char* count_str = (trimmed[0] == 'N' && trimmed[1] == 'T') ? (trimmed + 2) : (trimmed + 1);
+      // Try to parse the trigger count after 'T' or 'NT'
+      if (sscanf(count_str, " %d", &t_count) == 1 && t_count > 0) {
         trigger_count += t_count;
       } else {
         trigger_count += 1;
@@ -134,64 +135,6 @@ static void get_next_bd_wfm_if_exists(const char* filename, char* out_filename) 
       }
     }
   }
-}
-
-// Helper function to calculate expected number of ADC words from an ADC command file
-static uint64_t calculate_expected_adc_words(const char* file_path, int iterations, bool verbose) {
-  // Parse the ADC command file to count D commands (only these generate ADC words)
-  
-  FILE* file = fopen(file_path, "r");
-  if (file == NULL) {
-    fprintf(stderr, "Failed to open ADC command file '%s': %s\n", file_path, strerror(errno));
-    return 0;
-  }
-  
-  // Count D commands (these generate ADC words)
-  char line[512];
-  uint64_t adc_words_per_execution = 0;
-  
-  while (fgets(line, sizeof(line), file)) {
-    // Skip empty lines and comments
-    char* trimmed = line;
-    while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
-    if (*trimmed == '\n' || *trimmed == '\r' || *trimmed == '\0' || *trimmed == '#') {
-      continue;
-    }
-    
-    // Check command type - only D commands generate ADC words
-    if (*trimmed == 'D') {
-      // D commands generate 4 ADC words per execution (one per ADC channel read)
-      uint32_t delay_value = 0;
-      uint32_t repeat_value = 0;
-      
-      // Parse the delay and repeat values from the command
-      // Format: D <delay> <repeats> where repeats is the number of EXTRA times it runs
-      int parsed = sscanf(trimmed + 1, " %u %u", &delay_value, &repeat_value);
-      if (parsed >= 2) {
-        // Second parameter is the repeat count (extra executions)
-        adc_words_per_execution += (repeat_value + 1) * 4;
-      } else if (parsed == 1) {
-        // Only delay specified, runs once
-        adc_words_per_execution += 4;
-      } else {
-        // Default to runs once
-        adc_words_per_execution += 4;
-      }
-    }
-    // T and O commands don't generate ADC words, just ignore them
-  }
-  
-  fclose(file);
-  
-  // Calculate total ADC words: adc_words_per_execution * total_iterations
-  uint64_t total_adc_words = adc_words_per_execution * iterations;
-  
-  if (verbose) {
-    printf("Calculated %llu ADC words per execution, %llu total ADC words (%d iterations)\n", 
-           adc_words_per_execution, total_adc_words, iterations);
-  }
-  
-  return total_adc_words;
 }
 
 // Channel test command implementation
@@ -1189,10 +1132,10 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     }
     
     // Add DAC NOOP stopper
-    dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, true, false, false, 1, *(ctx->verbose)); // Wait for 1 trigger
+    dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, DAC_TRIGGER_WAIT, DAC_NO_CONTINUE, DAC_NO_LDAC, 1, *(ctx->verbose)); // Wait for 1 trigger
     
     // Add ADC NOOP stopper  
-    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, *(ctx->verbose)); // Wait for 1 trigger
+    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, ADC_TRIGGER_WAIT, ADC_NO_CONTINUE, 1, *(ctx->verbose)); // Wait for 1 trigger
   }
 
   // Start command streaming for each connected board
@@ -2009,8 +1952,8 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   for (int board = 0; board < 8; board++) {
     if (!connected_boards[board]) continue;
     
-    dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, true, false, false, 1, *(ctx->verbose));
-    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, *(ctx->verbose));
+    dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, DAC_TRIGGER_WAIT, DAC_NO_CONTINUE, DAC_NO_LDAC, 1, *(ctx->verbose));
+    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, ADC_TRIGGER_WAIT, ADC_NO_CONTINUE, 1, *(ctx->verbose));
   }
   
   // Calculate DAC values
@@ -2036,7 +1979,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
       if (!connected_boards[board]) continue;
       
       int16_t ch_vals[8] = {0};
-      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, true, false, true, 1, *(ctx->verbose));
+      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, DAC_TRIGGER_WAIT, DAC_NO_CONTINUE, DAC_LDAC, 1, *(ctx->verbose));
       total_dac_commands++;
     }
     
@@ -2049,7 +1992,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
         ch_vals[target_channel] = dac_positive;
       }
       
-      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, true, false, true, 1, *(ctx->verbose));
+      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, DAC_TRIGGER_WAIT, DAC_NO_CONTINUE, DAC_LDAC, 1, *(ctx->verbose));
       total_dac_commands++;
     }
     
@@ -2062,7 +2005,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
         ch_vals[target_channel] = dac_negative;
       }
       
-      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, true, false, true, 1, *(ctx->verbose));
+      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, DAC_TRIGGER_WAIT, DAC_NO_CONTINUE, DAC_LDAC, 1, *(ctx->verbose));
       total_dac_commands++;
     }
   }
@@ -2089,10 +2032,10 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
       if (!connected_boards[board]) continue;
       
       // NOOP wait for trigger
-      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, true, 1, *(ctx->verbose));
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, ADC_TRIGGER_WAIT, ADC_CONTINUE, 1, *(ctx->verbose));
       // Delay then read for all connected boards
-      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, true, delay_cycles, *(ctx->verbose));
-      adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 0, 0, *(ctx->verbose));
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, ADC_DELAY_WAIT, ADC_CONTINUE, delay_cycles, *(ctx->verbose));
+      adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, ADC_TRIGGER_WAIT, ADC_NO_CONTINUE, 0, 0, *(ctx->verbose));
       total_adc_commands += 3;
       }
     }

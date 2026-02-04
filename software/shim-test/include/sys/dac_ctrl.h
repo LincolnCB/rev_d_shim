@@ -5,6 +5,24 @@
 #include <stdbool.h>
 #include "map_memory.h"
 
+// DAC wait mode flags for DAC commands
+typedef enum {
+  DAC_DELAY_WAIT = 0,
+  DAC_TRIGGER_WAIT = 1
+} dac_wait_mode_t;
+
+// DAC continue mode flags for DAC commands
+typedef enum {
+  DAC_NO_CONTINUE = 0,
+  DAC_CONTINUE = 1
+} dac_continue_mode_t;
+
+// LDAC mode flags for DAC commands
+typedef enum {
+  DAC_NO_LDAC = 0,
+  DAC_LDAC = 1
+} dac_ldac_mode_t;
+
 //////////////////// DAC Control Definitions ////////////////////
 // DAC FIFO address
 #define DAC_FIFO(board)    (0x80000000 + (board) * 0x10000)
@@ -81,8 +99,8 @@ char* dac_format_data(uint32_t dac_value, bool verbose);
 char* dac_format_state(uint8_t state_code, bool verbose);
 
 // DAC command word functions
-void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool trig, bool cont, bool ldac, uint32_t value, bool verbose);
-void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[8], bool trig, bool cont, bool ldac, uint32_t value, bool verbose);
+void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, dac_wait_mode_t trig, dac_continue_mode_t cont, dac_ldac_mode_t ldac, uint32_t value, bool verbose);
+void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[8], dac_wait_mode_t trig, dac_continue_mode_t cont, dac_ldac_mode_t ldac, uint32_t value, bool verbose);
 void dac_cmd_dac_wr_ch(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t ch, int16_t ch_val, bool verbose);
 void dac_cmd_set_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel, int16_t cal_val, bool verbose);
 void dac_cmd_get_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel, bool verbose);

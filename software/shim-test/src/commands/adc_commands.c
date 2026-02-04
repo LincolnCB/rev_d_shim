@@ -205,8 +205,8 @@ int cmd_adc_noop(const char** args, int arg_count, const command_flag_t* flags, 
     
     for (int board = 0; board < 8; board++) {
       if (!connected_boards[board]) continue;
-      
-      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, is_trigger, cont, value, *(ctx->verbose));
+
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, is_trigger ? ADC_TRIGGER_WAIT : ADC_DELAY_WAIT, cont ? ADC_CONTINUE : ADC_NO_CONTINUE, value, *(ctx->verbose));
       printf("  Board %d: ADC no-op command sent\n", board);
     }
   } else {
@@ -216,7 +216,7 @@ int cmd_adc_noop(const char** args, int arg_count, const command_flag_t* flags, 
       return -1;
     }
     
-    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, is_trigger, cont, value, *(ctx->verbose));
+    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, is_trigger ? ADC_TRIGGER_WAIT : ADC_DELAY_WAIT, cont ? ADC_CONTINUE : ADC_NO_CONTINUE, value, *(ctx->verbose));
     printf("ADC no-op command sent to board %d with %s mode, value %u%s.\n", 
            board, is_trigger ? "trigger" : "delay", value, cont ? ", continuous" : "");
   }
@@ -300,7 +300,7 @@ int cmd_do_adc_rd(const char** args, int arg_count, const command_flag_t* flags,
   printf("Performing ADC read on board %d (%s mode, value %u, repeat_count %ld)...\n", 
          board, is_trigger ? "trigger" : "delay", value, repeat_count);
   
-  adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, is_trigger, false, value, (uint32_t)repeat_count, *(ctx->verbose));
+  adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, is_trigger ? ADC_TRIGGER_WAIT : ADC_DELAY_WAIT, ADC_NO_CONTINUE, value, (uint32_t)repeat_count, *(ctx->verbose));
   
   printf("ADC read command sent to board %d: adc_rd(%s, %u, repeat_count=%ld).\n", 
          board, is_trigger ? "trigger" : "delay", value, repeat_count);
@@ -643,9 +643,10 @@ static int parse_adc_command_file(const char* file_path, adc_command_t** command
       continue;
     }
     
-    // Check if line starts with T, D, or O (removed L support)
-    if (*trimmed != 'T' && *trimmed != 'D' && *trimmed != 'O') {
-      fprintf(stderr, "Invalid line %d: must start with 'T', 'D', or 'O'\n", line_num);
+    // Check if line starts with T, D, O, NT, or ND
+    if (*trimmed != 'T' && *trimmed != 'D' && *trimmed != 'O' && 
+        strncmp(trimmed, "NT", 2) != 0 && strncmp(trimmed, "ND", 2) != 0) {
+      fprintf(stderr, "Invalid line %d: must start with 'T', 'D', 'O', 'NT', or 'ND'\n", line_num);
       fclose(file);
       return -1;
     }
@@ -667,6 +668,21 @@ static int parse_adc_command_file(const char* file_path, adc_command_t** command
       // Validate order values (0-7)
       if (s1 > 7 || s2 > 7 || s3 > 7 || s4 > 7 || s5 > 7 || s6 > 7 || s7 > 7 || s8 > 7) {
         fprintf(stderr, "Invalid line %d: order values must be 0-7\n", line_num);
+        fclose(file);
+        return -1;
+      }
+    } else if (strncmp(trimmed, "NT", 2) == 0 || strncmp(trimmed, "ND", 2) == 0) {
+      // NT, ND commands (noop): <cmd> <value>
+      char cmd_str[3];
+      int parsed = sscanf(trimmed, "%2s %u", cmd_str, &value);
+      if (parsed < 2) {
+        fprintf(stderr, "Invalid line %d: '%s' command must have a value\n", line_num, cmd_str);
+        fclose(file);
+        return -1;
+      }
+      // Validate value range (noop uses 25-bit value)
+      if (value > 0x1FFFFFF) {
+        fprintf(stderr, "Invalid line %d: value %u out of range (max 0x1FFFFFF)\n", line_num, value);
         fclose(file);
         return -1;
       }
@@ -730,20 +746,37 @@ static int parse_adc_command_file(const char* file_path, adc_command_t** command
     }
     
     adc_command_t* cmd = &(*commands)[*command_count];
-    cmd->type = *trimmed;
     
     if (*trimmed == 'O') {
+      cmd->type = ADC_ORDER_CMD;
       uint8_t s1, s2, s3, s4, s5, s6, s7, s8;
+      char dummy_char;
       sscanf(trimmed, "%c %hhu %hhu %hhu %hhu %hhu %hhu %hhu %hhu", 
-             &cmd->type, &s1, &s2, &s3, &s4, &s5, &s6, &s7, &s8);
+             &dummy_char, &s1, &s2, &s3, &s4, &s5, &s6, &s7, &s8);
       cmd->order[0] = s1; cmd->order[1] = s2; cmd->order[2] = s3; cmd->order[3] = s4;
       cmd->order[4] = s5; cmd->order[5] = s6; cmd->order[6] = s7; cmd->order[7] = s8;
       cmd->value = 0; // Not used for order commands
       cmd->repeat_count = 0; // Not used for order commands
+    } else if (strncmp(trimmed, "NT", 2) == 0) {
+      // Noop with trigger
+      cmd->type = ADC_NOOP_TRIGGER_CMD;
+      char cmd_str[3];
+      sscanf(trimmed, "%2s %u", cmd_str, &cmd->value);
+      cmd->repeat_count = 0; // Not used for noop
+      for (int i = 0; i < 8; i++) cmd->order[i] = 0;
+    } else if (strncmp(trimmed, "ND", 2) == 0) {
+      // Noop with delay
+      cmd->type = ADC_NOOP_DELAY_CMD;
+      char cmd_str[3];
+      sscanf(trimmed, "%2s %u", cmd_str, &cmd->value);
+      cmd->repeat_count = 0; // Not used for noop
+      for (int i = 0; i < 8; i++) cmd->order[i] = 0;
     } else {
       // Parse T, D commands with optional repeat_count
+      char cmd_char;
       uint32_t repeat_count;
-      int parsed = sscanf(trimmed, "%c %u %u", &cmd->type, &cmd->value, &repeat_count);
+      int parsed = sscanf(trimmed, "%c %u %u", &cmd_char, &cmd->value, &repeat_count);
+      cmd->type = (cmd_char == 'T') ? ADC_TRIGGER_CMD : ADC_DELAY_CMD;
       if (parsed >= 3) {
         cmd->repeat_count = repeat_count;
       } else {
@@ -792,7 +825,8 @@ static void* adc_cmd_stream_thread(void* arg) {
       adc_command_t* cmd = &commands[cmd_index];
 
       // Calculate words needed for this command
-      uint32_t words_needed = ((cmd->type == 'D') && (cmd->repeat_count > 0)) ? 2 : 1;
+      // Noop commands (ADC_NOOP_TRIGGER_CMD and ADC_NOOP_DELAY_CMD) always need 1 word
+      uint32_t words_needed = ((cmd->type == ADC_DELAY_CMD) && (cmd->repeat_count > 0)) ? 2 : 1;
 
       // Check ADC command FIFO status
       uint32_t fifo_status = sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, board, false);
@@ -808,17 +842,23 @@ static void* adc_cmd_stream_thread(void* arg) {
       if (words_available >= words_needed) {
         // Send the command
         switch (cmd->type) {
-          case 'T':
-            adc_cmd_noop(ctx->adc_ctrl, board, true, false, cmd->value, false);
+          case ADC_TRIGGER_CMD:
+            adc_cmd_adc_rd(ctx->adc_ctrl, board, ADC_TRIGGER_WAIT, ADC_NO_CONTINUE, cmd->value, cmd->repeat_count, false);
             break;
-          case 'D':
-            adc_cmd_adc_rd(ctx->adc_ctrl, board, false, false, cmd->value, cmd->repeat_count, false);
+          case ADC_DELAY_CMD:
+            adc_cmd_adc_rd(ctx->adc_ctrl, board, ADC_DELAY_WAIT, ADC_NO_CONTINUE, cmd->value, cmd->repeat_count, false);
             break;
-          case 'O':
+          case ADC_ORDER_CMD:
             adc_cmd_set_ord(ctx->adc_ctrl, board, cmd->order, false);
             break;
+          case ADC_NOOP_TRIGGER_CMD:
+            adc_cmd_noop(ctx->adc_ctrl, board, ADC_TRIGGER_WAIT, ADC_NO_CONTINUE, cmd->value, false);
+            break;
+          case ADC_NOOP_DELAY_CMD:
+            adc_cmd_noop(ctx->adc_ctrl, board, ADC_DELAY_WAIT, ADC_NO_CONTINUE, cmd->value, false);
+            break;
           default:
-            fprintf(stderr, "ADC Command Stream Thread[%d]: Invalid command type '%c'\n", board, cmd->type);
+            fprintf(stderr, "ADC Command Stream Thread[%d]: Invalid command type %d\n", board, cmd->type);
             break;
         }
 
@@ -828,9 +868,10 @@ static void* adc_cmd_stream_thread(void* arg) {
         cmd_index++;
 
         if (verbose) {
-          printf("ADC Command Stream Thread[%d]: Iteration %d/%d, Sent command %d/%d (type=%c, value=%u, repeat=%u) [FIFO: %u/%u words, %d needed]\n",
+          const char* type_names[] = {"ADC_DELAY_CMD", "ADC_TRIGGER_CMD", "ADC_ORDER_CMD", "ADC_NOOP_TRIGGER_CMD", "ADC_NOOP_DELAY_CMD"};
+          printf("ADC Command Stream Thread[%d]: Iteration %d/%d, Sent command %d/%d (type=%s, value=%u, repeat=%u) [FIFO: %u/%u words, %d needed]\n",
                  board, current_iteration + 1, iterations, commands_sent_this_iteration, command_count,
-                 cmd->type, cmd->value, cmd->repeat_count, words_used, ADC_CMD_FIFO_WORDCOUNT, words_needed);
+                 type_names[cmd->type], cmd->value, cmd->repeat_count, words_used, ADC_CMD_FIFO_WORDCOUNT, words_needed);
         }
       } else {
         // Not enough space in FIFO, sleep and try again
@@ -984,4 +1025,51 @@ int cmd_stop_adc_cmd_stream(const char** args, int arg_count, const command_flag
   
   printf("ADC command streaming for board %d has been stopped.\n", board);
   return 0;
+}
+
+// Helper function to calculate expected number of ADC words from an ADC command file
+uint64_t calculate_expected_adc_words(const char* file_path, int iterations, bool verbose) {
+  // Parse the ADC command file using existing parser
+  adc_command_t* commands = NULL;
+  int command_count = 0;
+  
+  if (parse_adc_command_file(file_path, &commands, &command_count) != 0) {
+    return 0;
+  }
+  
+  // Count ADC words based on command types:
+  // - ADC_TRIGGER_CMD: generates 4 ADC words per trigger count (value field), multiplied by (repeat_count + 1)
+  // - ADC_DELAY_CMD: generates 4 ADC words per total runs (repeat_count + 1)
+  // - ADC_NOOP_TRIGGER_CMD, ADC_NOOP_DELAY_CMD, ADC_ORDER_CMD: generate 0 ADC words
+  uint64_t adc_words_per_execution = 0;
+  
+  for (int i = 0; i < command_count; i++) {
+    switch (commands[i].type) {
+      case ADC_TRIGGER_CMD:
+        // Each trigger generates 4 ADC words, multiplied by trigger count and total runs
+        adc_words_per_execution += commands[i].value * (commands[i].repeat_count + 1) * 4;
+        break;
+      case ADC_DELAY_CMD:
+        // Each delay execution generates 4 ADC words, multiplied by total runs
+        adc_words_per_execution += (commands[i].repeat_count + 1) * 4;
+        break;
+      case ADC_NOOP_TRIGGER_CMD:
+      case ADC_NOOP_DELAY_CMD:
+      case ADC_ORDER_CMD:
+        // These commands don't generate ADC words
+        break;
+    }
+  }
+  
+  free(commands);
+  
+  // Calculate total ADC words: adc_words_per_execution * total_iterations
+  uint64_t total_adc_words = adc_words_per_execution * iterations;
+  
+  if (verbose) {
+    printf("Calculated %llu ADC words per execution, %llu total ADC words (%d iterations)\n", 
+           adc_words_per_execution, total_adc_words, iterations);
+  }
+  
+  return total_adc_words;
 }
