@@ -612,25 +612,27 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   
   // Prompt for SPI frequency
   double spi_freq_mhz;
-  printf("Enter SPI clock frequency in MHz: ");
-  fflush(stdout);
+  spi_freq_mhz = ((double) sys_sts_get_spi_clk_freq_hz(ctx->sys_sts, *(ctx->verbose))) / 1e6;
+  printf("Detected SPI clock frequency: %.3f MHz\n", spi_freq_mhz);
+  // printf("Enter SPI clock frequency in MHz: ");
+  // fflush(stdout);
   
-  if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
-    fprintf(stderr, "Failed to read SPI frequency.\n");
-    return -1;
-  }
+  // if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+  //   fprintf(stderr, "Failed to read SPI frequency.\n");
+  //   return -1;
+  // }
   
-  // Remove newline
-  len = strlen(input_buffer);
-  if (len > 0 && input_buffer[len - 1] == '\n') {
-    input_buffer[len - 1] = '\0';
-  }
+  // // Remove newline
+  // len = strlen(input_buffer);
+  // if (len > 0 && input_buffer[len - 1] == '\n') {
+  //   input_buffer[len - 1] = '\0';
+  // }
   
-  spi_freq_mhz = atof(input_buffer);
-  if (spi_freq_mhz <= 0.0) {
-    fprintf(stderr, "Invalid SPI frequency. Must be > 0 MHz.\n");
-    return -1;
-  }
+  // spi_freq_mhz = atof(input_buffer);
+  // if (spi_freq_mhz <= 0.0) {
+  //   fprintf(stderr, "Invalid SPI frequency. Must be > 0 MHz.\n");
+  //   return -1;
+  // }
   
   // Prompt for the number of ramp samples
   printf("Enter number of ramp samples: ");

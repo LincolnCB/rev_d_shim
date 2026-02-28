@@ -484,8 +484,8 @@ int cmd_stream_adc_data_to_file(const char** args, int arg_count, const command_
   // Parse word count
   char* endptr;
   uint64_t word_count = parse_value(args[1], &endptr);
-  if (*endptr != '\0' || word_count == 0) {
-    fprintf(stderr, "Invalid word count for stream_adc_data_to_file: '%s'. Must be a positive integer.\n", args[1]);
+  if (*endptr != '\0') {
+    fprintf(stderr, "Invalid word count for stream_adc_data_to_file: '%s'. Must be a valid integer.\n", args[1]);
     return -1;
   }
   

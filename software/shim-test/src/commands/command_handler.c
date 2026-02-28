@@ -67,6 +67,7 @@ static command_entry_t command_table[] = {
   {"invert_mosi_clk", cmd_invert_mosi_clk, {0, 0, {-1}, "Invert MOSI SCK polarity register"}},
   {"invert_miso_clk", cmd_invert_miso_clk, {0, 0, {-1}, "Invert MISO SCK polarity register"}},
   {"spi_clk_freq", cmd_spi_clk_freq, {0, 0, {-1}, "Show SPI clock frequency in MHz (and Hz if verbose)"}},
+  {"get_min_delay_times", cmd_get_min_delay_times, {0, 0, {-1}, "Show minimum delay times for DAC and ADC in SPI clock cycles"}},
   
   // ===== DAC COMMANDS (from dac_commands.h) =====
   {"dac_cmd_fifo_sts", cmd_dac_cmd_fifo_sts, {1, 1, {-1}, "Show DAC command FIFO status for specified board (0-7)"}},

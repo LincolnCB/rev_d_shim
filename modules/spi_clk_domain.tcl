@@ -26,7 +26,9 @@ create_bd_pin -dir I -from 14 -to 0 integ_thresh_avg
 create_bd_pin -dir I -from 31 -to 0 integ_window
 create_bd_pin -dir I integ_en
 create_bd_pin -dir I -from  4 -to 0 dac_n_cs_high_time
+create_bd_pin -dir I -from 25 -to 0 dac_delay_too_short_time
 create_bd_pin -dir I -from  7 -to 0 adc_n_cs_high_time
+create_bd_pin -dir I -from 25 -to 0 adc_delay_too_short_time
 create_bd_pin -dir I -from 15 -to 0 boot_test_skip
 create_bd_pin -dir I -from 15 -to 0 debug
 create_bd_pin -dir I -from 15 -to 0 dac_cal_init
@@ -140,7 +142,9 @@ cell rev_d_shim:user:spi_cfg_sync spi_cfg_sync {} {
   integ_window integ_window
   integ_en integ_en
   dac_n_cs_high_time dac_n_cs_high_time
+  dac_delay_too_short_time dac_delay_too_short_time
   adc_n_cs_high_time adc_n_cs_high_time
+  adc_delay_too_short_time adc_delay_too_short_time
   boot_test_skip boot_test_skip
   debug debug
   dac_cal_init dac_cal_init
@@ -233,6 +237,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     integ_thresh_avg spi_cfg_sync/integ_thresh_avg_sync
     integ_en spi_cfg_sync/integ_en_sync
     dac_n_cs_high_time spi_cfg_sync/dac_n_cs_high_time_sync
+    dac_delay_too_short_time spi_cfg_sync/dac_delay_too_short_time_sync
     dac_cal_init spi_cfg_sync/dac_cal_init_sync
     dac_cmd dac_ch${i}_cmd
     dac_cmd_rd_en dac_ch${i}_cmd_rd_en
@@ -248,6 +253,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     spi_clk spi_clk
     resetn spi_rst_core/peripheral_aresetn
     adc_n_cs_high_time spi_cfg_sync/adc_n_cs_high_time_sync
+    adc_delay_too_short_time spi_cfg_sync/adc_delay_too_short_time_sync
     adc_cmd adc_ch${i}_cmd
     adc_cmd_rd_en adc_ch${i}_cmd_rd_en
     adc_cmd_empty adc_ch${i}_cmd_empty

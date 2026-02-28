@@ -35,12 +35,16 @@ struct sys_sts_t create_sys_sts(bool verbose) {
 
   // Initialize SPI clock frequency pointer
   sys_sts.spi_clk_freq_hz = sys_sts_ptr + SPI_CLK_FREQ_OFFSET;
-
-  // Initialize debug register
-  sys_sts.debug = sys_sts_ptr + DEBUG_REG_OFFSET;
   
   // Initialize trigger counter pointer
   sys_sts.trig_counter = sys_sts_ptr + TRIG_COUNTER_OFFSET;
+  
+  // Initialize debug register
+  sys_sts.debug = sys_sts_ptr + DEBUG_REG_OFFSET;
+
+  // Initialize DAC and ADC "delay too short" time registers
+  sys_sts.dac_delay_too_short_time = sys_sts_ptr + DEBUG_DAC_DELAY_TOO_SHORT_TIME_OFFSET;
+  sys_sts.adc_delay_too_short_time = sys_sts_ptr + DEBUG_ADC_DELAY_TOO_SHORT_TIME_OFFSET;
   
   return sys_sts;
 }
@@ -356,6 +360,15 @@ uint32_t sys_sts_get_trig_data_fifo_status(struct sys_sts_t *sys_sts, bool verbo
   return get_fifo_status(sys_sts->trig_data_fifo_sts, "Trigger Data", verbose);
 }
 
+// Get trigger counter value
+uint32_t sys_sts_get_trig_counter(struct sys_sts_t *sys_sts, bool verbose) {
+  if (verbose) {
+    printf("Reading trigger counter register...\n");
+    printf("Trigger counter raw: 0x%" PRIx32 "\n", *(sys_sts->trig_counter));
+  }
+  return *(sys_sts->trig_counter);
+}
+
 // Get debug register value
 uint32_t sys_sts_get_debug(struct sys_sts_t *sys_sts, bool verbose) {
   if (verbose) {
@@ -365,14 +378,25 @@ uint32_t sys_sts_get_debug(struct sys_sts_t *sys_sts, bool verbose) {
   return *(sys_sts->debug);
 }
 
-// Get trigger counter value
-uint32_t sys_sts_get_trig_counter(struct sys_sts_t *sys_sts, bool verbose) {
+// Get DAC "delay too short" time in SPI clock cycles
+uint32_t sys_sts_get_dac_delay_too_short_time(struct sys_sts_t *sys_sts, bool verbose) {
   if (verbose) {
-    printf("Reading trigger counter register...\n");
-    printf("Trigger counter raw: 0x%" PRIx32 "\n", *(sys_sts->trig_counter));
+    printf("Reading DAC 'delay too short' time register...\n");
+    printf("DAC 'delay too short' time raw: 0x%" PRIx32 "\n", *(sys_sts->dac_delay_too_short_time));
   }
-  return *(sys_sts->trig_counter);
+  return *(sys_sts->dac_delay_too_short_time);
 }
+
+// Get ADC "delay too short" time in SPI clock cycles
+uint32_t sys_sts_get_adc_delay_too_short_time(struct sys_sts_t *sys_sts, bool verbose) {
+  if (verbose) {
+    printf("Reading ADC 'delay too short' time register...\n");
+    printf("ADC 'delay too short' time raw: 0x%" PRIx32 "\n", *(sys_sts->adc_delay_too_short_time));
+  }
+  return *(sys_sts->adc_delay_too_short_time);
+}
+  
+
 
 // Print FIFO status details
 void print_fifo_status(uint32_t fifo_status, const char *fifo_name) {

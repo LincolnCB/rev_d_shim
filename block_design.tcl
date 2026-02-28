@@ -8,7 +8,7 @@ if {$board_count < 1 || $board_count > 8} {
 }
 
 ## Variably choose whether to use an external clock
-set use_ext_clk 0
+set use_ext_clk 1
 
 # If the external clock is not 0 or 1, then error out
 if {$use_ext_clk != 0 && $use_ext_clk != 1} {
@@ -17,7 +17,7 @@ if {$use_ext_clk != 0 && $use_ext_clk != 1} {
 }
 
 ## Variably define the default SPI clock frequency (MHz)
-set spi_clk_freq_mhz 50.000
+set spi_clk_freq_mhz 20.000
 
 # If the default SPI clock frequency is not between 1 and 50 MHz, then error out
 if {$spi_clk_freq_mhz < 1.0 || $spi_clk_freq_mhz > 50.0} {
@@ -29,7 +29,7 @@ if {$spi_clk_freq_mhz < 1.0 || $spi_clk_freq_mhz > 50.0} {
 # This sets the depth of the FIFOs as 2^ADDR_WIDTH
 # Larger FIFOs use more FPGA resources, but allow for longer bursts and more buffering.
 # This can hit the cap fast!
-set dac_cmd_fifo_addr_width 13
+set dac_cmd_fifo_addr_width 14
 set dac_data_fifo_addr_width 12
 set adc_cmd_fifo_addr_width 10
 set adc_data_fifo_addr_width 13
@@ -47,8 +47,8 @@ set trig_data_fifo_addr_width 10
 # Inputs
 #------------------------------------------------------------
 
-# (10Mhz_In)
-create_bd_port -dir I -type clk -freq_hz 10000000 Scanner_10Mhz_In
+# (30MHz_In)
+create_bd_port -dir I -type clk -freq_hz 30000000 Scanner_30MHz_In
 # (Shutdown_Sense)
 create_bd_port -dir I -type data Shutdown_Sense
 # (Trigger_In)
@@ -220,7 +220,10 @@ addr 0x40000000 128 axi_sys_ctrl/S_AXI ps/M_AXI_GP0
 ###############################################################################
 
 ### Hardware manager
-cell rev_d_shim:user:hw_manager hw_manager {} {
+# Set SPI start wait to 5 seconds
+cell rev_d_shim:user:hw_manager hw_manager {
+  SPI_START_WAIT 500000000
+} {
   clk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
   ctrl_en axi_sys_ctrl/ctrl_en
@@ -275,7 +278,7 @@ if {$use_ext_clk} {
     PRIMITIVE MMCM
     USE_DYN_RECONFIG true
     USE_SAFE_CLOCK_STARTUP true
-    PRIM_IN_FREQ 10
+    PRIM_IN_FREQ 30
     CLKOUT1_REQUESTED_OUT_FREQ ${spi_clk_freq_mhz}
     FEEDBACK_SOURCE FDBK_AUTO
     CLKOUT1_DRIVES BUFGCE
@@ -283,7 +286,7 @@ if {$use_ext_clk} {
     s_axi_aclk ps/FCLK_CLK0
     s_axi_aresetn ps_rst/peripheral_aresetn
     s_axi_lite sys_cfg_axi_intercon/M02_AXI
-    clk_in1 Scanner_10Mhz_In
+    clk_in1 Scanner_30MHz_In
   }
 } else {
   # Use FCLK_CLK0 as the clock input
@@ -314,11 +317,16 @@ cell rev_d_shim:user:clock_divider spi_clk_divider {} {
 ###############################################################################
 
 ### Calculate timing from SPI clock frequency
+## ~~~~~~~~~~~~ TODO ~~~~~~~~~~~~
+#  Replace with AXI snoop of clk
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ## Constant block for SPI clock frequency in Hz
 cell xilinx.com:ip:xlconstant:1.1 spi_clk_freq_hz_const {
   CONST_VAL [expr {int($spi_clk_freq_mhz * 1000000 + 0.5)}]
   CONST_WIDTH 32
 } {}
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 ## Negate unlock_cfg to get calc signal
 cell xilinx.com:ip:util_vector_logic n_unlock_cfg {
   C_SIZE 1
@@ -378,7 +386,9 @@ module spi_clk_domain spi_clk_domain {
   integ_window axi_sys_ctrl/integ_window
   integ_en axi_sys_ctrl/integ_en
   dac_n_cs_high_time dac_timing_calc/n_cs_high_time
+  dac_delay_too_short_time dac_timing_calc/delay_too_short_time
   adc_n_cs_high_time adc_timing_calc/n_cs_high_time
+  adc_delay_too_short_time adc_timing_calc/delay_too_short_time
   boot_test_skip axi_sys_ctrl/boot_test_skip
   debug axi_sys_ctrl/debug
   dac_cal_init axi_sys_ctrl/dac_cal_init
@@ -477,17 +487,19 @@ addr 0x40100000 256 status_reg/S_AXI ps/M_AXI_GP0
 #   575 : 32   -- 544b Command FIFO status (32 bits per buffer, ordered as DAC0, ADC0, ..., DAC7, ADC7, Trigger)
 #  1119 : 576  -- 544b Data FIFO status (32 bits per buffer, ordered as DAC0, ADC0, ..., DAC7, ADC7, Trigger)
 #  1151 : 1120 --  32b SPI clock frequency in Hz
-#  1183 : 1152 --  32b Debug 1 (SPI clock locked, spi_off, DAC/ADC ~CS high time)
-#  1215 : 1184 --  32b Trigger counter (number of triggers received)
-#  2047 : 1216 -- RESERVED (0)
+#  1183 : 1152 --  32b Trigger counter (number of triggers received)
+#  1215 : 1184 --  32b Debug 1 (SPI clock locked, spi_off, DAC/ADC ~CS high time)
+#  1247 : 1216 --  32b DAC "delay too short" time (in SPI clock cycles)
+#  1279 : 1248 --  32b ADC "delay too short" time (in SPI clock cycles)
+#  2047 : 1279 -- RESERVED (0)
 cell xilinx.com:ip:xlconcat:2.1 sts_concat {
-  NUM_PORTS 7
+  NUM_PORTS 9
 } {
   In0 hw_manager/status_word
   In1 axi_spi_interface/cmd_fifo_sts
   In2 axi_spi_interface/data_fifo_sts
   In3 spi_clk_freq_hz_const/dout
-  In5 spi_clk_domain/trig_counter
+  In4 spi_clk_domain/trig_counter
   dout status_reg/sts_data
 }
 # Debug 1 tracks the following:
@@ -496,6 +508,10 @@ cell xilinx.com:ip:xlconcat:2.1 sts_concat {
 #  6 : 2  --  5b DAC ~CS high time
 # 14 : 7  --  8b ADC ~CS high time
 # 31 : 15 -- 17b RESERVED (0)
+cell xilinx.com:ip:xlconstant:1.1 pad_17 {
+  CONST_VAL 0
+  CONST_WIDTH 17
+} {}
 cell xilinx.com:ip:xlconcat:2.1 debug_1 {
   NUM_PORTS 5
 } {
@@ -503,21 +519,35 @@ cell xilinx.com:ip:xlconcat:2.1 debug_1 {
   In1 hw_manager/spi_off
   In2 dac_timing_calc/n_cs_high_time
   In3 adc_timing_calc/n_cs_high_time
-  dout sts_concat/In4
+  In4 pad_17/dout
+  dout sts_concat/In5
 }
-cell xilinx.com:ip:xlconstant:1.1 pad_17 {
+# Delay too short times
+cell xilinx.com:ip:xlconstant:1.1 pad_7 {
   CONST_VAL 0
-  CONST_WIDTH 17
+  CONST_WIDTH 7
+} {}
+cell xilinx.com:ip:xlconcat:2.1 dac_delay_too_short_concat {
+  NUM_PORTS 2
 } {
-  dout debug_1/In4
+  In0 dac_timing_calc/delay_too_short_time
+  In1 pad_7/dout
+  dout sts_concat/In6
+}
+cell xilinx.com:ip:xlconcat:2.1 adc_delay_too_short_concat {
+  NUM_PORTS 2
+} {
+  In0 adc_timing_calc/delay_too_short_time
+  In1 pad_7/dout
+  dout sts_concat/In7
 }
 
 # Pad reserved bits
 cell xilinx.com:ip:xlconstant:1.1 pad_sts_reserved {
   CONST_VAL 0
-  CONST_WIDTH [expr {2048 - 1216}]
+  CONST_WIDTH [expr {2048 - 1279}]
 } {
-  dout sts_concat/In6
+  dout sts_concat/In8
 }
 
 ## IRQ interrupt concat

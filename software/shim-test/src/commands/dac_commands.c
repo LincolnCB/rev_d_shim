@@ -520,34 +520,33 @@ static int parse_waveform_file(const char* file_path, waveform_command_t** comma
     }
     
     // Parse the line to validate format
-    char mode;
+    char cmd_mode[3];
     uint32_t value;
     int16_t ch_vals[8];
     int parsed;
     
     if (is_noop_cmd) {
-      // NT or ND commands: only mode and value (no channel values allowed)
-      char cmd_str[3];
-      parsed = sscanf(trimmed, "%2s %u", cmd_str, &value);
+      // NT or ND commands: only cmd_mode and value (no channel values allowed)
+      parsed = sscanf(trimmed, "%2s %u", cmd_mode, &value);
       if (parsed != 2) {
-        fprintf(stderr, "Invalid line %d: NT/ND commands must have exactly mode and value\n", line_num);
+        fprintf(stderr, "Invalid line %d: NT/ND commands must have exactly cmd_mode and value\n", line_num);
         fclose(file);
         return -1;
       }
     } else {
       // D or T commands: can have channel values
-      parsed = sscanf(trimmed, "%c %u %hd %hd %hd %hd %hd %hd %hd %hd", 
-                     &mode, &value, &ch_vals[0], &ch_vals[1], &ch_vals[2], &ch_vals[3],
+      parsed = sscanf(trimmed, "%2s %u %hd %hd %hd %hd %hd %hd %hd %hd", 
+                     cmd_mode, &value, &ch_vals[0], &ch_vals[1], &ch_vals[2], &ch_vals[3],
                      &ch_vals[4], &ch_vals[5], &ch_vals[6], &ch_vals[7]);
     
       if (parsed < 2) {
-        fprintf(stderr, "Invalid line %d: must have at least mode and value\n", line_num);
+        fprintf(stderr, "Invalid line %d: must have at least cmd_mode and value\n", line_num);
         fclose(file);
         return -1;
       }
     
       if (parsed != 2 && parsed != 10) {
-        fprintf(stderr, "Invalid line %d: must have either 2 fields (mode, value) or 10 fields (mode, value, 8 channels)\n", line_num);
+        fprintf(stderr, "Invalid line %d: must have either 2 fields (cmd_mode, value) or 10 fields (cmd_mode, value, 8 channels)\n", line_num);
         fclose(file);
         return -1;
       }
@@ -609,29 +608,26 @@ static int parse_waveform_file(const char* file_path, waveform_command_t** comma
     // Check if this is a noop command
     bool is_noop_cmd = (strncmp(trimmed, "NT", 2) == 0 || strncmp(trimmed, "ND", 2) == 0);
     
-    char mode;
+    char cmd_mode[3];
     uint32_t value;
     int16_t ch_vals[8];
     int parsed;
     
     if (is_noop_cmd) {
       // Parse NT or ND command
-      char cmd_str[3];
-      sscanf(trimmed, "%2s %u", cmd_str, &value);
-      cmd->type = (cmd_str[1] == 'T') ? DAC_NOOP_TRIGGER_CMD : DAC_NOOP_DELAY_CMD;
+      sscanf(trimmed, "%2s %u", cmd_mode, &value);
+      cmd->type = (cmd_mode[1] == 'T') ? DAC_NOOP_TRIGGER_CMD : DAC_NOOP_DELAY_CMD;
       cmd->value = value;
-      cmd->has_ch_vals = false;
     } else {
       // Parse D or T command
-      parsed = sscanf(trimmed, "%c %u %hd %hd %hd %hd %hd %hd %hd %hd", 
-                     &mode, &value, &ch_vals[0], &ch_vals[1], &ch_vals[2], &ch_vals[3],
+      parsed = sscanf(trimmed, "%2s %u %hd %hd %hd %hd %hd %hd %hd %hd", 
+                     cmd_mode, &value, &ch_vals[0], &ch_vals[1], &ch_vals[2], &ch_vals[3],
                      &ch_vals[4], &ch_vals[5], &ch_vals[6], &ch_vals[7]);
       
-      cmd->type = (mode == 'T') ? DAC_TRIGGER_CMD : DAC_DELAY_CMD;
+      cmd->type = (cmd_mode[0] == 'T') ? DAC_TRIGGER_CMD : DAC_DELAY_CMD;
       cmd->value = value;
-      cmd->has_ch_vals = (parsed == 10);
       
-      if (cmd->has_ch_vals) {
+      if (parsed == 10) {
         for (int i = 0; i < 8; i++) {
           cmd->ch_vals[i] = ch_vals[i];
         }
@@ -771,7 +767,7 @@ void* dac_cmd_stream_thread(void* arg) {
       
       // Check if we have space for the next command
       waveform_command_t* cmd = &commands[cmd_index];
-      uint32_t words_needed = cmd->has_ch_vals ? 5 : 1; // dac_wr needs 5 words, noop needs 1
+      uint32_t words_needed = (cmd->type == DAC_TRIGGER_CMD || cmd->type == DAC_DELAY_CMD) ? 5 : 1; // dac_wr needs 5 words, noop needs 1
       
       if (words_available >= words_needed) {
         // For iterating, we need to adjust the 'cont' flag:
@@ -783,12 +779,12 @@ void* dac_cmd_stream_thread(void* arg) {
         bool is_trigger = (cmd->type == DAC_TRIGGER_CMD || cmd->type == DAC_NOOP_TRIGGER_CMD);
         
         // Send the command based on type
-        if (cmd->has_ch_vals) {
+        if (cmd->type == DAC_TRIGGER_CMD || cmd->type == DAC_DELAY_CMD) {
           // DAC_TRIGGER_CMD or DAC_DELAY_CMD with channel values
-          dac_cmd_dac_wr(ctx->dac_ctrl, board, cmd->ch_vals, is_trigger ? DAC_TRIGGER_WAIT : DAC_DELAY_WAIT, cont_flag ? DAC_CONTINUE : DAC_NO_CONTINUE, DAC_LDAC, cmd->value, false);
+          dac_cmd_dac_wr(ctx->dac_ctrl, board, cmd->ch_vals, is_trigger ? DAC_TRIGGER_WAIT : DAC_DELAY_WAIT, cont_flag ? DAC_CONTINUE : DAC_NO_CONTINUE, DAC_LDAC, cmd->value, *(ctx->verbose));
         } else {
           // DAC_NOOP_TRIGGER_CMD or DAC_NOOP_DELAY_CMD (noop commands)
-          dac_cmd_noop(ctx->dac_ctrl, board, is_trigger ? DAC_TRIGGER_WAIT : DAC_DELAY_WAIT, cont_flag ? DAC_CONTINUE : DAC_NO_CONTINUE, DAC_NO_LDAC, cmd->value, false);
+          dac_cmd_noop(ctx->dac_ctrl, board, is_trigger ? DAC_TRIGGER_WAIT : DAC_DELAY_WAIT, cont_flag ? DAC_CONTINUE : DAC_NO_CONTINUE, DAC_NO_LDAC, cmd->value, *(ctx->verbose));
         }
         
         commands_sent_this_iteration++;
@@ -801,7 +797,6 @@ void* dac_cmd_stream_thread(void* arg) {
           printf("DAC Command Stream Thread[%d]: Iteration %d/%d, Sent command %d/%d (type=%s, value=%u, %s, cont=%s) [FIFO: %u/%u words, %d needed]\n", 
                  board, current_iteration + 1, iterations, commands_sent_this_iteration, command_count, 
                  type_names[cmd->type], cmd->value,
-                 cmd->has_ch_vals ? "with ch_vals" : "noop",
                  cont_flag ? "true" : "false", words_used, DAC_CMD_FIFO_WORDCOUNT, words_needed);
         }
       } else {
@@ -892,7 +887,7 @@ int cmd_stream_dac_commands_from_file(const char** args, int arg_count, const co
   
   for (int i = 0; i < command_count; i++) {
     waveform_command_t* cmd = &commands[i];
-    uint32_t words_needed = cmd->has_ch_vals ? 5 : 1; // dac_wr needs 5 words, noop needs 1
+    uint32_t words_needed = (cmd->type == DAC_TRIGGER_CMD || cmd->type == DAC_DELAY_CMD) ? 5 : 1;
     
     if (cmd->type == DAC_TRIGGER_CMD || cmd->type == DAC_NOOP_TRIGGER_CMD) {
       // Found a trigger command - check the gap since last trigger

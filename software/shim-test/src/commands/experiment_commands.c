@@ -968,25 +968,27 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   
   // Prompt for SPI frequency and trigger lockout time
   double spi_freq_mhz;
-  printf("Enter SPI clock frequency in MHz: ");
-  fflush(stdout);
+  spi_freq_mhz = ((double) sys_sts_get_spi_clk_freq_hz(ctx->sys_sts, *(ctx->verbose))) / 1e6;
+  printf("Detected SPI clock frequency: %.3f MHz\n", spi_freq_mhz);
+  // printf("Enter SPI clock frequency in MHz: ");
+  // fflush(stdout);
   
-  if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
-    fprintf(stderr, "Failed to read SPI frequency.\n");
-    return -1;
-  }
+  // if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+  //   fprintf(stderr, "Failed to read SPI frequency.\n");
+  //   return -1;
+  // }
   
-  // Remove newline
-  len = strlen(input_buffer);
-  if (len > 0 && input_buffer[len - 1] == '\n') {
-    input_buffer[len - 1] = '\0';
-  }
+  // // Remove newline
+  // len = strlen(input_buffer);
+  // if (len > 0 && input_buffer[len - 1] == '\n') {
+  //   input_buffer[len - 1] = '\0';
+  // }
   
-  spi_freq_mhz = atof(input_buffer);
-  if (spi_freq_mhz <= 0.0) {
-    fprintf(stderr, "Invalid SPI frequency. Must be > 0 MHz.\n");
-    return -1;
-  }
+  // spi_freq_mhz = atof(input_buffer);
+  // if (spi_freq_mhz <= 0.0) {
+  //   fprintf(stderr, "Invalid SPI frequency. Must be > 0 MHz.\n");
+  //   return -1;
+  // }
   
   double lockout_ms;
   printf("Enter trigger lockout time (milliseconds): ");
@@ -1074,10 +1076,6 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     
     // Calculate expected number of ADC words from ADC command file using board-specific ADC iterations
     adc_word_counts[board] = calculate_expected_adc_words(resolved_adc_files[board], adc_iterations[board], *(ctx->verbose));
-    if (adc_word_counts[board] == 0) {
-      fprintf(stderr, "Failed to calculate expected ADC word count from ADC command file for board %d\n", board);
-      return -1;
-    }
     
     total_expected_triggers = board_triggers[board]; // All boards have same count
     
@@ -1329,28 +1327,20 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   trigger_cmd_sync_ch(ctx->trigger_ctrl, false, *(ctx->verbose));
   
   // Reset trigger count after sync_ch to start counting from 0
-  if (*(ctx->verbose)) {
-    printf("Resetting trigger count after sync\n");
-  }
+  printf("Resetting trigger count after sync\n");
   trigger_cmd_reset_count(ctx->trigger_ctrl, *(ctx->verbose));
   
   // Set trigger lockout
-  if (*(ctx->verbose)) {
-    printf("Setting trigger lockout time to %u cycles\n", lockout_time);
-  }
+  printf("Setting trigger lockout time to %u cycles\n", lockout_time);
   trigger_cmd_set_lockout(ctx->trigger_ctrl, lockout_time, *(ctx->verbose));
   
   // Set up trigger expectations after sync trigger is sent and trigger streaming is ready
   if (total_expected_triggers > 0) {
-    if (*(ctx->verbose)) {
-      printf("Setting expected external triggers to %u with logging enabled\n", total_expected_triggers);
-    }
+    printf("Setting expected external triggers to %u with logging enabled\n", total_expected_triggers);
     trigger_cmd_expect_ext(ctx->trigger_ctrl, total_expected_triggers, true, *(ctx->verbose));
   }
   
-  if (*(ctx->verbose)) {
-    printf("Waveform test setup completed. All streaming started successfully.\n");
-  }
+  printf("Waveform test setup completed. All streaming started successfully.\n");
   
   // Start trigger monitoring
   if (start_trigger_monitor(ctx->sys_sts, total_expected_triggers, *(ctx->verbose)) != 0) {
@@ -1853,17 +1843,19 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   }
   
   double spi_freq_mhz;
-  printf("Enter SPI clock frequency in MHz: ");
-  fflush(stdout);
-  if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
-    fprintf(stderr, "Failed to read SPI frequency.\n");
-    return -1;
-  }
-  spi_freq_mhz = atof(input_buffer);
-  if (spi_freq_mhz <= 0.0) {
-    fprintf(stderr, "Invalid SPI frequency. Must be > 0 MHz.\n");
-    return -1;
-  }
+  spi_freq_mhz = ((double) sys_sts_get_spi_clk_freq_hz(ctx->sys_sts, *(ctx->verbose))) / 1e6;
+  printf("Detected SPI clock frequency: %.3f MHz\n", spi_freq_mhz);
+  // printf("Enter SPI clock frequency in MHz: ");
+  // fflush(stdout);
+  // if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+  //   fprintf(stderr, "Failed to read SPI frequency.\n");
+  //   return -1;
+  // }
+  // spi_freq_mhz = atof(input_buffer);
+  // if (spi_freq_mhz <= 0.0) {
+  //   fprintf(stderr, "Invalid SPI frequency. Must be > 0 MHz.\n");
+  //   return -1;
+  // }
   
   double lockout_ms;
   printf("Enter trigger lockout time in milliseconds: ");

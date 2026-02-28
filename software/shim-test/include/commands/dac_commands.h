@@ -15,7 +15,6 @@ typedef enum {
 typedef struct {
   dac_command_type_t type;  // Command type
   uint32_t value;           // Command value
-  bool has_ch_vals;         // Whether channel values are present
   int16_t ch_vals[8];       // Channel values (if present)
   bool cont;                // Continue flag
 } waveform_command_t;
