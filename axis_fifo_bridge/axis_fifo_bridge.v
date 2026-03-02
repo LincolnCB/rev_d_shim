@@ -4,8 +4,8 @@ module axis_fifo_bridge #(
   parameter integer AXIS_DATA_WIDTH = 32,
   parameter         ENABLE_WRITE    = 1, // 1=enable AXIS writes to FIFO
   parameter         ENABLE_READ     = 1, // 1=enable AXIS reads from FIFO
-  parameter         ALWAYS_READY    = "TRUE", // If "TRUE", s_axis_tready is always high
-  parameter         ALWAYS_VALID    = "TRUE"  // If "TRUE", m_axis_tvalid is always high
+  parameter         ALWAYS_READY    = 1, // If 1, s_axis_tready is always high
+  parameter         ALWAYS_VALID    = 1  // If 1, m_axis_tvalid is always high
 )(
   input  wire                       aclk,
   input  wire                       aresetn,
@@ -42,7 +42,7 @@ module axis_fifo_bridge #(
 
   // s_axis_tready logic
   generate
-    if (ALWAYS_READY == "TRUE") begin : GEN_ALWAYS_READY
+    if (ALWAYS_READY) begin : GEN_ALWAYS_READY
       assign s_axis_tready = 1'b1;
     end else begin : GEN_BLOCKING_READY
       assign s_axis_tready = write_allowed;
@@ -64,7 +64,7 @@ module axis_fifo_bridge #(
 
   // m_axis_tdata/valid logic
   generate
-    if (ALWAYS_VALID == "TRUE") begin : GEN_ALWAYS_VALID
+    if (ALWAYS_VALID) begin : GEN_ALWAYS_VALID
       assign m_axis_tdata  = fifo_empty ? {AXIS_DATA_WIDTH{1'b0}} : fifo_rd_data;
       assign m_axis_tvalid = 1'b1;
     end else begin : GEN_BLOCKING_VALID
