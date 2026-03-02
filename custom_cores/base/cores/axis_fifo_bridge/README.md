@@ -15,11 +15,11 @@ The `axis_fifo_bridge` module bridges an AXI4-Stream (AXIS) subordinate/manager 
 
 ## Parameters
 
-- `AXIS_DATA_WIDTH` (integer): AXIS data width (default: 32).
-- `ENABLE_WRITE` (bit): Enable AXIS writes to FIFO (default: 1).
-- `ENABLE_READ` (bit): Enable AXIS reads from FIFO (default: 1).
-- `ALWAYS_READY` (string): If `"TRUE"`, `s_axis_tready` is always high (default: `"TRUE"`).
-- `ALWAYS_VALID` (string): If `"TRUE"`, `m_axis_tvalid` is always high (default: `"TRUE"`).
+- `AXIS_DATA_WIDTH` (integer): AXIS data width (default: `32`).
+- `ENABLE_WRITE` (bit): Enable AXIS writes to FIFO (default: `1`).
+- `ENABLE_READ` (bit): Enable AXIS reads from FIFO (default: `1`).
+- `ALWAYS_READY` (bit): If `1`, `s_axis_tready` is always high (default: `1`).
+- `ALWAYS_VALID` (bit): If `1`, `m_axis_tvalid` is always high (default: `1`).
 
 ## Ports
 
@@ -65,7 +65,7 @@ The `axis_fifo_bridge` module bridges an AXI4-Stream (AXIS) subordinate/manager 
 - If `ENABLE_WRITE` is set and FIFO is not full, data is written to the FIFO.
 - If FIFO is full or writes are disabled, no data is written.
 - If FIFO is full and a write is attempted, `fifo_overflow` is asserted.
-- `s_axis_tready` is always high if `ALWAYS_READY` is `"TRUE"`, otherwise it reflects FIFO status and enable.
+- `s_axis_tready` is always high if `ALWAYS_READY` is set, otherwise it reflects FIFO status and enable.
 
 ### Read Path
 
@@ -73,12 +73,12 @@ The `axis_fifo_bridge` module bridges an AXI4-Stream (AXIS) subordinate/manager 
 - If `ENABLE_READ` is set and FIFO is not empty, data is read from the FIFO and presented on `m_axis_tdata`.
 - If FIFO is empty or reads are disabled, no data is read.
 - If FIFO is empty and a read is attempted, `fifo_underflow` is asserted.
-- `m_axis_tvalid` is always high if `ALWAYS_VALID` is `"TRUE"`, otherwise it reflects FIFO status and enable.
+- `m_axis_tvalid` is always high if `ALWAYS_VALID` is set, otherwise it reflects FIFO status and enable.
 
 ### Handshake Behavior
 
-- If `ALWAYS_READY` is `"TRUE"`, `s_axis_tready` is always high (subordinate interface never stalls).
-- If `ALWAYS_VALID` is `"TRUE"`, `m_axis_tvalid` is always high (manager interface always presents data, zero if FIFO empty).
+- If `ALWAYS_READY` is set, `s_axis_tready` is always high (subordinate interface never stalls).
+- If `ALWAYS_VALID` is set, `m_axis_tvalid` is always high (manager interface always presents data, zero if FIFO empty).
 
 ## Notes
 
