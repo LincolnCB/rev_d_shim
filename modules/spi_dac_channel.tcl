@@ -95,8 +95,10 @@ cell xilinx.com:ip:proc_sys_reset:5.0 miso_rst {} {
   slowest_sync_clk miso_sck
 }
 ## DAC SPI core
+# +/- 3A limit for the DAC value (19660 = 32767 * 3A / 5A)
 cell rev_d_shim:user:ad5676_dac_ctrl dac_spi {
   ABS_CAL_MAX 4096
+  ABS_DAC_MAX 19660
 } {
   clk spi_clk
   resetn resetn
