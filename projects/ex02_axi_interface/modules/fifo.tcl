@@ -23,13 +23,16 @@ cell xilinx.com:ip:xlslice:1.0 rst_slice {
 } {
   din cfg_word
 }
-# Reset manager
-# Use aux_reset to allow for manual customizable low/high active
-cell xilinx.com:ip:proc_sys_reset:5.0 fifo_rst {
-  C_AUX_RESET_HIGH.VALUE_SRC USER
-  C_AUX_RESET_HIGH 1
+# Negate the reset signal (To make active high reset)
+cell xilinx.com:ip:util_vector_logic n_rst {
+  C_SIZE 1
+  C_OPERATION not
 } {
-  aux_reset_in rst_slice/dout
+  Op1 rst_slice/dout
+}
+# Reset manager
+cell xilinx.com:ip:proc_sys_reset:5.0 fifo_rst {} {
+  ext_reset_in n_rst/Res
   slowest_sync_clk aclk
 }
 
@@ -37,7 +40,8 @@ cell xilinx.com:ip:proc_sys_reset:5.0 fifo_rst {
 # AXI Stream interface
 cell base:user:axi_fifo_bridge axi_fifo_bridge {} {
   aclk aclk
-  aresetn fifo_rst/peripheral_aresetn
+  wr_resetn fifo_rst/peripheral_aresetn
+  rd_resetn fifo_rst/peripheral_aresetn
   s_axi S_AXI
 }
 # FIFO

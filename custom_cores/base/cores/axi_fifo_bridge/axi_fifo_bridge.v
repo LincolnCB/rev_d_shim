@@ -44,6 +44,18 @@ module axi_fifo_bridge #(
   output reg                        fifo_overflow
 );
 
+  // Validate parameters
+  initial begin
+    if (AXI_ADDR_WIDTH <= 0) 
+      $error("Invalid value for AXI_ADDR_WIDTH parameter: %d. Must be greater than 0.", AXI_ADDR_WIDTH);
+    if (AXI_DATA_WIDTH <= 0 || AXI_DATA_WIDTH % 8 != 0) 
+      $error("Invalid value for AXI_DATA_WIDTH parameter: %d. Must be greater than 0 and a multiple of 8.", AXI_DATA_WIDTH);
+    if (ENABLE_WRITE != 0 && ENABLE_WRITE != 1)
+      $error("Invalid value for ENABLE_WRITE parameter: %d. Must be 0 or 1.", ENABLE_WRITE);
+    if (ENABLE_READ != 0 && ENABLE_READ != 1)
+      $error("Invalid value for ENABLE_READ parameter: %d. Must be 0 or 1.", ENABLE_READ);
+  end
+
   // Response signals
   localparam RESP_OKAY = 2'b00;
   localparam RESP_SLVERR = 2'b10;

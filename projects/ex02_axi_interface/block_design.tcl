@@ -129,7 +129,8 @@ cell xilinx.com:ip:axi_bram_ctrl:4.1 axi_bram_ctrl {
 }
 # Create a BRAM block using Vivado's Block Memory Generator
 # - Set the memory type to Single_Port_RAM
-# - Set the BRAM block to Stand_Alone mode
+# - Set the BRAM block to BRAM_Controller mode 
+#     (for when interfacing directly with Xilinx BRAM controller. Use Stand_Alone if using your own controller)
 # - Set the byte size to 8 bits
 # - Set the write width to 32 bits
 # - Set the write depth to 16384 (512Kib, 524288 bits)
@@ -145,7 +146,7 @@ cell xilinx.com:ip:axi_bram_ctrl:4.1 axi_bram_ctrl {
 #     ( *If you do change this, make sure to update the address range*  )
 cell xilinx.com:ip:blk_mem_gen bram {
   MEMORY_TYPE Single_Port_RAM
-  USE_BRAM_BLOCK Stand_Alone
+  USE_BRAM_BLOCK BRAM_Controller
   USE_BYTE_WRITE_ENABLE true
   BYTE_SIZE 8
   WRITE_WIDTH_A 32

@@ -38,8 +38,6 @@ module axi_sts_alert_reg #
   output wire                      s_axi_rvalid,  // AXI4-Lite subordinate: Read data valid
   input  wire                      s_axi_rready   // AXI4-Lite subordinate: Read data ready
 );
-  // Register to hold the last read status data
-  reg [STS_DATA_WIDTH-1:0] last_read_sts_data;
 
   // Function to calculate the ceiling of log2(value)
   function integer clogb2 (input integer value);
@@ -48,21 +46,34 @@ module axi_sts_alert_reg #
 
   // Local parameters for address calculation
   localparam integer ADDR_LSB = clogb2(AXI_DATA_WIDTH/8 - 1); // LSB for address alignment
-  localparam integer STS_SIZE = STS_DATA_WIDTH/AXI_DATA_WIDTH; // Number of status words
-  localparam integer STS_WIDTH = STS_SIZE > 1 ? clogb2(STS_SIZE-1) : 1; // Bits needed for status word index
+  localparam integer STS_WORDCOUNT = STS_DATA_WIDTH/AXI_DATA_WIDTH; // Number of status words
+  localparam integer STS_WORDCOUNT_WIDTH = STS_WORDCOUNT > 1 ? clogb2(STS_WORDCOUNT-1) : 1; // Bits needed for status word index
+
+  // Validate parameters
+  initial begin
+    if (STS_DATA_WIDTH <= 0 || STS_DATA_WIDTH % AXI_DATA_WIDTH != 0)
+      $error("Invalid value for STS_DATA_WIDTH parameter: %d. Must be greater than 0 and a multiple of AXI_DATA_WIDTH (%d).", STS_DATA_WIDTH, AXI_DATA_WIDTH);
+    if (AXI_DATA_WIDTH <= 0 || AXI_DATA_WIDTH % 8 != 0)
+      $error("Invalid value for AXI_DATA_WIDTH parameter: %d. Must be greater than 0 and a multiple of 8.", AXI_DATA_WIDTH);
+    if (AXI_ADDR_WIDTH <= 0)
+      $error("Invalid value for AXI_ADDR_WIDTH parameter: %d. Must be greater than 0.", AXI_ADDR_WIDTH);
+    if (AXI_ADDR_WIDTH < ADDR_LSB + STS_WORDCOUNT_WIDTH)
+      $error("Invalid value for AXI_ADDR_WIDTH parameter: %d. Must be at least %d to address all status words (ADDR_LSB=%d, STS_WORDCOUNT_WIDTH=%d).", AXI_ADDR_WIDTH, ADDR_LSB + STS_WORDCOUNT_WIDTH, ADDR_LSB, STS_WORDCOUNT_WIDTH);
+  end
 
   // Internal registers for read valid and read data
   reg int_rvalid_reg, int_rvalid_next;
   reg [AXI_DATA_WIDTH-1:0] int_rdata_reg, int_rdata_next;
-
+  // Register to hold the last read status data
+  reg [STS_DATA_WIDTH-1:0] last_read_sts_data;
   // Array of status words split from sts_data
-  wire [AXI_DATA_WIDTH-1:0] int_data_mux [STS_SIZE-1:0];
+  wire [AXI_DATA_WIDTH-1:0] int_data_mux [STS_WORDCOUNT-1:0];
 
   genvar j, k;
 
   // Generate block to assign each status word from sts_data
   generate
-    for(j = 0; j < STS_SIZE; j = j + 1)
+    for(j = 0; j < STS_WORDCOUNT; j = j + 1)
     begin : WORDS
       assign int_data_mux[j] = sts_data[j*AXI_DATA_WIDTH+AXI_DATA_WIDTH-1:j*AXI_DATA_WIDTH];
     end
@@ -93,7 +104,7 @@ module axi_sts_alert_reg #
     if(s_axi_arvalid)
     begin
       int_rvalid_next = 1'b1;
-      int_rdata_next = int_data_mux[s_axi_araddr[ADDR_LSB+STS_WIDTH-1:ADDR_LSB]];
+      int_rdata_next = int_data_mux[s_axi_araddr[ADDR_LSB+STS_WORDCOUNT_WIDTH-1:ADDR_LSB]];
     end
 
     // If read data is accepted, clear valid
@@ -109,7 +120,7 @@ module axi_sts_alert_reg #
     if(!aresetn)
       last_read_sts_data <= {(STS_DATA_WIDTH){1'b0}};
     else if(s_axi_arvalid && s_axi_arready)
-      last_read_sts_data[s_axi_araddr[ADDR_LSB+STS_WIDTH-1:ADDR_LSB]*AXI_DATA_WIDTH +: AXI_DATA_WIDTH] <= int_rdata_reg;
+      last_read_sts_data[s_axi_araddr[ADDR_LSB+STS_WORDCOUNT_WIDTH-1:ADDR_LSB]*AXI_DATA_WIDTH +: AXI_DATA_WIDTH] <= int_rdata_reg;
   end
 
   // Alert logic: set alert if the status data has changed since last read
