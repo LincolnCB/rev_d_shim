@@ -35,6 +35,21 @@ module axis_fifo_bridge #(
   output reg                        fifo_overflow
 );
 
+  // Parameter validation
+  initial begin
+    if (AXI_DATA_WIDTH <= 0 || AXI_DATA_WIDTH % 8 != 0) 
+      $error("Invalid value for AXI_DATA_WIDTH parameter: %d. Must be greater than 0 and a multiple of 8.", AXI_DATA_WIDTH);
+    if (ENABLE_WRITE != 0 && ENABLE_WRITE != 1)
+      $error("Invalid value for ENABLE_WRITE parameter: %d. Must be 0 or 1.", ENABLE_WRITE);
+    if (ENABLE_READ != 0 && ENABLE_READ != 1)
+      $error("Invalid value for ENABLE_READ parameter: %d. Must be 0 or 1.", ENABLE_READ);
+    if (ALWAYS_READY != 0 && ALWAYS_READY != 1)
+      $error("Invalid value for ALWAYS_READY parameter: %d. Must be 0 or 1.", ALWAYS_READY);
+    if (ALWAYS_VALID != 0 && ALWAYS_VALID != 1)
+      $error("Invalid value for ALWAYS_VALID parameter: %d. Must be 0 or 1.", ALWAYS_VALID);
+  end
+
+
   // Write logic (AXIS subordinate to FIFO)
   wire write_allowed = ENABLE_WRITE && !fifo_full;
   assign fifo_wr_data = s_axis_tdata;

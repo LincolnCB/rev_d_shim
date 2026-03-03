@@ -21,6 +21,27 @@ module fifo_sync #(
   output wire                   almost_empty
 );
 
+  localparam [ADDR_WIDTH:0] FIFO_DEPTH = {1'b1, {ADDR_WIDTH{1'b0}}}; // 2^ADDR_WIDTH
+  localparam [ADDR_WIDTH:0] ALMOST_FULL_THR_W = ALMOST_FULL_THRESHOLD[ADDR_WIDTH:0];
+  localparam [ADDR_WIDTH:0] ALMOST_EMPTY_THR_W = ALMOST_EMPTY_THRESHOLD[ADDR_WIDTH:0];
+
+  // Validate parameters
+  initial begin
+    if (FORCE_BRAM != 0 && FORCE_BRAM != 1)
+      $error("Invalid value for FORCE_BRAM parameter: %d. Must be 0 or 1.", FORCE_BRAM);
+    if (DATA_WIDTH <= 0) 
+      $error("Invalid value for DATA_WIDTH parameter: %d. Must be greater than 0.", DATA_WIDTH);
+    if (ADDR_WIDTH <= 0)
+      $error("Invalid value for ADDR_WIDTH parameter: %d. Must be greater than 0.", ADDR_WIDTH);
+    if (ALMOST_FULL_THRESHOLD < 0 || ALMOST_FULL_THRESHOLD > FIFO_DEPTH)
+      $error("Invalid value for ALMOST_FULL_THRESHOLD parameter: %d. Must be between 0 and FIFO depth (2^ADDR_WIDTH, ADDR_WIDTH=%d, FIFO_DEPTH=%d).",
+             ALMOST_FULL_THRESHOLD, ADDR_WIDTH, FIFO_DEPTH);
+    if (ALMOST_EMPTY_THRESHOLD < 0 || ALMOST_EMPTY_THRESHOLD > FIFO_DEPTH)
+      $error("Invalid value for ALMOST_EMPTY_THRESHOLD parameter: %d. Must be between 0 and FIFO depth (2^ADDR_WIDTH, ADDR_WIDTH=%d, FIFO_DEPTH=%d).",
+             ALMOST_EMPTY_THRESHOLD, ADDR_WIDTH, FIFO_DEPTH);
+  end
+
+
   // Write and read pointers
   reg [ADDR_WIDTH:0] wr_ptr_bin;
   reg [ADDR_WIDTH:0] rd_ptr_bin;
@@ -69,8 +90,8 @@ module fifo_sync #(
   assign fifo_count = wr_ptr_bin - rd_ptr_bin;
 
   // Almost full/empty
-  assign almost_full  = (fifo_count >= ((1 << ADDR_WIDTH) - ALMOST_FULL_THRESHOLD[ADDR_WIDTH:0]));
-  assign almost_empty = (fifo_count <= ALMOST_EMPTY_THRESHOLD[ADDR_WIDTH:0]);
+  assign almost_full  = (fifo_count >= (FIFO_DEPTH - ALMOST_FULL_THR_W));
+  assign almost_empty = (fifo_count <= ALMOST_EMPTY_THR_W);
 
 endmodule
 
@@ -88,17 +109,19 @@ module mem_sync #(
   output reg  [DATA_WIDTH-1:0]  rd_data
 );
 
+  localparam [ADDR_WIDTH:0] BRAM_DEPTH = {1'b1, {ADDR_WIDTH{1'b0}}}; // 2^ADDR_WIDTH
+
   generate
     if (FORCE_BRAM) begin : gen_bram
       // Forced BRAM usage
-      (* ram_style = "block" *) reg [DATA_WIDTH-1:0] mem [0:(1<<ADDR_WIDTH)-1];
+      (* ram_style = "block" *) reg [DATA_WIDTH-1:0] mem [0:BRAM_DEPTH-1];
       always @(posedge clk) begin
         if(wr_en) mem[wr_addr] <= wr_data;
         rd_data <= mem[rd_addr];
       end
     end else begin : gen_reg
       // Default memory
-      reg [DATA_WIDTH-1:0] mem [0:(1<<ADDR_WIDTH)-1];
+      reg [DATA_WIDTH-1:0] mem [0:BRAM_DEPTH-1];
       always @(posedge clk) begin
         if(wr_en) mem[wr_addr] <= wr_data;
         rd_data <= mem[rd_addr];

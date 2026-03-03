@@ -10,10 +10,13 @@ module sync_incoherent #(
   output wire [WIDTH-1:0] dout   // Synchronized output signal
 );
 
-  // Ensure DEPTH is within range
-  localparam MIN_DEPTH = 2;
-  localparam MAX_DEPTH = 8;
-  localparam SYNC_DEPTH = (DEPTH < MIN_DEPTH) ? MIN_DEPTH : (DEPTH > MAX_DEPTH) ? MAX_DEPTH : DEPTH;
+  // Validate parameters
+  initial begin
+    if (DEPTH < 2 || DEPTH > 8)
+      $error("Invalid value for DEPTH parameter: %d. Must be between 2 and 8.", DEPTH);
+    if (WIDTH <= 0)
+      $error("Invalid value for WIDTH parameter: %d. Must be greater than 0.", WIDTH);
+  end
 
   function integer clogb2 (input integer value);
     for(clogb2 = 0; value > 0; clogb2 = clogb2 + 1) value = value >> 1;
@@ -21,7 +24,7 @@ module sync_incoherent #(
 
   // Internal flip-flop chain
   // Use a fixed maximum depth for synthesis compatibility
-  reg [WIDTH-1:0] sync_chain [0:MAX_DEPTH-1];
+  reg [WIDTH-1:0] sync_chain [0:7]; // Maximum depth of 8
 
   // Initial stage logic
   always @(posedge clk) begin
@@ -33,11 +36,11 @@ module sync_incoherent #(
   end
   genvar i;
   generate
-    for (i = 1; i < MAX_DEPTH; i = i + 1) begin : sync_chain_gen
+    for (i = 1; i < 8; i = i + 1) begin : sync_chain_gen
       always @(posedge clk) begin
         if (!resetn) begin
           sync_chain[i] <= {WIDTH{1'b0}};
-        end else if (i < SYNC_DEPTH) begin
+        end else if (i < DEPTH) begin
           sync_chain[i] <= sync_chain[i-1];
         end
       end
@@ -45,6 +48,6 @@ module sync_incoherent #(
   endgenerate
 
   // Output is the last flip-flop in the chain
-  assign dout = sync_chain[SYNC_DEPTH-1];
+  assign dout = sync_chain[DEPTH-1];
 
 endmodule

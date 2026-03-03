@@ -23,10 +23,25 @@ module fifo_async #(
   output wire                   almost_empty
 );
 
-  // Cap ALMOST_FULL_THRESHOLD to be less than FIFO depth
-  localparam [ADDR_WIDTH:0] ALMOST_FULL_THRESHOLD_CAPPED = (ALMOST_FULL_THRESHOLD < (1 << ADDR_WIDTH)) ? ALMOST_FULL_THRESHOLD[ADDR_WIDTH:0] : (1 << ADDR_WIDTH) - 1;
-  localparam [ADDR_WIDTH:0] ALMOST_EMPTY_THRESHOLD_CAPPED = (ALMOST_EMPTY_THRESHOLD < (1 << ADDR_WIDTH)) ? ALMOST_EMPTY_THRESHOLD[ADDR_WIDTH:0] : (1 << ADDR_WIDTH) - 1;
-  
+  localparam [ADDR_WIDTH:0] FIFO_DEPTH = {1'b1, {ADDR_WIDTH{1'b0}}}; // 2^ADDR_WIDTH
+  localparam [ADDR_WIDTH:0] ALMOST_FULL_THR_W = ALMOST_FULL_THRESHOLD[ADDR_WIDTH:0];
+  localparam [ADDR_WIDTH:0] ALMOST_EMPTY_THR_W = ALMOST_EMPTY_THRESHOLD[ADDR_WIDTH:0];
+
+  // Validate parameters
+  initial begin
+    if (FORCE_BRAM != 0 && FORCE_BRAM != 1)
+      $error("Invalid value for FORCE_BRAM parameter: %d. Must be 0 or 1.", FORCE_BRAM);
+    if (DATA_WIDTH <= 0) 
+      $error("Invalid value for DATA_WIDTH parameter: %d. Must be greater than 0.", DATA_WIDTH);
+    if (ADDR_WIDTH <= 0)
+      $error("Invalid value for ADDR_WIDTH parameter: %d. Must be greater than 0.", ADDR_WIDTH);
+    if (ALMOST_FULL_THRESHOLD < 0 || ALMOST_FULL_THRESHOLD > FIFO_DEPTH)
+      $error("Invalid value for ALMOST_FULL_THRESHOLD parameter: %d. Must be between 0 and FIFO depth (2^ADDR_WIDTH, ADDR_WIDTH=%d, FIFO_DEPTH=%d).",
+             ALMOST_FULL_THRESHOLD, ADDR_WIDTH, FIFO_DEPTH);
+    if (ALMOST_EMPTY_THRESHOLD < 0 || ALMOST_EMPTY_THRESHOLD > FIFO_DEPTH)
+      $error("Invalid value for ALMOST_EMPTY_THRESHOLD parameter: %d. Must be between 0 and FIFO depth (2^ADDR_WIDTH, ADDR_WIDTH=%d, FIFO_DEPTH=%d).",
+             ALMOST_EMPTY_THRESHOLD, ADDR_WIDTH, FIFO_DEPTH);
+  end
 
   // Function to convert binary to Gray code
   function [ADDR_WIDTH:0] binary_to_gray(input [ADDR_WIDTH:0] bin);
@@ -129,12 +144,12 @@ module fifo_async #(
   assign fifo_count_wr_clk = wr_ptr_bin - rd_ptr_bin_wr_clk;
 
   // since the ptrs wrap circularily we need to be very careful with the subtractions. Best to have a test
-  assign almost_full = (fifo_count_wr_clk >= ((1 << ADDR_WIDTH) - ALMOST_FULL_THRESHOLD_CAPPED));
+  assign almost_full = (fifo_count_wr_clk >= (FIFO_DEPTH - ALMOST_FULL_THR_W));
 
   // ALMOST EMPTY calculation is done in read clock domain
   assign fifo_count_rd_clk = wr_ptr_bin_rd_clk - rd_ptr_bin;
 
-  assign almost_empty = (fifo_count_rd_clk <= ALMOST_EMPTY_THRESHOLD_CAPPED);
+  assign almost_empty = (fifo_count_rd_clk <= ALMOST_EMPTY_THR_W);
 
 endmodule
 
@@ -154,10 +169,12 @@ module mem_async #(
   output reg  [DATA_WIDTH-1:0]  rd_data
 );
 
+  localparam [ADDR_WIDTH:0] BRAM_DEPTH = {1'b1, {ADDR_WIDTH{1'b0}}}; // 2^ADDR_WIDTH
+
   generate
     if (FORCE_BRAM) begin : gen_bram
       // Forced BRAM usage
-      (* ram_style = "block" *) reg [DATA_WIDTH-1:0] mem [0:(1<<ADDR_WIDTH)-1];
+      (* ram_style = "block" *) reg [DATA_WIDTH-1:0] mem [0:BRAM_DEPTH-1];
       always @(posedge wr_clk) begin
         if(wr_en) mem[wr_addr] <= wr_data;
       end
@@ -166,7 +183,7 @@ module mem_async #(
       end
     end else begin : gen_reg
       // Default memory
-      reg [DATA_WIDTH-1:0] mem [0:(1<<ADDR_WIDTH)-1];
+      reg [DATA_WIDTH-1:0] mem [0:BRAM_DEPTH-1];
       always @(posedge wr_clk) begin
         if(wr_en) mem[wr_addr] <= wr_data;
       end
