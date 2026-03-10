@@ -155,6 +155,9 @@ char* dac_format_state(uint8_t state_code, bool verbose) {
     case DAC_STATE_DAC_WR_CH:
       strcat(buffer, "DAC Write Channel");
       break;
+    case DAC_STATE_PRE_DELAY_WAIT:
+      strcat(buffer, "Pre-Delay Wait");
+      break;
     case DAC_STATE_ERROR:
       strcat(buffer, "ERROR");
       break;

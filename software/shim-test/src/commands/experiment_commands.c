@@ -47,8 +47,10 @@ typedef enum {
 static int validate_system_running(command_context_t* ctx) {
   uint32_t hw_status = sys_sts_get_hw_status(ctx->sys_sts, *(ctx->verbose));
   uint32_t state = HW_STS_STATE(hw_status);
-  if (state != S_RUNNING) {
-    printf("Error: Hardware manager is not running (state: %u). Use 'on' command first.\n", state);
+  if (state == S_HALTED) {
+    printf("Error: Hardware manager is halted. Turn it off and on again using:\n  off\n  ctrl_on\n  pow_on\n");
+  } else if (state != S_RUNNING) {
+    printf("Error: Hardware manager is not running (state: %u). Use 'ctrl_on' and 'pow_on' commands first.\n", state);
     return -1;
   }
   return 0;
@@ -446,6 +448,7 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
   // Iterate through all channels to calibrate
   for (int ch = start_ch; ch <= end_ch; ch++) {
     int board, channel;
+    int16_t current_cal_value = 0;
     board = ch / 8;
     channel = ch % 8;
     
@@ -460,42 +463,6 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
     if (*(ctx->verbose)) {
       printf("\n  Starting calibration for channel %d (board %d, channel %d)\n", ch, board, channel);
     }
-    
-    // Get current DAC calibration value and store it
-    dac_cmd_get_cal(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, *(ctx->verbose));
-    
-    // Wait for calibration data to be available
-    int tries = 0;
-    uint32_t dac_data_fifo_status;
-    while (tries < 100) {
-      dac_data_fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
-      if (FIFO_STS_WORD_COUNT(dac_data_fifo_status) > 0) break;
-      usleep(100); // 0.1ms
-      tries++;
-    }
-    
-    if (FIFO_STS_WORD_COUNT(dac_data_fifo_status) == 0) {
-      if (*(ctx->verbose)) {
-        printf("FAILED - DAC calibration data timeout (no data in FIFO after %d tries)\n", tries);
-      } else {
-        printf("-F- |\n");
-      }
-      
-      // Check hardware status when calibration fails - if system is halted, abort calibration
-      printf("Reading hardware status register...\n");
-      uint32_t hw_status = sys_sts_get_hw_status(ctx->sys_sts, *(ctx->verbose));
-      if (HW_STS_STATE(hw_status) == S_HALTED) {
-        printf("Hardware status shows system is HALTED. Aborting channel calibration.\n");
-        print_hw_status(hw_status, *(ctx->verbose));
-        return -1;
-      }
-      
-      continue;
-    }
-    
-    uint32_t original_cal_data_word = dac_read_data(ctx->dac_ctrl, (uint8_t)board);
-    int16_t original_cal_value = DAC_CAL_DATA_VAL(original_cal_data_word);
-    int16_t current_cal_value = original_cal_value;
     
     // Perform calibration iterations
     bool calibration_failed = false;
@@ -656,8 +623,13 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
         current_cal_value = 4095;
       }
       
-      // Set new calibration value
-      dac_cmd_set_cal(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, current_cal_value, *(ctx->verbose));
+      // Set new calibration value if linearity is still linear
+      if (cal_sts == LINEARITY_LINEAR) {
+        dac_cmd_set_cal(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, current_cal_value, *(ctx->verbose));
+      } else if (*ctx->verbose) {
+        printf("    Skipping DAC calibration update due to non-linear or zero slope\n");
+        fflush(stdout);
+      }
       
       // Convert offset and slope to amps (range -5.0 to 5.0 for ±32767)
       double offset_amps = dac_to_amps(intercept);

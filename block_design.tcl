@@ -263,7 +263,7 @@ cell rev_d_shim:user:shutdown_sense shutdown_sense {} {
   shutdown_sense_en hw_manager/shutdown_sense_en
   shutdown_sense_connected shutdown_sense_connected/dout
   shutdown_sense_pin Shutdown_Sense
-  shutdown_sense hw_manager/shutdown_sense
+  shutdown_sense_o hw_manager/shutdown_sense_sts
   shutdown_sense_sel Shutdown_Sense_Sel
 }
 

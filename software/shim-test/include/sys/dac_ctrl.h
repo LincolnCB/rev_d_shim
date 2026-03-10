@@ -32,18 +32,19 @@ typedef enum {
 #define DAC_DATA_FIFO_WORDCOUNT  (uint32_t)(1 << 12) // 4096 words (2^12)
 
 // DAC state codes
-#define DAC_STATE_RESET      0
-#define DAC_STATE_INIT       1
-#define DAC_STATE_TEST_WR    2
-#define DAC_STATE_REQ_RD     3
-#define DAC_STATE_TEST_RD    4
-#define DAC_STATE_SET_MID    5
-#define DAC_STATE_IDLE       6
-#define DAC_STATE_DELAY      7
-#define DAC_STATE_TRIG_WAIT  8
-#define DAC_STATE_DAC_WR     9
-#define DAC_STATE_DAC_WR_CH  10
-#define DAC_STATE_ERROR      15
+#define DAC_STATE_RESET          0
+#define DAC_STATE_INIT           1
+#define DAC_STATE_TEST_WR        2
+#define DAC_STATE_REQ_RD         3
+#define DAC_STATE_TEST_RD        4
+#define DAC_STATE_SET_MID        5
+#define DAC_STATE_IDLE           6
+#define DAC_STATE_DELAY          7
+#define DAC_STATE_TRIG_WAIT      8
+#define DAC_STATE_DAC_WR         9
+#define DAC_STATE_DAC_WR_CH      10
+#define DAC_STATE_PRE_DELAY_WAIT 11
+#define DAC_STATE_ERROR          15
 
 // DAC command codes (3 MSB of command word)
 #define DAC_CMD_NO_OP     0
