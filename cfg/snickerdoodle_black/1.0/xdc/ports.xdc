@@ -9,11 +9,11 @@
 # Inputs
 #------------------------------------------------------------
 
-# 10MHz clock input (10Mhz_In)
-# Pin: 10MHz_In JB2.38 N18
-set_property IOSTANDARD   LVCMOS25  [get_ports Scanner_10Mhz_In]
-set_property PACKAGE_PIN  N18       [get_ports Scanner_10Mhz_In]
-set_property PULLTYPE     PULLDOWN  [get_ports Scanner_10Mhz_In]
+# 30MHz clock input (30MHz_In)
+# Pin: 30MHz_In JB2.38 N18
+set_property IOSTANDARD   LVCMOS25  [get_ports Scanner_30MHz_In]
+set_property PACKAGE_PIN  N18       [get_ports Scanner_30MHz_In]
+set_property PULLTYPE     PULLDOWN  [get_ports Scanner_30MHz_In]
 
 # Trigger in (Trigger_In)
 # Pin: Trigger_In JB2.36 P19

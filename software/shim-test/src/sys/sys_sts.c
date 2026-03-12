@@ -35,12 +35,16 @@ struct sys_sts_t create_sys_sts(bool verbose) {
 
   // Initialize SPI clock frequency pointer
   sys_sts.spi_clk_freq_hz = sys_sts_ptr + SPI_CLK_FREQ_OFFSET;
-
-  // Initialize debug register
-  sys_sts.debug = sys_sts_ptr + DEBUG_REG_OFFSET;
   
   // Initialize trigger counter pointer
   sys_sts.trig_counter = sys_sts_ptr + TRIG_COUNTER_OFFSET;
+  
+  // Initialize debug register
+  sys_sts.debug = sys_sts_ptr + DEBUG_REG_OFFSET;
+
+  // Initialize DAC and ADC "delay too short" time registers
+  sys_sts.dac_delay_too_short_time = sys_sts_ptr + DEBUG_DAC_DELAY_TOO_SHORT_TIME_OFFSET;
+  sys_sts.adc_delay_too_short_time = sys_sts_ptr + DEBUG_ADC_DELAY_TOO_SHORT_TIME_OFFSET;
   
   return sys_sts;
 }
@@ -79,7 +83,7 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
   if (verbose) printf("Raw hardware state code: 0x%" PRIx32 "\n", HW_STS_STATE(hw_status));
   switch (HW_STS_STATE(hw_status)) {
     case S_IDLE:
-      printf("State: Idle\n");
+      printf("State: Idle (Waiting For Control Board Enable)\n");
       break;
     case S_CONFIRM_SPI_RST:
       printf("State: Confirm SPI Reset\n");
@@ -89,6 +93,9 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
       break;
     case S_CONFIRM_SPI_START:
       printf("State: Confirm SPI Start\n");
+      break;
+    case S_WAIT_FOR_POW_EN:
+      printf("State: Waiting For Power Board Enable\n");
       break;
     case S_POWER_ON_AMP_BRD:
       printf("State: Power On Amplifier Board\n");
@@ -132,8 +139,11 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
       case STS_LOCK_VIOL:
         printf("Status: Configuration lock violation\n");
         break;
-      case STS_SYS_EN_OOB:
-        printf("Status: System enable register out of bounds\n");
+      case STS_CTRL_EN_OOB:
+        printf("Status: Control board enable register out of bounds\n");
+        break;
+      case STS_POW_EN_OOB:
+        printf("Status: Power board enable register out of bounds\n");
         break;
       case STS_CMD_BUF_RESET_OOB:
         printf("Status: Command buffer reset out of bounds\n");
@@ -350,6 +360,15 @@ uint32_t sys_sts_get_trig_data_fifo_status(struct sys_sts_t *sys_sts, bool verbo
   return get_fifo_status(sys_sts->trig_data_fifo_sts, "Trigger Data", verbose);
 }
 
+// Get trigger counter value
+uint32_t sys_sts_get_trig_counter(struct sys_sts_t *sys_sts, bool verbose) {
+  if (verbose) {
+    printf("Reading trigger counter register...\n");
+    printf("Trigger counter raw: 0x%" PRIx32 "\n", *(sys_sts->trig_counter));
+  }
+  return *(sys_sts->trig_counter);
+}
+
 // Get debug register value
 uint32_t sys_sts_get_debug(struct sys_sts_t *sys_sts, bool verbose) {
   if (verbose) {
@@ -359,14 +378,25 @@ uint32_t sys_sts_get_debug(struct sys_sts_t *sys_sts, bool verbose) {
   return *(sys_sts->debug);
 }
 
-// Get trigger counter value
-uint32_t sys_sts_get_trig_counter(struct sys_sts_t *sys_sts, bool verbose) {
+// Get DAC "delay too short" time in SPI clock cycles
+uint32_t sys_sts_get_dac_delay_too_short_time(struct sys_sts_t *sys_sts, bool verbose) {
   if (verbose) {
-    printf("Reading trigger counter register...\n");
-    printf("Trigger counter raw: 0x%" PRIx32 "\n", *(sys_sts->trig_counter));
+    printf("Reading DAC 'delay too short' time register...\n");
+    printf("DAC 'delay too short' time raw: 0x%" PRIx32 "\n", *(sys_sts->dac_delay_too_short_time));
   }
-  return *(sys_sts->trig_counter);
+  return *(sys_sts->dac_delay_too_short_time);
 }
+
+// Get ADC "delay too short" time in SPI clock cycles
+uint32_t sys_sts_get_adc_delay_too_short_time(struct sys_sts_t *sys_sts, bool verbose) {
+  if (verbose) {
+    printf("Reading ADC 'delay too short' time register...\n");
+    printf("ADC 'delay too short' time raw: 0x%" PRIx32 "\n", *(sys_sts->adc_delay_too_short_time));
+  }
+  return *(sys_sts->adc_delay_too_short_time);
+}
+  
+
 
 // Print FIFO status details
 void print_fifo_status(uint32_t fifo_status, const char *fifo_name) {

@@ -28,7 +28,6 @@
 // Forward declarations for helper functions
 static int validate_system_running(command_context_t* ctx);
 static int count_trigger_lines_in_file(const char* file_path);
-static uint64_t calculate_expected_adc_words(const char* file_path, int iterations, bool verbose);
 
 // Linearity status for channel calibration
 typedef enum {
@@ -48,15 +47,17 @@ typedef enum {
 static int validate_system_running(command_context_t* ctx) {
   uint32_t hw_status = sys_sts_get_hw_status(ctx->sys_sts, *(ctx->verbose));
   uint32_t state = HW_STS_STATE(hw_status);
-  if (state != S_RUNNING) {
-    printf("Error: Hardware manager is not running (state: %u). Use 'on' command first.\n", state);
+  if (state == S_HALTED) {
+    printf("Error: Hardware manager is halted. Turn it off and on again using:\n  off\n  ctrl_on\n  pow_on\n");
+  } else if (state != S_RUNNING) {
+    printf("Error: Hardware manager is not running (state: %u). Use 'ctrl_on' and 'pow_on' commands first.\n", state);
     return -1;
   }
   return 0;
 }
 
 // Helper function to count trigger lines in a DAC/ADC file 
-// (sum trigger counts from T lines, formatted similarly enough in both files to be fine)
+// (sum trigger counts from T and NT lines, formatted similarly enough in both files to be fine)
 static int count_trigger_lines_in_file(const char* file_path) {
   FILE* file = fopen(file_path, "r");
   if (file == NULL) {
@@ -75,11 +76,13 @@ static int count_trigger_lines_in_file(const char* file_path) {
       continue;
     }
     
-    // Check if line starts with T (trigger)
-    if (*trimmed == 'T') {
+    // Check if line starts with T (trigger) or NT (noop-trigger)
+    if (*trimmed == 'T' || (trimmed[0] == 'N' && trimmed[1] == 'T')) {
       int t_count = 1;
-      // Try to parse the trigger count after 'T'
-      if (sscanf(trimmed + 1, " %d", &t_count) == 1 && t_count > 0) {
+      // For NT, skip past 'NT', for T, skip past 'T'
+      const char* count_str = (trimmed[0] == 'N' && trimmed[1] == 'T') ? (trimmed + 2) : (trimmed + 1);
+      // Try to parse the trigger count after 'T' or 'NT'
+      if (sscanf(count_str, " %d", &t_count) == 1 && t_count > 0) {
         trigger_count += t_count;
       } else {
         trigger_count += 1;
@@ -134,64 +137,6 @@ static void get_next_bd_wfm_if_exists(const char* filename, char* out_filename) 
       }
     }
   }
-}
-
-// Helper function to calculate expected number of ADC words from an ADC command file
-static uint64_t calculate_expected_adc_words(const char* file_path, int iterations, bool verbose) {
-  // Parse the ADC command file to count D commands (only these generate ADC words)
-  
-  FILE* file = fopen(file_path, "r");
-  if (file == NULL) {
-    fprintf(stderr, "Failed to open ADC command file '%s': %s\n", file_path, strerror(errno));
-    return 0;
-  }
-  
-  // Count D commands (these generate ADC words)
-  char line[512];
-  uint64_t adc_words_per_execution = 0;
-  
-  while (fgets(line, sizeof(line), file)) {
-    // Skip empty lines and comments
-    char* trimmed = line;
-    while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
-    if (*trimmed == '\n' || *trimmed == '\r' || *trimmed == '\0' || *trimmed == '#') {
-      continue;
-    }
-    
-    // Check command type - only D commands generate ADC words
-    if (*trimmed == 'D') {
-      // D commands generate 4 ADC words per execution (one per ADC channel read)
-      uint32_t delay_value = 0;
-      uint32_t repeat_value = 0;
-      
-      // Parse the delay and repeat values from the command
-      // Format: D <delay> <repeats> where repeats is the number of EXTRA times it runs
-      int parsed = sscanf(trimmed + 1, " %u %u", &delay_value, &repeat_value);
-      if (parsed >= 2) {
-        // Second parameter is the repeat count (extra executions)
-        adc_words_per_execution += (repeat_value + 1) * 4;
-      } else if (parsed == 1) {
-        // Only delay specified, runs once
-        adc_words_per_execution += 4;
-      } else {
-        // Default to runs once
-        adc_words_per_execution += 4;
-      }
-    }
-    // T and O commands don't generate ADC words, just ignore them
-  }
-  
-  fclose(file);
-  
-  // Calculate total ADC words: adc_words_per_execution * total_iterations
-  uint64_t total_adc_words = adc_words_per_execution * iterations;
-  
-  if (verbose) {
-    printf("Calculated %llu ADC words per execution, %llu total ADC words (%d iterations)\n", 
-           adc_words_per_execution, total_adc_words, iterations);
-  }
-  
-  return total_adc_words;
 }
 
 // Channel test command implementation
@@ -503,6 +448,7 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
   // Iterate through all channels to calibrate
   for (int ch = start_ch; ch <= end_ch; ch++) {
     int board, channel;
+    int16_t current_cal_value = 0;
     board = ch / 8;
     channel = ch % 8;
     
@@ -517,42 +463,6 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
     if (*(ctx->verbose)) {
       printf("\n  Starting calibration for channel %d (board %d, channel %d)\n", ch, board, channel);
     }
-    
-    // Get current DAC calibration value and store it
-    dac_cmd_get_cal(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, *(ctx->verbose));
-    
-    // Wait for calibration data to be available
-    int tries = 0;
-    uint32_t dac_data_fifo_status;
-    while (tries < 100) {
-      dac_data_fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
-      if (FIFO_STS_WORD_COUNT(dac_data_fifo_status) > 0) break;
-      usleep(100); // 0.1ms
-      tries++;
-    }
-    
-    if (FIFO_STS_WORD_COUNT(dac_data_fifo_status) == 0) {
-      if (*(ctx->verbose)) {
-        printf("FAILED - DAC calibration data timeout (no data in FIFO after %d tries)\n", tries);
-      } else {
-        printf("-F- |\n");
-      }
-      
-      // Check hardware status when calibration fails - if system is halted, abort calibration
-      printf("Reading hardware status register...\n");
-      uint32_t hw_status = sys_sts_get_hw_status(ctx->sys_sts, *(ctx->verbose));
-      if (HW_STS_STATE(hw_status) == S_HALTED) {
-        printf("Hardware status shows system is HALTED. Aborting channel calibration.\n");
-        print_hw_status(hw_status, *(ctx->verbose));
-        return -1;
-      }
-      
-      continue;
-    }
-    
-    uint32_t original_cal_data_word = dac_read_data(ctx->dac_ctrl, (uint8_t)board);
-    int16_t original_cal_value = DAC_CAL_DATA_VAL(original_cal_data_word);
-    int16_t current_cal_value = original_cal_value;
     
     // Perform calibration iterations
     bool calibration_failed = false;
@@ -713,8 +623,13 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
         current_cal_value = 4095;
       }
       
-      // Set new calibration value
-      dac_cmd_set_cal(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, current_cal_value, *(ctx->verbose));
+      // Set new calibration value if linearity is still linear
+      if (cal_sts == LINEARITY_LINEAR) {
+        dac_cmd_set_cal(ctx->dac_ctrl, (uint8_t)board, (uint8_t)channel, current_cal_value, *(ctx->verbose));
+      } else if (*ctx->verbose) {
+        printf("    Skipping DAC calibration update due to non-linear or zero slope\n");
+        fflush(stdout);
+      }
       
       // Convert offset and slope to amps (range -5.0 to 5.0 for ±32767)
       double offset_amps = dac_to_amps(intercept);
@@ -1025,25 +940,27 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   
   // Prompt for SPI frequency and trigger lockout time
   double spi_freq_mhz;
-  printf("Enter SPI clock frequency in MHz: ");
-  fflush(stdout);
+  spi_freq_mhz = ((double) sys_sts_get_spi_clk_freq_hz(ctx->sys_sts, *(ctx->verbose))) / 1e6;
+  printf("Detected SPI clock frequency: %.3f MHz\n", spi_freq_mhz);
+  // printf("Enter SPI clock frequency in MHz: ");
+  // fflush(stdout);
   
-  if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
-    fprintf(stderr, "Failed to read SPI frequency.\n");
-    return -1;
-  }
+  // if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+  //   fprintf(stderr, "Failed to read SPI frequency.\n");
+  //   return -1;
+  // }
   
-  // Remove newline
-  len = strlen(input_buffer);
-  if (len > 0 && input_buffer[len - 1] == '\n') {
-    input_buffer[len - 1] = '\0';
-  }
+  // // Remove newline
+  // len = strlen(input_buffer);
+  // if (len > 0 && input_buffer[len - 1] == '\n') {
+  //   input_buffer[len - 1] = '\0';
+  // }
   
-  spi_freq_mhz = atof(input_buffer);
-  if (spi_freq_mhz <= 0.0) {
-    fprintf(stderr, "Invalid SPI frequency. Must be > 0 MHz.\n");
-    return -1;
-  }
+  // spi_freq_mhz = atof(input_buffer);
+  // if (spi_freq_mhz <= 0.0) {
+  //   fprintf(stderr, "Invalid SPI frequency. Must be > 0 MHz.\n");
+  //   return -1;
+  // }
   
   double lockout_ms;
   printf("Enter trigger lockout time (milliseconds): ");
@@ -1131,10 +1048,6 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     
     // Calculate expected number of ADC words from ADC command file using board-specific ADC iterations
     adc_word_counts[board] = calculate_expected_adc_words(resolved_adc_files[board], adc_iterations[board], *(ctx->verbose));
-    if (adc_word_counts[board] == 0) {
-      fprintf(stderr, "Failed to calculate expected ADC word count from ADC command file for board %d\n", board);
-      return -1;
-    }
     
     total_expected_triggers = board_triggers[board]; // All boards have same count
     
@@ -1189,10 +1102,10 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     }
     
     // Add DAC NOOP stopper
-    dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, true, false, false, 1, *(ctx->verbose)); // Wait for 1 trigger
+    dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, DAC_TRIGGER_WAIT, DAC_NO_CONTINUE, DAC_NO_LDAC, 1, *(ctx->verbose)); // Wait for 1 trigger
     
     // Add ADC NOOP stopper  
-    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, *(ctx->verbose)); // Wait for 1 trigger
+    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, ADC_TRIGGER_WAIT, ADC_NO_CONTINUE, 1, *(ctx->verbose)); // Wait for 1 trigger
   }
 
   // Start command streaming for each connected board
@@ -1386,28 +1299,20 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   trigger_cmd_sync_ch(ctx->trigger_ctrl, false, *(ctx->verbose));
   
   // Reset trigger count after sync_ch to start counting from 0
-  if (*(ctx->verbose)) {
-    printf("Resetting trigger count after sync\n");
-  }
+  printf("Resetting trigger count after sync\n");
   trigger_cmd_reset_count(ctx->trigger_ctrl, *(ctx->verbose));
   
   // Set trigger lockout
-  if (*(ctx->verbose)) {
-    printf("Setting trigger lockout time to %u cycles\n", lockout_time);
-  }
+  printf("Setting trigger lockout time to %u cycles\n", lockout_time);
   trigger_cmd_set_lockout(ctx->trigger_ctrl, lockout_time, *(ctx->verbose));
   
   // Set up trigger expectations after sync trigger is sent and trigger streaming is ready
   if (total_expected_triggers > 0) {
-    if (*(ctx->verbose)) {
-      printf("Setting expected external triggers to %u with logging enabled\n", total_expected_triggers);
-    }
+    printf("Setting expected external triggers to %u with logging enabled\n", total_expected_triggers);
     trigger_cmd_expect_ext(ctx->trigger_ctrl, total_expected_triggers, true, *(ctx->verbose));
   }
   
-  if (*(ctx->verbose)) {
-    printf("Waveform test setup completed. All streaming started successfully.\n");
-  }
+  printf("Waveform test setup completed. All streaming started successfully.\n");
   
   // Start trigger monitoring
   if (start_trigger_monitor(ctx->sys_sts, total_expected_triggers, *(ctx->verbose)) != 0) {
@@ -1910,17 +1815,19 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   }
   
   double spi_freq_mhz;
-  printf("Enter SPI clock frequency in MHz: ");
-  fflush(stdout);
-  if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
-    fprintf(stderr, "Failed to read SPI frequency.\n");
-    return -1;
-  }
-  spi_freq_mhz = atof(input_buffer);
-  if (spi_freq_mhz <= 0.0) {
-    fprintf(stderr, "Invalid SPI frequency. Must be > 0 MHz.\n");
-    return -1;
-  }
+  spi_freq_mhz = ((double) sys_sts_get_spi_clk_freq_hz(ctx->sys_sts, *(ctx->verbose))) / 1e6;
+  printf("Detected SPI clock frequency: %.3f MHz\n", spi_freq_mhz);
+  // printf("Enter SPI clock frequency in MHz: ");
+  // fflush(stdout);
+  // if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
+  //   fprintf(stderr, "Failed to read SPI frequency.\n");
+  //   return -1;
+  // }
+  // spi_freq_mhz = atof(input_buffer);
+  // if (spi_freq_mhz <= 0.0) {
+  //   fprintf(stderr, "Invalid SPI frequency. Must be > 0 MHz.\n");
+  //   return -1;
+  // }
   
   double lockout_ms;
   printf("Enter trigger lockout time in milliseconds: ");
@@ -2009,8 +1916,8 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
   for (int board = 0; board < 8; board++) {
     if (!connected_boards[board]) continue;
     
-    dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, true, false, false, 1, *(ctx->verbose));
-    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, false, 1, *(ctx->verbose));
+    dac_cmd_noop(ctx->dac_ctrl, (uint8_t)board, DAC_TRIGGER_WAIT, DAC_NO_CONTINUE, DAC_NO_LDAC, 1, *(ctx->verbose));
+    adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, ADC_TRIGGER_WAIT, ADC_NO_CONTINUE, 1, *(ctx->verbose));
   }
   
   // Calculate DAC values
@@ -2036,7 +1943,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
       if (!connected_boards[board]) continue;
       
       int16_t ch_vals[8] = {0};
-      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, true, false, true, 1, *(ctx->verbose));
+      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, DAC_TRIGGER_WAIT, DAC_NO_CONTINUE, DAC_LDAC, 1, *(ctx->verbose));
       total_dac_commands++;
     }
     
@@ -2049,7 +1956,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
         ch_vals[target_channel] = dac_positive;
       }
       
-      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, true, false, true, 1, *(ctx->verbose));
+      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, DAC_TRIGGER_WAIT, DAC_NO_CONTINUE, DAC_LDAC, 1, *(ctx->verbose));
       total_dac_commands++;
     }
     
@@ -2062,7 +1969,7 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
         ch_vals[target_channel] = dac_negative;
       }
       
-      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, true, false, true, 1, *(ctx->verbose));
+      dac_cmd_dac_wr(ctx->dac_ctrl, (uint8_t)board, ch_vals, DAC_TRIGGER_WAIT, DAC_NO_CONTINUE, DAC_LDAC, 1, *(ctx->verbose));
       total_dac_commands++;
     }
   }
@@ -2089,10 +1996,10 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
       if (!connected_boards[board]) continue;
       
       // NOOP wait for trigger
-      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, true, true, 1, *(ctx->verbose));
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, ADC_TRIGGER_WAIT, ADC_CONTINUE, 1, *(ctx->verbose));
       // Delay then read for all connected boards
-      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, false, true, delay_cycles, *(ctx->verbose));
-      adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, true, false, 0, 0, *(ctx->verbose));
+      adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, ADC_DELAY_WAIT, ADC_CONTINUE, delay_cycles, *(ctx->verbose));
+      adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, ADC_TRIGGER_WAIT, ADC_NO_CONTINUE, 0, 0, *(ctx->verbose));
       total_adc_commands += 3;
       }
     }

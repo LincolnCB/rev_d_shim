@@ -8,7 +8,7 @@ if {$board_count < 1 || $board_count > 8} {
 }
 
 ## Variably choose whether to use an external clock
-set use_ext_clk 0
+set use_ext_clk 1
 
 # If the external clock is not 0 or 1, then error out
 if {$use_ext_clk != 0 && $use_ext_clk != 1} {
@@ -29,7 +29,7 @@ if {$spi_clk_freq_mhz < 1.0 || $spi_clk_freq_mhz > 50.0} {
 # This sets the depth of the FIFOs as 2^ADDR_WIDTH
 # Larger FIFOs use more FPGA resources, but allow for longer bursts and more buffering.
 # This can hit the cap fast!
-set dac_cmd_fifo_addr_width 13
+set dac_cmd_fifo_addr_width 14
 set dac_data_fifo_addr_width 12
 set adc_cmd_fifo_addr_width 10
 set adc_data_fifo_addr_width 13
@@ -47,8 +47,8 @@ set trig_data_fifo_addr_width 10
 # Inputs
 #------------------------------------------------------------
 
-# (10Mhz_In)
-create_bd_port -dir I -type clk -freq_hz 10000000 Scanner_10Mhz_In
+# (30MHz_In)
+create_bd_port -dir I -type clk -freq_hz 30000000 Scanner_30MHz_In
 # (Shutdown_Sense)
 create_bd_port -dir I -type data Shutdown_Sense
 # (Trigger_In)
@@ -202,7 +202,7 @@ cell xilinx.com:ip:smartconnect:1.0 sys_cfg_axi_intercon {
 # +3 Integrator window (unsigned, 32b, min 2048)
 # +4 Integrator enable (1b cap)
 # +5 Boot test skip (16b cap)
-cell rev_d_shim:user:axi_sys_ctrl axi_sys_ctrl {
+cell shim:user:axi_sys_ctrl axi_sys_ctrl {
   INTEG_THRESHOLD_AVERAGE_DEFAULT 16384
   INTEG_WINDOW_DEFAULT 5000000
   INTEG_EN_DEFAULT 1
@@ -220,12 +220,17 @@ addr 0x40000000 128 axi_sys_ctrl/S_AXI ps/M_AXI_GP0
 ###############################################################################
 
 ### Hardware manager
-cell rev_d_shim:user:hw_manager hw_manager {} {
+# Set SPI start wait to 5 seconds
+cell shim:user:hw_manager hw_manager {
+  SPI_START_WAIT 500000000
+} {
   clk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
-  sys_en axi_sys_ctrl/sys_en
+  ctrl_en axi_sys_ctrl/ctrl_en
+  pow_en axi_sys_ctrl/pow_en
   ext_en Manual_Enable
-  sys_en_oob axi_sys_ctrl/sys_en_oob
+  ctrl_en_oob axi_sys_ctrl/ctrl_en_oob
+  pow_en_oob axi_sys_ctrl/pow_en_oob
   cmd_buf_reset_oob axi_sys_ctrl/cmd_buf_reset_oob
   data_buf_reset_oob axi_sys_ctrl/data_buf_reset_oob
   integ_thresh_avg_oob axi_sys_ctrl/integ_thresh_avg_oob
@@ -253,12 +258,12 @@ for {set i $board_count} {$i < 8} {incr i} {
   wire shutdown_sense_connected/In${i} const_0/dout
 }
 # Shutdown sense module
-cell rev_d_shim:user:shutdown_sense shutdown_sense {} {
+cell shim:user:shutdown_sense shutdown_sense {} {
   clk ps/FCLK_CLK0
   shutdown_sense_en hw_manager/shutdown_sense_en
   shutdown_sense_connected shutdown_sense_connected/dout
   shutdown_sense_pin Shutdown_Sense
-  shutdown_sense hw_manager/shutdown_sense
+  shutdown_sense_o hw_manager/shutdown_sense_sts
   shutdown_sense_sel Shutdown_Sense_Sel
 }
 
@@ -273,7 +278,7 @@ if {$use_ext_clk} {
     PRIMITIVE MMCM
     USE_DYN_RECONFIG true
     USE_SAFE_CLOCK_STARTUP true
-    PRIM_IN_FREQ 10
+    PRIM_IN_FREQ 30
     CLKOUT1_REQUESTED_OUT_FREQ ${spi_clk_freq_mhz}
     FEEDBACK_SOURCE FDBK_AUTO
     CLKOUT1_DRIVES BUFGCE
@@ -281,7 +286,7 @@ if {$use_ext_clk} {
     s_axi_aclk ps/FCLK_CLK0
     s_axi_aresetn ps_rst/peripheral_aresetn
     s_axi_lite sys_cfg_axi_intercon/M02_AXI
-    clk_in1 Scanner_10Mhz_In
+    clk_in1 Scanner_30MHz_In
   }
 } else {
   # Use FCLK_CLK0 as the clock input
@@ -302,16 +307,26 @@ if {$use_ext_clk} {
   }
 }
 addr 0x40200000 2048 spi_clk/s_axi_lite ps/M_AXI_GP0
+
+## SPI clock output slowdown divider for DAC boot test
+cell shim:user:clock_divider spi_clk_divider {} {
+  clk_i spi_clk/clk_out1
+}
   
 
 ###############################################################################
 
 ### Calculate timing from SPI clock frequency
+## ~~~~~~~~~~~~ TODO ~~~~~~~~~~~~
+#  Replace with AXI snoop of clk
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ## Constant block for SPI clock frequency in Hz
 cell xilinx.com:ip:xlconstant:1.1 spi_clk_freq_hz_const {
   CONST_VAL [expr {int($spi_clk_freq_mhz * 1000000 + 0.5)}]
   CONST_WIDTH 32
 } {}
+## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 ## Negate unlock_cfg to get calc signal
 cell xilinx.com:ip:util_vector_logic n_unlock_cfg {
   C_SIZE 1
@@ -320,13 +335,13 @@ cell xilinx.com:ip:util_vector_logic n_unlock_cfg {
   Op1 axi_sys_ctrl/unlock
 }
 ## Timing calculation cores
-cell rev_d_shim:user:ad5676_dac_timing_calc dac_timing_calc {} {
+cell shim:user:ad5676_dac_timing_calc dac_timing_calc {} {
   clk ps/FCLK_CLK0
   resetn ps_rst/peripheral_aresetn
   spi_clk_freq_hz spi_clk_freq_hz_const/dout
   calc n_unlock_cfg/Res
 }
-cell rev_d_shim:user:ads816x_adc_timing_calc adc_timing_calc {
+cell shim:user:ads816x_adc_timing_calc adc_timing_calc {
   ADS_MODEL_ID 8
 } {
   clk ps/FCLK_CLK0
@@ -365,17 +380,21 @@ cell xilinx.com:ip:util_vector_logic lock_viol_or {
 module spi_clk_domain spi_clk_domain {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
-  spi_clk spi_clk/clk_out1
+  spi_clk spi_clk_divider/clk_o
   spi_en hw_manager/spi_en
   integ_thresh_avg axi_sys_ctrl/integ_thresh_avg
   integ_window axi_sys_ctrl/integ_window
   integ_en axi_sys_ctrl/integ_en
   dac_n_cs_high_time dac_timing_calc/n_cs_high_time
+  dac_delay_too_short_time dac_timing_calc/delay_too_short_time
   adc_n_cs_high_time adc_timing_calc/n_cs_high_time
+  adc_delay_too_short_time adc_timing_calc/delay_too_short_time
   boot_test_skip axi_sys_ctrl/boot_test_skip
   debug axi_sys_ctrl/debug
   dac_cal_init axi_sys_ctrl/dac_cal_init
+  do_dac_pre_delay axi_sys_ctrl/do_dac_pre_delay
   spi_off hw_manager/spi_off
+  spi_off spi_clk_divider/slow_en
   over_thresh hw_manager/over_thresh
   thresh_underflow hw_manager/thresh_underflow
   thresh_overflow hw_manager/thresh_overflow
@@ -408,7 +427,7 @@ module axi_spi_interface axi_spi_interface {
   aresetn ps_rst/peripheral_aresetn
   cmd_buf_reset axi_sys_ctrl/cmd_buf_reset
   data_buf_reset axi_sys_ctrl/data_buf_reset
-  spi_clk spi_clk/clk_out1
+  spi_clk spi_clk_divider/clk_o
   S_AXI ps/M_AXI_GP1
 }
 ## Wire channel pins for the module
@@ -469,17 +488,19 @@ addr 0x40100000 256 status_reg/S_AXI ps/M_AXI_GP0
 #   575 : 32   -- 544b Command FIFO status (32 bits per buffer, ordered as DAC0, ADC0, ..., DAC7, ADC7, Trigger)
 #  1119 : 576  -- 544b Data FIFO status (32 bits per buffer, ordered as DAC0, ADC0, ..., DAC7, ADC7, Trigger)
 #  1151 : 1120 --  32b SPI clock frequency in Hz
-#  1183 : 1152 --  32b Debug 1 (SPI clock locked, spi_off, DAC/ADC ~CS high time)
-#  1215 : 1184 --  32b Trigger counter (number of triggers received)
-#  2047 : 1216 -- RESERVED (0)
+#  1183 : 1152 --  32b Trigger counter (number of triggers received)
+#  1215 : 1184 --  32b Debug 1 (SPI clock locked, spi_off, DAC/ADC ~CS high time)
+#  1247 : 1216 --  32b DAC "delay too short" time (in SPI clock cycles)
+#  1279 : 1248 --  32b ADC "delay too short" time (in SPI clock cycles)
+#  2047 : 1279 -- RESERVED (0)
 cell xilinx.com:ip:xlconcat:2.1 sts_concat {
-  NUM_PORTS 7
+  NUM_PORTS 9
 } {
   In0 hw_manager/status_word
   In1 axi_spi_interface/cmd_fifo_sts
   In2 axi_spi_interface/data_fifo_sts
   In3 spi_clk_freq_hz_const/dout
-  In5 spi_clk_domain/trig_counter
+  In4 spi_clk_domain/trig_counter
   dout status_reg/sts_data
 }
 # Debug 1 tracks the following:
@@ -488,6 +509,10 @@ cell xilinx.com:ip:xlconcat:2.1 sts_concat {
 #  6 : 2  --  5b DAC ~CS high time
 # 14 : 7  --  8b ADC ~CS high time
 # 31 : 15 -- 17b RESERVED (0)
+cell xilinx.com:ip:xlconstant:1.1 pad_17 {
+  CONST_VAL 0
+  CONST_WIDTH 17
+} {}
 cell xilinx.com:ip:xlconcat:2.1 debug_1 {
   NUM_PORTS 5
 } {
@@ -495,21 +520,35 @@ cell xilinx.com:ip:xlconcat:2.1 debug_1 {
   In1 hw_manager/spi_off
   In2 dac_timing_calc/n_cs_high_time
   In3 adc_timing_calc/n_cs_high_time
-  dout sts_concat/In4
+  In4 pad_17/dout
+  dout sts_concat/In5
 }
-cell xilinx.com:ip:xlconstant:1.1 pad_17 {
+# Delay too short times
+cell xilinx.com:ip:xlconstant:1.1 pad_7 {
   CONST_VAL 0
-  CONST_WIDTH 17
+  CONST_WIDTH 7
+} {}
+cell xilinx.com:ip:xlconcat:2.1 dac_delay_too_short_concat {
+  NUM_PORTS 2
 } {
-  dout debug_1/In4
+  In0 dac_timing_calc/delay_too_short_time
+  In1 pad_7/dout
+  dout sts_concat/In6
+}
+cell xilinx.com:ip:xlconcat:2.1 adc_delay_too_short_concat {
+  NUM_PORTS 2
+} {
+  In0 adc_timing_calc/delay_too_short_time
+  In1 pad_7/dout
+  dout sts_concat/In7
 }
 
 # Pad reserved bits
 cell xilinx.com:ip:xlconstant:1.1 pad_sts_reserved {
   CONST_VAL 0
-  CONST_WIDTH [expr {2048 - 1216}]
+  CONST_WIDTH [expr {2048 - 1280}]
 } {
-  dout sts_concat/In6
+  dout sts_concat/In8
 }
 
 ## IRQ interrupt concat
@@ -524,7 +563,7 @@ cell xilinx.com:ip:xlconcat:2.1 irq_concat {
 
 ### Gate the SPI clocks (MISO and MOSI SCK)
 cell base:user:clock_gate spi_mosi_sck_gate {} {
-  clk spi_clk/clk_out1
+  clk spi_clk_divider/clk_o
   en hw_manager/spi_clk_gate
 }
 cell base:user:clock_gate spi_miso_sck_gate {} {

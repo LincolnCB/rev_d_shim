@@ -5,7 +5,8 @@
 
 // Basic system commands
 int cmd_verbose(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
-int cmd_on(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+int cmd_ctrl_on(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+int cmd_pow_on(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_off(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_dbg(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
@@ -26,8 +27,9 @@ int cmd_set_data_buf_reset(const char** args, int arg_count, const command_flag_
 int cmd_invert_mosi_clk(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_invert_miso_clk(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
-// SPI clock frequency commands
+// SPI clock frequency and timing commands
 int cmd_spi_clk_freq(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+int cmd_get_min_delay_times(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
 // Integrator configuration commands
 int cmd_set_integ_window(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);

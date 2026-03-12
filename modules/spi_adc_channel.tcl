@@ -7,6 +7,7 @@ create_bd_pin -dir I -type reset resetn
 
 # Config parameters
 create_bd_pin -dir I -from 8 -to 0 adc_n_cs_high_time
+create_bd_pin -dir I -from 24 -to 0 adc_delay_too_short_time
 create_bd_pin -dir I boot_test_skip
 create_bd_pin -dir I debug
 
@@ -80,12 +81,13 @@ cell xilinx.com:ip:proc_sys_reset:5.0 miso_rst {} {
   slowest_sync_clk miso_sck
 }
 ## ADC SPI core
-cell rev_d_shim:user:ads816x_adc_ctrl adc_spi {} {
+cell shim:user:ads816x_adc_ctrl adc_spi {} {
   clk spi_clk
   resetn resetn
   boot_test_skip boot_test_skip
   debug debug
   n_cs_high_time adc_n_cs_high_time
+  delay_too_short_time adc_delay_too_short_time
   cmd_buf_rd_en adc_cmd_rd_en
   cmd_buf_word adc_cmd
   cmd_buf_empty adc_cmd_empty_blocked/Res

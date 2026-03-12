@@ -23,9 +23,20 @@ int cmd_verbose(const char** args, int arg_count, const command_flag_t* flags, i
   return 0;
 }
 
-int cmd_on(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  printf("Turning the system on...\n");
-  sys_ctrl_turn_on(ctx->sys_ctrl, *(ctx->verbose));
+int cmd_ctrl_on(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  printf("Turning the control board on...\n");
+  sys_ctrl_turn_ctrl_on(ctx->sys_ctrl, *(ctx->verbose));
+  
+  // Wait a bit and check status
+  usleep(100000); // 100ms
+  uint32_t hw_status = sys_sts_get_hw_status(ctx->sys_sts, *(ctx->verbose));
+  print_hw_status(hw_status, *(ctx->verbose));
+  return 0;
+}
+
+int cmd_pow_on(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  printf("Turning the power board on...\n");
+  sys_ctrl_turn_pow_on(ctx->sys_ctrl, *(ctx->verbose));
   
   // Wait a bit and check status
   usleep(100000); // 100ms
@@ -237,6 +248,25 @@ int cmd_invert_miso_clk(const char** args, int arg_count, const command_flag_t* 
 int cmd_spi_clk_freq(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   uint32_t freq_hz = sys_sts_get_spi_clk_freq_hz(ctx->sys_sts, *(ctx->verbose));
   print_spi_clk_freq(freq_hz, *(ctx->verbose));
+  return 0;
+}
+
+// Get minimum delay times in SPI clock cycles
+int cmd_get_min_delay_times(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  uint32_t dac_delay_too_short_time = sys_sts_get_dac_delay_too_short_time(ctx->sys_sts, *(ctx->verbose));
+  uint32_t adc_delay_too_short_time = sys_sts_get_adc_delay_too_short_time(ctx->sys_sts, *(ctx->verbose));
+  double spi_clk_freq_mhz = ((double) sys_sts_get_spi_clk_freq_hz(ctx->sys_sts, false)) / 1e6;
+  uint32_t min_dac_delay_cycles = dac_delay_too_short_time + 1;
+  uint32_t min_adc_delay_cycles = adc_delay_too_short_time + 1;
+  double max_dac_sample_rate_khz = spi_clk_freq_mhz / min_dac_delay_cycles * 1e3;
+  double max_adc_sample_rate_khz = spi_clk_freq_mhz / min_adc_delay_cycles * 1e3;
+  double min_dac_delay_us = ((double) min_dac_delay_cycles) / spi_clk_freq_mhz;
+  double min_adc_delay_us = ((double) min_adc_delay_cycles) / spi_clk_freq_mhz;
+  printf("Minimum delay times (in SPI clock cycles at %.2f MHz):\n", spi_clk_freq_mhz);
+  printf("  DAC minimum delay: %u cycles (~%.2f us, max sample rate: ~%.2f kHz)\n", min_dac_delay_cycles, min_dac_delay_us, max_dac_sample_rate_khz);
+  printf("  ADC minimum delay: %u cycles (~%.2f us, max sample rate: ~%.2f kHz)\n", min_adc_delay_cycles, min_adc_delay_us, max_adc_sample_rate_khz);
+  printf(" WARNING: Clock cycles are exact, but corresponding times and sample rates could have rounding errors.\n");
+  printf("          Check the exact cycle delay in your waveforms if you are trying to operate near these limits.\n");
   return 0;
 }
 

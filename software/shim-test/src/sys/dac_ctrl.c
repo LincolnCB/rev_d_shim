@@ -155,6 +155,9 @@ char* dac_format_state(uint8_t state_code, bool verbose) {
     case DAC_STATE_DAC_WR_CH:
       strcat(buffer, "DAC Write Channel");
       break;
+    case DAC_STATE_PRE_DELAY_WAIT:
+      strcat(buffer, "Pre-Delay Wait");
+      break;
     case DAC_STATE_ERROR:
       strcat(buffer, "ERROR");
       break;
@@ -170,7 +173,7 @@ char* dac_format_state(uint8_t state_code, bool verbose) {
 }
 
 // DAC command word functions
-void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool trig, bool cont, bool ldac, uint32_t value, bool verbose) {
+void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, dac_wait_mode_t trig, dac_continue_mode_t cont, dac_ldac_mode_t ldac, uint32_t value, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
     return;
@@ -180,9 +183,9 @@ void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool trig, bool co
     return;
   }
   uint32_t cmd_word = (DAC_CMD_NO_OP  << DAC_CMD_CMD_LSB ) |
-                      ((ldac ? 1 : 0) << DAC_CMD_LDAC_BIT) |
-                      ((trig ? 1 : 0) << DAC_CMD_TRIG_BIT) |
-                      ((cont ? 1 : 0) << DAC_CMD_CONT_BIT) |
+                      ((ldac == DAC_LDAC ? 1 : 0) << DAC_CMD_LDAC_BIT) |
+                      ((trig == DAC_TRIGGER_WAIT ? 1 : 0) << DAC_CMD_TRIG_BIT) |
+                      ((cont == DAC_CONTINUE ? 1 : 0) << DAC_CMD_CONT_BIT) |
                       (value & 0x1FFFFFF);
   
   if (verbose) {
@@ -191,7 +194,7 @@ void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool trig, bool co
   *(dac_ctrl->buffer[board]) = cmd_word;
 }
 
-void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[8], bool trig, bool cont, bool ldac, uint32_t value, bool verbose) {
+void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[8], dac_wait_mode_t trig, dac_continue_mode_t cont, dac_ldac_mode_t ldac, uint32_t value, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
     return;
@@ -202,9 +205,9 @@ void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[
   }
   
   uint32_t cmd_word = (DAC_CMD_DAC_WR << DAC_CMD_CMD_LSB ) |
-                      ((trig ? 1 : 0) << DAC_CMD_TRIG_BIT) |
-                      ((cont ? 1 : 0) << DAC_CMD_CONT_BIT) |
-                      ((ldac ? 1 : 0) << DAC_CMD_LDAC_BIT) |
+                      ((trig == DAC_TRIGGER_WAIT ? 1 : 0) << DAC_CMD_TRIG_BIT) |
+                      ((cont == DAC_CONTINUE ? 1 : 0) << DAC_CMD_CONT_BIT) |
+                      ((ldac == DAC_LDAC ? 1 : 0) << DAC_CMD_LDAC_BIT) |
                       (value & 0x1FFFFFF);
   
   if (verbose) {

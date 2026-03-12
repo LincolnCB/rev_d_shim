@@ -10,9 +10,11 @@ create_bd_pin -dir I -from 31 -to 0 integ_window
 create_bd_pin -dir I -from 14 -to 0 integ_thresh_avg
 create_bd_pin -dir I integ_en
 create_bd_pin -dir I -from 4 -to 0 dac_n_cs_high_time
+create_bd_pin -dir I -from 24 -to 0 dac_delay_too_short_time
 create_bd_pin -dir I -from 15 -to 0 dac_cal_init
 create_bd_pin -dir I boot_test_skip
 create_bd_pin -dir I debug
+create_bd_pin -dir I do_pre_delay
 
 ## Status signals
 # System status
@@ -94,14 +96,18 @@ cell xilinx.com:ip:proc_sys_reset:5.0 miso_rst {} {
   slowest_sync_clk miso_sck
 }
 ## DAC SPI core
-cell rev_d_shim:user:ad5676_dac_ctrl dac_spi {
+# +/- 3.5A limit for the DAC value (22937 = 32767 * 3.5A / 5A)
+cell shim:user:ad5676_dac_ctrl dac_spi {
   ABS_CAL_MAX 4096
+  ABS_DAC_MAX 22937
 } {
   clk spi_clk
   resetn resetn
   boot_test_skip boot_test_skip
   debug debug
+  do_pre_delay do_pre_delay
   n_cs_high_time dac_n_cs_high_time
+  delay_too_short_time dac_delay_too_short_time
   cal_init_val dac_cal_init
   cmd_buf_rd_en dac_cmd_rd_en
   cmd_buf_word dac_cmd
@@ -134,7 +140,7 @@ cell rev_d_shim:user:ad5676_dac_ctrl dac_spi {
 ### Integrator
 
 # Instantiate the threshold integrator module
-cell rev_d_shim:user:threshold_integrator threshold_core {} {
+cell shim:user:threshold_integrator threshold_core {} {
   clk spi_clk
   resetn resetn
   enable integ_en

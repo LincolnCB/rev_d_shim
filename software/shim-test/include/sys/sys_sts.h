@@ -23,14 +23,17 @@
 #define TRIG_DATA_FIFO_STS_OFFSET   (uint32_t) 34 // Trigger data FIFO status
 // SPI clock frequency offset
 #define SPI_CLK_FREQ_OFFSET         (uint32_t) 35 // SPI clock frequency in Hz
-// Debug register
-#define DEBUG_REG_OFFSET            (uint32_t) 36 // Debug register offset
+// Trigger counter offset
+#define TRIG_COUNTER_OFFSET         (uint32_t) 36 // Trigger counter offset
+// Timing debug register
+#define DEBUG_REG_OFFSET            (uint32_t) 37 // Timing debug register offset
 #define DEBUG_SPI_CLK_LOCKED_BIT 0  // SPI clock locked status bit
 #define DEBUG_SPI_OFF_BIT        1  // SPI off status bit
 #define DEBUG_DAC_CS_HIGH_TIME(word) (((word) >> 2) & 0x1F) // DAC ~CS high time (5 bits)
 #define DEBUG_ADC_CS_HIGH_TIME(word) (((word) >> 7) & 0xFF) // ADC ~CS high time (8 bits)
-// Trigger counter offset
-#define TRIG_COUNTER_OFFSET         (uint32_t) 37 // Trigger counter offset
+// Delay too short times (in SPI clock cycles)
+#define DEBUG_DAC_DELAY_TOO_SHORT_TIME_OFFSET (uint32_t) 38 // DAC "delay too short" time offset
+#define DEBUG_ADC_DELAY_TOO_SHORT_TIME_OFFSET (uint32_t) 39 // ADC "delay too short" time offset
 
 // Macro for extracting the 4-bit state
 #define HW_STS_STATE(hw_status) ((hw_status) & 0xF)
@@ -44,11 +47,12 @@
 #define S_CONFIRM_SPI_RST     (uint32_t) 2
 #define S_POWER_ON_CRTL_BRD   (uint32_t) 3
 #define S_CONFIRM_SPI_START   (uint32_t) 4
-#define S_POWER_ON_AMP_BRD    (uint32_t) 5
-#define S_AMP_POWER_WAIT      (uint32_t) 6
-#define S_RUNNING             (uint32_t) 7
-#define S_HALTING             (uint32_t) 8
-#define S_HALTED              (uint32_t) 9
+#define S_WAIT_FOR_POW_EN     (uint32_t) 5
+#define S_POWER_ON_AMP_BRD    (uint32_t) 6
+#define S_AMP_POWER_WAIT      (uint32_t) 7
+#define S_RUNNING             (uint32_t) 8
+#define S_HALTING             (uint32_t) 9
+#define S_HALTED              (uint32_t) 10
 
 // Status codes (matches hardware manager core status codes)
 // 25 bits wide, see hardware hw_manager.v for details
@@ -60,16 +64,17 @@
 #define STS_SPI_START_TIMEOUT        (uint32_t) 0x0101 // SPI start timeout.
 // Pre-start configuration values
 #define STS_LOCK_VIOL                (uint32_t) 0x0200 // Configuration lock violation.
-#define STS_SYS_EN_OOB               (uint32_t) 0x0201 // System enable register out of bounds.
-#define STS_CMD_BUF_RESET_OOB        (uint32_t) 0x0202 // Command buffer reset out of bounds.
-#define STS_DATA_BUF_RESET_OOB       (uint32_t) 0x0203 // Data buffer reset out of bounds.
-#define STS_INTEG_THRESH_AVG_OOB     (uint32_t) 0x0204 // Integrator threshold average out of bounds.
-#define STS_INTEG_WINDOW_OOB         (uint32_t) 0x0205 // Integrator window out of bounds.
-#define STS_INTEG_EN_OOB             (uint32_t) 0x0206 // Integrator enable register out of bounds.
-#define STS_BOOT_TEST_SKIP_OOB       (uint32_t) 0x0207 // Boot test skip out of bounds.
-#define STS_DEBUG_OOB                (uint32_t) 0x0208 // Debug out of bounds.
-#define STS_MOSI_SCK_POL_OOB         (uint32_t) 0x0209 // MOSI SCK polarity out of bounds.
-#define STS_MISO_SCK_POL_OOB         (uint32_t) 0x020A // MISO SCK polarity out of bounds.
+#define STS_CTRL_EN_OOB              (uint32_t) 0x0201 // Control board enable register out of bounds.
+#define STS_POW_EN_OOB               (uint32_t) 0x0202 // Power board enable register out of bounds.
+#define STS_CMD_BUF_RESET_OOB        (uint32_t) 0x0203 // Command buffer reset out of bounds.
+#define STS_DATA_BUF_RESET_OOB       (uint32_t) 0x0204 // Data buffer reset out of bounds.
+#define STS_INTEG_THRESH_AVG_OOB     (uint32_t) 0x0205 // Integrator threshold average out of bounds.
+#define STS_INTEG_WINDOW_OOB         (uint32_t) 0x0206 // Integrator window out of bounds.
+#define STS_INTEG_EN_OOB             (uint32_t) 0x0207 // Integrator enable register out of bounds.
+#define STS_BOOT_TEST_SKIP_OOB       (uint32_t) 0x0208 // Boot test skip out of bounds.
+#define STS_DEBUG_OOB                (uint32_t) 0x0209 // Debug out of bounds.
+#define STS_MOSI_SCK_POL_OOB         (uint32_t) 0x020A // MOSI SCK polarity out of bounds.
+#define STS_MISO_SCK_POL_OOB         (uint32_t) 0x020B // MISO SCK polarity out of bounds.
 // Shutdown sense
 #define STS_SHUTDOWN_SENSE           (uint32_t) 0x0300 // Shutdown sense detected.
 #define STS_EXT_SHUTDOWN             (uint32_t) 0x0301 // External shutdown triggered.
@@ -125,8 +130,10 @@ struct sys_sts_t {
   volatile uint32_t *trig_cmd_fifo_sts;      // Trigger command FIFO status
   volatile uint32_t *trig_data_fifo_sts;     // Trigger data FIFO status
   volatile uint32_t *spi_clk_freq_hz;        // SPI clock frequency in Hz
-  volatile uint32_t *debug;                  // Debug register
   volatile uint32_t *trig_counter;           // Trigger counter
+  volatile uint32_t *debug;                  // Debug register
+  volatile uint32_t *dac_delay_too_short_time; // DAC "delay too short" time in SPI clock cycles
+  volatile uint32_t *adc_delay_too_short_time; // ADC "delay too short" time in SPI clock cycles
 };
 
 // Structure initialization function
@@ -150,10 +157,14 @@ uint32_t sys_sts_get_adc_data_fifo_status(struct sys_sts_t *sys_sts, uint8_t boa
 uint32_t sys_sts_get_trig_cmd_fifo_status(struct sys_sts_t *sys_sts, bool verbose);
 // Get trigger data FIFO status
 uint32_t sys_sts_get_trig_data_fifo_status(struct sys_sts_t *sys_sts, bool verbose);
-// Get debug register value
-uint32_t sys_sts_get_debug(struct sys_sts_t *sys_sts, bool verbose);
 // Get trigger counter value
 uint32_t sys_sts_get_trig_counter(struct sys_sts_t *sys_sts, bool verbose);
+// Get debug register value
+uint32_t sys_sts_get_debug(struct sys_sts_t *sys_sts, bool verbose);
+// Get DAC "delay too short" time in SPI clock cycles
+uint32_t sys_sts_get_dac_delay_too_short_time(struct sys_sts_t *sys_sts, bool verbose);
+// Get ADC "delay too short" time in SPI clock cycles
+uint32_t sys_sts_get_adc_delay_too_short_time(struct sys_sts_t *sys_sts, bool verbose);
 
 // Interpret and print hardware status
 void print_hw_status(uint32_t hw_status, bool verbose);

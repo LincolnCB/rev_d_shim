@@ -213,7 +213,7 @@ char* adc_format_command(uint8_t cmd_code, bool verbose) {
 }
 
 // ADC command word functions
-void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t value, bool verbose) {
+void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, adc_wait_mode_t trig, adc_continue_mode_t cont, uint32_t value, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
     return;
@@ -223,8 +223,8 @@ void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool co
     return;
   }
   uint32_t cmd_word = (ADC_CMD_NO_OP  << ADC_CMD_CMD_LSB ) |
-                      ((trig ? 1 : 0) << ADC_CMD_TRIG_BIT) |
-                      ((cont ? 1 : 0) << ADC_CMD_CONT_BIT) |
+                      ((trig == ADC_TRIGGER_WAIT ? 1 : 0) << ADC_CMD_TRIG_BIT) |
+                      ((cont == ADC_CONTINUE ? 1 : 0) << ADC_CMD_CONT_BIT) |
                       (value & 0x1FFFFFF);
   
   if (verbose) {
@@ -233,7 +233,7 @@ void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool co
   *(adc_ctrl->buffer[board]) = cmd_word;
 }
 
-void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool cont, uint32_t value, uint32_t repeat_count, bool verbose) {
+void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, adc_wait_mode_t trig, adc_continue_mode_t cont, uint32_t value, uint32_t repeat_count, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
     return;
@@ -243,8 +243,8 @@ void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool trig, bool 
     return;
   }
   uint32_t cmd_word = (ADC_CMD_ADC_RD << ADC_CMD_CMD_LSB ) |
-                      ((trig ? 1 : 0) << ADC_CMD_TRIG_BIT) |
-                      ((cont ? 1 : 0) << ADC_CMD_CONT_BIT) |
+                      ((trig == ADC_TRIGGER_WAIT ? 1 : 0) << ADC_CMD_TRIG_BIT) |
+                      ((cont == ADC_CONTINUE ? 1 : 0) << ADC_CMD_CONT_BIT) |
                       (((repeat_count > 0) ? 1 : 0) << ADC_CMD_REPEAT_BIT) |
                       (value & 0x1FFFFFF);
   
