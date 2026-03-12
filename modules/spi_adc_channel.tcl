@@ -81,7 +81,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 miso_rst {} {
   slowest_sync_clk miso_sck
 }
 ## ADC SPI core
-cell rev_d_shim:user:ads816x_adc_ctrl adc_spi {} {
+cell shim:user:ads816x_adc_ctrl adc_spi {} {
   clk spi_clk
   resetn resetn
   boot_test_skip boot_test_skip

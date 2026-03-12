@@ -131,7 +131,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 sync_reset {} {
   slowest_sync_clk spi_clk
 }
 ## SPI system configuration synchronization
-cell rev_d_shim:user:spi_cfg_sync spi_cfg_sync {} {
+cell shim:user:spi_cfg_sync spi_cfg_sync {} {
   aclk aclk
   aresetn aresetn
   spi_clk spi_clk
@@ -150,7 +150,7 @@ cell rev_d_shim:user:spi_cfg_sync spi_cfg_sync {} {
   dac_cal_init dac_cal_init
 }
 ## SPI system status synchronization
-cell rev_d_shim:user:spi_sts_sync spi_sts_sync {} {
+cell shim:user:spi_sts_sync spi_sts_sync {} {
   aclk aclk
   aresetn aresetn
   spi_clk spi_clk
@@ -207,7 +207,7 @@ cell xilinx.com:ip:util_vector_logic trig_data_full_blocked {
 }
 ## Trigger core
 # 10000000 = 0.5 seconds at 20 MHz SPI clock
-cell rev_d_shim:user:trigger_core trig_core {
+cell shim:user:trigger_core trig_core {
   TRIGGER_LOCKOUT_DEFAULT 10000000
 } {
   clk spi_clk

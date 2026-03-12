@@ -97,7 +97,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 miso_rst {} {
 }
 ## DAC SPI core
 # +/- 3.5A limit for the DAC value (22937 = 32767 * 3.5A / 5A)
-cell rev_d_shim:user:ad5676_dac_ctrl dac_spi {
+cell shim:user:ad5676_dac_ctrl dac_spi {
   ABS_CAL_MAX 4096
   ABS_DAC_MAX 22937
 } {
@@ -140,7 +140,7 @@ cell rev_d_shim:user:ad5676_dac_ctrl dac_spi {
 ### Integrator
 
 # Instantiate the threshold integrator module
-cell rev_d_shim:user:threshold_integrator threshold_core {} {
+cell shim:user:threshold_integrator threshold_core {} {
   clk spi_clk
   resetn resetn
   enable integ_en

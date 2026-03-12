@@ -202,7 +202,7 @@ cell xilinx.com:ip:smartconnect:1.0 sys_cfg_axi_intercon {
 # +3 Integrator window (unsigned, 32b, min 2048)
 # +4 Integrator enable (1b cap)
 # +5 Boot test skip (16b cap)
-cell rev_d_shim:user:axi_sys_ctrl axi_sys_ctrl {
+cell shim:user:axi_sys_ctrl axi_sys_ctrl {
   INTEG_THRESHOLD_AVERAGE_DEFAULT 16384
   INTEG_WINDOW_DEFAULT 5000000
   INTEG_EN_DEFAULT 1
@@ -221,7 +221,7 @@ addr 0x40000000 128 axi_sys_ctrl/S_AXI ps/M_AXI_GP0
 
 ### Hardware manager
 # Set SPI start wait to 5 seconds
-cell rev_d_shim:user:hw_manager hw_manager {
+cell shim:user:hw_manager hw_manager {
   SPI_START_WAIT 500000000
 } {
   clk ps/FCLK_CLK0
@@ -258,7 +258,7 @@ for {set i $board_count} {$i < 8} {incr i} {
   wire shutdown_sense_connected/In${i} const_0/dout
 }
 # Shutdown sense module
-cell rev_d_shim:user:shutdown_sense shutdown_sense {} {
+cell shim:user:shutdown_sense shutdown_sense {} {
   clk ps/FCLK_CLK0
   shutdown_sense_en hw_manager/shutdown_sense_en
   shutdown_sense_connected shutdown_sense_connected/dout
@@ -309,7 +309,7 @@ if {$use_ext_clk} {
 addr 0x40200000 2048 spi_clk/s_axi_lite ps/M_AXI_GP0
 
 ## SPI clock output slowdown divider for DAC boot test
-cell rev_d_shim:user:clock_divider spi_clk_divider {} {
+cell shim:user:clock_divider spi_clk_divider {} {
   clk_i spi_clk/clk_out1
 }
   
@@ -335,13 +335,13 @@ cell xilinx.com:ip:util_vector_logic n_unlock_cfg {
   Op1 axi_sys_ctrl/unlock
 }
 ## Timing calculation cores
-cell rev_d_shim:user:ad5676_dac_timing_calc dac_timing_calc {} {
+cell shim:user:ad5676_dac_timing_calc dac_timing_calc {} {
   clk ps/FCLK_CLK0
   resetn ps_rst/peripheral_aresetn
   spi_clk_freq_hz spi_clk_freq_hz_const/dout
   calc n_unlock_cfg/Res
 }
-cell rev_d_shim:user:ads816x_adc_timing_calc adc_timing_calc {
+cell shim:user:ads816x_adc_timing_calc adc_timing_calc {
   ADS_MODEL_ID 8
 } {
   clk ps/FCLK_CLK0
