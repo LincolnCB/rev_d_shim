@@ -52,7 +52,7 @@ create_project -part $part_name project $tmp_dir
 set_property BOARD_PART $board_part [current_project]
 
 # Add the path to the custom IP core packages, if they exist
-set cores_list [glob -type d -nocomplain tmp/custom_cores/*]
+set cores_list [glob -type d -nocomplain ${tmp_dir}/cores/*]
 if {[llength $cores_list] > 0} {
   set_property IP_REPO_PATHS $cores_list [current_project]
 }
@@ -115,7 +115,7 @@ proc auto_connect_axi {offset range intf_pin manager} {
 # Procedure for creating a cell
 #  cell_vlnv: VLNV of the cell (vendor:library:name:version)
 #    Version is optional, usually omitted for custom cores and included for Xilinx cores.
-#    For repository IP defined in custom_cores, the format is:
+#    For repository IP defined in projects/PROJECT/cores/, the format is:
 #      [directory (e.g. base)]:user:[filename (e.g. fifo_async)]
 #  cell_name: name of the cell
 #  cell_props: dictionary of properties to set

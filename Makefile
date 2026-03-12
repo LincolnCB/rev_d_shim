@@ -138,29 +138,31 @@ help:
 	@echo "  - e.g. 'make PROJECT=ex02_axi_interface BOARD=snickerdoodle_black BOARD_VER=1.0 OFFLINE=true'"
 	@echo ""
 	@echo "Available targets:"
-	@echo "  all                  - Build the SD card image for the project"
-	@echo "  tests                - Run all the tests for the custom cores necessary for the project"
-	@echo "  write_sd             - Write the SD card image to the mount point (will clean first)"
-	@echo "                         (set custom MOUNT_DIR to the mount point of the SD card if needed)"
-	@echo "  petalinux_cfg        - Write or update the PetaLinux system configuration file"
-	@echo "  petalinux_rootfs_cfg - Write or update the PetaLinux root filesystem configuration file"
-	@echo "  petalinux_kernel_cfg - Write or update the PetaLinux kernel configuration file"
-	@echo "  clean_sd             - Clean the SD card at the mount point"
-	@echo "                         (set custom MOUNT_DIR to the mount point of the SD card if needed)"
-	@echo "  clean_project        - Remove a single project's intermediate and temporary files, including cores"
-	@echo "  clean_build          - Remove all the intermediate and temporary files"
-	@echo "  clean_tests          - Remove all the result files from the tests, leaving the test status"
-	@echo "  clean_test_results   - Clean all test status and summary files from custom cores and projects"
-	@echo "  clean_all            - Remove all the output files too"
-	@echo "  bit                  - Build the bitstream file (system.bit) to the 'out' directory"
-	@echo "  sd                   - Build all the files necessary for a bootable SD card to the 'out' directory"
-	@echo "  rootfs               - Build the compressed root filesystem to the 'out' directory"
-	@echo "  boot                 - Build the compressed boot files to the 'out' directory"
-	@echo "  cores                - Build all the cores necessary for the project in the 'tmp' directory"
-	@echo "  xpr                  - Build the Xilinx project file (project.xpr) in the 'tmp' directory"
-	@echo "  xsa                  - Build the hardware definition file (hw_def.xsa) in the 'tmp' directory"
-	@echo "  petalinux            - Create the PetaLinux project without building it in the 'tmp' directory"
-	@echo "  petalinux_build      - Build the PetaLinux project in the 'tmp' directory"
+	@echo "  all                    - Build the SD card image for the project"
+	@echo "  tests                  - Run all the tests for the custom cores necessary for the project"
+	@echo "  write_sd               - Write the SD card image to the mount point (will clean first)"
+	@echo "                           (set custom MOUNT_DIR to the mount point of the SD card if needed)"
+	@echo "  petalinux_cfg          - Write or update the PetaLinux system configuration file"
+	@echo "  petalinux_rootfs_cfg   - Write or update the PetaLinux root filesystem configuration file"
+	@echo "  petalinux_kernel_cfg   - Write or update the PetaLinux kernel configuration file"
+	@echo "  clean_sd               - Clean the SD card at the mount point"
+	@echo "                           (set custom MOUNT_DIR to the mount point of the SD card if needed)"
+	@echo "  clean_project          - Remove a single project's intermediate and temporary files, including cores"
+	@echo "  clean_build            - Remove all the intermediate and temporary files"
+	@echo "  clean_tests            - Remove all the result files from the tests for PROJECT, leaving the test status"
+	@echo "  clean_all_tests        - Remove all the result files from the tests for all projects, leaving the test status"
+	@echo "  clean_test_results     - Clean all test status and summary files from custom cores in PROJECT"
+	@echo "  clean_all_test_results - Clean all test status and summary files from custom cores in all projects"
+	@echo "  clean_all              - Remove all the output files too"
+	@echo "  bit                    - Build the bitstream file (system.bit) to the 'out' directory"
+	@echo "  sd                     - Build all the files necessary for a bootable SD card to the 'out' directory"
+	@echo "  rootfs                 - Build the compressed root filesystem to the 'out' directory"
+	@echo "  boot                   - Build the compressed boot files to the 'out' directory"
+	@echo "  cores                  - Build all the cores necessary for the project in the 'tmp' directory"
+	@echo "  xpr                    - Build the Xilinx project file (project.xpr) in the 'tmp' directory"
+	@echo "  xsa                    - Build the hardware definition file (hw_def.xsa) in the 'tmp' directory"
+	@echo "  petalinux              - Create the PetaLinux project without building it in the 'tmp' directory"
+	@echo "  petalinux_build        - Build the PetaLinux project in the 'tmp' directory"
 
 # Test summary for all the custom cores necessary for the project
 tests: projects/${PROJECT}/tests/core_tests_summary
@@ -194,7 +196,6 @@ clean_sd:
 clean_project:
 	@./scripts/make/status.sh "CLEANING PROJECT: $(BOARD)/$(BOARD_VER)/$(PROJECT)"
 	$(RM) tmp/$(BOARD)/$(BOARD_VER)/$(PROJECT)
-	$(RM) $(addsuffix *, $(addprefix tmp/custom_cores/, $(PROJECT_CORES)))
 
 # Remove all the intermediate and temporary files
 clean_build:
@@ -203,15 +204,26 @@ clean_build:
 	$(RM) tmp
 	$(RM) tmp_reports
 
-# Remove all the result files from the tests, leaving the test status
+# Remove all the result files from the tests for a single project, leaving the test status
 clean_tests:
 	@./scripts/make/status.sh "CLEANING TESTS"
-	$(RM) custom_cores/*/cores/*/tests/results
+	$(RM) projects/$(PROJECT)/cores/*/*/tests/results
 
-# Clean all test status and summary files from custom cores and projects 
+# Remove all the result files from the tests for all projects, leaving the test status
+clean_all_tests: clean_tests
+	@./scripts/make/status.sh "CLEANING ALL TESTS"
+	$(RM) projects/*/cores/*/*/tests/results
+
+# Clean all test status and summary files from custom cores and project folder
 clean_test_results: clean_tests
 	@./scripts/make/status.sh "CLEANING TEST RESULTS"
-	$(RM) custom_cores/*/cores/*/tests/test_status
+	$(RM) projects/$(PROJECT)/cores/*/*/tests/test_status
+	$(RM) projects/$(PROJECT)/tests/core_tests_summary
+
+# Clean all test status and summary files from custom cores and all project folders
+clean_all_test_results: clean_all_tests
+	@./scripts/make/status.sh "CLEANING ALL TEST RESULTS"
+	$(RM) projects/*/cores/*/*/tests/test_status
 	$(RM) projects/*/tests/core_tests_summary
 
 # Remove all the output files too
@@ -254,7 +266,7 @@ boot: out/$(BOARD)/$(BOARD_VER)/$(PROJECT)/BOOT.tar.gz
 # The necessary cores for the specific project are extracted
 # 	from `block_design.tcl` (recursively by sub-modules)
 #		by `scripts/make/get_cores_from_tcl.sh`
-cores: $(addprefix tmp/custom_cores/, $(PROJECT_CORES))
+cores: $(addprefix tmp/$(BOARD)/$(BOARD_VER)/$(PROJECT)/cores/, $(PROJECT_CORES))
 
 # The Xilinx project file
 # This file can be edited in Vivado to test Tcl commands and changes
@@ -284,18 +296,18 @@ petalinux_build: tmp/$(BOARD)/$(BOARD_VER)/$(PROJECT)/petalinux/images/linux/BOO
 # The test status file is generated by the `scripts/make/test_core.sh` script
 # This make target uses "pattern-specific variables" (GNU Make 6.12) to set the vendor and core
 #  as well as "secondary expansion" (GNU Make 3.9) to allow for their use in the prerequisite
-custom_cores/%/tests/test_status: VENDOR = $(word 1,$(subst /, ,$*))
-custom_cores/%/tests/test_status: CORE = $(word 3,$(subst /, ,$*))
-custom_cores/%/tests/test_status: custom_cores/$$(VENDOR)/cores/$$(CORE)/$$(CORE).v $$(wildcard custom_cores/$$(VENDOR)/cores/$$(CORE)/tests/src/*) $$(wildcard custom_cores/$$(VENDOR)/cores/$$(CORE)/submodules/*.v) scripts/make/test_core.sh scripts/make/cocotb.mk
-	@./scripts/make/status.sh "MAKING TEST STATUS FILE FOR CORE: '$(CORE)' by '$(VENDOR)'"
+projects/${PROJECT}/cores/%/tests/test_status: VENDOR = $(word 1,$(subst /, ,$*))
+projects/${PROJECT}/cores/%/tests/test_status: CORE = $(word 2,$(subst /, ,$*))
+projects/${PROJECT}/cores/%/tests/test_status: projects/${PROJECT}/cores/$$(VENDOR)/$$(CORE)/$$(CORE).v $$(wildcard projects/${PROJECT}/cores/$$(VENDOR)/$$(CORE)/tests/src/*) $$(wildcard projects/${PROJECT}/cores/$$(VENDOR)/$$(CORE)/submodules/*.v) scripts/make/test_core.sh scripts/make/cocotb.mk
+	@./scripts/make/status.sh "MAKING TEST STATUS FILE FOR CORE: '$(CORE)' by '$(VENDOR)' in '$(PROJECT)'"
 	mkdir -p $(@D)
-	scripts/make/test_core.sh $(VENDOR) $(CORE)
+	scripts/make/test_core.sh $(PROJECT) $(VENDOR) $(CORE)
 
 # Test summary for all the custom cores necessary for the project
 # The necessary cores for the specific project are extracted
 # 	from `block_design.tcl` (recursively by sub-modules)
 #		by `scripts/make/get_cores_from_tcl.sh`
-projects/${PROJECT}/tests/core_tests_summary: $(addprefix custom_cores/, $(addsuffix /tests/test_status, $(foreach core,$(PROJECT_CORES),$(subst /,/cores/,$(core))))) scripts/make/test_core.sh scripts/make/cocotb.mk
+projects/${PROJECT}/tests/core_tests_summary: $(addprefix projects/${PROJECT}/cores/, $(addsuffix /tests/test_status, $(PROJECT_CORES))) scripts/make/test_core.sh scripts/make/cocotb.mk
 	@./scripts/make/status.sh "MAKING TEST SUMMARY FOR PROJECT: $(PROJECT)"
 	mkdir -p $(@D)
 	echo "Test summary of custom cores for project $(PROJECT) on $$(date +"%Y/%m/%d at %H:%M %Z"):" > $@
@@ -303,7 +315,7 @@ projects/${PROJECT}/tests/core_tests_summary: $(addprefix custom_cores/, $(addsu
 	@for core in $(PROJECT_CORES); do \
 		VENDOR=$$(echo $$core | cut -d'/' -f1); \
 		CORE=$$(echo $$core | cut -d'/' -f2); \
-		TEST_CERT=custom_cores/$$VENDOR/cores/$$CORE/tests/test_status; \
+		TEST_CERT=projects/${PROJECT}/cores/$$VENDOR/$$CORE/tests/test_status; \
 		echo "$$VENDOR/cores/$$CORE:" >> $@; \
 		echo "  - $$(cat $$TEST_CERT)" >> $@; \
 	done
@@ -312,18 +324,18 @@ projects/${PROJECT}/tests/core_tests_summary: $(addprefix custom_cores/, $(addsu
 # Cores are packaged using the `scripts/vivado/package_core.tcl` script
 # This make target uses "pattern-specific variables" (GNU Make 6.12) to set the vendor and core
 #  as well as "secondary expansion" (GNU Make 3.9) to allow for their use in the prerequisite
-tmp/custom_cores/%: VENDOR = $(word 1,$(subst /, ,$*))
-tmp/custom_cores/%: CORE = $(word 2,$(subst /, ,$*))
-tmp/custom_cores/%: custom_cores/$$(VENDOR)/cores/$$(CORE)/$$(CORE).v $$(wildcard custom_cores/$$(VENDOR)/cores/$$(CORE)/submodules/*.v) scripts/vivado/package_core.tcl
+tmp/$(BOARD)/$(BOARD_VER)/$(PROJECT)/cores/%: VENDOR = $(word 1,$(subst /, ,$*))
+tmp/$(BOARD)/$(BOARD_VER)/$(PROJECT)/cores/%: CORE = $(word 2,$(subst /, ,$*))
+tmp/$(BOARD)/$(BOARD_VER)/$(PROJECT)/cores/%: projects/${PROJECT}/cores/$$(VENDOR)/$$(CORE)/$$(CORE).v $$(wildcard projects/${PROJECT}/cores/$$(VENDOR)/$$(CORE)/submodules/*.v) scripts/vivado/package_core.tcl
 	@./scripts/make/status.sh "MAKING USER CORE: '$(CORE)' by '$(VENDOR)'"
 	mkdir -p $(@D)
-	$(VIVADO) -source scripts/vivado/package_core.tcl -tclargs $(VENDOR) $(CORE) $(PART)
+	$(VIVADO) -source scripts/vivado/package_core.tcl -tclargs $(BOARD) $(BOARD_VER) $(PROJECT) $(VENDOR) $(CORE) $(PART)
 
 # The project file (.xpr)
 # Requires all the cores
 # Built using the `scripts/vivado/project.tcl` script, which uses
 # 	the block design and ports files from the project
-tmp/$(BOARD)/$(BOARD_VER)/$(PROJECT)/project.xpr: scripts/vivado/project.tcl projects/$(PROJECT)/block_design.tcl $(BOARD_XDC) $(addprefix tmp/custom_cores/, $(PROJECT_CORES)) $(wildcard projects/$(PROJECT)/modules/*.tcl) scripts/vivado/project.tcl
+tmp/$(BOARD)/$(BOARD_VER)/$(PROJECT)/project.xpr: scripts/vivado/project.tcl projects/$(PROJECT)/block_design.tcl $(BOARD_XDC) $(addprefix tmp/$(BOARD)/$(BOARD_VER)/$(PROJECT)/cores/, $(PROJECT_CORES)) $(wildcard projects/$(PROJECT)/modules/*.tcl) scripts/vivado/project.tcl
 	@./scripts/make/status.sh "MAKING PROJECT: $(BOARD)/$(BOARD_VER)/$(PROJECT)/project.xpr"
 	mkdir -p $(@D)
 	$(VIVADO) -source scripts/vivado/project.tcl -tclargs $(BOARD) $(BOARD_VER) $(PROJECT)

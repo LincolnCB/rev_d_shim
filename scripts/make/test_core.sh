@@ -1,22 +1,23 @@
 #!/bin/bash
 # Tests a custom core with cocotb. Uses the shared Makefile in scripts/make/cocotb.mk.
-# Arguments: <vendor> <core>
-# Usage: test_core.sh <vendor> <core>
+# Arguments: <project> <vendor> <core>
+# Usage: test_core.sh <project> <vendor> <core>
 # Example:
-#   ./scripts/make/test_core.sh base axi_fifo_bridge
+#   ./scripts/make/test_core.sh ex02_axi_interface base axi_fifo_bridge
 
-if [ $# -ne 2 ]; then
+if [ $# -ne 3 ]; then
   echo "[CORE TESTS] ERROR:"
-  echo "Usage: $0 <vendor> <core>"
+  echo "Usage: $0 <project> <vendor> <core>"
   exit 1
 fi
 
 # Store the positional parameters in named variables and clear them
-VENDOR=${1}
-CORE=${2}
+PROJECT=${1}
+VENDOR=${2}
+CORE=${3}
 set --
 
-TEST_DIR="custom_cores/${VENDOR}/cores/${CORE}/tests"
+TEST_DIR="projects/${PROJECT}/cores/${VENDOR}/${CORE}/tests"
 
 # Verify that the tests directory exists
 if [ ! -d "${TEST_DIR}" ]; then

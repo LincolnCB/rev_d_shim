@@ -55,8 +55,8 @@ fi
 
 # Verify that each extracted core path exists
 while IFS= read -r CORE_NAME; do
-  # Convert a core name (like base/axi_fifo_bridge) to a core path (like custom_cores/base/cores/axi_fifo_bridge)
-  CORE_PATH="custom_cores/${CORE_NAME//\//\/cores/}"
+  # Convert a core name (like base/axi_fifo_bridge) to a core path (like project/PROJECT/cores/base/axi_fifo_bridge)
+  CORE_PATH="projects/${PRJ}/cores/${CORE_NAME}"
   if [ ! -d "$CORE_PATH" ]; then
     echo "[CHECK PROJECT SRC] ERROR: Core path does not exist: $CORE_PATH"
     exit 1
