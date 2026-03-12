@@ -1,9 +1,0 @@
-@@ -15,7 +15,7 @@
- #
- # sudo 
- #
--# CONFIG_sudo is not set
-+CONFIG_sudo=y
- # CONFIG_sudo-dbg is not set
- # CONFIG_sudo-dev is not set
- 
