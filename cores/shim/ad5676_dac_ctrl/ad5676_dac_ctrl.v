@@ -57,18 +57,15 @@ module ad5676_dac_ctrl #(
       $error("Invalid value for ABS_DAC_MAX parameter: %d. Must be between 0 and 32767.", ABS_DAC_MAX);
   end
 
-  localparam signed [15:0] ABS_CAL_MAX_SIGNED = ABS_CAL_MAX;
-  localparam signed [16:0] ABS_DAC_MAX_SIGNED = ABS_DAC_MAX;
+  localparam signed [15:0] ABS_CAL_MAX_SIGNED = ABS_CAL_MAX[15:0];
+  localparam signed [16:0] ABS_DAC_MAX_SIGNED = ABS_DAC_MAX[16:0];
 
   ///////////////////////////////////////////////////////////////////////////////
   // SPI Timing Parameters
   ///////////////////////////////////////////////////////////////////////////////
 
-  // SPI command bit width
-  localparam integer SPI_CMD_BITS = 24;
   // SPI bit position for MISO read start
-  localparam integer SPI_BIT_MISO_START = 5'd18;
-
+  localparam [4:0] SPI_BIT_MISO_START = 5'd18;
 
   ///////////////////////////////////////////////////////////////////////////////
   // SPI Command Bit Definitions
@@ -480,14 +477,14 @@ module ad5676_dac_ctrl #(
     end
   end
   // Store the calibrated midrange value for each channel (in offset form)
-  assign cal_midrange[0] = signed_to_offset(cal_val[0]);
-  assign cal_midrange[1] = signed_to_offset(cal_val[1]);
-  assign cal_midrange[2] = signed_to_offset(cal_val[2]);
-  assign cal_midrange[3] = signed_to_offset(cal_val[3]);
-  assign cal_midrange[4] = signed_to_offset(cal_val[4]);
-  assign cal_midrange[5] = signed_to_offset(cal_val[5]);
-  assign cal_midrange[6] = signed_to_offset(cal_val[6]);
-  assign cal_midrange[7] = signed_to_offset(cal_val[7]);
+  assign cal_midrange[0] = signed_to_offset({cal_val[0][15], cal_val[0]});
+  assign cal_midrange[1] = signed_to_offset({cal_val[1][15], cal_val[1]});
+  assign cal_midrange[2] = signed_to_offset({cal_val[2][15], cal_val[2]});
+  assign cal_midrange[3] = signed_to_offset({cal_val[3][15], cal_val[3]});
+  assign cal_midrange[4] = signed_to_offset({cal_val[4][15], cal_val[4]});
+  assign cal_midrange[5] = signed_to_offset({cal_val[5][15], cal_val[5]});
+  assign cal_midrange[6] = signed_to_offset({cal_val[6][15], cal_val[6]});
+  assign cal_midrange[7] = signed_to_offset({cal_val[7][15], cal_val[7]});
 
   //// ---- DAC word sequencing
   // Start the 8ch DAC write after pre-delay finishes or DAC_WR command doesn't have pre-delay
@@ -563,10 +560,10 @@ module ad5676_dac_ctrl #(
       abs_dac_val[7] <= 15'd0;
     end else begin
       if (load_dac_val && !dac_vals_ready) begin
-        abs_dac_val[dac_channel] <= signed_to_abs(cmd_word[15:0]); // Save the absolute value of the first DAC value for storage
+        abs_dac_val[dac_channel] <= signed_to_abs(cmd_word[15:0])[14:0]; // Save the absolute value of the first DAC value for storage
         // Also prepare the second DAC value if a pair is being loaded
         if (load_dac_val_pair) begin
-          abs_dac_val[dac_channel + 1] <= signed_to_abs(cmd_word[31:16]); // Save the absolute value of the second DAC value for storage
+          abs_dac_val[dac_channel + 1] <= signed_to_abs(cmd_word[31:16])[14:0]; // Save the absolute value of the second DAC value for storage
         end
       // Zero first channel when CMD_ZERO is received
       end else if (do_next_cmd && command == CMD_ZERO) begin
@@ -676,12 +673,17 @@ module ad5676_dac_ctrl #(
     .wr_rst_n    (miso_resetn), // Reset for MISO clock domain
     .wr_data     (miso_data), // MISO data to write
     .wr_en       (miso_buf_wr_en), // Write enable for MISO data
+    .fifo_count_wr_clk (),
+    .full        (),
+    .almost_full (),
 
     .rd_clk      (clk), // FPGA SCK
     .rd_rst_n    (resetn),
     .rd_data     (miso_data_mosi_clk),
     .rd_en       (~n_miso_data_ready_mosi_clk), // Immediately read MISO data when available in the MOSI clock domain
-    .empty       (n_miso_data_ready_mosi_clk)
+    .fifo_count_rd_clk (),
+    .empty       (n_miso_data_ready_mosi_clk),
+    .almost_empty()
   );
   // MISO bit counter
   always @(posedge miso_sck) begin
@@ -773,7 +775,7 @@ module ad5676_dac_ctrl #(
     end
   endfunction
   // Convert the signed value to absolute value
-  function [14:0] signed_to_abs(input signed [15:0] signed_val);
+  function [15:0] signed_to_abs(input signed [15:0] signed_val);
     begin
       if (signed_val < 0) begin
         signed_to_abs = -signed_val; // If negative, take the absolute value
