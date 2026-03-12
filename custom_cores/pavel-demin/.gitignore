@@ -1,0 +1,38 @@
+# Ignore user-specific environment configuration files
+environment.sh
+make_defaults.mk
+
+# Ignore waveform, readout, and log files
+*.wfm
+*.rdout
+*.log
+
+# Ignore CSV files -- manually add any needed CSV files
+*.csv
+
+# Ignore .mat and .npy files -- manually add any needed files
+*.mat
+*.npy
+
+# Ignore Vivado generated files
+tmp
+tmp_reports
+out
+.vscode
+.Xil
+
+# Ignore Verilator and cocotb generated files
+__pycache__
+sim_build
+dump.vcd
+**/tests/results
+results.xml
+*coverage.xml
+*coverage.yaml
+
+# Ignore test status files (e.g. from cocotb) so the history doesn't get cluttered
+core_tests_summary
+test_status
+
+# Ignore script-generated files
+*.dedup
