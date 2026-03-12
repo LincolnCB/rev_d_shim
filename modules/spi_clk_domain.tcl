@@ -32,6 +32,7 @@ create_bd_pin -dir I -from 25 -to 0 adc_delay_too_short_time
 create_bd_pin -dir I -from 15 -to 0 boot_test_skip
 create_bd_pin -dir I -from 15 -to 0 debug
 create_bd_pin -dir I -from 15 -to 0 dac_cal_init
+create_bd_pin -dir I do_dac_pre_delay
 
 ## Status signals (need synchronization)
 # SPI system status
@@ -148,6 +149,7 @@ cell shim:user:spi_cfg_sync spi_cfg_sync {} {
   boot_test_skip boot_test_skip
   debug debug
   dac_cal_init dac_cal_init
+  do_dac_pre_delay do_dac_pre_delay
 }
 ## SPI system status synchronization
 cell shim:user:spi_sts_sync spi_sts_sync {} {
@@ -239,6 +241,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     dac_n_cs_high_time spi_cfg_sync/dac_n_cs_high_time_sync
     dac_delay_too_short_time spi_cfg_sync/dac_delay_too_short_time_sync
     dac_cal_init spi_cfg_sync/dac_cal_init_sync
+    do_pre_delay spi_cfg_sync/do_dac_pre_delay_sync
     dac_cmd dac_ch${i}_cmd
     dac_cmd_rd_en dac_ch${i}_cmd_rd_en
     dac_cmd_empty dac_ch${i}_cmd_empty

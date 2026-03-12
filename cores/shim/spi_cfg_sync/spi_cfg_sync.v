@@ -19,6 +19,7 @@ module spi_cfg_sync (
   input  wire [15:0] boot_test_skip,
   input  wire [15:0] debug,
   input  wire signed [15:0] dac_cal_init,
+  input  wire        do_dac_pre_delay,
 
   // Synchronized outputs to SPI domain
   output wire        spi_en_sync,
@@ -32,7 +33,8 @@ module spi_cfg_sync (
   output wire [24:0] adc_delay_too_short_time_sync,
   output wire [15:0] boot_test_skip_sync,
   output wire [15:0] debug_sync,
-  output wire signed [15:0] dac_cal_init_sync
+  output wire signed [15:0] dac_cal_init_sync,
+  output wire        do_dac_pre_delay_sync
 );
 
   // Default values for registers
@@ -188,6 +190,16 @@ module spi_cfg_sync (
     .din(dac_cal_init),
     .dout(dac_cal_init_sync),
     .dout_default(dac_cal_init_default)
+  );
+
+  // DAC pre-delay enable (incoherent)
+  sync_incoherent #(
+    .WIDTH(1)
+  ) sync_do_dac_pre_delay (
+    .clk(spi_clk),
+    .resetn(spi_resetn),
+    .din(do_dac_pre_delay),
+    .dout(do_dac_pre_delay_sync)
   );
   
 endmodule

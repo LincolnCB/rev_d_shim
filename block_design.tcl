@@ -392,6 +392,7 @@ module spi_clk_domain spi_clk_domain {
   boot_test_skip axi_sys_ctrl/boot_test_skip
   debug axi_sys_ctrl/debug
   dac_cal_init axi_sys_ctrl/dac_cal_init
+  do_dac_pre_delay axi_sys_ctrl/do_dac_pre_delay
   spi_off hw_manager/spi_off
   spi_off spi_clk_divider/slow_en
   over_thresh hw_manager/over_thresh
@@ -545,7 +546,7 @@ cell xilinx.com:ip:xlconcat:2.1 adc_delay_too_short_concat {
 # Pad reserved bits
 cell xilinx.com:ip:xlconstant:1.1 pad_sts_reserved {
   CONST_VAL 0
-  CONST_WIDTH [expr {2048 - 1279}]
+  CONST_WIDTH [expr {2048 - 1280}]
 } {
   dout sts_concat/In8
 }
