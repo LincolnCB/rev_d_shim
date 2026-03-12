@@ -16,15 +16,6 @@
 [submodule "boards/zybo_z7_10"]
 	path = boards/zybo_z7_10
 	url = https://github.com/LincolnCB/zybo_z7_10.git
-[submodule "custom_cores/open-mri"]
-	path = custom_cores/open-mri
-	url = https://github.com/LincolnCB/open-mri-cores.git
-[submodule "custom_cores/pavel-demin"]
-	path = custom_cores/pavel-demin
-	url = https://github.com/LincolnCB/pavel-demin-cores.git
 [submodule "kernel_modules/u-dma-buf"]
 	path = kernel_modules/u-dma-buf
 	url = https://github.com/LincolnCB/u-dma-buf.git
-[submodule "custom_cores/rev_d_shim"]
-	path = custom_cores/rev_d_shim
-	url = https://github.com/LincolnCB/rev_d_shim_cores.git
