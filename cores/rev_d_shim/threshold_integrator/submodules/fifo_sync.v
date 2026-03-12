@@ -1,0 +1,1 @@
+../../../../base/cores/fifo_sync/fifo_sync.v
