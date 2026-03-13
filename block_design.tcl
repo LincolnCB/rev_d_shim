@@ -386,9 +386,9 @@ module spi_clk_domain spi_clk_domain {
   integ_window axi_sys_ctrl/integ_window
   integ_en axi_sys_ctrl/integ_en
   dac_n_cs_high_time dac_timing_calc/n_cs_high_time
-  dac_delay_too_short_time dac_timing_calc/delay_too_short_time
+  dac_min_delay_time dac_timing_calc/min_delay_time
   adc_n_cs_high_time adc_timing_calc/n_cs_high_time
-  adc_delay_too_short_time adc_timing_calc/delay_too_short_time
+  adc_min_delay_time adc_timing_calc/min_delay_time
   boot_test_skip axi_sys_ctrl/boot_test_skip
   debug axi_sys_ctrl/debug
   dac_cal_init axi_sys_ctrl/dac_cal_init
@@ -490,8 +490,8 @@ addr 0x40100000 256 status_reg/S_AXI ps/M_AXI_GP0
 #  1151 : 1120 --  32b SPI clock frequency in Hz
 #  1183 : 1152 --  32b Trigger counter (number of triggers received)
 #  1215 : 1184 --  32b Debug 1 (SPI clock locked, spi_off, DAC/ADC ~CS high time)
-#  1247 : 1216 --  32b DAC "delay too short" time (in SPI clock cycles)
-#  1279 : 1248 --  32b ADC "delay too short" time (in SPI clock cycles)
+#  1247 : 1216 --  32b DAC minimum delay time (in SPI clock cycles)
+#  1279 : 1248 --  32b ADC minimum delay time (in SPI clock cycles)
 #  2047 : 1279 -- RESERVED (0)
 cell xilinx.com:ip:xlconcat:2.1 sts_concat {
   NUM_PORTS 9
@@ -523,22 +523,22 @@ cell xilinx.com:ip:xlconcat:2.1 debug_1 {
   In4 pad_17/dout
   dout sts_concat/In5
 }
-# Delay too short times
+# Minimum delay times
 cell xilinx.com:ip:xlconstant:1.1 pad_7 {
   CONST_VAL 0
   CONST_WIDTH 7
 } {}
-cell xilinx.com:ip:xlconcat:2.1 dac_delay_too_short_concat {
+cell xilinx.com:ip:xlconcat:2.1 dac_min_delay_time_concat {
   NUM_PORTS 2
 } {
-  In0 dac_timing_calc/delay_too_short_time
+  In0 dac_timing_calc/min_delay_time
   In1 pad_7/dout
   dout sts_concat/In6
 }
-cell xilinx.com:ip:xlconcat:2.1 adc_delay_too_short_concat {
+cell xilinx.com:ip:xlconcat:2.1 adc_min_delay_time_concat {
   NUM_PORTS 2
 } {
-  In0 adc_timing_calc/delay_too_short_time
+  In0 adc_timing_calc/min_delay_time
   In1 pad_7/dout
   dout sts_concat/In7
 }

@@ -26,6 +26,8 @@ struct sys_ctrl_t create_sys_ctrl(bool verbose) {
   sys_ctrl.debug                   = sys_ctrl_ptr + DEBUG_OFFSET;
   sys_ctrl.mosi_sck_pol            = sys_ctrl_ptr + MOSI_SCK_POL_OFFSET;
   sys_ctrl.miso_sck_pol            = sys_ctrl_ptr + MISO_SCK_POL_OFFSET;
+  sys_ctrl.dac_cal_init            = sys_ctrl_ptr + DAC_CAL_INIT_OFFSET;
+  sys_ctrl.do_dac_pre_delay        = sys_ctrl_ptr + DO_DAC_PRE_DELAY_OFFSET;
   
   return sys_ctrl;
 }
@@ -53,30 +55,6 @@ void sys_ctrl_turn_off(struct sys_ctrl_t *sys_ctrl, bool verbose) {
   }
   *(sys_ctrl->ctrl_enable) = 0; // Set the system enable register to 0
   *(sys_ctrl->power_enable) = 0;  // Set the power enable register to 0
-}
-
-// Set the boot_test_skip register to a 16-bit value
-void sys_ctrl_set_boot_test_skip(struct sys_ctrl_t *sys_ctrl, uint16_t value, bool verbose) {
-  if (verbose) {
-    printf("Setting boot_test_skip to 0x%" PRIx32 "\n", value);
-  }
-  // Write the 16-bit value to the boot_test_skip register
-  *(sys_ctrl->boot_test_skip) = (uint32_t)value;
-  if (verbose) {
-    printf("boot_test_skip set to 0x%" PRIx32 "\n", *(sys_ctrl->boot_test_skip));
-  }
-}
-
-// Set the debug register to a 16-bit value
-void sys_ctrl_set_debug(struct sys_ctrl_t *sys_ctrl, uint16_t value, bool verbose) {
-  if (verbose) {
-    printf("Setting debug to 0x%" PRIx32 "\n", value);
-  }
-  // Write the 16-bit value to the debug register
-  *(sys_ctrl->debug) = (uint32_t)value;
-  if (verbose) {
-    printf("debug set to 0x%" PRIx32 "\n", *(sys_ctrl->debug));
-  }
 }
 
 // Set the command buffer reset register (1 = reset) to a 17-bit mask
@@ -108,6 +86,66 @@ void sys_ctrl_set_data_buf_reset(struct sys_ctrl_t *sys_ctrl, uint32_t mask, boo
   *(sys_ctrl->data_buf_reset) = mask & 0x1FFFF; // Mask to 17 bits
   if (verbose) {
     printf("data_buf_reset set to 0x%" PRIx32 "\n", *(sys_ctrl->data_buf_reset));
+  }
+}
+
+// Set the integrator threshold average register to a 32-bit value
+void sys_ctrl_set_integ_threshold_average(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose) {
+  if (verbose) {
+    printf("Setting integ_threshold_average to 0x%" PRIx32 "\n", value);
+  }
+  // Write the 32-bit value to the integrator threshold average register
+  *(sys_ctrl->integ_threshold_average) = value;
+  if (verbose) {
+    printf("integ_threshold_average set to 0x%" PRIx32 "\n", *(sys_ctrl->integ_threshold_average));
+  }
+}
+
+// Set the integrator window register to a 32-bit value
+void sys_ctrl_set_integ_window(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose) {
+  if (verbose) {
+    printf("Setting integ_window to 0x%" PRIx32 "\n", value);
+  }
+  // Write the 32-bit value to the integrator window register
+  *(sys_ctrl->integ_window) = value;
+  if (verbose) {
+    printf("integ_window set to 0x%" PRIx32 "\n", *(sys_ctrl->integ_window));
+  }
+}
+
+// Set the integrator enable register to a 32-bit value
+void sys_ctrl_set_integ_enable(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose) {
+  if (verbose) {
+    printf("Setting integ_enable to 0x%" PRIx32 "\n", value);
+  }
+  // Write the 32-bit value to the integrator enable register
+  *(sys_ctrl->integ_enable) = value;
+  if (verbose) {
+    printf("integ_enable set to 0x%" PRIx32 "\n", *(sys_ctrl->integ_enable));
+  }
+}
+
+// Set the boot_test_skip register to a 16-bit value
+void sys_ctrl_set_boot_test_skip(struct sys_ctrl_t *sys_ctrl, uint16_t value, bool verbose) {
+  if (verbose) {
+    printf("Setting boot_test_skip to 0x%" PRIx32 "\n", value);
+  }
+  // Write the 16-bit value to the boot_test_skip register
+  *(sys_ctrl->boot_test_skip) = (uint32_t)value;
+  if (verbose) {
+    printf("boot_test_skip set to 0x%" PRIx32 "\n", *(sys_ctrl->boot_test_skip));
+  }
+}
+
+// Set the debug register to a 16-bit value
+void sys_ctrl_set_debug(struct sys_ctrl_t *sys_ctrl, uint16_t value, bool verbose) {
+  if (verbose) {
+    printf("Setting debug to 0x%" PRIx32 "\n", value);
+  }
+  // Write the 16-bit value to the debug register
+  *(sys_ctrl->debug) = (uint32_t)value;
+  if (verbose) {
+    printf("debug set to 0x%" PRIx32 "\n", *(sys_ctrl->debug));
   }
 }
 
@@ -143,38 +181,31 @@ void sys_ctrl_invert_miso_sck(struct sys_ctrl_t *sys_ctrl, bool verbose) {
   }
 }
 
-// Set the integrator window register to a 32-bit value
-void sys_ctrl_set_integ_window(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose) {
+// Set the DAC calibration init register to a 16-bit signed value
+void sys_ctrl_set_dac_cal_init(struct sys_ctrl_t *sys_ctrl, int16_t value, bool verbose) {
   if (verbose) {
-    printf("Setting integ_window to 0x%" PRIx32 "\n", value);
+    printf("Setting DAC calibration init to %d (0x%" PRIx16 ")\n", value, (uint32_t)(uint16_t)value);
   }
-  // Write the 32-bit value to the integrator window register
-  *(sys_ctrl->integ_window) = value;
+  // Write the 16-bit signed value to the DAC calibration init register
+  *(sys_ctrl->dac_cal_init) = (uint32_t)(uint16_t)value;
   if (verbose) {
-    printf("integ_window set to 0x%" PRIx32 "\n", *(sys_ctrl->integ_window));
-  }
-}
-
-// Set the integrator threshold average register to a 32-bit value
-void sys_ctrl_set_integ_threshold_average(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose) {
-  if (verbose) {
-    printf("Setting integ_threshold_average to 0x%" PRIx32 "\n", value);
-  }
-  // Write the 32-bit value to the integrator threshold average register
-  *(sys_ctrl->integ_threshold_average) = value;
-  if (verbose) {
-    printf("integ_threshold_average set to 0x%" PRIx32 "\n", *(sys_ctrl->integ_threshold_average));
+    printf("DAC calibration init set to %d (0x%" PRIx32 ")\n", (int16_t)(uint16_t)(*(sys_ctrl->dac_cal_init) & 0xFFFF), *(sys_ctrl->dac_cal_init));
   }
 }
 
-// Set the integrator enable register to a 32-bit value
-void sys_ctrl_set_integ_enable(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose) {
+
+// Toggle the DAC pre-delay bit in the do_dac_pre_delay register
+void sys_ctrl_toggle_dac_pre_delay(struct sys_ctrl_t *sys_ctrl, bool verbose) {
+  uint32_t current_value = *(sys_ctrl->do_dac_pre_delay);
+  uint32_t new_value = current_value ^ 0x1; // Toggle the last bit
+  
   if (verbose) {
-    printf("Setting integ_enable to 0x%" PRIx32 "\n", value);
+    printf("Toggling DAC pre-delay bit from 0x%" PRIx32 " to 0x%" PRIx32 "\n", current_value, new_value);
   }
-  // Write the 32-bit value to the integrator enable register
-  *(sys_ctrl->integ_enable) = value;
+  
+  *(sys_ctrl->do_dac_pre_delay) = new_value;
+  
   if (verbose) {
-    printf("integ_enable set to 0x%" PRIx32 "\n", *(sys_ctrl->integ_enable));
+    printf("DAC pre-delay bit set to 0x%" PRIx32 "\n", *(sys_ctrl->do_dac_pre_delay));
   }
 }

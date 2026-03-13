@@ -37,7 +37,7 @@ class fwft_fifo_model:
     def write_item(self, cmd):
         if len(self.fifo) < self.DEPTH:
             self.fifo.append(cmd)
-            self.dut._log.info(f"{self.name}: Wrote item {cmd:08x}, number of items in buf: {len(self.fifo)}")
+            self.dut._log.info(f"{self.name}: Wrote item 0x{cmd:08X}, number of items in buf: {len(self.fifo)}")
         else:
             self.dut._log.warning(f"{self.name}: Attempted to write item but FIFO is full")
 
@@ -46,7 +46,7 @@ class fwft_fifo_model:
     def pop_item(self):
         if len(self.fifo) > 0:
             cmd = self.fifo.popleft()
-            self.dut._log.info(f"{self.name}: Read item {cmd:08x}, number of items in buf: {len(self.fifo)}")
+            self.dut._log.info(f"{self.name}: Read item 0x{cmd:08X}, number of items in buf: {len(self.fifo)}")
             return cmd
         else:
             self.dut._log.warning(f"{self.name}: Attempted to read item but FIFO is empty")

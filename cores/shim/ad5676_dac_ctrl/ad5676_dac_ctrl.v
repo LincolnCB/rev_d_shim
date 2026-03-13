@@ -8,10 +8,10 @@ module ad5676_dac_ctrl #(
   input  wire        resetn,
 
   input  wire        boot_test_skip, // Skip the boot test sequence
-  input  wire        debug, // Debug mode flag
-  input  wire        do_pre_delay, // Whether to do the pre-delay before DAC writes that require a delay
+  input  wire        debug,          // Debug mode flag
+  input  wire        do_pre_delay,   // Whether to do the pre-delay before DAC writes that require a delay
   input  wire [ 4:0] n_cs_high_time, // n_cs high time in clock cycles (max 31)
-  input  wire [24:0] delay_too_short_time, // Minimum delay time for DAC update commands in clock cycles
+  input  wire [24:0] min_delay_time, // Minimum delay time for DAC update commands in clock cycles
 
   input  wire signed [15:0] cal_init_val, // Default calibration value for all channels on reset (in 2's complement)
 
@@ -142,28 +142,29 @@ module ad5676_dac_ctrl #(
   reg         do_ldac;
   reg         ldac_unsafe;
   reg         wait_for_trig;
-  wire        trig_wait_done;
+  reg         expect_next;
+  // Wait done signals
   wire        pre_delay_wait_done;
   wire        delay_wait_done;
-  reg         expect_next;
+  wire        trig_wait_done;
   // Delay timer and trigger counter
-  wire [24:0] min_delay;
-  reg  [24:0] delay_timer, trigger_counter;
+  reg  [24:0] min_delay_latched;
+  reg  [24:0] delay_timer;
+  reg  [24:0] trigger_counter;
   // Calibration values
   reg  signed [15:0] cal_val [0:7];
   wire [15:0] cal_midrange [0:7];
 
   //// ---- Calibrated DAC value calculation
-  wire        load_dac_val;
-  wire        load_dac_val_pair;
   reg         dac_vals_ready;
   reg  signed [16:0] first_dac_val_cal_signed;
   reg  signed [16:0] second_dac_val_cal_signed;
-  reg  [14:0] abs_dac_val [0:7];
+  reg  [15:0] abs_dac_val [0:7];
   wire        first_dac_val_cal_signed_oob;
   wire        second_dac_val_cal_signed_oob;
 
   //// ---- DAC MOSI SPI control
+  wire        immediately_start_8ch_dac_wr;
   wire        start_8ch_dac_wr;
   reg         read_next_dac_val_pair;
   wire        start_spi_cmd;
@@ -174,6 +175,7 @@ module ad5676_dac_ctrl #(
   // Chip select control
   reg  [ 4:0] n_cs_timer;
   reg         running_n_cs_timer;
+  reg         running_n_cs_timer_prev;
   wire        cs_wait_done;
   // Latched n_cs high time
   reg  [ 4:0] n_cs_high_time_latched;
@@ -254,8 +256,8 @@ module ad5676_dac_ctrl #(
   assign trig_wait_done = (trigger && trigger_counter == 1) || trigger_counter == 0;
   // Delay wait is done when delay timer reaches 0
   assign delay_wait_done = (delay_timer == 0);
-  // Pre-delay wait is done when delay timer reaches min_delay
-  assign pre_delay_wait_done = (delay_timer == min_delay);
+  // Pre-delay wait is done when delay timer reaches min_delay_latched
+  assign pre_delay_wait_done = (delay_timer == min_delay_latched);
   // Current command is finished
   assign cmd_done = (state == S_IDLE && next_cmd_ready) // IDLE and next command is ready
                     // Waiting and wait is fully done
@@ -276,7 +278,7 @@ module ad5676_dac_ctrl #(
                           // DAC_WR command goes to either DAC_WR, TRIG_WAIT, or DELAY depending on command
                           //   If TRIG_BIT is set or delay time is exactly minimum, begin DAC write immediately
                           //   Otherwise, go do pre-delay state first
-                          : (command == CMD_DAC_WR) ? ((cmd_word[TRIG_BIT] || cmd_word[24:0] == min_delay || !do_pre_delay) ? S_DAC_WR : S_PRE_DELAY)
+                          : (command == CMD_DAC_WR) ? ((cmd_word[TRIG_BIT] || cmd_word[24:0] == min_delay_latched || !do_pre_delay) ? S_DAC_WR : S_PRE_DELAY)
                           // If command is single-channel DAC write, go to DAC_WR_CH state
                           : (command == CMD_DAC_WR_CH) ? S_DAC_WR_CH
                           // If command is CANCEL, go to IDLE 
@@ -316,7 +318,10 @@ module ad5676_dac_ctrl #(
 
 
   //// ---- Delay timer
-  assign min_delay = (delay_too_short_time == 25'h1FFFFFF) ? 25'h1FFFFFF : (delay_too_short_time + 1);
+  always @(posedge clk) begin
+    if (!resetn) min_delay_latched <= 25'd0;
+    else if (state == S_RESET) min_delay_latched <= (min_delay_time > 25'd216) ? min_delay_time : 25'd216; // Absolute minimum delay is 216 cycles (8 * (24 + 3))
+  end
   // CANCEL command can skip to the end of the wait
   always @(posedge clk) begin
     // Reset delay timer on reset, error, or canceling a wait
@@ -324,14 +329,14 @@ module ad5676_dac_ctrl #(
     // Skip forward if cancel_wait depending on whether in DELAY or PRE_DELAY
     else if (cancel_wait) begin
       if (state == S_DELAY) delay_timer <= 25'd0;
-      else if (state == S_PRE_DELAY) delay_timer <= min_delay;
+      else if (state == S_PRE_DELAY) delay_timer <= min_delay_latched;
     end
     // If the next command is a DAC write or no-op with a delay wait, load the delay timer from command word
     else if (do_next_cmd 
              && ((command == CMD_DAC_WR) || (command == CMD_NO_OP)) 
              && !cmd_word[TRIG_BIT]) begin
-      if (cmd_word[24:0] < min_delay) begin
-        delay_timer <= 25'h1FFFFFF; // Error will be flagged. Max the delay in the meantuime.
+      if (cmd_word[24:0] < min_delay_latched) begin
+        delay_timer <= 25'h1FFFFFF; // Error will be flagged. Max the delay in the meantime.
       end else begin
         delay_timer <= cmd_word[24:0] - 1; // Load the delay time from the command word (minus 1 since we check for zero in the wait condition)
       end
@@ -365,8 +370,8 @@ module ad5676_dac_ctrl #(
                   || (do_next_cmd 
                       && ((command == CMD_DAC_WR) || (command == CMD_NO_OP)) 
                       && !cmd_word[TRIG_BIT]
-                      && (cmd_word[24:0] < min_delay)) // Delay in command too short
-                  || (state == S_PRE_DELAY && delay_timer < min_delay) // Something went wrong and the PRE_DELAY didn't end when it should
+                      && (cmd_word[24:0] < min_delay_latched)) // Delay in command too short
+                  || (state == S_PRE_DELAY && delay_timer < min_delay_latched) // Something went wrong and the PRE_DELAY didn't end when it should
                   || (ldac_unsafe && ldac_shared) // LDAC misalignment
                   || (do_next_cmd && next_cmd_state == S_ERROR) // Bad command
                   || (((cmd_done && expect_next) || read_next_dac_val_pair) && !next_cmd_ready) // Command buffer underflow
@@ -390,7 +395,7 @@ module ad5676_dac_ctrl #(
     else if (do_next_cmd 
              && ((command == CMD_DAC_WR) || (command == CMD_NO_OP)) 
              && !cmd_word[TRIG_BIT]
-             && (cmd_word[24:0] < min_delay)) delay_too_short <= 1'b1; // Delay too short if loading delay timer with a value below the minimum
+             && (cmd_word[24:0] < min_delay_latched)) delay_too_short <= 1'b1; // Delay too short if loading delay timer with a value below the minimum
     else if (state == S_DAC_WR && !dac_wr_done && !wait_for_trig && delay_wait_done) delay_too_short <= 1'b1; // Delay too short if delay timer is zero before DAC write is done
   end
   // LDAC misalignment
@@ -402,7 +407,7 @@ module ad5676_dac_ctrl #(
   always @(posedge clk) begin
     if (!resetn) bad_cmd <= 1'b0;
     else if (do_next_cmd && next_cmd_state == S_ERROR) bad_cmd <= 1'b1; // Bad command if next command is parsed as ERROR
-    else if (state == S_PRE_DELAY && delay_timer < min_delay) bad_cmd <= 1'b1; // Something went wrong and the PRE_DELAY didn't end when it should
+    else if (state == S_PRE_DELAY && delay_timer < min_delay_latched) bad_cmd <= 1'b1; // Something went wrong and the PRE_DELAY didn't end when it should
   end
   // Command buffer underflow
   always @(posedge clk) begin
@@ -446,11 +451,11 @@ module ad5676_dac_ctrl #(
   // Update absolute DAC values concatenation
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) abs_dac_val_concat <= 120'd0; // Reset concatenation on reset or error
-    // Concatenate absolute DAC values when LDAC is asserted
-    else if (ldac) begin
-      abs_dac_val_concat <= {abs_dac_val[7], abs_dac_val[6], abs_dac_val[5], 
-                             abs_dac_val[4], abs_dac_val[3], abs_dac_val[2], 
-                             abs_dac_val[1], abs_dac_val[0]};
+    // Concatenate absolute DAC values as LDAC is asserted
+    else if (do_ldac && cmd_done) begin
+      abs_dac_val_concat <= {abs_dac_val[7][14:0], abs_dac_val[6][14:0], abs_dac_val[5][14:0], 
+                             abs_dac_val[4][14:0], abs_dac_val[3][14:0], abs_dac_val[2][14:0], 
+                             abs_dac_val[1][14:0], abs_dac_val[0][14:0]};
     end
   end
 
@@ -488,9 +493,9 @@ module ad5676_dac_ctrl #(
 
   //// ---- DAC word sequencing
   // Start the 8ch DAC write after pre-delay finishes or DAC_WR command doesn't have pre-delay
+  assign immediately_start_8ch_dac_wr = cmd_word[TRIG_BIT] || (cmd_word[24:0] == min_delay_latched) || !do_pre_delay;
   assign start_8ch_dac_wr = (state == S_PRE_DELAY && pre_delay_wait_done)
-                            || (do_next_cmd && command == CMD_DAC_WR 
-                              && (cmd_word[TRIG_BIT] || cmd_word[24:0] == min_delay || !do_pre_delay));
+                            || (do_next_cmd && command == CMD_DAC_WR && immediately_start_8ch_dac_wr);
   // DAC channel count status
   assign last_dac_channel = ((state == S_DAC_WR || state == S_SET_MID) && dac_channel == 3'd7) || (state == S_DAC_WR_CH); // Last channel is when in DAC_WR state and channel is 7, or if doing a single-channel write
   assign second_dac_channel_of_pair = (state == S_DAC_WR && dac_channel[0] == 1'b1); // Even channel is when the least significant bit is set (off by 1)
@@ -525,8 +530,6 @@ module ad5676_dac_ctrl #(
     else if ((state == S_DAC_WR || state == S_SET_MID) && dac_spi_cmd_done) dac_channel <= dac_channel + 1; // Increment channel when timer is done
   end
   // DAC value loading
-  assign load_dac_val_pair = read_next_dac_val_pair && next_cmd_ready;
-  assign load_dac_val = (do_next_cmd && command == CMD_DAC_WR_CH) || load_dac_val_pair;
   // Load and calibrate DAC values from command word
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) begin
@@ -537,40 +540,41 @@ module ad5676_dac_ctrl #(
       if (dac_vals_ready) begin
         dac_vals_ready <= 1'b0; // Clear loaded flag after storing values
       // Prepare DAC values if any DAC value loading condition is met
-      end else if (load_dac_val) begin
+      end else if (read_next_dac_val_pair && next_cmd_ready) begin
         first_dac_val_cal_signed <= $signed({cmd_word[15], cmd_word[15:0]}) + $signed({cal_val[dac_channel][15], cal_val[dac_channel]}); // Add calibration to first DAC value
-        // Also prepare the second DAC value if a pair is being loaded
-        if (load_dac_val_pair) begin
-          second_dac_val_cal_signed <= $signed({cmd_word[31], cmd_word[31:16]}) + $signed({cal_val[dac_channel + 1][15], cal_val[dac_channel + 1]}); // Add calibration to second DAC value
-        end
+        second_dac_val_cal_signed <= $signed({cmd_word[31], cmd_word[31:16]}) + $signed({cal_val[dac_channel + 1][15], cal_val[dac_channel + 1]}); // Add calibration to second DAC value
         dac_vals_ready <= 1'b1; // Indicate that DAC values have been loaded
+      end else if (do_next_cmd && command == CMD_DAC_WR_CH) begin
+        first_dac_val_cal_signed <= $signed({cmd_word[15], cmd_word[15:0]}) + $signed({cal_val[cmd_word[18:16]][15], cal_val[cmd_word[18:16]]}); // Add calibration to DAC value
+        dac_vals_ready <= 1'b1; // Indicate that DAC value has been loaded
       end
     end
   end
-  // Store absolute value of calibrated or zeroed DAC values when ready to be written
+  // Store absolute value of DAC values when ready to be written
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) begin
-      abs_dac_val[0] <= 15'd0;
-      abs_dac_val[1] <= 15'd0;
-      abs_dac_val[2] <= 15'd0;
-      abs_dac_val[3] <= 15'd0;
-      abs_dac_val[4] <= 15'd0;
-      abs_dac_val[5] <= 15'd0;
-      abs_dac_val[6] <= 15'd0;
-      abs_dac_val[7] <= 15'd0;
+      abs_dac_val[0] <= 16'd0;
+      abs_dac_val[1] <= 16'd0;
+      abs_dac_val[2] <= 16'd0;
+      abs_dac_val[3] <= 16'd0;
+      abs_dac_val[4] <= 16'd0;
+      abs_dac_val[5] <= 16'd0;
+      abs_dac_val[6] <= 16'd0;
+      abs_dac_val[7] <= 16'd0;
     end else begin
-      if (load_dac_val && !dac_vals_ready) begin
-        abs_dac_val[dac_channel] <= signed_to_abs(cmd_word[15:0])[14:0]; // Save the absolute value of the first DAC value for storage
-        // Also prepare the second DAC value if a pair is being loaded
-        if (load_dac_val_pair) begin
-          abs_dac_val[dac_channel + 1] <= signed_to_abs(cmd_word[31:16])[14:0]; // Save the absolute value of the second DAC value for storage
-        end
-      // Zero first channel when CMD_ZERO is received
+      // If a DAC pair is currently loading, store the absolute values (dac_channel is already ready)
+      if (!dac_vals_ready && read_next_dac_val_pair && next_cmd_ready) begin
+        abs_dac_val[dac_channel] <= signed_to_abs(cmd_word[15:0]);
+        abs_dac_val[dac_channel + 1] <= signed_to_abs(cmd_word[31:16]);
+      // If a single DAC value is coming from the command word, store the absolute value in the command-word-indicated channel
+      end else if (!dac_vals_ready && do_next_cmd && command == CMD_DAC_WR_CH) begin
+        abs_dac_val[cmd_word[18:16]] <= signed_to_abs(cmd_word[15:0]);
+      // Store zero on first channel when CMD_ZERO is received
       end else if (do_next_cmd && command == CMD_ZERO) begin
-        abs_dac_val[0] <= 15'd0;
-      // Zero each channel after writing the previous one when in SET_MID state
+        abs_dac_val[0] <= 16'd0;
+      // Store zero on each channel after writing the previous one when in SET_MID state
       end else if (state == S_SET_MID && dac_spi_cmd_done && !last_dac_channel) begin
-        abs_dac_val[dac_channel + 1] <= 15'd0;
+        abs_dac_val[dac_channel + 1] <= 16'd0;
       end
     end
   end
@@ -590,16 +594,22 @@ module ad5676_dac_ctrl #(
   // Latch ~(Chip Select) high time when coming out of reset
   always @(posedge clk) begin
     if (!resetn) n_cs_high_time_latched <= 5'd0;
-    else if (state == S_RESET) n_cs_high_time_latched <= n_cs_high_time;
+    else if (state == S_RESET) n_cs_high_time_latched <= (n_cs_high_time > 5'd3) ? n_cs_high_time : 5'd3; // Minimum of 3 cycles high
   end
   // ~(Chip Select) timer
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) n_cs_timer <= 5'd0;
-    else if (start_spi_cmd) n_cs_timer <= n_cs_high_time_latched;
+    else if (start_spi_cmd) n_cs_timer <= n_cs_high_time_latched - 1;
     else if (n_cs_timer > 0) n_cs_timer <= n_cs_timer - 1;
-    running_n_cs_timer <= (n_cs_timer > 0); // Flag to indicate if CS timer is running
   end
-  // ~(Chip Select) (n_cs) has been high for the required time (timer went from nonzero to zero)
+  // ~(Chip Select) timer running flags
+  always @(posedge clk) begin
+    if (!resetn || state == S_ERROR) running_n_cs_timer <= 1'b0;
+    else if (start_spi_cmd) running_n_cs_timer <= 1'b1; // Start CS timer when starting SPI command
+    else if (n_cs_timer == 0) running_n_cs_timer <= 1'b0; // Stop CS timer when it reaches zero
+    running_n_cs_timer_prev <= running_n_cs_timer; // Store previous value for edge detection
+  end
+  // ~(Chip Select) (n_cs) has been high for the required time (timer was running and reached 0)
   assign cs_wait_done = (running_n_cs_timer && n_cs_timer == 0);
   // ~(Chip Select) (n_cs) signal
   always @(posedge clk) begin
@@ -715,7 +725,7 @@ module ad5676_dac_ctrl #(
   // DEBUG: n_cs_timer start value
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) debug_n_cs_timer <= 1'b0;
-    else if (!running_n_cs_timer && n_cs_timer > 0 && debug) debug_n_cs_timer <= 1'b1;
+    else if (!running_n_cs_timer_prev && running_n_cs_timer && debug) debug_n_cs_timer <= 1'b1;
     else debug_n_cs_timer <= 1'b0;
   end
   // DEBUG: SPI bit counter when it changes from 0 to nonzero
@@ -730,13 +740,13 @@ module ad5676_dac_ctrl #(
                           || debug_spi_bit
                           || debug_dac_write;
   // DAC data output write enable
-  // Write MISO data to the data buffer when attempting a write and buffer isn't full
+  // Write DAC data to the data buffer when attempting a write and buffer isn't full
   always @(posedge clk) begin
     if (!resetn) data_buf_wr_en <= 1'b0; // Reset data word write enable on reset
     else if (try_data_write && !data_buf_full) data_buf_wr_en <= 1'b1; // Write data word when two words are ready and buffer isn't full
     else data_buf_wr_en <= 1'b0;
   end
-  // MISO data word
+  // DAC data word
   always @(posedge clk) begin
     if (!resetn) data_word <= 32'd0; // Reset data word on reset or error
     else if (try_data_write && !data_buf_full) begin

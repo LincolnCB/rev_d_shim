@@ -42,9 +42,9 @@ struct sys_sts_t create_sys_sts(bool verbose) {
   // Initialize debug register
   sys_sts.debug = sys_sts_ptr + DEBUG_REG_OFFSET;
 
-  // Initialize DAC and ADC "delay too short" time registers
-  sys_sts.dac_delay_too_short_time = sys_sts_ptr + DEBUG_DAC_DELAY_TOO_SHORT_TIME_OFFSET;
-  sys_sts.adc_delay_too_short_time = sys_sts_ptr + DEBUG_ADC_DELAY_TOO_SHORT_TIME_OFFSET;
+  // Initialize DAC and ADC minimum delay time registers
+  sys_sts.dac_min_delay_time = sys_sts_ptr + DEBUG_DAC_MIN_DELAY_TIME_OFFSET;
+  sys_sts.adc_min_delay_time = sys_sts_ptr + DEBUG_ADC_MIN_DELAY_TIME_OFFSET;
   
   return sys_sts;
 }
@@ -378,22 +378,22 @@ uint32_t sys_sts_get_debug(struct sys_sts_t *sys_sts, bool verbose) {
   return *(sys_sts->debug);
 }
 
-// Get DAC "delay too short" time in SPI clock cycles
-uint32_t sys_sts_get_dac_delay_too_short_time(struct sys_sts_t *sys_sts, bool verbose) {
+// Get DAC minimum delay time in SPI clock cycles
+uint32_t sys_sts_get_dac_min_delay_time(struct sys_sts_t *sys_sts, bool verbose) {
   if (verbose) {
     printf("Reading DAC 'delay too short' time register...\n");
-    printf("DAC 'delay too short' time raw: 0x%" PRIx32 "\n", *(sys_sts->dac_delay_too_short_time));
+    printf("DAC 'delay too short' time raw: 0x%" PRIx32 "\n", *(sys_sts->dac_min_delay_time));
   }
-  return *(sys_sts->dac_delay_too_short_time);
+  return *(sys_sts->dac_min_delay_time);
 }
 
-// Get ADC "delay too short" time in SPI clock cycles
-uint32_t sys_sts_get_adc_delay_too_short_time(struct sys_sts_t *sys_sts, bool verbose) {
+// Get ADC minimum delay time in SPI clock cycles
+uint32_t sys_sts_get_adc_min_delay_time(struct sys_sts_t *sys_sts, bool verbose) {
   if (verbose) {
     printf("Reading ADC 'delay too short' time register...\n");
-    printf("ADC 'delay too short' time raw: 0x%" PRIx32 "\n", *(sys_sts->adc_delay_too_short_time));
+    printf("ADC 'delay too short' time raw: 0x%" PRIx32 "\n", *(sys_sts->adc_min_delay_time));
   }
-  return *(sys_sts->adc_delay_too_short_time);
+  return *(sys_sts->adc_min_delay_time);
 }
   
 

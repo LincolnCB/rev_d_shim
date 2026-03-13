@@ -10,7 +10,7 @@ create_bd_pin -dir I -from 31 -to 0 integ_window
 create_bd_pin -dir I -from 14 -to 0 integ_thresh_avg
 create_bd_pin -dir I integ_en
 create_bd_pin -dir I -from 4 -to 0 dac_n_cs_high_time
-create_bd_pin -dir I -from 24 -to 0 dac_delay_too_short_time
+create_bd_pin -dir I -from 24 -to 0 dac_min_delay_time
 create_bd_pin -dir I -from 15 -to 0 dac_cal_init
 create_bd_pin -dir I boot_test_skip
 create_bd_pin -dir I debug
@@ -107,7 +107,7 @@ cell shim:user:ad5676_dac_ctrl dac_spi {
   debug debug
   do_pre_delay do_pre_delay
   n_cs_high_time dac_n_cs_high_time
-  delay_too_short_time dac_delay_too_short_time
+  min_delay_time dac_min_delay_time
   cal_init_val dac_cal_init
   cmd_buf_rd_en dac_cmd_rd_en
   cmd_buf_word dac_cmd

@@ -31,9 +31,9 @@
 #define DEBUG_SPI_OFF_BIT        1  // SPI off status bit
 #define DEBUG_DAC_CS_HIGH_TIME(word) (((word) >> 2) & 0x1F) // DAC ~CS high time (5 bits)
 #define DEBUG_ADC_CS_HIGH_TIME(word) (((word) >> 7) & 0xFF) // ADC ~CS high time (8 bits)
-// Delay too short times (in SPI clock cycles)
-#define DEBUG_DAC_DELAY_TOO_SHORT_TIME_OFFSET (uint32_t) 38 // DAC "delay too short" time offset
-#define DEBUG_ADC_DELAY_TOO_SHORT_TIME_OFFSET (uint32_t) 39 // ADC "delay too short" time offset
+// Minimum delay times (in SPI clock cycles)
+#define DEBUG_DAC_MIN_DELAY_TIME_OFFSET (uint32_t) 38 // DAC minimum delay time offset
+#define DEBUG_ADC_MIN_DELAY_TIME_OFFSET (uint32_t) 39 // ADC minimum delay time offset
 
 // Macro for extracting the 4-bit state
 #define HW_STS_STATE(hw_status) ((hw_status) & 0xF)
@@ -122,18 +122,18 @@
 
 // System status structure
 struct sys_sts_t {
-  volatile uint32_t *hw_status_reg;          // Hardware status
-  volatile uint32_t *dac_cmd_fifo_sts[8];    // DAC command FIFO status for 8 boards
-  volatile uint32_t *dac_data_fifo_sts[8];   // DAC data FIFO status for 8 boards
-  volatile uint32_t *adc_cmd_fifo_sts[8];    // ADC command FIFO status for 8 boards
-  volatile uint32_t *adc_data_fifo_sts[8];   // ADC data FIFO status for 8 boards
-  volatile uint32_t *trig_cmd_fifo_sts;      // Trigger command FIFO status
-  volatile uint32_t *trig_data_fifo_sts;     // Trigger data FIFO status
-  volatile uint32_t *spi_clk_freq_hz;        // SPI clock frequency in Hz
-  volatile uint32_t *trig_counter;           // Trigger counter
-  volatile uint32_t *debug;                  // Debug register
-  volatile uint32_t *dac_delay_too_short_time; // DAC "delay too short" time in SPI clock cycles
-  volatile uint32_t *adc_delay_too_short_time; // ADC "delay too short" time in SPI clock cycles
+  volatile uint32_t *hw_status_reg;        // Hardware status
+  volatile uint32_t *dac_cmd_fifo_sts[8];  // DAC command FIFO status for 8 boards
+  volatile uint32_t *dac_data_fifo_sts[8]; // DAC data FIFO status for 8 boards
+  volatile uint32_t *adc_cmd_fifo_sts[8];  // ADC command FIFO status for 8 boards
+  volatile uint32_t *adc_data_fifo_sts[8]; // ADC data FIFO status for 8 boards
+  volatile uint32_t *trig_cmd_fifo_sts;    // Trigger command FIFO status
+  volatile uint32_t *trig_data_fifo_sts;   // Trigger data FIFO status
+  volatile uint32_t *spi_clk_freq_hz;      // SPI clock frequency in Hz
+  volatile uint32_t *trig_counter;         // Trigger counter
+  volatile uint32_t *debug;                // Debug register
+  volatile uint32_t *dac_min_delay_time;   // DAC minimum delay time in SPI clock cycles
+  volatile uint32_t *adc_min_delay_time;   // ADC minimum delay time in SPI clock cycles
 };
 
 // Structure initialization function
@@ -162,9 +162,9 @@ uint32_t sys_sts_get_trig_counter(struct sys_sts_t *sys_sts, bool verbose);
 // Get debug register value
 uint32_t sys_sts_get_debug(struct sys_sts_t *sys_sts, bool verbose);
 // Get DAC "delay too short" time in SPI clock cycles
-uint32_t sys_sts_get_dac_delay_too_short_time(struct sys_sts_t *sys_sts, bool verbose);
+uint32_t sys_sts_get_dac_min_delay_time(struct sys_sts_t *sys_sts, bool verbose);
 // Get ADC "delay too short" time in SPI clock cycles
-uint32_t sys_sts_get_adc_delay_too_short_time(struct sys_sts_t *sys_sts, bool verbose);
+uint32_t sys_sts_get_adc_min_delay_time(struct sys_sts_t *sys_sts, bool verbose);
 
 // Interpret and print hardware status
 void print_hw_status(uint32_t hw_status, bool verbose);

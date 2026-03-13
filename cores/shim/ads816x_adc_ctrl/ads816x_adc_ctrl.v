@@ -5,9 +5,9 @@ module ads816x_adc_ctrl (
   input  wire        resetn,
 
   input  wire        boot_test_skip, // Skip the boot test sequence
-  input  wire        debug, // Debug mode flag
+  input  wire        debug,          // Debug mode flag
   input  wire [7:0]  n_cs_high_time, // n_cs high time in clock cycles (max 255)
-  input  wire [24:0] delay_too_short_time, // Minimum delay time for ADC read commands in clock cycles
+  input  wire [24:0] min_delay_time, // Minimum delay time for ADC read commands in clock cycles
 
   output reg         setup_done,
 
@@ -40,11 +40,8 @@ module ads816x_adc_ctrl (
   // Timing Parameters
   ///////////////////////////////////////////////////////////////////////////////
 
-  // SPI command bit width
-  localparam integer OTF_CMD_BITS = 16;
   // N_CS timer value to start MISO read
-  localparam integer N_CS_MISO_START_TIME = 2;
-
+  localparam [7:0] N_CS_MISO_START_TIME = 8'd2;
 
   ///////////////////////////////////////////////////////////////////////////////
   // SPI Command Bit Definitions
@@ -110,6 +107,7 @@ module ads816x_adc_ctrl (
   wire        cmd_done;
   wire        do_next_cmd;
   wire [ 3:0] next_cmd_state;
+  wire        cancel_repeat;
   wire        cancel_wait;
   wire        error;
   // Command word toggled bits
@@ -124,7 +122,9 @@ module ads816x_adc_ctrl (
   reg  [31:0] repeat_counter;
   reg  [31:0] repeat_cmd_word;
   // Delay timer and trigger counter
-  reg  [24:0] delay_timer, trigger_counter;
+  reg  [24:0] min_delay_latched;
+  reg  [24:0] delay_timer;
+  reg  [24:0] trigger_counter;
   // ADC sample order
   reg  [ 2:0] sample_order [0:7];
 
@@ -137,6 +137,7 @@ module ads816x_adc_ctrl (
   // Chip select control
   reg  [ 7:0] n_cs_timer;
   reg         running_n_cs_timer;
+  reg         running_n_cs_timer_prev;
   wire        cs_wait_done;
   // Latched n_cs high time
   reg  [ 7:0] n_cs_high_time_latched;
@@ -292,12 +293,16 @@ module ads816x_adc_ctrl (
 
   //// ---- Delay timer
   always @(posedge clk) begin
+    if (!resetn) min_delay_latched <= 25'd0;
+    else if (state == S_RESET) min_delay_latched <= (min_delay_time > 25'd171) ? min_delay_time : 25'd171; // Absolute minimum delay is 171 cycles (9 * (16 + 3))
+  end
+  always @(posedge clk) begin
     if (!resetn || state == S_ERROR || cancel_wait) delay_timer <= 25'd0;
     // If the next command is an ADC read or no-op with a delay wait, load the delay timer from command word
     else if (do_next_cmd
              && ((command == CMD_ADC_RD) || (command == CMD_NO_OP))
              && !cmd_word[TRIG_BIT]) begin
-      if (cmd_word[24:0] <= delay_too_short_time) begin
+      if (cmd_word[24:0] < min_delay_latched) begin
         delay_timer <= 25'h1FFFFFF; // Error will be flagged. Max the delay in the meantime.
       end else begin
         delay_timer <= cmd_word[24:0] - 1; // Load the delay time from the command word (minus 1 since we check for zero in the wait condition)
@@ -348,7 +353,7 @@ module ads816x_adc_ctrl (
     else if (do_next_cmd
              && ((command == CMD_ADC_RD) || (command == CMD_NO_OP))
              && !cmd_word[TRIG_BIT]
-             && (cmd_word[24:0] <= delay_too_short_time)) delay_too_short <= 1'b1; // Delay too short if loading delay timer with a value below the minimum
+             && (cmd_word[24:0] < min_delay_latched)) delay_too_short <= 1'b1; // Delay too short if loading delay timer with a value below the minimum
     else if (state == S_ADC_RD && !adc_rd_done && !wait_for_trig && delay_wait_done) delay_too_short <= 1'b1; // Delay too short if delay timer is zero before ADC read is done
   end
   // Bad command
@@ -422,17 +427,23 @@ module ads816x_adc_ctrl (
                           || (state == S_ADC_RD_CH && adc_spi_cmd_done && !last_adc_word);
   // Latch ~(Chip Select) high time when coming out of reset
   always @(posedge clk) begin
-    if (!resetn) n_cs_high_time_latched <= 8'd8; // Default to 8 clock cycles if not set
-    else if (state == S_RESET) n_cs_high_time_latched <= n_cs_high_time;
+    if (!resetn) n_cs_high_time_latched <= 8'd0;
+    else if (state == S_RESET) n_cs_high_time_latched <= (n_cs_high_time > 8'd3) ? n_cs_high_time : 8'd3; // Minimum of 3 cycles high
   end
   // ~(Chip Select) timer
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) n_cs_timer <= 8'd0;
-    else if (start_spi_cmd) n_cs_timer <= n_cs_high_time_latched;
+    else if (start_spi_cmd) n_cs_timer <= n_cs_high_time_latched - 1;
     else if (n_cs_timer > 0) n_cs_timer <= n_cs_timer - 1;
-    running_n_cs_timer <= (n_cs_timer > 0); // Flag to indicate if CS timer is running
   end
-  // ~(Chip Select) (n_cs) has been high for the required time (timer went from nonzero to zero)
+  // ~(Chip Select) timer running flags
+  always @(posedge clk) begin
+    if (!resetn || state == S_ERROR) running_n_cs_timer <= 1'b0;
+    else if (start_spi_cmd) running_n_cs_timer <= 1'b1; // Start CS timer when starting SPI command
+    else if (n_cs_timer == 0) running_n_cs_timer <= 1'b0; // Stop CS timer when it reaches zero
+    running_n_cs_timer_prev <= running_n_cs_timer; // Store previous value for edge detection
+  end
+  // ~(Chip Select) (n_cs) has been high for the required time (timer was running and reached 0)
   assign cs_wait_done = (running_n_cs_timer && n_cs_timer == 0);
   // ~(Chip Select) (n_cs) signal
   always @(posedge clk) begin
@@ -513,12 +524,17 @@ module ads816x_adc_ctrl (
     .wr_rst_n    (miso_resetn), // Reset for MISO clock domain
     .wr_data     (miso_data), // MISO data to write
     .wr_en       (miso_buf_wr_en), // Write enable for MISO data
+    .fifo_count_wr_clk (),
+    .full        (),
+    .almost_full (),
 
     .rd_clk      (clk), // FPGA SCK
     .rd_rst_n    (resetn),
     .rd_data     (miso_data_mosi_clk),
     .rd_en       (!n_miso_data_ready_mosi_clk), // Immediately read MISO data when available in the MOSI clock domain
-    .empty       (n_miso_data_ready_mosi_clk)
+    .fifo_count_rd_clk (),
+    .empty       (n_miso_data_ready_mosi_clk),
+    .almost_empty()
   );
   // MISO bit counter
   always @(posedge miso_sck) begin
@@ -548,7 +564,7 @@ module ads816x_adc_ctrl (
   assign adc_ch_data_ready = (single_reads > 0 && !n_miso_data_ready_mosi_clk);
   // Single read count (could be two in a row, make sure the second isn't lost)
   always @(posedge clk) begin
-    if (!resetn || state == S_ERROR) single_reads <= 2'b0;
+    if (!resetn || state == S_ERROR) single_reads <= 3'b0;
     // Increment the count by 1 if CMD_ADC_RD_CH command is received
     else if (do_next_cmd && command == CMD_ADC_RD_CH) begin
       // Leave as is if trying to increment and decrement at the same time
@@ -570,7 +586,7 @@ module ads816x_adc_ctrl (
   // DEBUG: n_cs_timer start value
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) debug_n_cs_timer <= 1'b0;
-    else if (!running_n_cs_timer && n_cs_timer > 0 && debug) debug_n_cs_timer <= 1'b1;
+    else if (!running_n_cs_timer_prev && running_n_cs_timer && debug) debug_n_cs_timer <= 1'b1;
     else debug_n_cs_timer <= 1'b0;
   end
   // DEBUG: SPI bit counter when it changes from 0 to nonzero
@@ -587,7 +603,7 @@ module ads816x_adc_ctrl (
                           || debug_spi_bit
                           || debug_cmd_done;
   // ADC data output write enable
-  // Write MISO data to the data buffer when attempting a write and buffer isn't full
+  // Write ADC data to the data buffer when attempting a write and buffer isn't full
   always @(posedge clk) begin
     if (!resetn) data_buf_wr_en <= 1'b0; // Reset data word write enable on reset
     else if (try_data_write && !data_buf_full) data_buf_wr_en <= 1'b1; // Write data word when two words are ready and buffer isn't full
@@ -607,8 +623,8 @@ module ads816x_adc_ctrl (
       miso_data_storage <= offset_to_signed(miso_data_mosi_clk); // Store the last MISO data word
     end
   end
-  // FIFO data word to write
-  // [15:0] is the first word, [31:16] is the second word
+  // ADC data word to write
+  // For data, [15:0] is the first word, [31:16] is the second word
   always @(posedge clk) begin
     if (!resetn) data_word <= 32'd0; // Reset data word on reset
     else if (try_data_write && !data_buf_full) begin
@@ -629,7 +645,7 @@ module ads816x_adc_ctrl (
         data_word <= {DBG_REPEAT_BIT, 6'd0, repeat_cmd_word[31:26], repeat_counter[15:0]};
       // Write n_cs timer value with debug code
       end else if (debug_n_cs_timer) begin
-        data_word <= {DBG_N_CS_TIMER, 20'd0, (n_cs_timer + 5'd1)};
+        data_word <= {DBG_N_CS_TIMER, 20'd0, (n_cs_timer + 8'd1)};
       // Write SPI bit counter value with debug code
       end else if (debug_spi_bit) begin
         data_word <= {DBG_SPI_BIT, 23'd0, spi_bit};

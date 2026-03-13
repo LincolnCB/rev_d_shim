@@ -233,13 +233,13 @@ int cmd_set_data_buf_reset(const char** args, int arg_count, const command_flag_
 
 // SPI polarity commands
 int cmd_invert_mosi_clk(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  sys_ctrl_invert_mosi_sck(ctx->sys_ctrl, *(ctx->verbose));
+  sys_ctrl_invert_mosi_sck(ctx->sys_ctrl, true);
   printf("MOSI SCK polarity inverted.\n");
   return 0;
 }
 
 int cmd_invert_miso_clk(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  sys_ctrl_invert_miso_sck(ctx->sys_ctrl, *(ctx->verbose));
+  sys_ctrl_invert_miso_sck(ctx->sys_ctrl, true);
   printf("MISO SCK polarity inverted.\n");
   return 0;
 }
@@ -253,11 +253,9 @@ int cmd_spi_clk_freq(const char** args, int arg_count, const command_flag_t* fla
 
 // Get minimum delay times in SPI clock cycles
 int cmd_get_min_delay_times(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  uint32_t dac_delay_too_short_time = sys_sts_get_dac_delay_too_short_time(ctx->sys_sts, *(ctx->verbose));
-  uint32_t adc_delay_too_short_time = sys_sts_get_adc_delay_too_short_time(ctx->sys_sts, *(ctx->verbose));
+  uint32_t min_dac_delay_cycles = sys_sts_get_dac_min_delay_time(ctx->sys_sts, *(ctx->verbose));
+  uint32_t min_adc_delay_cycles = sys_sts_get_adc_min_delay_time(ctx->sys_sts, *(ctx->verbose));
   double spi_clk_freq_mhz = ((double) sys_sts_get_spi_clk_freq_hz(ctx->sys_sts, false)) / 1e6;
-  uint32_t min_dac_delay_cycles = dac_delay_too_short_time + 1;
-  uint32_t min_adc_delay_cycles = adc_delay_too_short_time + 1;
   double max_dac_sample_rate_khz = spi_clk_freq_mhz / min_dac_delay_cycles * 1e3;
   double max_adc_sample_rate_khz = spi_clk_freq_mhz / min_adc_delay_cycles * 1e3;
   double min_dac_delay_us = ((double) min_dac_delay_cycles) / spi_clk_freq_mhz;

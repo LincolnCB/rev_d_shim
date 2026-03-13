@@ -29,19 +29,19 @@ async def test_dac_wr(dut):
     await tb.reset()
 
     # Build the DAC_WR command sequence
-    cmd_list = []
-    cmd_list.append(tb.build_dac_wr_header(trig_wait=1, cont=0, ldac=1, value=10))
+    cmd_word_list = []
+    cmd_word_list.append(tb.build_dac_wr_header(trig_wait=1, cont=0, ldac=1, value=10))
     for _ in range(4):
         value = 1000
-        cmd_list.append(tb.build_dac_pair(v_lo_chN=value, v_hi_chNp1=value))
+        cmd_word_list.append(tb.build_dac_pair(v_lo_chN=value, v_hi_chNp1=value))
 
     # Start the command buffer model and scoreboard
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
 
     # Send commands and wait for completion
-    await tb.send_commands(cmd_list)
+    await tb.send_commands(cmd_word_list)
     await scoreboard_task
 
     # Give time before ending the test and ensure we don't collide with other tests
@@ -64,16 +64,16 @@ async def test_dac_wr_ch(dut):
     await tb.reset()
 
     # Build the DAC_WR_CH command sequence
-    cmd_list = []
-    cmd_list.append(tb.build_dac_wr_ch(7, 1000))
+    cmd_word_list = []
+    cmd_word_list.append(tb.build_dac_wr_ch(7, 1000))
 
     # Start the command buffer model and scoreboard
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
 
     # Send commands and wait for completion
-    await tb.send_commands(cmd_list)
+    await tb.send_commands(cmd_word_list)
     await scoreboard_task
 
     # Give time before ending the test and ensure we don't collide with other tests
@@ -96,16 +96,16 @@ async def test_zero(dut):
     await tb.reset()
 
     # Build the ZERO command sequence
-    cmd_list = []
-    cmd_list.append(tb.build_zero())
+    cmd_word_list = []
+    cmd_word_list.append(tb.build_zero())
 
     # Start the command buffer model and scoreboard
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
 
     # Send commands and wait for completion
-    await tb.send_commands(cmd_list)
+    await tb.send_commands(cmd_word_list)
     await scoreboard_task
 
     # Give time before ending the test and ensure we don't collide with other tests
@@ -128,19 +128,19 @@ async def test_noop_trigger_wait(dut):
     await tb.reset()
 
     # Build the NO_OP command sequence
-    cmd_list = []
-    cmd_list.append(tb.build_noop(trig_wait=1, cont=0, ldac=1, value=10))
+    cmd_word_list = []
+    cmd_word_list.append(tb.build_noop(trig_wait=1, cont=0, ldac=1, value=10))
 
     # Start the command buffer model and scoreboard
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
 
     # Start the random trigger driver
     trigger_driver_task = cocotb.start_soon(tb.random_trigger_driver())
 
     # Send commands and wait for completion
-    await tb.send_commands(cmd_list)
+    await tb.send_commands(cmd_word_list)
     await scoreboard_task
 
     # Give time before ending the test and ensure we don't collide with other tests
@@ -164,19 +164,19 @@ async def test_noop_trigger_wait_no_ldac(dut):
     await tb.reset()
 
     # Build the NO_OP command sequence
-    cmd_list = []
-    cmd_list.append(tb.build_noop(trig_wait=1, cont=0, ldac=0, value=10))
+    cmd_word_list = []
+    cmd_word_list.append(tb.build_noop(trig_wait=1, cont=0, ldac=0, value=10))
 
     # Start the command buffer model and scoreboard
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
 
     # Start the random trigger driver
     trigger_driver_task = cocotb.start_soon(tb.random_trigger_driver())
 
     # Send commands and wait for completion
-    await tb.send_commands(cmd_list)
+    await tb.send_commands(cmd_word_list)
     await scoreboard_task
 
     # Give time before ending the test and ensure we don't collide with other tests
@@ -200,16 +200,16 @@ async def test_noop_delay(dut):
     await tb.reset()
 
     # Build the NO_OP command sequence
-    cmd_list = []
-    cmd_list.append(tb.build_noop(trig_wait=0, cont=0, ldac=1, value=20))
+    cmd_word_list = []
+    cmd_word_list.append(tb.build_noop(trig_wait=0, cont=0, ldac=1, value=20))
 
     # Start the command buffer model and scoreboard
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
 
     # Send commands and wait for completion
-    await tb.send_commands(cmd_list)
+    await tb.send_commands(cmd_word_list)
     await scoreboard_task
 
     # Give time before ending the test and ensure we don't collide with other tests
@@ -232,16 +232,16 @@ async def test_noop_delay_no_ldac(dut):
     await tb.reset()
 
     # Build the NO_OP command sequence
-    cmd_list = []
-    cmd_list.append(tb.build_noop(trig_wait=0, cont=0, ldac=0, value=20))
+    cmd_word_list = []
+    cmd_word_list.append(tb.build_noop(trig_wait=0, cont=0, ldac=0, value=20))
 
     # Start the command buffer model and scoreboard
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
 
     # Send commands and wait for completion
-    await tb.send_commands(cmd_list)
+    await tb.send_commands(cmd_word_list)
     await scoreboard_task
 
     # Give time before ending the test and ensure we don't collide with other tests
@@ -264,16 +264,16 @@ async def test_set_cal(dut):
     await tb.reset()
 
     # Build the SET_CAL command sequence
-    cmd_list = []
-    cmd_list.append(tb.build_set_cal(ch=3, cal_signed_16=-1234))
+    cmd_word_list = []
+    cmd_word_list.append(tb.build_set_cal(ch=3, cal_signed_16=-1234))
 
     # Start the command buffer model and scoreboard
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
 
     # Send commands and wait for completion
-    await tb.send_commands(cmd_list)
+    await tb.send_commands(cmd_word_list)
     await scoreboard_task
 
     # Give time before ending the test and ensure we don't collide with other tests
@@ -296,16 +296,16 @@ async def test_get_cal(dut):
     await tb.reset()
 
     # Build the GET_CAL command sequence
-    cmd_list = []
-    cmd_list.append(tb.build_get_cal(ch=3))
+    cmd_word_list = []
+    cmd_word_list.append(tb.build_get_cal(ch=3))
 
     # Start the command buffer model and scoreboard
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
 
     # Send commands and wait for completion
-    await tb.send_commands(cmd_list)
+    await tb.send_commands(cmd_word_list)
     await scoreboard_task
 
     # Give time before ending the test and ensure we don't collide with other tests
@@ -328,18 +328,17 @@ async def test_bad_cmd(dut):
     await tb.reset()
 
     # Build the BAD_CMD command sequence
-    cmd_type = 0b110  # Invalid command type
-    cmd = (cmd_type << 29)
-    cmd_list = []
-    cmd_list.append(cmd)
+    cmd_value = 0b110  # Invalid command type
+    cmd_word_list = []
+    cmd_word_list.append((cmd_value << 29))
 
     # Start the command buffer model and scoreboard
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
 
     # Send commands and wait for completion
-    await tb.send_commands(cmd_list)
+    await tb.send_commands(cmd_word_list)
     await scoreboard_task
 
     # Give time before ending the test and ensure we don't collide with other tests
@@ -364,17 +363,17 @@ async def test_cancel(dut):
     # Delay wait command and cancel command sequence
     delay_cmd = tb.build_noop(trig_wait=0, cont=0, ldac=1, value=50)
     cancel_cmd = tb.build_cancel()
-    cmd_list = []
-    cmd_list.append(delay_cmd)
-    cmd_list.append(cancel_cmd)
+    cmd_word_list = []
+    cmd_word_list.append(delay_cmd)
+    cmd_word_list.append(cancel_cmd)
 
     # Start the command buffer model and scoreboard
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
 
     # Send commands and wait for completion
-    await tb.send_commands(cmd_list)
+    await tb.send_commands(cmd_word_list)
     await scoreboard_task
 
     # Give time before ending the test and ensure we don't collide with other tests
@@ -392,14 +391,14 @@ async def example_simulation(dut):
     tb.dut._log.info("STARTING TEST: example_simulation")
 
     # Build a sequence of commands to simulate
-    cmd_list = []
-    cmd_list.append(tb.build_dac_wr_ch(0, 500))
-    cmd_list.append(tb.build_dac_wr_ch(1, 1000))
-    cmd_list.append(tb.build_dac_wr_ch(2, 1500))
-    cmd_list.append(tb.build_dac_wr_ch(3, 2000))
-    cmd_list.append(tb.build_noop(trig_wait=1, cont=0, ldac=1, value=10))
-    cmd_list.append(tb.build_set_cal(ch=0, cal_signed_16=-500))
-    cmd_list.append(tb.build_get_cal(ch=0))
+    cmd_word_list = []
+    cmd_word_list.append(tb.build_dac_wr_ch(0, 500))
+    cmd_word_list.append(tb.build_dac_wr_ch(1, 1000))
+    cmd_word_list.append(tb.build_dac_wr_ch(2, 1500))
+    cmd_word_list.append(tb.build_dac_wr_ch(3, 2000))
+    cmd_word_list.append(tb.build_noop(trig_wait=1, cont=0, ldac=1, value=10))
+    cmd_word_list.append(tb.build_set_cal(ch=0, cal_signed_16=-500))
+    cmd_word_list.append(tb.build_get_cal(ch=0))
 
-    simulation_task = cocotb.start_soon(tb.simulate_dut(cmd_list, clk_cycles=1000))
+    simulation_task = cocotb.start_soon(tb.simulate_dut(cmd_word_list, clk_cycles=1000))
     await simulation_task

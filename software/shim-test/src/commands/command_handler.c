@@ -84,6 +84,8 @@ static command_entry_t command_table[] = {
   {"stop_dac_cmd_stream", cmd_stop_dac_cmd_stream, {1, 1, {-1}, "Stop DAC command streaming for specified board (0-7)"}},
   {"stream_dac_debug", cmd_stream_dac_debug, {2, 2, {-1}, "Start DAC debug data streaming to file: <board> <file_path> (streams DAC debug data to file)"}},
   {"stop_dac_debug_stream", cmd_stop_dac_debug_stream, {1, 1, {-1}, "Stop DAC debug data streaming for specified board (0-7)"}},
+  {"set_dac_cal_init", cmd_set_dac_cal_init, {1, 1, {-1}, "Set the unified DAC calibration init register to a 16-bit signed value: <cal_init_value> (-32767 to 32767)"}},
+  {"toggle_dac_pre_delay", cmd_toggle_dac_pre_delay, {0, 0, {-1}, "Toggle the DAC pre-delay bit in the do_dac_pre_delay register"}},
   
   // ===== ADC COMMANDS (from adc_commands.h) =====
   {"adc_cmd_fifo_sts", cmd_adc_cmd_fifo_sts, {1, 1, {-1}, "Show ADC command FIFO status for specified board (0-7)"}},

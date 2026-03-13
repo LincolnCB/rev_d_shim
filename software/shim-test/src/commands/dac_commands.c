@@ -1248,4 +1248,20 @@ int cmd_stop_dac_debug_stream(const char** args, int arg_count, const command_fl
   return 0;
 }
 
+// Set the unified DAC calibration init register to a 16-bit signed value: <cal_init_value> (-32767 to 32767)
+int cmd_set_dac_cal_init(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  // Parse cal init value
+  char* endptr;
+  long cal_init_value = parse_value(args[0], &endptr);
+  if (*endptr != '\0' || cal_init_value < -32767 || cal_init_value > 32767) {
+    fprintf(stderr, "Invalid calibration init value '%s'. Must be an integer between -32767 and 32767.\n", args[0]);
+    return -1;
+  }
 
+  sys_ctrl_set_dac_cal_init(ctx->sys_ctrl, (int16_t)cal_init_value, true);
+}
+
+// Toggle the DAC pre-delay bit in the do_dac_pre_delay register
+int cmd_toggle_dac_pre_delay(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  sys_ctrl_toggle_dac_pre_delay(ctx->sys_ctrl, true);
+}

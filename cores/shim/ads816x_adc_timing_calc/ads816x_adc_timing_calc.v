@@ -9,9 +9,8 @@ module ads816x_adc_timing_calc #(
   input  wire [31:0] spi_clk_freq_hz, // SPI clock frequency in Hz
   input  wire        calc,            // Start calculation signal
   
-  output reg  [7:0]  n_cs_high_time,     // Calculated n_cs high time in cycles (minus 1)
-                                         //   Range: 2 to 255 (corresponds to 3 to 256 cycles, 60ns to 5120ns at 50MHz SPI clock)
-  output reg  [24:0] delay_too_short_time, // Minimum delay time for ADC read commands in cycles (minus 1)
+  output reg  [7:0]  n_cs_high_time,     // Calculated n_cs high time in cycles (3 to 255)
+  output reg  [24:0] min_delay_time,     // Minimum delay time for ADC read commands in cycles (minus 1)
   output reg  [2:0]  miso_halfclk_delay, // Calculated MISO half-clock delay (floor((spi_clk_freq * 4 + 1476395008) >> 30)), capped at 7
   output reg         done,               // Calculation complete
   output reg         lock_viol           // Error if frequency changes during calc
@@ -76,20 +75,20 @@ module ads816x_adc_timing_calc #(
   localparam S_FIND_MIN_DELAY  = 4'd6;
   localparam S_DONE            = 4'd7;
 
-  reg [ 3:0] state;
-  reg [31:0] spi_clk_freq_hz_latched;
+  reg  [ 3:0] state;
+  reg  [31:0] spi_clk_freq_hz_latched;
   
   // Intermediate calculation results
-  reg [31:0] min_cycles_for_t_conv;
-  reg [31:0] min_cycles_for_t_cycle;
-  reg [31:0] final_result;
+  reg  [31:0] min_cycles_for_t_conv;
+  reg  [31:0] min_cycles_for_t_cycle;
+  reg  [31:0] final_result;
   
   // Multiplication state machine (shift-add algorithm)
-  reg [ 3:0] mult_count;      // 4 bits sufficient for max 16 bits
-  reg [15:0] mult_shift;      // Shift a bit through this to control multiplication
-  reg [31:0] multiplicand;    // The constant (T_CONV_NiS or T_CYCLE_NiS or MISO_DELAY_NiS)
-  reg [31:0] multiplier;      // The frequency value
-  reg [63:0] mult_accumulator;
+  reg  [ 3:0] mult_count;      // 4 bits sufficient for max 16 bits
+  reg  [15:0] mult_shift;      // Shift a bit through this to control multiplication
+  reg  [31:0] multiplicand;    // The constant (T_CONV_NiS or T_CYCLE_NiS or MISO_DELAY_NiS)
+  reg  [31:0] multiplier;      // The frequency value
+  reg  [63:0] mult_accumulator;
   wire [63:0] mult_result_rounded_up;
 
   // MISO half-clock delay calculation intermediate
@@ -107,7 +106,7 @@ module ads816x_adc_timing_calc #(
       done <= 1'b0;
       lock_viol <= 1'b0;
       n_cs_high_time <= 8'd0;
-      delay_too_short_time <= 25'd0;
+      min_delay_time <= 25'd0;
       miso_delay_calc <= 36'd0;
       miso_halfclk_delay <= 3'd1;
       spi_clk_freq_hz_latched <= 32'd0;
@@ -239,11 +238,11 @@ module ads816x_adc_timing_calc #(
               mult_shift <= 16'd1 << mult_count;
               mult_count <= mult_count + 1;
             end else begin
-              // Cap n_cs_high_time at 255 (at the maximum 50MHz SPI clock, 256 + 16 bits is 5440ns, which is over the maximum 4000ns required)
+              // Cap n_cs_high_time at 255 (at the maximum 50MHz SPI clock, 255 + 16 bits is 5420ns, which is over the maximum 4000ns required)
               if (final_result > 255) begin
                 n_cs_high_time <= 8'd255;
               end else begin
-                n_cs_high_time <= final_result[7:0] - 1; // Truncate to 8 bits
+                n_cs_high_time <= final_result[7:0]; // Truncate to 8 bits
               end
               // Store MISO delay calculation result
               miso_delay_calc <= (mult_accumulator + MISO_DELAY_OFFSET);
@@ -262,11 +261,9 @@ module ads816x_adc_timing_calc #(
             // calc went low, reset
             state <= S_IDLE;
           end else begin
-            // Delay too short time is [9 * (n_cs_high_time + 1 + OTF_CMD_BITS) - 1]
-            //   (subtract 1 to convert to "time too short" threshold)
-            delay_too_short_time <= (( {17'd0, n_cs_high_time} + 25'd1 + OTF_CMD_BITS) << 3)
-                                    + ( {17'd0, n_cs_high_time} + 25'd1 + OTF_CMD_BITS)
-                                    - 25'd1;
+            // Minimum delay is [9 * (n_cs_high_time + OTF_CMD_BITS)]
+            min_delay_time <= (( {17'd0, n_cs_high_time} + OTF_CMD_BITS) << 3)
+                                    + ( {17'd0, n_cs_high_time} + OTF_CMD_BITS);
             // Calculate miso_halfclk_delay, capped at 7
             if (miso_delay_calc[35:30] > 7) begin
               miso_halfclk_delay <= 3'd7;

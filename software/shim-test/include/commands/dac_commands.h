@@ -68,4 +68,9 @@ int cmd_stop_dac_debug_stream(const char** args, int arg_count, const command_fl
 // Other DAC operations
 int cmd_set_and_check(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
+// Set the unified DAC calibration init register to a 16-bit signed value: <cal_init_value> (-32767 to 32767)
+int cmd_set_dac_cal_init(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+// Toggle the DAC pre-delay bit in the do_dac_pre_delay register
+int cmd_toggle_dac_pre_delay(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+
 #endif // DAC_COMMANDS_H
