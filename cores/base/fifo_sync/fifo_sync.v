@@ -8,6 +8,7 @@ module fifo_sync #(
 )(
   input  wire                   clk,
   input  wire                   resetn,
+  
   input  wire [DATA_WIDTH-1:0]  wr_data,
   input  wire                   wr_en,
   output wire                   full,

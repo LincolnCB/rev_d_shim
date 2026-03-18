@@ -192,7 +192,7 @@ class threshold_integrator_base:
             self.expected_chunk_size = 0
             self.expected_chunk_width = 0
         else:
-            self.expected_chunk_size = (2**self.expected_chunk_width) - 1
+            self.expected_chunk_size = (2**self.expected_chunk_width)
 
 
         # Assertions
@@ -227,7 +227,7 @@ class threshold_integrator_base:
                 break
         
         self.dut._log.info(f"Expected Chunk Size: {self.expected_chunk_size}")
-        self.dut._log.info(f"Current Chunk Size: {int(self.dut.chunk_size.value)}")
+        self.dut._log.info(f"Current Chunk Size: {int(self.dut.chunk_mask.value + 1)}")
 
         # Assertions
         assert int(self.dut.state.value) == 2, \
@@ -236,8 +236,8 @@ class threshold_integrator_base:
         assert int(self.dut.max_value.value) == self.driven_threshold_average_value * (self.driven_window_value >> 4), \
             f"Expected max_value: {self.driven_threshold_average_value * (self.driven_window_value >> 4)}, got: {int(self.dut.max_value.value)}"
         
-        assert int(self.dut.chunk_size.value) == self.expected_chunk_size, \
-            f"Expected chunk_size: {self.expected_chunk_size}, got: {int(self.dut.chunk_size.value)}"
+        assert int(self.dut.chunk_mask.value + 1) == self.expected_chunk_size, \
+            f"Expected chunk_size: {self.expected_chunk_size}, got: {int(self.dut.chunk_mask.value + 1)}"
         
         # Go to RUNNING state
         await RisingEdge(self.dut.clk)
@@ -252,8 +252,8 @@ class threshold_integrator_base:
         assert int(self.dut.state.value) == 3, \
             f"Expected state after sample_core_done: 3 (RUNNING), got: {int(self.dut.state.value)} ({self.get_state_name(self.dut.state.value)})"
         
-        assert int(self.dut.inflow_chunk_timer.value) == int(self.dut.chunk_size.value) << 4, \
-            f"Expected inflow_chunk_timer: {int(self.dut.chunk_size.value) << 4}, got: {int(self.dut.inflow_chunk_timer.value)}"
+        assert int(self.dut.inflow_chunk_timer.value) == (int(self.dut.chunk_mask.value + 1) << 4) - 1, \
+            f"Expected inflow_chunk_timer: {(int(self.dut.chunk_mask.value + 1) << 4) - 1}, got: {int(self.dut.inflow_chunk_timer.value)}"
         
         assert int(self.dut.outflow_timer.value) == int(self.dut.window.value) - 1, \
             f"Expected outflow_timer: {int(self.dut.window.value) - 1}, got: {int(self.dut.outflow_timer.value)}"
@@ -265,7 +265,7 @@ class threshold_integrator_base:
         self.dut._log.info(f"Window: {int(self.dut.window.value)}")
         self.dut._log.info(f"Threshold Average: {int(self.dut.threshold_average.value)}")
 
-        self.dut._log.info(f"Current Chunk Size: {int(self.dut.chunk_size.value)}")
+        self.dut._log.info(f"Current Chunk Size: {int(self.dut.chunk_mask.value + 1)}")
         self.dut._log.info(f"Expected Chunk Size: {self.expected_chunk_size}")
 
         self.dut._log.info(f"Current Chunk Width: {int(self.dut.chunk_width.value)}")
@@ -304,7 +304,7 @@ class threshold_integrator_base:
         constructed_abs_sample_concat = 0
 
         # Initiliaze previous values for scoreboard
-        previous_inflow_chunk_timer_value = int(self.dut.chunk_size.value) << 4
+        previous_inflow_chunk_timer_value = {(int(self.dut.chunk_mask.value + 1) << 4) - 1}
         previous_outflow_timer_value = int(self.dut.window.value) - 1
 
         previous_inflow_value = [0] * 8
@@ -425,21 +425,21 @@ class threshold_integrator_base:
                             f"Expected inflow_chunk_sum[{i}] to be reset to 0, got: {int(self.dut.inflow_chunk_sum[i].value)}"
                     
                     # When previous_inflow_chunk_timer_value is 0, it means we are at the start of a new chunk so:
-                    # Inflow chunk timer should be set to chunk_size << 4
-                    assert int(self.dut.inflow_chunk_timer.value) == self.expected_chunk_size << 4, \
-                        f"Expected inflow_chunk_timer: {self.expected_chunk_size << 4}, got: {int(self.dut.inflow_chunk_timer.value)}"
+                    # Inflow chunk timer should be set to (chunk_size << 4) - 1
+                    assert int(self.dut.inflow_chunk_timer.value) == (self.expected_chunk_size << 4) - 1, \
+                        f"Expected inflow_chunk_timer: {(self.expected_chunk_size << 4) - 1}, got: {int(self.dut.inflow_chunk_timer.value)}"
                     # FIFO in queue count should be set to 8
                     assert int(self.dut.fifo_in_queue_count.value) == 8, \
                         f"Expected fifo_in_queue_count: 8, got: {int(self.dut.fifo_in_queue_count.value)}"
 
             ## Outflow Logic Scoreboard
 
-            # When previous_outflow_timer_value is 0, outflow_timer should be set to chunk_size << 4
+            # When previous_outflow_timer_value is 0, outflow_timer should be set to (chunk_size << 4) - 1
             # And outflow_value[i], outflow_value_plus_one[i] and outflow_remainder[i] should be available with correct values
             # This is when chunk sums will have exited the FIFO   
             if previous_outflow_timer_value == 0:
-                assert int(self.dut.outflow_timer.value) == self.expected_chunk_size << 4, \
-                    f"Expected outflow_timer: {self.expected_chunk_size << 4}, got: {int(self.dut.outflow_timer.value)}"
+                assert int(self.dut.outflow_timer.value) == (self.expected_chunk_size << 4) - 1, \
+                    f"Expected outflow_timer: {(self.expected_chunk_size << 4) - 1}, got: {int(self.dut.outflow_timer.value)}"
                 
                 for i in range(8):
                     # Model the outflow values based on DUT
@@ -447,7 +447,7 @@ class threshold_integrator_base:
                     self.expected_number_of_elements_in_fifo -= 1
                     expected_outflow_value[i] = expected_fifo_out_chunk_sum[i] >> self.expected_chunk_width
                     expected_outflow_value_plus_one[i] = (expected_fifo_out_chunk_sum[i] >> self.expected_chunk_width) + 1
-                    expected_outflow_remainder[i] = expected_fifo_out_chunk_sum[i] & self.expected_chunk_size
+                    expected_outflow_remainder[i] = expected_fifo_out_chunk_sum[i] & (self.expected_chunk_size - 1)
 
                     # Real average of outflow value
                     expected_float_outflow_value[i] = expected_fifo_out_chunk_sum[i] / (2**self.expected_chunk_width)
@@ -553,8 +553,8 @@ class threshold_integrator_base:
                 else:
                     return False
 
-        chunk_size = (2**chunk_width) - 1
-        inflow_chunk_timer = chunk_size << 4
+        chunk_size = (2**chunk_width)
+        inflow_chunk_timer = (chunk_size << 4) - 1
 
         self.dut._log.info(f"Window: {window}")
         self.dut._log.info(f"Chunk Width: {chunk_width}")

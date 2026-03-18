@@ -392,13 +392,11 @@ async def example_simulation(dut):
 
     # Build a sequence of commands to simulate
     cmd_word_list = []
-    cmd_word_list.append(tb.build_dac_wr_ch(0, 500))
-    cmd_word_list.append(tb.build_dac_wr_ch(1, 1000))
-    cmd_word_list.append(tb.build_dac_wr_ch(2, 1500))
-    cmd_word_list.append(tb.build_dac_wr_ch(3, 2000))
-    cmd_word_list.append(tb.build_noop(trig_wait=1, cont=0, ldac=1, value=10))
-    cmd_word_list.append(tb.build_set_cal(ch=0, cal_signed_16=-500))
-    cmd_word_list.append(tb.build_get_cal(ch=0))
+    for ch in range(8):
+        for it in range(5):
+            value = -3000 + it * 1500 # Example values for testing
+            cmd_word_list.append(tb.build_dac_wr_ch(ch, value))
+        cmd_word_list.append(tb.build_dac_wr_ch(ch, 0)) # Reset to 0 after the sequence
 
     simulation_task = cocotb.start_soon(tb.simulate_dut(cmd_word_list, clk_cycles=1000))
     await simulation_task

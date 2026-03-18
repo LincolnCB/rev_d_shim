@@ -231,9 +231,9 @@ module ad5676_dac_ctrl #(
         do_ldac <= cmd_word[LDAC_BIT];
         wait_for_trig <= cmd_word[TRIG_BIT];
         expect_next <= cmd_word[CONT_BIT];
-      // For immediate write commands, always set do_ldac to 1, wait_for_trig to 1, and expect_next to 0
+      // For immediate write commands, always set do_ldac to 0, wait_for_trig to 1, and expect_next to 0
       end else if (command == CMD_DAC_WR_CH || command == CMD_ZERO) begin
-        do_ldac <= 1'b1;
+        do_ldac <= 1'b0;
         wait_for_trig <= 1'b1;
         expect_next <= 1'b0;
       // Otherwise set flags to 0
@@ -452,7 +452,7 @@ module ad5676_dac_ctrl #(
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) abs_dac_val_concat <= 120'd0; // Reset concatenation on reset or error
     // Concatenate absolute DAC values as LDAC is asserted
-    else if (do_ldac && cmd_done) begin
+    else if (cmd_done && (do_ldac || state == S_DAC_WR_CH)) begin
       abs_dac_val_concat <= {abs_dac_val[7][14:0], abs_dac_val[6][14:0], abs_dac_val[5][14:0], 
                              abs_dac_val[4][14:0], abs_dac_val[3][14:0], abs_dac_val[2][14:0], 
                              abs_dac_val[1][14:0], abs_dac_val[0][14:0]};

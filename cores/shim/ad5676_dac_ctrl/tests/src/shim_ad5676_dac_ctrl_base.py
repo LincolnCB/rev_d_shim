@@ -73,6 +73,7 @@ class shim_ad5676_dac_ctrl_base:
         # Initialize input signals
         self.dut.boot_test_skip.value = 1
         self.dut.debug.value = 0
+        self.dut.do_pre_delay.value = 1
         self.dut.n_cs_high_time.value = 16
         self.dut.cal_init_val.value = 0
         self.dut.cmd_buf_word.value = 0

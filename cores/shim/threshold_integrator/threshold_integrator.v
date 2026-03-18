@@ -18,35 +18,38 @@ module threshold_integrator (
 );
 
   //// Internal signals
-  reg [43:0] max_value           ;
-  reg [ 4:0] chunk_width         ;
-  reg [24:0] chunk_size          ;
-  reg [24:0] inflow_chunk_timer  ;
-  reg [31:0] outflow_timer       ;
-  reg [ 3:0] fifo_in_queue_count ;
-  reg [35:0] fifo_din            ;
-  wire       fifo_full           ;
-  wire       wr_en               ;
-  reg [ 3:0] fifo_out_queue_count;
-  wire[35:0] fifo_dout           ;
-  wire       fifo_empty          ;
-  wire       rd_en               ;
-  wire[ 7:0] channel_over_thresh ;
-  reg [ 2:0] state               ;
-  wire[14:0] inflow_value              [0:7];
-  reg [35:0] inflow_chunk_sum          [0:7];
-  reg [35:0] queued_fifo_in_chunk_sum  [0:7];
-  reg [35:0] queued_fifo_out_chunk_sum [0:7];
-  reg [14:0] outflow_value             [0:7];
-  reg [15:0] outflow_value_plus_one    [0:7];
-  reg [19:0] outflow_remainder         [0:7];
-  reg signed [16:0] sum_delta          [0:7];
-  reg signed [44:0] total_sum          [0:7];
+  reg  [43:0] max_value           ;
+  reg  [ 4:0] chunk_width         ;
+  reg  [24:0] chunk_mask          ;
+  reg  [24:0] timer_init_value    ;
+  reg  [24:0] inflow_chunk_timer  ;
+  reg  [31:0] outflow_timer       ;
+  reg  [ 3:0] fifo_in_queue_count ;
+  reg  [35:0] fifo_din            ;
+  wire        fifo_full           ;
+  wire        wr_en               ;
+  reg  [ 3:0] fifo_out_queue_count;
+  wire [35:0] fifo_dout           ;
+  wire        fifo_empty          ;
+  wire        rd_en               ;
+  wire [ 7:0] channel_over_thresh ;
+  reg  [ 2:0] state               ;
+  wire [14:0] inflow_value              [0:7];
+  reg  [35:0] inflow_chunk_sum          [0:7];
+  reg  [35:0] queued_fifo_in_chunk_sum  [0:7];
+  reg  [35:0] queued_fifo_out_chunk_sum [0:7];
+  reg  [14:0] outflow_value             [0:7];
+  reg  [15:0] outflow_value_plus_one    [0:7];
+  reg  [24:0] outflow_remainder         [0:7];
+  reg  signed [16:0] sum_delta          [0:7];
+  reg  signed [44:0] total_sum          [0:7];
+  wire        calc_sum_delta;
+  reg         add_sum_delta;
 
   // Registers for shift-add multiplication
-  reg [43:0] window_reg;
-  reg [14:0] threshold_average_shift;
-  reg [ 4:0] max_value_mult_cnt;
+  reg  [43:0] window_reg;
+  reg  [14:0] threshold_average_shift;
+  reg  [ 4:0] max_value_mult_cnt;
 
   //// State encoding
   localparam  IDLE          = 3'd0,
@@ -64,12 +67,18 @@ module threshold_integrator (
   rolling_sum_mem (
     .clk(clk),
     .resetn(resetn),
+
     .wr_data(fifo_din),
     .wr_en(wr_en),
     .full(fifo_full),
+    .almost_full(),
+
+    .fifo_count(),
+
     .rd_data(fifo_dout),
     .rd_en(rd_en),
-    .empty(fifo_empty)
+    .empty(fifo_empty),
+    .almost_empty()
   );
 
   //// FIFO I/O
@@ -82,6 +91,7 @@ module threshold_integrator (
   end
   assign wr_en = (fifo_in_queue_count != 0);
   assign rd_en = (fifo_out_queue_count != 0);
+  assign calc_sum_delta = (outflow_timer[3:0] == 0);
 
   //// Global logic
   always @(posedge clk) begin : global_logic
@@ -90,7 +100,8 @@ module threshold_integrator (
       // Zero all individual signals
       max_value <= 0;
       chunk_width <= 0;
-      chunk_size <= 0;
+      chunk_mask <= 0;
+      timer_init_value <= 0;
       inflow_chunk_timer <= 0;
       outflow_timer <= 0;
       fifo_in_queue_count <= 0;
@@ -115,7 +126,7 @@ module threshold_integrator (
         // IDLE state, waiting for enable signal
         IDLE: begin
           if (enable) begin
-            // Calculate chunk_size: (MSB index of window) - 10
+            // Calculate chunk size: (MSB index of window) - 10
             if (window < 32'd2048) begin // window is too small, disallowed
               over_thresh <= 1;
               state <= OUT_OF_BOUNDS;
@@ -166,7 +177,7 @@ module threshold_integrator (
               end
 
               // Prepare for shift-add multiplication in SETUP
-              window_reg <= window >> 4; // Only adding every 16th clock cycle
+              window_reg <= {12'b0, window >> 4}; // Only adding every 16th clock cycle
               threshold_average_shift <= threshold_average;
               max_value_mult_cnt <= 0;
 
@@ -184,8 +195,9 @@ module threshold_integrator (
             end
             threshold_average_shift <= threshold_average_shift >> 1;
             max_value_mult_cnt <= max_value_mult_cnt + 1;
-          end else begin // Finished shift-add multiplication, set chunk size from chunk width and go to WAIT for sample core
-            chunk_size <= (25'b1 << chunk_width) - 1;
+          end else begin // Finished shift-add multiplication, set chunk mask / timer init from chunk width and go to WAIT for sample core
+            chunk_mask <= (25'b1 << chunk_width) - 1;
+            timer_init_value <= (25'b1 << (chunk_width + 4)) - 1;
             state <= WAIT;
           end
         end // SETUP
@@ -194,7 +206,7 @@ module threshold_integrator (
         WAIT: begin
           if (sample_core_done) begin
             // Initialize timers
-            inflow_chunk_timer <= chunk_size << 4;
+            inflow_chunk_timer <= timer_init_value;
             outflow_timer <= window - 1;
             setup_done <= 1;
             state <= RUNNING;
@@ -222,7 +234,7 @@ module threshold_integrator (
 
           // Inflow timer
           if (inflow_chunk_timer == 0) begin // Reset inflow chunk timer
-            inflow_chunk_timer <= chunk_size << 4;
+            inflow_chunk_timer <= timer_init_value;
             fifo_in_queue_count <= 8;
           end else begin
             inflow_chunk_timer <= inflow_chunk_timer - 1;
@@ -241,13 +253,20 @@ module threshold_integrator (
             end
             outflow_timer <= outflow_timer - 1;
           end else begin
-            outflow_timer <= chunk_size << 4;
+            outflow_timer <= {7'b0, timer_init_value};
           end // Outflow timer
 
           // Outflow FIFO counter
           if (fifo_out_queue_count != 0) begin
             // FIFO pop is done in the per-channel logic below
             fifo_out_queue_count <= fifo_out_queue_count - 1;
+          end
+
+          // Sume delta calculation timing logic
+          if (calc_sum_delta) begin
+            add_sum_delta <= 1;
+          end else begin
+            add_sum_delta <= 0;
           end
 
         end // RUNNING
@@ -260,6 +279,10 @@ module threshold_integrator (
           // Stop everything until reset
         end // ERROR
 
+        default: begin : default_state_error
+          state <= ERROR;
+        end
+
       endcase // state
     end
   end // Global logic
@@ -268,7 +291,7 @@ module threshold_integrator (
   genvar i;
   generate // Per-channel logic generate
     for (i = 0; i < 8; i = i + 1) begin : channel_loop
-      assign channel_over_thresh[i] = (total_sum[i] > max_value) ? 1 : 0;
+      assign channel_over_thresh[i] = (total_sum[i] > $signed({1'b0, max_value})) ? 1 : 0;
       assign inflow_value[i] = abs_sample_concat[((i+1)*15)-1 -: 15];
 
       always @(posedge clk) begin : channel_logic
@@ -289,10 +312,10 @@ module threshold_integrator (
           if (inflow_chunk_timer[3:0] == 0) begin
             // Inflow addition logic
             if (inflow_chunk_timer != 0) begin // Add to chunk sum
-              inflow_chunk_sum[i] <= inflow_chunk_sum[i] + inflow_value[i];
+              inflow_chunk_sum[i] <= inflow_chunk_sum[i] + {21'b0, inflow_value[i]};
             end else begin // Add to chunk sum and move into FIFO queue. Reset chunk sum
-              queued_fifo_in_chunk_sum[i] <= inflow_chunk_sum[i] + inflow_value[i];
-              inflow_chunk_sum[i] <= 0;
+              queued_fifo_in_chunk_sum[i] <= inflow_chunk_sum[i];
+              inflow_chunk_sum[i] <= {21'b0, inflow_value[i]};
             end
           end
 
@@ -304,20 +327,20 @@ module threshold_integrator (
 
           // Move queued chunks in to outflow value and remainder
           if (outflow_timer == 0) begin
-            outflow_value[i] <= queued_fifo_out_chunk_sum[i] >> chunk_width;
-            outflow_value_plus_one[i] <= (queued_fifo_out_chunk_sum[i] >> chunk_width) + 1;
-            // Calculate remainder: Note that chunk_size is (25'b1 << chunk_width) - 1, so it can be used to mask out the remainder
-            outflow_remainder[i] <= queued_fifo_out_chunk_sum[i] & chunk_size;
+            outflow_value[i] <= queued_fifo_out_chunk_sum[i][{1'b0, chunk_width} +: 15];
+            outflow_value_plus_one[i] <= {1'b0, queued_fifo_out_chunk_sum[i][{1'b0, chunk_width} +: 15]} + 1;
+            // Calculate remainder by masking out by chunk_mask
+            outflow_remainder[i] <= queued_fifo_out_chunk_sum[i][24:0] & chunk_mask;
           end // FIFO out queue
 
           //// Sum logic
           // Pipeline the delta to the running total
-          if (outflow_timer[3:0] == 0) begin // Only add every 16th clock cycle
+          if (calc_sum_delta) begin // Only add every 16th clock cycle
             sum_delta[i] <= ((outflow_timer >> 4) < outflow_remainder[i])
                     ? $signed({2'b00, inflow_value[i]}) - $signed({1'b0, outflow_value_plus_one[i]})
                     : $signed({2'b00, inflow_value[i]}) - $signed({2'b00, outflow_value[i]});
-          end else if (outflow_timer[3:0] == 4'd15) begin // Add the sum delta to the total sum one cyle after it's calculated
-            total_sum[i] <= total_sum[i] + sum_delta[i];
+          end else if (add_sum_delta) begin // Add the sum delta to the total sum one cyle after it's calculated
+            total_sum[i] <= total_sum[i] + {{28{sum_delta[i][16]}}, sum_delta[i]};
           end // Sum logic
         end // RUNNING
       end // channel_running

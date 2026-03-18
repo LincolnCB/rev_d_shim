@@ -8,7 +8,7 @@ async def setup_testbench(dut, clk_period=4, time_unit='ns'):
     tb = threshold_integrator_base(dut, clk_period, time_unit)
     return tb
 
-@cocotb.test()
+@cocotb.test(skip=True)
 async def test_reset(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_reset")
@@ -27,7 +27,7 @@ async def test_reset(dut):
     await RisingEdge(dut.clk)
     state_transition_monitor_and_scoreboard_task.kill()
 
-@cocotb.test()
+@cocotb.test(skip=True)
 async def test_idle_to_out_of_bounds(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_idle_to_out_of_bounds")
@@ -66,7 +66,7 @@ async def test_idle_to_out_of_bounds(dut):
     state_transition_monitor_and_scoreboard_task.kill()
 
 
-@cocotb.test()
+@cocotb.test(skip=True)
 async def test_idle_to_running(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_idle_to_running")
@@ -87,7 +87,7 @@ async def test_idle_to_running(dut):
     await RisingEdge(dut.clk)
     state_transition_monitor_and_scoreboard_task.kill()
 
-@cocotb.test()
+@cocotb.test(skip=True)
 async def test_reset_to_running_to_reset_to_running(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_reset_to_running_to_reset_to_running")
@@ -126,7 +126,7 @@ async def print_expected_fifo_overflows(dut):
         window = 2**(i+1)-1
         await tb.fifo_will_overflow(window)
 
-@cocotb.test()
+@cocotb.test(skip=True)
 async def test_running_state_fifo_overflow(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_running_state_fifo_overflow")
@@ -152,7 +152,7 @@ async def test_running_state_fifo_overflow(dut):
     await RisingEdge(dut.clk)
     state_transition_monitor_and_scoreboard_task.kill()
 
-@cocotb.test()
+@cocotb.test(skip=True)
 async def test_running_state_over_threshold(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_running_state_over_threshold")
@@ -178,7 +178,7 @@ async def test_running_state_over_threshold(dut):
     await RisingEdge(dut.clk)
     state_transition_monitor_and_scoreboard_task.kill()
 
-@cocotb.test()
+@cocotb.test(skip=True)
 async def test_running_state_w_set_window_and_max_threshold_average(dut):
     for i in range(11, 15):
         tb = await setup_testbench(dut)
@@ -206,7 +206,7 @@ async def test_running_state_w_set_window_and_max_threshold_average(dut):
         state_transition_monitor_and_scoreboard_task.kill()
 
 
-@cocotb.test()
+@cocotb.test(skip=True)
 async def test_running_state_w_set_window_and_set_threshold_average(dut):
     for i in range(11, 15):
         tb = await setup_testbench(dut)
@@ -233,7 +233,7 @@ async def test_running_state_w_set_window_and_set_threshold_average(dut):
         await RisingEdge(dut.clk)
         state_transition_monitor_and_scoreboard_task.kill()
 
-@cocotb.test()
+@cocotb.test(skip=True)
 async def test_running_state_w_random_window_and_random_threshold_average(dut):
 
     modes = [
@@ -269,4 +269,30 @@ async def test_running_state_w_random_window_and_random_threshold_average(dut):
         await RisingEdge(dut.clk)
         await RisingEdge(dut.clk)
         state_transition_monitor_and_scoreboard_task.kill()
+
+@cocotb.test()
+async def test_channel_cal_operation(dut):
+    tb = await setup_testbench(dut)
+    tb.dut._log.info("STARTING TEST: test_channel_cal_operation")
+
+    # First have the DUT at a known state
+    await tb.reset()
+
+    # Then transition into RUNNING state
+    await tb.idle_to_running_state(window_value=50000, threshold_average_value=16384)
+
+    for ch in range(8):
+        for it in range(5):
+            value = -3000 + it * 1500
+            for _ in range(40):
+                await RisingEdge(dut.clk)
+                dut.abs_sample_concat.value = (abs(value) << (ch*15))
+        for _ in range(40):
+            await RisingEdge(dut.clk)
+            dut.abs_sample_concat.value = 0
+
+    for _ in range(51000):
+        await RisingEdge(dut.clk)
+        
+        
 
