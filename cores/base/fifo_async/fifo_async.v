@@ -107,7 +107,7 @@ module fifo_async #(
 
   // Synchronize pointers across clock domains
   // Use double-flop synchronizers for wr_ptr in read clock domain
-  reg [ADDR_WIDTH:0] wr_ptr_gray_rd_clk_sync1, wr_ptr_gray_rd_clk_sync2;
+  (* ASYNC_REG = "TRUE" *) reg [ADDR_WIDTH:0] wr_ptr_gray_rd_clk_sync1, wr_ptr_gray_rd_clk_sync2;
   always @(posedge rd_clk or negedge rd_rst_n) begin
     if (!rd_rst_n) begin
       wr_ptr_gray_rd_clk_sync1 <= 0;
@@ -121,7 +121,7 @@ module fifo_async #(
   assign wr_ptr_bin_rd_clk = gray_to_binary(wr_ptr_gray_rd_clk_sync2);
 
   // Use double-flop synchronizers for rd_ptr in write clock domain
-  reg [ADDR_WIDTH:0] rd_ptr_gray_wr_clk_sync1, rd_ptr_gray_wr_clk_sync2;
+  (* ASYNC_REG = "TRUE" *) reg [ADDR_WIDTH:0] rd_ptr_gray_wr_clk_sync1, rd_ptr_gray_wr_clk_sync2;
   always @(posedge wr_clk or negedge wr_rst_n) begin
     if (!wr_rst_n) begin
       rd_ptr_gray_wr_clk_sync1 <= 0;

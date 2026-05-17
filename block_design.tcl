@@ -312,7 +312,7 @@ addr 0x40200000 2048 spi_clk/s_axi_lite ps/M_AXI_GP0
 cell shim:user:clock_divider spi_clk_divider {} {
   clk_i spi_clk/clk_out1
 }
-  
+
 
 ###############################################################################
 
@@ -320,7 +320,7 @@ cell shim:user:clock_divider spi_clk_divider {} {
 ## ~~~~~~~~~~~~ TODO ~~~~~~~~~~~~
 #  Replace with AXI snoop of clk
 ## ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-## Constant block for SPI clock frequency in Hz
+## Constant block for SPI clock frequency in z
 cell xilinx.com:ip:xlconstant:1.1 spi_clk_freq_hz_const {
   CONST_VAL [expr {int($spi_clk_freq_mhz * 1000000 + 0.5)}]
   CONST_WIDTH 32
