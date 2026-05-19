@@ -53,7 +53,7 @@ module spi_cfg_sync (
   // SPI enable (incoherent)
   sync_incoherent #(
     .WIDTH(1),
-    .DEPTH(5) // Use deeper synchronizer to give extra delay for this signal
+    .DEPTH(4) // Use deeper synchronizer to give extra delay for this signal
   ) sync_spi_en (
     .clk(spi_clk),
     .resetn(spi_resetn),

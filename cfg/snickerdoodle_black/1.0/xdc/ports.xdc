@@ -311,6 +311,6 @@ set_property PACKAGE_PIN U20 [get_ports {n_MOSI_SCK_n[0]}]
 # Internal clock constraints
 #------------------------------------------------------------
 
-set_clock_groups -name clk_group_spi_gen -asynchronous -group [get_clocks {*system_spi_clk* clk_div8}]
 set_clock_groups -name clk_group_scanner -asynchronous -group [get_clocks Scanner_30MHz_In]
 set_clock_groups -name clk_group_fpga -asynchronous -group [get_clocks clk_fpga_0]
+set_clock_groups -logically_exclusive -group [get_clocks -of_object [get_pins -hierarchical spi_main_clk/clk_out1]] -group [get_clocks -of_object [get_pins -hierarchical spi_boot_clk/clk_out1]]

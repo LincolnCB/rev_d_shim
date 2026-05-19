@@ -274,7 +274,7 @@ if {$use_ext_clk} {
   # MMCM (handles down to 10 MHz input)
   # Includes power down and dynamic reconfiguration
   # Safe clock startup prevents clock output when not locked
-  cell xilinx.com:ip:clk_wiz:6.0 spi_clk {
+  cell xilinx.com:ip:clk_wiz:6.0 spi_main_clk {
     PRIMITIVE MMCM
     USE_DYN_RECONFIG true
     USE_SAFE_CLOCK_STARTUP true
@@ -288,10 +288,25 @@ if {$use_ext_clk} {
     s_axi_lite sys_cfg_axi_intercon/M02_AXI
     clk_in1 Scanner_30MHz_In
   }
+  # SPI boot clock (locked to 5 MHz for DAC boot)
+  cell xilinx.com:ip:clk_wiz:6.0 spi_boot_clk {
+    PRIMITIVE MMCM
+    USE_DYN_RECONFIG false
+    USE_SAFE_CLOCK_STARTUP true
+    PRIM_IN_FREQ 30
+    CLKOUT1_REQUESTED_OUT_FREQ 5
+    FEEDBACK_SOURCE FDBK_AUTO
+    CLKOUT1_DRIVES BUFGCE
+    RESET_PORT resetn
+    RESET_TYPE ACTIVE_LOW
+  } {
+    resetn ps_rst/peripheral_aresetn
+    clk_in1 Scanner_30MHz_In
+  }
 } else {
   # Use FCLK_CLK0 as the clock input
   # (Vivado gives 99999893 Hz as the actual generated frequency)
-  cell xilinx.com:ip:clk_wiz:6.0 spi_clk {
+  cell xilinx.com:ip:clk_wiz:6.0 spi_main_clk {
     PRIMITIVE MMCM
     USE_DYN_RECONFIG true
     USE_SAFE_CLOCK_STARTUP true
@@ -305,12 +320,27 @@ if {$use_ext_clk} {
     s_axi_lite sys_cfg_axi_intercon/M02_AXI
     clk_in1 ps/FCLK_CLK0
   }
+  cell xilinx.com:ip:clk_wiz:6.0 spi_boot_clk {
+    PRIMITIVE MMCM
+    USE_DYN_RECONFIG false
+    USE_SAFE_CLOCK_STARTUP true
+    PRIM_IN_FREQ 99.999893
+    CLKOUT1_REQUESTED_OUT_FREQ 5
+    FEEDBACK_SOURCE FDBK_AUTO
+    CLKOUT1_DRIVES BUFGCE
+    RESET_PORT resetn
+    RESET_TYPE ACTIVE_LOW
+  } {
+    resetn ps_rst/peripheral_aresetn
+    clk_in1 ps/FCLK_CLK0
+  }
 }
-addr 0x40200000 2048 spi_clk/s_axi_lite ps/M_AXI_GP0
+addr 0x40200000 2048 spi_main_clk/s_axi_lite ps/M_AXI_GP0
 
-## SPI clock output slowdown divider for DAC boot test
-cell shim:user:clock_divider spi_clk_divider {} {
-  clk_i spi_clk/clk_out1
+## SPI clock mux between bootup and main clock
+cell base:user:clock_mux spi_clk {} {
+  clk_0_i spi_main_clk/clk_out1
+  clk_1_i spi_boot_clk/clk_out1
 }
 
 
@@ -380,7 +410,7 @@ cell xilinx.com:ip:util_vector_logic lock_viol_or {
 module spi_clk_domain spi_clk_domain {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
-  spi_clk spi_clk_divider/clk_o
+  spi_clk spi_clk/clk_o
   spi_en hw_manager/spi_en
   integ_thresh_avg axi_sys_ctrl/integ_thresh_avg
   integ_window axi_sys_ctrl/integ_window
@@ -394,7 +424,7 @@ module spi_clk_domain spi_clk_domain {
   dac_cal_init axi_sys_ctrl/dac_cal_init
   do_dac_pre_delay axi_sys_ctrl/do_dac_pre_delay
   spi_off hw_manager/spi_off
-  spi_off spi_clk_divider/slow_en
+  spi_off spi_clk/sel
   over_thresh hw_manager/over_thresh
   thresh_underflow hw_manager/thresh_underflow
   thresh_overflow hw_manager/thresh_overflow
@@ -427,7 +457,7 @@ module axi_spi_interface axi_spi_interface {
   aresetn ps_rst/peripheral_aresetn
   cmd_buf_reset axi_sys_ctrl/cmd_buf_reset
   data_buf_reset axi_sys_ctrl/data_buf_reset
-  spi_clk spi_clk_divider/clk_o
+  spi_clk spi_clk/clk_o
   S_AXI ps/M_AXI_GP1
 }
 ## Wire channel pins for the module
@@ -504,7 +534,7 @@ cell xilinx.com:ip:xlconcat:2.1 sts_concat {
   dout status_reg/sts_data
 }
 # Debug 1 tracks the following:
-#    0    --  1b SPI clock locked
+#    0    --  1b SPI main clock locked
 #    1    --  1b `spi_off` signal
 #  6 : 2  --  5b DAC ~CS high time
 # 14 : 7  --  8b ADC ~CS high time
@@ -516,7 +546,7 @@ cell xilinx.com:ip:xlconstant:1.1 pad_17 {
 cell xilinx.com:ip:xlconcat:2.1 debug_1 {
   NUM_PORTS 5
 } {
-  In0 spi_clk/locked
+  In0 spi_main_clk/locked
   In1 hw_manager/spi_off
   In2 dac_timing_calc/n_cs_high_time
   In3 adc_timing_calc/n_cs_high_time
@@ -563,7 +593,7 @@ cell xilinx.com:ip:xlconcat:2.1 irq_concat {
 
 ### Gate the SPI clocks (MISO and MOSI SCK)
 cell base:user:clock_gate spi_mosi_sck_gate {} {
-  clk spi_clk_divider/clk_o
+  clk spi_clk/clk_o
   en hw_manager/spi_clk_gate
 }
 cell base:user:clock_gate spi_miso_sck_gate {} {
