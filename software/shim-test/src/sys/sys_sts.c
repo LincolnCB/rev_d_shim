@@ -166,12 +166,6 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
       case STS_DEBUG_OOB:
         printf("Status: Debug out of bounds\n");
         break;
-      case STS_MOSI_SCK_POL_OOB:
-        printf("Status: MOSI SCK polarity out of bounds\n");
-        break;
-      case STS_MISO_SCK_POL_OOB:
-        printf("Status: MISO SCK polarity out of bounds\n");
-        break;
       case STS_SHUTDOWN_SENSE:
         printf("Status: Shutdown sense detected\n");
         print_board_number = true;

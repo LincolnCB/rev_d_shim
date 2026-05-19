@@ -21,10 +21,8 @@
 #define INTEG_ENABLE_OFFSET            (uint32_t) 6
 #define BOOT_TEST_SKIP_OFFSET          (uint32_t) 7
 #define DEBUG_OFFSET                   (uint32_t) 8
-#define MOSI_SCK_POL_OFFSET            (uint32_t) 9
-#define MISO_SCK_POL_OFFSET            (uint32_t) 10
-#define DAC_CAL_INIT_OFFSET            (uint32_t) 11
-#define DO_DAC_PRE_DELAY_OFFSET        (uint32_t) 12
+#define DAC_CAL_INIT_OFFSET            (uint32_t) 9
+#define DO_DAC_PRE_DELAY_OFFSET        (uint32_t) 10
 
 //////////////////////////////////////////////////////////////////
 
@@ -39,8 +37,6 @@ struct sys_ctrl_t {
   volatile uint32_t *integ_enable;            // Integrator enable
   volatile uint32_t *boot_test_skip;          // Boot test skip
   volatile uint32_t *debug;                   // Debug
-  volatile uint32_t *mosi_sck_pol;            // MOSI SCK polarity
-  volatile uint32_t *miso_sck_pol;            // MISO SCK polarity
   volatile uint32_t *dac_cal_init;            // DAC calibration init
   volatile uint32_t *do_dac_pre_delay;        // Do DAC pre-delay
 };
@@ -67,10 +63,6 @@ void sys_ctrl_set_integ_enable(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool
 void sys_ctrl_set_boot_test_skip(struct sys_ctrl_t *sys_ctrl, uint16_t value, bool verbose);
 // Set the debug register to a 16-bit value
 void sys_ctrl_set_debug(struct sys_ctrl_t *sys_ctrl, uint16_t value, bool verbose);
-// Invert the MOSI SCK polarity register
-void sys_ctrl_invert_mosi_sck(struct sys_ctrl_t *sys_ctrl, bool verbose);
-// Invert the MISO SCK polarity register
-void sys_ctrl_invert_miso_sck(struct sys_ctrl_t *sys_ctrl, bool verbose);
 // Set the DAC calibration init register to a 16-bit signed value
 void sys_ctrl_set_dac_cal_init(struct sys_ctrl_t *sys_ctrl, int16_t value, bool verbose);
 // Toggle the DAC pre-delay bit in the do_dac_pre_delay register

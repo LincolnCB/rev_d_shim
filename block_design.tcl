@@ -125,10 +125,10 @@ create_bd_port -dir I -from 7 -to 0 -type data ADC_MISO_n
 create_bd_port -dir I -from 7 -to 0 MISO_SCK_p
 # (SCKO-)
 create_bd_port -dir I -from 7 -to 0 MISO_SCK_n
-# (~SCKI+)
-create_bd_port -dir O -from 0 -to 0 n_MOSI_SCK_p
-# (~SCKI-)
-create_bd_port -dir O -from 0 -to 0 n_MOSI_SCK_n
+# (SCKI+)
+create_bd_port -dir O -from 0 -to 0 MOSI_SCK_p
+# (SCKI-)
+create_bd_port -dir O -from 0 -to 0 MOSI_SCK_n
 
 ###############################################################################
 
@@ -206,8 +206,6 @@ cell shim:user:axi_sys_ctrl axi_sys_ctrl {
   INTEG_THRESHOLD_AVERAGE_DEFAULT 16384
   INTEG_WINDOW_DEFAULT 5000000
   INTEG_EN_DEFAULT 1
-  MOSI_SCK_POL_DEFAULT 0
-  MISO_SCK_POL_DEFAULT 1
   DAC_CAL_INIT_DEFAULT 14
 } {
   aclk ps/FCLK_CLK0
@@ -238,8 +236,6 @@ cell shim:user:hw_manager hw_manager {
   integ_en_oob axi_sys_ctrl/integ_en_oob
   boot_test_skip_oob axi_sys_ctrl/boot_test_skip_oob
   debug_oob axi_sys_ctrl/debug_oob
-  mosi_sck_pol_oob axi_sys_ctrl/mosi_sck_pol_oob
-  miso_sck_pol_oob axi_sys_ctrl/miso_sck_pol_oob
   dac_cal_init_oob axi_sys_ctrl/dac_cal_init_oob
   unlock_cfg axi_sys_ctrl/unlock
   n_shutdown_force n_Shutdown_Force
@@ -288,13 +284,13 @@ if {$use_ext_clk} {
     s_axi_lite sys_cfg_axi_intercon/M02_AXI
     clk_in1 Scanner_30MHz_In
   }
-  # SPI boot clock (locked to 5 MHz for DAC boot)
+  # SPI boot clock (locked to 7 MHz for DAC boot)
   cell xilinx.com:ip:clk_wiz:6.0 spi_boot_clk {
-    PRIMITIVE MMCM
+    PRIMITIVE PLL
     USE_DYN_RECONFIG false
     USE_SAFE_CLOCK_STARTUP true
     PRIM_IN_FREQ 30
-    CLKOUT1_REQUESTED_OUT_FREQ 5
+    CLKOUT1_REQUESTED_OUT_FREQ 7.0
     FEEDBACK_SOURCE FDBK_AUTO
     CLKOUT1_DRIVES BUFGCE
     RESET_PORT resetn
@@ -321,11 +317,11 @@ if {$use_ext_clk} {
     clk_in1 ps/FCLK_CLK0
   }
   cell xilinx.com:ip:clk_wiz:6.0 spi_boot_clk {
-    PRIMITIVE MMCM
+    PRIMITIVE PLL
     USE_DYN_RECONFIG false
     USE_SAFE_CLOCK_STARTUP true
     PRIM_IN_FREQ 99.999893
-    CLKOUT1_REQUESTED_OUT_FREQ 5
+    CLKOUT1_REQUESTED_OUT_FREQ 7.0
     FEEDBACK_SOURCE FDBK_AUTO
     CLKOUT1_DRIVES BUFGCE
     RESET_PORT resetn
@@ -596,32 +592,13 @@ cell base:user:clock_gate spi_mosi_sck_gate {} {
   clk spi_clk/clk_o
   en hw_manager/spi_clk_gate
 }
-cell base:user:clock_gate spi_miso_sck_gate {} {
+cell base:user:clock_gate spi_miso_sck_gate {
+  WIDTH 8
+} {
   en hw_manager/spi_clk_gate
+  clk_o spi_clk_domain/miso_sck
 }
-## Potentially invert the clocks based on register settings
-cell xilinx.com:ip:util_vector_logic mosi_sck_pol {
-  C_SIZE 1
-  C_OPERATION xor
-} {
-  Op1 spi_mosi_sck_gate/clk_gated
-  Op2 axi_sys_ctrl/mosi_sck_pol
-}
-# Extend the MISO SCK polarity to 8 bits of the same value
-cell xilinx.com:ip:xlconcat:2.1 miso_sck_ext {
-  NUM_PORTS 8
-} {}
-for {set i 0} {$i < 8} {incr i} {
-  wire miso_sck_ext/In${i} spi_miso_sck_gate/clk_gated
-}
-cell xilinx.com:ip:util_vector_logic miso_sck_pol {
-  C_SIZE 8
-  C_OPERATION xor
-} {
-  Op1 miso_sck_ext/dout
-  Op2 axi_sys_ctrl/miso_sck_pol
-  Res spi_clk_domain/miso_sck
-}
+
 
 ### Create I/O buffers for differential signals
 module io_bufs io_bufs {
@@ -633,7 +610,7 @@ module io_bufs io_bufs {
   adc_mosi spi_clk_domain/adc_mosi
   adc_miso spi_clk_domain/adc_miso
   miso_sck spi_miso_sck_gate/clk
-  n_mosi_sck mosi_sck_pol/Res
+  mosi_sck spi_mosi_sck_gate/clk_o
   ldac_p LDAC_p
   ldac_n LDAC_n
   n_dac_cs_p n_DAC_CS_p
@@ -650,8 +627,8 @@ module io_bufs io_bufs {
   adc_miso_n ADC_MISO_n
   miso_sck_p MISO_SCK_p
   miso_sck_n MISO_SCK_n
-  n_mosi_sck_p n_MOSI_SCK_p
-  n_mosi_sck_n n_MOSI_SCK_n
+  mosi_sck_p MOSI_SCK_p
+  mosi_sck_n MOSI_SCK_n
 }
 
 ###############################################################################

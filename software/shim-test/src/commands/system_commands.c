@@ -231,19 +231,6 @@ int cmd_set_data_buf_reset(const char** args, int arg_count, const command_flag_
   return 0;
 }
 
-// SPI polarity commands
-int cmd_invert_mosi_clk(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  sys_ctrl_invert_mosi_sck(ctx->sys_ctrl, true);
-  printf("MOSI SCK polarity inverted.\n");
-  return 0;
-}
-
-int cmd_invert_miso_clk(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  sys_ctrl_invert_miso_sck(ctx->sys_ctrl, true);
-  printf("MISO SCK polarity inverted.\n");
-  return 0;
-}
-
 // SPI clock frequency commands
 int cmd_spi_clk_freq(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   uint32_t freq_hz = sys_sts_get_spi_clk_freq_hz(ctx->sys_sts, *(ctx->verbose));

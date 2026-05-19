@@ -39,9 +39,7 @@ class hw_manager_base:
         0x0207: "STS_INTEG_EN_OOB",
         0x0208: "STS_BOOT_TEST_SKIP_OOB",
         0x0209: "STS_DEBUG_OOB",
-        0x020A: "STS_MOSI_SCK_POL_OOB",
-        0x020B: "STS_MISO_SCK_POL_OOB",
-        0x020C: "STS_DAC_CAL_INIT_OOB",
+        0x020A: "STS_DAC_CAL_INIT_OOB",
         0x0300: "STS_SHUTDOWN_SENSE",
         0x0301: "STS_EXT_SHUTDOWN",
         0x0400: "STS_OVER_THRESH",
@@ -123,12 +121,10 @@ class hw_manager_base:
         self.dut.integ_en_oob.value = 0
         self.dut.boot_test_skip_oob.value = 0
         self.dut.debug_oob.value = 0
-        self.dut.mosi_sck_pol_oob.value = 0
-        self.dut.miso_sck_pol_oob.value = 0
         self.dut.dac_cal_init_oob.value = 0
 
         # Shutdown sense (8-bit per board)
-        self.dut.shutdown_sense.value = 0
+        self.dut.shutdown_sense_sts.value = 0
 
         # Integrator (8-bit per board)
         self.dut.over_thresh.value = 0
@@ -481,8 +477,6 @@ class hw_manager_base:
             prev_integ_en_oob = self.dut.integ_en_oob.value.integer
             prev_boot_test_skip_oob= self.dut.boot_test_skip_oob.value.integer
             prev_debug_oob= self.dut.debug_oob.value.integer
-            prev_mosi_sck_pol_oob= self.dut.mosi_sck_pol_oob.value.integer
-            prev_miso_sck_pol_oob= self.dut.miso_sck_pol_oob.value.integer
             prev_dac_cal_init_oob= self.dut.dac_cal_init_oob.value.integer
             await ReadOnly()
 
@@ -503,8 +497,6 @@ class hw_manager_base:
                     or prev_integ_en_oob
                     or prev_boot_test_skip_oob
                     or prev_debug_oob
-                    or prev_mosi_sck_pol_oob
-                    or prev_miso_sck_pol_oob
                     or prev_dac_cal_init_oob
                 ):
                     if(prev_ctrl_en_oob):
@@ -559,18 +551,6 @@ class hw_manager_base:
                         await self.check_state_and_status(
                             expected_state=self.get_state_value("S_HALTING"),
                             expected_status_code=self.get_status_value("STS_DEBUG_OOB")
-                        )
-                        break
-                    elif(prev_mosi_sck_pol_oob):
-                        await self.check_state_and_status(
-                            expected_state=self.get_state_value("S_HALTING"),
-                            expected_status_code=self.get_status_value("STS_MOSI_SCK_POL_OOB")
-                        )
-                        break
-                    elif(prev_miso_sck_pol_oob):
-                        await self.check_state_and_status(
-                            expected_state=self.get_state_value("S_HALTING"),
-                            expected_status_code=self.get_status_value("STS_MISO_SCK_POL_OOB")
                         )
                         break
                     elif(prev_dac_cal_init_oob):
@@ -684,7 +664,7 @@ class hw_manager_base:
                     expected_status_code=self.get_status_value("STS_PS_SHUTDOWN")
                 )
                 break
-            elif(expected_timer >= self.SHUTDOWN_RESET_DELAY):
+            elif(expected_timer >= self.SHUTDOWN_FORCE_DELAY):
                 await self.check_state_and_status(
                     expected_state=self.get_state_value("S_CONFIRM_SPI_START"),
                     expected_status_code=self.get_status_value("STS_OK")
@@ -903,7 +883,7 @@ class hw_manager_base:
                     expected_status_code=self.get_status_value("STS_PS_SHUTDOWN")
                 )
                 break
-            elif(expected_timer >= self.SHUTDOWN_FORCE_DELAY):
+            elif(expected_timer >= self.SHUTDOWN_RESET_DELAY):
                 await self.check_state_and_status(
                     expected_state=self.get_state_value("S_RUNNING"),
                     expected_status_code=self.get_status_value("STS_OK")
@@ -947,9 +927,7 @@ class hw_manager_base:
             prev_ctrl_en               = self.dut.ctrl_en.value.integer
             prev_pow_en                = self.dut.pow_en.value.integer
             prev_lock_viol             = self.dut.lock_viol.value.integer
-            prev_mosi_sck_pol_oob      = self.dut.mosi_sck_pol_oob.value.integer
-            prev_miso_sck_pol_oob      = self.dut.miso_sck_pol_oob.value.integer
-            prev_shutdown_sense        = self.dut.shutdown_sense.value.integer
+            prev_shutdown_sense_sts    = self.dut.shutdown_sense_sts.value.integer
             prev_ext_en                = self.dut.ext_en.value.integer
             prev_over_thresh           = self.dut.over_thresh.value.integer
             prev_thresh_underflow      = self.dut.thresh_underflow.value.integer
@@ -984,9 +962,7 @@ class hw_manager_base:
             elif (
                 not prev_ctrl_en or not prev_pow_en
                 or prev_lock_viol
-                or prev_mosi_sck_pol_oob
-                or prev_miso_sck_pol_oob
-                or prev_shutdown_sense
+                or prev_shutdown_sense_sts
                 or not prev_ext_en
                 or prev_over_thresh
                 or prev_thresh_underflow
@@ -1024,21 +1000,11 @@ class hw_manager_base:
                         expected_state=self.get_state_value("S_HALTING"),
                         expected_status_code=self.get_status_value("STS_LOCK_VIOL")
                     )
-                elif prev_mosi_sck_pol_oob:
-                    await self.check_state_and_status(
-                        expected_state=self.get_state_value("S_HALTING"),
-                        expected_status_code=self.get_status_value("STS_MOSI_SCK_POL_OOB")
-                    )
-                elif prev_miso_sck_pol_oob:
-                    await self.check_state_and_status(
-                        expected_state=self.get_state_value("S_HALTING"),
-                        expected_status_code=self.get_status_value("STS_MISO_SCK_POL_OOB")
-                    )
-                elif prev_shutdown_sense:
+                elif prev_shutdown_sense_sts:
                     await self.check_state_and_status(
                         expected_state=self.get_state_value("S_HALTING"),
                         expected_status_code=self.get_status_value("STS_SHUTDOWN_SENSE"),
-                        expected_board_num=self.extract_board_num(self.dut.shutdown_sense.value)
+                        expected_board_num=self.extract_board_num(self.dut.shutdown_sense_sts.value)
                     )
                 elif not prev_ext_en:
                     await self.check_state_and_status(

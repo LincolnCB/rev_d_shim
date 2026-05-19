@@ -64,8 +64,6 @@ static command_entry_t command_table[] = {
   {"set_integ_window", cmd_set_integ_window, {1, 1, {-1}, "Set integrator window register to a 32-bit value"}},
   {"set_integ_average", cmd_set_integ_average, {1, 1, {-1}, "Set integrator threshold average register to a 32-bit value"}},
   {"set_integ_enable", cmd_set_integ_enable, {1, 1, {-1}, "Set integrator enable register to a 32-bit value"}},
-  {"invert_mosi_clk", cmd_invert_mosi_clk, {0, 0, {-1}, "Invert MOSI SCK polarity register"}},
-  {"invert_miso_clk", cmd_invert_miso_clk, {0, 0, {-1}, "Invert MISO SCK polarity register"}},
   {"spi_clk_freq", cmd_spi_clk_freq, {0, 0, {-1}, "Show SPI clock frequency in MHz (and Hz if verbose)"}},
   {"get_min_delay_times", cmd_get_min_delay_times, {0, 0, {-1}, "Show minimum delay times for DAC and ADC in SPI clock cycles"}},
   

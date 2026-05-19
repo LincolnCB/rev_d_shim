@@ -96,8 +96,6 @@ async def test_idle_oob_errors(dut):
         ("integ_en_oob",         "STS_INTEG_EN_OOB"),
         ("boot_test_skip_oob",   "STS_BOOT_TEST_SKIP_OOB"),
         ("debug_oob",            "STS_DEBUG_OOB"),
-        ("mosi_sck_pol_oob",     "STS_MOSI_SCK_POL_OOB"),
-        ("miso_sck_pol_oob",     "STS_MISO_SCK_POL_OOB"),
         ("dac_cal_init_oob",     "STS_DAC_CAL_INIT_OOB"),
     ]
     for signal_name, status_name in oob_cases:
@@ -441,24 +439,6 @@ async def test_running_lock_viol(dut):
 
 
 @cocotb.test()
-async def test_running_mosi_sck_pol_oob(dut):
-    """S_RUNNING: mosi_sck_pol_oob → STS_MOSI_SCK_POL_OOB"""
-    tb = await setup_testbench(dut)
-    tb.dut._log.info("STARTING TEST: test_running_mosi_sck_pol_oob")
-    await _run_with_scoreboard(dut, tb,
-        _running_error_drive(tb, dut, "mosi_sck_pol_oob", 1))
-
-
-@cocotb.test()
-async def test_running_miso_sck_pol_oob(dut):
-    """S_RUNNING: miso_sck_pol_oob → STS_MISO_SCK_POL_OOB"""
-    tb = await setup_testbench(dut)
-    tb.dut._log.info("STARTING TEST: test_running_miso_sck_pol_oob")
-    await _run_with_scoreboard(dut, tb,
-        _running_error_drive(tb, dut, "miso_sck_pol_oob", 1))
-
-
-@cocotb.test()
 async def test_running_ext_en_low(dut):
     """S_RUNNING: ext_en drops → STS_EXT_SHUTDOWN"""
     tb = await setup_testbench(dut)
@@ -519,7 +499,7 @@ async def test_running_per_board_errors(dut):
       - board_num == board (lowest set bit)
     """
     per_board_cases = [
-        ("shutdown_sense",         "STS_SHUTDOWN_SENSE"),
+        ("shutdown_sense_sts",     "STS_SHUTDOWN_SENSE"),
         ("over_thresh",            "STS_OVER_THRESH"),
         ("thresh_underflow",       "STS_THRESH_UNDERFLOW"),
         ("thresh_overflow",        "STS_THRESH_OVERFLOW"),
@@ -586,7 +566,7 @@ async def test_running_ps_shutdown_priority_over_lock_viol(dut):
 
 @cocotb.test()
 async def test_running_lock_viol_priority_over_shutdown_sense(dut):
-    """S_RUNNING: lock_viol=1 + shutdown_sense=1 → STS_LOCK_VIOL wins"""
+    """S_RUNNING: lock_viol=1 + shutdown_sense_sts=1 → STS_LOCK_VIOL wins"""
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_running_lock_viol_priority_over_shutdown_sense")
 
@@ -594,8 +574,8 @@ async def test_running_lock_viol_priority_over_shutdown_sense(dut):
         await tb.reach_s_running()
         await RisingEdge(dut.clk)
         await ReadWrite()
-        dut.shutdown_sense.value = 0xFF
-        dut.lock_viol.value = 1         # higher priority than shutdown_sense
+        dut.shutdown_sense_sts.value = 0xFF
+        dut.lock_viol.value = 1         # higher priority than shutdown_sense_sts
         await tb._wait_for_state_rw(tb.get_state_value("S_HALTED"), "S_HALTED")
 
     await _run_with_scoreboard(dut, tb, drive())
@@ -603,7 +583,7 @@ async def test_running_lock_viol_priority_over_shutdown_sense(dut):
 
 @cocotb.test()
 async def test_running_shutdown_sense_priority_over_ext_en(dut):
-    """S_RUNNING: shutdown_sense=1 + ext_en=0 → STS_SHUTDOWN_SENSE wins"""
+    """S_RUNNING: shutdown_sense_sts=1 + ext_en=0 → STS_SHUTDOWN_SENSE wins"""
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_running_shutdown_sense_priority_over_ext_en")
 
@@ -612,7 +592,7 @@ async def test_running_shutdown_sense_priority_over_ext_en(dut):
         await RisingEdge(dut.clk)
         await ReadWrite()
         dut.ext_en.value = 0
-        dut.shutdown_sense.value = 0x01     # higher priority than ext_en
+        dut.shutdown_sense_sts.value = 0x01     # higher priority than ext_en
         await tb._wait_for_state_rw(tb.get_state_value("S_HALTED"), "S_HALTED")
 
     await _run_with_scoreboard(dut, tb, drive())
@@ -826,7 +806,6 @@ async def test_idle_oob_priority(dut):
         ("ctrl_en_oob",       "pow_en_oob",        "STS_CTRL_EN_OOB"),
         ("pow_en_oob",        "cmd_buf_reset_oob",  "STS_POW_EN_OOB"),
         ("cmd_buf_reset_oob", "data_buf_reset_oob", "STS_CMD_BUF_RESET_OOB"),
-        ("mosi_sck_pol_oob",  "miso_sck_pol_oob",  "STS_MOSI_SCK_POL_OOB"),
     ]
     for high_sig, low_sig, expected_status in priority_pairs:
         tb = await setup_testbench(dut)
@@ -940,45 +919,6 @@ async def test_wait_for_pow_en_stays_waiting(dut):
 # -----------------------------------------------------------------------------
 # S_RUNNING priority tests
 # -----------------------------------------------------------------------------
-
-@cocotb.test()
-async def test_running_mosi_priority_over_miso(dut):
-    """S_RUNNING: mosi_sck_pol_oob + miso_sck_pol_oob → STS_MOSI_SCK_POL_OOB wins"""
-    tb = await setup_testbench(dut)
-    tb.dut._log.info("STARTING TEST: test_running_mosi_priority_over_miso")
-    await tb.reset()
-
-    async def drive():
-        await tb.reach_s_running()
-        await RisingEdge(dut.clk)
-        await ReadWrite()
-        dut.miso_sck_pol_oob.value = 1
-        dut.mosi_sck_pol_oob.value = 1   # higher priority
-        await tb._wait_for_state_rw(tb.get_state_value("S_HALTED"), "S_HALTED")
-
-    await _run_with_scoreboard(dut, tb, drive())
-    dut.mosi_sck_pol_oob.value = 0
-    dut.miso_sck_pol_oob.value = 0
-
-
-@cocotb.test()
-async def test_running_miso_priority_over_shutdown_sense(dut):
-    """S_RUNNING: miso_sck_pol_oob + shutdown_sense → STS_MISO_SCK_POL_OOB wins"""
-    tb = await setup_testbench(dut)
-    tb.dut._log.info("STARTING TEST: test_running_miso_priority_over_shutdown_sense")
-
-    async def drive():
-        await tb.reach_s_running()
-        await RisingEdge(dut.clk)
-        await ReadWrite()
-        dut.shutdown_sense.value = 0x01
-        dut.miso_sck_pol_oob.value = 1   # higher priority
-        await tb._wait_for_state_rw(tb.get_state_value("S_HALTED"), "S_HALTED")
-
-    await _run_with_scoreboard(dut, tb, drive())
-    dut.miso_sck_pol_oob.value = 0
-    dut.shutdown_sense.value = 0
-
 
 @cocotb.test()
 async def test_running_ext_en_priority_over_over_thresh(dut):

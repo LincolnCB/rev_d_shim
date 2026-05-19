@@ -29,8 +29,6 @@ module hw_manager #(
   input   wire          integ_en_oob,         // Integrator enable register out of bounds
   input   wire          boot_test_skip_oob,   // Boot test skip out of bounds
   input   wire          debug_oob,            // Debug reg out of bounds
-  input   wire          mosi_sck_pol_oob,     // MOSI SCK polarity out of bounds
-  input   wire          miso_sck_pol_oob,     // MISO SCK polarity out of bounds
   input   wire          dac_cal_init_oob,     // DAC calibration initial value out of bounds
   // Shutdown sense (per board)
   input   wire  [ 7:0]  shutdown_sense_sts, // Shutdown sense
@@ -131,9 +129,7 @@ module hw_manager #(
               STS_INTEG_EN_OOB            = 25'h0207,
               STS_BOOT_TEST_SKIP_OOB      = 25'h0208,
               STS_DEBUG_OOB               = 25'h0209,
-              STS_MOSI_SCK_POL_OOB        = 25'h020A,
-              STS_MISO_SCK_POL_OOB        = 25'h020B,
-              STS_DAC_CAL_INIT_OOB        = 25'h020C;
+              STS_DAC_CAL_INIT_OOB        = 25'h020A;
   // Shutdown sense
   localparam  STS_SHUTDOWN_SENSE          = 25'h0300,
               STS_EXT_SHUTDOWN            = 25'h0301;
@@ -207,8 +203,6 @@ module hw_manager #(
               || integ_en_oob
               || boot_test_skip_oob
               || debug_oob
-              || mosi_sck_pol_oob
-              || miso_sck_pol_oob
               || dac_cal_init_oob
             ) begin
               if (ctrl_en_oob) begin // Control board enable out of bounds
@@ -238,12 +232,6 @@ module hw_manager #(
               end else if (debug_oob) begin // Debug reg out of bounds
                 state <= S_HALTING;
                 status_code <= STS_DEBUG_OOB;
-              end else if (mosi_sck_pol_oob) begin // MOSI SCK polarity out of bounds
-                state <= S_HALTING;
-                status_code <= STS_MOSI_SCK_POL_OOB;
-              end else if (miso_sck_pol_oob) begin // MISO SCK polarity out of bounds
-                state <= S_HALTING;
-                status_code <= STS_MISO_SCK_POL_OOB;
               end else if (dac_cal_init_oob) begin // DAC calibration initial value out of bounds
                 state <= S_HALTING;
                 status_code <= STS_DAC_CAL_INIT_OOB;
@@ -392,8 +380,6 @@ module hw_manager #(
               !ctrl_en || !pow_en
               // Pre-start configuration values
               || lock_viol
-              || mosi_sck_pol_oob
-              || miso_sck_pol_oob
               // Shutdown sense
               || |shutdown_sense_sts
               || !ext_en
@@ -431,8 +417,6 @@ module hw_manager #(
             if (!ctrl_en || !pow_en) status_code <= STS_PS_SHUTDOWN;
             // Pre-start configuration values
             else if (lock_viol) status_code <= STS_LOCK_VIOL;
-            else if (mosi_sck_pol_oob) status_code <= STS_MOSI_SCK_POL_OOB;
-            else if (miso_sck_pol_oob) status_code <= STS_MISO_SCK_POL_OOB;
             // Shutdown sense
             else if (|shutdown_sense_sts) begin
               status_code <= STS_SHUTDOWN_SENSE;

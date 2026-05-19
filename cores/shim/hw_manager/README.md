@@ -12,14 +12,16 @@ The `hw_manager` module manages the hardware system's startup, operation, and sh
   - `aresetn`: Active-low reset.
 
 - **System Control**
-  - `sys_en`: System enable (turn the system on).
+  - `ctrl_en`: Control board enable (turn the system on).
+  - `pow_en`: Power stage enable (turn on power stage).
   - `spi_off`: SPI system powered off.
   - `calc_n_cs_done`: DAC/ADC n_cs timing calculation done.
   - `ext_en`: External enable (deadman shutdown).
 
 - **Configuration Status**
   - `lock_viol`: Configuration lock violation.
-  - `sys_en_oob`: System enable register out of bounds.
+  - `ctrl_en_oob`: Control board enable register out of bounds.
+  - `pow_en_oob`: Power stage enable register out of bounds.
   - `cmd_buf_reset_oob`: Command buffer reset out of bounds.
   - `data_buf_reset_oob`: Data buffer reset out of bounds.
   - `integ_thresh_avg_oob`: Integrator threshold average out of bounds.
@@ -27,12 +29,10 @@ The `hw_manager` module manages the hardware system's startup, operation, and sh
   - `integ_en_oob`: Integrator enable register out of bounds.
   - `boot_test_skip_oob`: Boot test skip out of bounds.
   - `debug_oob`: Debug out of bounds.
-  - `mosi_sck_pol_oob`: MOSI SCK polarity out of bounds.
-  - `miso_sck_pol_oob`: MISO SCK polarity out of bounds.
   - `dac_cal_init_oob`: DAC calibration initial value out of bounds.
 
 - **Shutdown Sense**
-  - `shutdown_sense [7:0]`: Shutdown sense (per board).
+  - `shutdown_sense_sts [7:0]`: Shutdown sense (per board).
 
 - **Integrator Status**
   - `over_thresh [7:0]`: DAC over threshold (per board).
@@ -88,23 +88,24 @@ The `hw_manager` module manages the hardware system's startup, operation, and sh
 ### State Machine Overview
 
 The state machine states are encoded as follows:
-- `4'd1`: `S_IDLE` - Waits for `sys_en` to go high. Checks for out-of-bounds configuration values (`sys_en_oob`, `cmd_buf_reset_oob`, `data_buf_reset_oob`, `integ_thresh_avg_oob`, `integ_window_oob`, `integ_en_oob`, `boot_test_skip_oob`, `debug_oob`, `mosi_sck_pol_oob`, `miso_sck_pol_oob`, `dac_cal_init_oob`). If any OOB condition is detected, transitions to `S_HALTING` with the corresponding status code and asserts `ps_interrupt`. If all checks pass, locks configuration and powers up the SPI clock.
+- `4'd1`: `S_IDLE` - Waits for `ctrl_en` to go high. Checks out-of-bounds configuration values (`ctrl_en_oob`, `pow_en_oob`, `cmd_buf_reset_oob`, `data_buf_reset_oob`, `integ_thresh_avg_oob`, `integ_window_oob`, `integ_en_oob`, `boot_test_skip_oob`, `debug_oob`, `dac_cal_init_oob`). If any OOB condition is detected, transitions to `S_HALTING` with the corresponding status code. If checks pass, locks configuration and transitions to SPI reset confirmation.
 - `4'd2`: `S_CONFIRM_SPI_RST` - Makes sure the SPI system is powered off (`spi_off`). If not powered off within `SPI_RESET_WAIT`, transitions to `S_HALTING` with a timeout status.
 - `4'd3`: `S_POWER_ON_CRTL_BRD` - Releases shutdown force (`n_shutdown_force` high) and waits for `SHUTDOWN_FORCE_DELAY`.
-- `4'd4`: `S_CONFIRM_SPI_START` - Enables shutdown sense, SPI clock, and SPI subsystem, then waits for the SPI subsystem to start (`spi_off` deasserted). If not started within `SPI_START_WAIT` or if any DAC/ADC boot failure occurs, transitions to `S_HALTING` with the appropriate status code.
-- `4'd5`: `S_POWER_ON_AMP_BRD` - Pulses `shutdown_rst` high for `SHUTDOWN_RESET_PULSE`, then sets it high again.
-- `4'd6`: `S_AMP_POWER_WAIT` - Waits for `SHUTDOWN_RESET_DELAY` after pulsing shutdown reset, then unblocks command/data buffers and asserts `ps_interrupt`.
-- `4'd7`: `S_RUNNING` - Normal operation. Continuously monitors for halt conditions. If any error or shutdown condition occurs, transitions to `S_HALTING`, disables outputs, and asserts `ps_interrupt`.
-- `4'd8`: `S_HALTING` - Prepares to halt the system. Takes one cycle to set all signals to the initial state and assert `ps_interrupt`.
-- `4'd9`: `S_HALTED` - Halted state. All outputs are disabled, and the system waits for a reset or `sys_en` to go low.
+- `4'd4`: `S_CONFIRM_SPI_START` - Enables SPI clock/subsystem and waits for the SPI subsystem to start (`spi_off` deasserted). If startup times out, or DAC/ADC boot failures are observed, transitions to `S_HALTING` with the appropriate status code.
+- `4'd5`: `S_WAIT_FOR_POW_EN` - Waits for `pow_en` before powering on amplifier boards.
+- `4'd6`: `S_POWER_ON_AMP_BRD` - Pulses `shutdown_rst` high for `SHUTDOWN_RESET_PULSE`.
+- `4'd7`: `S_AMP_POWER_WAIT` - Waits for `SHUTDOWN_RESET_DELAY`, then enables shutdown sense, unblocks buffers, and asserts `ps_interrupt`.
+- `4'd8`: `S_RUNNING` - Normal operation. Continuously monitors for halt conditions. If any error or shutdown condition occurs, transitions to `S_HALTING`.
+- `4'd9`: `S_HALTING` - One-cycle transition that drives outputs to the halted state and asserts `ps_interrupt`.
+- `4'd10`: `S_HALTED` - Halted state. All outputs are disabled, and the system waits for both `ctrl_en` and `pow_en` to go low.
 
 ### Halt/Error Conditions
 
 The system transitions through `S_HALTING` to `S_HALTED` and sets the appropriate status code if any of the following occur:
-- `sys_en` goes low (processing system shutdown)
+- `ctrl_en` or `pow_en` goes low (processing system shutdown)
 - Configuration lock violation (`lock_viol`)
-- Out-of-bounds configuration values (`sys_en_oob`, `cmd_buf_reset_oob`, `data_buf_reset_oob`, `integ_thresh_avg_oob`, `integ_window_oob`, `integ_en_oob`, `boot_test_skip_oob`, `debug_oob`, `mosi_sck_pol_oob`, `miso_sck_pol_oob`, `dac_cal_init_oob`)
-- Shutdown detected via `shutdown_sense` or `ext_shutdown`
+- Out-of-bounds configuration values (`ctrl_en_oob`, `pow_en_oob`, `cmd_buf_reset_oob`, `data_buf_reset_oob`, `integ_thresh_avg_oob`, `integ_window_oob`, `integ_en_oob`, `boot_test_skip_oob`, `debug_oob`, `dac_cal_init_oob`)
+- Shutdown detected via `shutdown_sense_sts` or `ext_en` deassertion
 - Integrator thresholds exceeded or hardware error underflow/overflow conditions
 - Trigger buffer or command errors
 - DAC/ADC boot failure, buffer or command errors (per board)
@@ -129,17 +130,16 @@ Status codes are 25 bits wide and include:
 - `25'h0100`: `STS_SPI_RESET_TIMEOUT` - SPI initialization timeout.
 - `25'h0101`: `STS_SPI_START_TIMEOUT` - SPI start timeout.
 - `25'h0200`: `STS_LOCK_VIOL` - Configuration lock violation.
-- `25'h0201`: `STS_SYS_EN_OOB` - System enable register out of bounds.
-- `25'h0202`: `STS_CMD_BUF_RESET_OOB` - Command buffer reset out of bounds.
-- `25'h0203`: `STS_DATA_BUF_RESET_OOB` - Data buffer reset out of bounds.
-- `25'h0204`: `STS_INTEG_THRESH_AVG_OOB` - Integrator threshold average out of bounds.
-- `25'h0205`: `STS_INTEG_WINDOW_OOB` - Integrator window out of bounds.
-- `25'h0206`: `STS_INTEG_EN_OOB` - Integrator enable register out of bounds.
-- `25'h0207`: `STS_BOOT_TEST_SKIP_OOB` - Boot test skip out of bounds.
-- `25'h0208`: `STS_DEBUG_OOB` - Debug out of bounds.
-- `25'h0209`: `STS_MOSI_SCK_POL_OOB` - MOSI SCK polarity out of bounds.
-- `25'h020A`: `STS_MISO_SCK_POL_OOB` - MISO SCK polarity out of bounds.
-- `25'h020B`: `STS_DAC_CAL_INIT_OOB` - DAC calibration initial value out of bounds.
+- `25'h0201`: `STS_CTRL_EN_OOB` - Control board enable register out of bounds.
+- `25'h0202`: `STS_POW_EN_OOB` - Power stage enable register out of bounds.
+- `25'h0203`: `STS_CMD_BUF_RESET_OOB` - Command buffer reset out of bounds.
+- `25'h0204`: `STS_DATA_BUF_RESET_OOB` - Data buffer reset out of bounds.
+- `25'h0205`: `STS_INTEG_THRESH_AVG_OOB` - Integrator threshold average out of bounds.
+- `25'h0206`: `STS_INTEG_WINDOW_OOB` - Integrator window out of bounds.
+- `25'h0207`: `STS_INTEG_EN_OOB` - Integrator enable register out of bounds.
+- `25'h0208`: `STS_BOOT_TEST_SKIP_OOB` - Boot test skip out of bounds.
+- `25'h0209`: `STS_DEBUG_OOB` - Debug out of bounds.
+- `25'h020A`: `STS_DAC_CAL_INIT_OOB` - DAC calibration initial value out of bounds.
 - `25'h0300`: `STS_SHUTDOWN_SENSE` - Shutdown sense detected.
 - `25'h0301`: `STS_EXT_SHUTDOWN` - External shutdown triggered.
 - `25'h0400`: `STS_OVER_THRESH` - DAC over threshold.

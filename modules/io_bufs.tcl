@@ -13,9 +13,9 @@ cell base:user:diff_out_buf ldac_obuf {
   diff_out_n ldac_n
 }
 # (~DAC_CS)
-create_bd_pin -dir I n_dac_cs
-create_bd_pin -dir O n_dac_cs_p
-create_bd_pin -dir O n_dac_cs_n
+create_bd_pin -dir I -from 7 -to 0 n_dac_cs
+create_bd_pin -dir O -from 7 -to 0 n_dac_cs_p
+create_bd_pin -dir O -from 7 -to 0 n_dac_cs_n
 cell base:user:diff_out_buf n_dac_cs_obuf {
   DIFF_BUF_WIDTH 8
 } {
@@ -24,9 +24,9 @@ cell base:user:diff_out_buf n_dac_cs_obuf {
   diff_out_n n_dac_cs_n
 }
 # (DAC_MOSI)
-create_bd_pin -dir I dac_mosi
-create_bd_pin -dir O dac_mosi_p
-create_bd_pin -dir O dac_mosi_n
+create_bd_pin -dir I -from 7 -to 0 dac_mosi
+create_bd_pin -dir O -from 7 -to 0 dac_mosi_p
+create_bd_pin -dir O -from 7 -to 0 dac_mosi_n
 cell base:user:diff_out_buf dac_mosi_obuf {
   DIFF_BUF_WIDTH 8
 } {
@@ -35,9 +35,9 @@ cell base:user:diff_out_buf dac_mosi_obuf {
   diff_out_n dac_mosi_n
 }
 # (DAC_MISO)
-create_bd_pin -dir O dac_miso
-create_bd_pin -dir I dac_miso_p
-create_bd_pin -dir I dac_miso_n
+create_bd_pin -dir O -from 7 -to 0 dac_miso
+create_bd_pin -dir I -from 7 -to 0 dac_miso_p
+create_bd_pin -dir I -from 7 -to 0 dac_miso_n
 cell base:user:diff_in_buf dac_miso_ibuf {
   DIFF_BUF_WIDTH 8
 } {
@@ -48,9 +48,9 @@ cell base:user:diff_in_buf dac_miso_ibuf {
 
 ## ADC
 # (~ADC_CS)
-create_bd_pin -dir I n_adc_cs
-create_bd_pin -dir O n_adc_cs_p
-create_bd_pin -dir O n_adc_cs_n
+create_bd_pin -dir I -from 7 -to 0 n_adc_cs
+create_bd_pin -dir O -from 7 -to 0 n_adc_cs_p
+create_bd_pin -dir O -from 7 -to 0 n_adc_cs_n
 cell base:user:diff_out_buf n_adc_cs_obuf {
   DIFF_BUF_WIDTH 8
 } {
@@ -59,9 +59,9 @@ cell base:user:diff_out_buf n_adc_cs_obuf {
   diff_out_n n_adc_cs_n
 }
 # (ADC_MOSI)
-create_bd_pin -dir I adc_mosi
-create_bd_pin -dir O adc_mosi_p
-create_bd_pin -dir O adc_mosi_n
+create_bd_pin -dir I -from 7 -to 0 adc_mosi
+create_bd_pin -dir O -from 7 -to 0 adc_mosi_p
+create_bd_pin -dir O -from 7 -to 0 adc_mosi_n
 cell base:user:diff_out_buf adc_mosi_obuf {
   DIFF_BUF_WIDTH 8
 } {
@@ -70,9 +70,9 @@ cell base:user:diff_out_buf adc_mosi_obuf {
   diff_out_n adc_mosi_n
 }
 # (ADC_MISO)
-create_bd_pin -dir O adc_miso
-create_bd_pin -dir I adc_miso_p
-create_bd_pin -dir I adc_miso_n
+create_bd_pin -dir O -from 7 -to 0 adc_miso
+create_bd_pin -dir I -from 7 -to 0 adc_miso_p
+create_bd_pin -dir I -from 7 -to 0 adc_miso_n
 cell base:user:diff_in_buf adc_miso_ibuf {
   DIFF_BUF_WIDTH 8
 } {
@@ -83,24 +83,34 @@ cell base:user:diff_in_buf adc_miso_ibuf {
 
 ## Clocks
 # (MISO_SCK)
-create_bd_pin -dir O -type clock miso_sck
-create_bd_pin -dir I -type clock miso_sck_p
-create_bd_pin -dir I -type clock miso_sck_n
+create_bd_pin -dir O -from 7 -to 0 -type clock miso_sck
+create_bd_pin -dir I -from 7 -to 0 -type clock miso_sck_p
+create_bd_pin -dir I -from 7 -to 0 -type clock miso_sck_n
 cell base:user:diff_in_buf miso_sck_ibuf {
   DIFF_BUF_WIDTH 8
 } {
   diff_in_p miso_sck_p
   diff_in_n miso_sck_n
-  d_out miso_sck
 }
-# (~MOSI_SCK)
-create_bd_pin -dir I -type clock n_mosi_sck
-create_bd_pin -dir O -type clock n_mosi_sck_p
-create_bd_pin -dir O -type clock n_mosi_sck_n
-cell base:user:diff_out_buf n_mosi_sck_obuf {
+#######################################
+# TODO: Requires inversion. This will be a hardware fix next iteration (written 2026-05-19)
+cell xilinx.com:ip:util_vector_logic miso_sck_pol {
+  C_SIZE 8
+  C_OPERATION not
+} {
+  Op1 miso_sck_ibuf/d_out
+  Res miso_sck
+}
+#######################################
+
+# (MOSI_SCK)
+create_bd_pin -dir I -from 7 -to 0 -type clock mosi_sck
+create_bd_pin -dir O -from 7 -to 0 -type clock mosi_sck_p
+create_bd_pin -dir O -from 7 -to 0 -type clock mosi_sck_n
+cell base:user:diff_out_buf mosi_sck_obuf {
   DIFF_BUF_WIDTH 1
 } {
-  d_in n_mosi_sck
-  diff_out_p n_mosi_sck_p
-  diff_out_n n_mosi_sck_n
+  d_in mosi_sck
+  diff_out_p mosi_sck_p
+  diff_out_n mosi_sck_n
 }

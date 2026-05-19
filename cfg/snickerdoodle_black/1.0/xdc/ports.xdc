@@ -298,13 +298,13 @@ set_property PACKAGE_PIN K18 [get_ports {MISO_SCK_n[6]}]
 set_property PACKAGE_PIN L16 [get_ports {MISO_SCK_p[7]}]
 set_property PACKAGE_PIN L17 [get_ports {MISO_SCK_n[7]}]
 
-# MOSI SCK (~SCKI[+/-])
+# MOSI SCK (SCKI[+/-])
 # Pins:
-#   n_MOSI_SCK JB2.23 T20 (+) / JB2.25 U20 (-)
-set_property IOSTANDARD LVDS_25 [get_ports {n_MOSI_SCK_p[0]}]
-set_property IOSTANDARD LVDS_25 [get_ports {n_MOSI_SCK_n[0]}]
-set_property PACKAGE_PIN T20 [get_ports {n_MOSI_SCK_p[0]}]
-set_property PACKAGE_PIN U20 [get_ports {n_MOSI_SCK_n[0]}]
+#   MOSI_SCK JB2.23 T20 (+) / JB2.25 U20 (-)
+set_property IOSTANDARD LVDS_25 [get_ports {MOSI_SCK_p[0]}]
+set_property IOSTANDARD LVDS_25 [get_ports {MOSI_SCK_n[0]}]
+set_property PACKAGE_PIN T20 [get_ports {MOSI_SCK_p[0]}]
+set_property PACKAGE_PIN U20 [get_ports {MOSI_SCK_n[0]}]
 
 
 #------------------------------------------------------------

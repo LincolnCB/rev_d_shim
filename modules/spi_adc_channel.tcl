@@ -6,7 +6,7 @@ create_bd_pin -dir I -type clock spi_clk
 create_bd_pin -dir I -type reset resetn
 
 # Config parameters
-create_bd_pin -dir I -from 8 -to 0 adc_n_cs_high_time
+create_bd_pin -dir I -from 7 -to 0 adc_n_cs_high_time
 create_bd_pin -dir I -from 24 -to 0 adc_min_delay_time
 create_bd_pin -dir I boot_test_skip
 create_bd_pin -dir I debug
