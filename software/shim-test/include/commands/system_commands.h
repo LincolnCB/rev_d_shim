@@ -27,10 +27,10 @@ int cmd_set_data_buf_reset(const char** args, int arg_count, const command_flag_
 int cmd_spi_clk_freq(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_get_min_delay_times(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
-// Integrator configuration commands
-int cmd_set_integ_window(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
-int cmd_set_integ_average(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
-int cmd_set_integ_enable(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+// Threshold configuration commands
+int cmd_set_thresh_window(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+int cmd_set_thresh_average(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+int cmd_set_thresh_en(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
 // Safe buffer reset function
 void safe_buffer_reset(command_context_t* ctx, bool verbose);

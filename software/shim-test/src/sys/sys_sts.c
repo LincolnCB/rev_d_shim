@@ -151,14 +151,14 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
       case STS_DATA_BUF_RESET_OOB:
         printf("Status: Data buffer reset out of bounds\n");
         break;
-      case STS_INTEG_THRESH_AVG_OOB:
-        printf("Status: Integrator threshold average out of bounds\n");
+      case STS_THRESH_VAL_OOB:
+        printf("Status: Threshold average out of bounds\n");
         break;
-      case STS_INTEG_WINDOW_OOB:
-        printf("Status: Integrator window out of bounds\n");
+      case STS_THRESH_WINDOW_OOB:
+        printf("Status: Threshold window out of bounds\n");
         break;
-      case STS_INTEG_EN_OOB:
-        printf("Status: Integrator enable register out of bounds\n");
+      case STS_THRESH_EN_OOB:
+        printf("Status: Threshold enable register out of bounds\n");
         break;
       case STS_BOOT_TEST_SKIP_OOB:
         printf("Status: Boot test skip out of bounds\n");

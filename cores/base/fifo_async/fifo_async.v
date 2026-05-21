@@ -62,9 +62,9 @@ module fifo_async #(
   reg [ADDR_WIDTH:0] wr_ptr_bin;
   reg [ADDR_WIDTH:0] wr_ptr_gray; // the gray code version of the pointer is used for synchronization
 
-  reg [ADDR_WIDTH:0] rd_ptr_bin;
-  reg [ADDR_WIDTH:0] rd_ptr_bin_next;
-  reg [ADDR_WIDTH:0] rd_ptr_gray; // the gray code version of the pointer is used for synchronization
+  reg  [ADDR_WIDTH:0] rd_ptr_bin;
+  wire [ADDR_WIDTH:0] rd_ptr_bin_next;
+  reg  [ADDR_WIDTH:0] rd_ptr_gray; // the gray code version of the pointer is used for synchronization
 
   // FIFO memory (BRAM instance)
   mem_async #(
@@ -94,7 +94,7 @@ module fifo_async #(
   end
 
   // Read logic
-  always @* rd_ptr_bin_next = rd_ptr_bin + {{ADDR_WIDTH{1'b0}}, (rd_en & ~empty)};
+  assign rd_ptr_bin_next = rd_ptr_bin + {{ADDR_WIDTH{1'b0}}, (rd_en & ~empty)};
   always @(posedge rd_clk or negedge rd_rst_n) begin
     if (!rd_rst_n) begin
       rd_ptr_bin  <= 0;

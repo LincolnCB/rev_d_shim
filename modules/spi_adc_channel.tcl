@@ -1,5 +1,5 @@
 ### ADC Channel Module
-## This module implements an ADC channel with an integrator and SPI interface.
+## This module implements an ADC channel with an SPI interface.
 
 # System signals
 create_bd_pin -dir I -type clock spi_clk

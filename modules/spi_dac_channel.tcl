@@ -1,17 +1,17 @@
 ### DAC Channel Module
-## This module implements a DAC channel with an integrator and SPI interface.
+## This module implements a DAC channel with a threshold core and SPI interface.
 
-# Get the include_integrator flag from the calling context
-set include_integrator [module_get_upvar include_integrator]
+# Get the threshold_core_level flag from the calling context
+set threshold_core_level [module_get_upvar threshold_core_level]
 
 # System signals
 create_bd_pin -dir I -type clock spi_clk
 create_bd_pin -dir I -type reset resetn
 
 # Config parameters
-create_bd_pin -dir I -from 31 -to 0 integ_window
-create_bd_pin -dir I -from 14 -to 0 integ_thresh_avg
-create_bd_pin -dir I integ_en
+create_bd_pin -dir I -from 31 -to 0 thresh_window
+create_bd_pin -dir I -from 14 -to 0 thresh_val
+create_bd_pin -dir I thresh_en
 create_bd_pin -dir I -from 4 -to 0 dac_n_cs_high_time
 create_bd_pin -dir I -from 24 -to 0 dac_min_delay_time
 create_bd_pin -dir I -from 15 -to 0 dac_cal_init
@@ -22,7 +22,7 @@ create_bd_pin -dir I do_pre_delay
 ## Status signals
 # System status
 create_bd_pin -dir O setup_done
-# Integrator status
+# Threshold status
 create_bd_pin -dir O over_thresh
 create_bd_pin -dir O thresh_overflow
 create_bd_pin -dir O thresh_underflow
@@ -140,29 +140,25 @@ cell shim:user:ad5676_dac_ctrl dac_spi {
 
 ##################################################
 
-### Integrator
-# Setup is done if integrator and DAC SPI controller are both done
-if {$include_integrator} {
-  module spi_dac_integrator dac_integrator {
-    integ_window integ_window
-    integ_thresh_avg integ_thresh_avg
-    integ_en integ_en
-    spi_clk spi_clk
-    resetn resetn
-    abs_sample_concat dac_spi/abs_dac_val_concat
-    sample_core_setup dac_spi/setup_done
-    over_thresh over_thresh
-    thresh_overflow thresh_overflow
-    thresh_underflow thresh_underflow
-  }
-  cell xilinx.com:ip:util_vector_logic setup_done_and {
-    C_SIZE 1
-    C_OPERATION and
-  } {
-    Op1 dac_integrator/setup_done
-    Op2 dac_spi/setup_done
-    Res setup_done
-  }
-} else {
-  wire setup_done dac_spi/setup_done
+### Threshold core
+# Setup is done if threshold_core and DAC SPI controller are both done
+module spi_dac_threshold dac_threshold {
+  thresh_window thresh_window
+  thresh_val thresh_val
+  thresh_en thresh_en
+  spi_clk spi_clk
+  resetn resetn
+  abs_sample_concat dac_spi/abs_dac_val_concat
+  sample_core_setup dac_spi/setup_done
+  over_thresh over_thresh
+  thresh_overflow thresh_overflow
+  thresh_underflow thresh_underflow
+}
+cell xilinx.com:ip:util_vector_logic setup_done_and {
+  C_SIZE 1
+  C_OPERATION and
+} {
+  Op1 dac_threshold/setup_done
+  Op2 dac_spi/setup_done
+  Res setup_done
 }

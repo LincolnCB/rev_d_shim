@@ -9,9 +9,9 @@ module spi_cfg_sync (
   // Inputs from axi_sys_ctrl (AXI domain)
   input  wire        spi_en,
   input  wire        block_bufs,
-  input  wire [14:0] integ_thresh_avg,
-  input  wire [31:0] integ_window,
-  input  wire        integ_en,
+  input  wire [14:0] thresh_val,
+  input  wire [31:0] thresh_window,
+  input  wire        thresh_en,
   input  wire [ 4:0] dac_n_cs_high_time,
   input  wire [24:0] dac_min_delay_time,
   input  wire [ 7:0] adc_n_cs_high_time,
@@ -24,9 +24,9 @@ module spi_cfg_sync (
   // Synchronized outputs to SPI domain
   output wire        spi_en_sync,
   output wire        block_bufs_sync,
-  output wire [14:0] integ_thresh_avg_sync,
-  output wire [31:0] integ_window_sync,
-  output wire        integ_en_sync,
+  output wire [14:0] thresh_val_sync,
+  output wire [31:0] thresh_window_sync,
+  output wire        thresh_en_sync,
   output wire [ 4:0] dac_n_cs_high_time_sync,
   output wire [24:0] dac_min_delay_time_sync,
   output wire [ 7:0] adc_n_cs_high_time_sync,
@@ -38,8 +38,8 @@ module spi_cfg_sync (
 );
 
   // Default values for registers
-  localparam [14:0] integ_thresh_avg_default = 15'h1000;
-  localparam [31:0] integ_window_default = 32'h00010000;
+  localparam [14:0] thresh_val_default = 15'h1000;
+  localparam [31:0] thresh_window_default = 32'h00010000;
   localparam [ 4:0] dac_n_cs_high_time_default = 5'd31; // Max value
   localparam [24:0] dac_min_delay_time_default = 25'd224; // Absolute minimum for full DAC operation
   localparam [ 7:0] adc_n_cs_high_time_default = 8'd255; // Max value
@@ -71,40 +71,40 @@ module spi_cfg_sync (
     .dout(block_bufs_sync)
   );
   
-  // Integrator enable (incoherent)
+  // Threshold enable (incoherent)
   sync_incoherent #(
     .WIDTH(1)
-  ) sync_integ_en (
+  ) sync_thresh_en (
     .clk(spi_clk),
     .resetn(spi_resetn),
-    .din(integ_en),
-    .dout(integ_en_sync)
+    .din(thresh_en),
+    .dout(thresh_en_sync)
   );
 
-  // Integrator threshold average (coherent)
+  // Threshold average (coherent)
   sync_coherent #(
     .WIDTH(15)
-  ) sync_integ_thresh_avg (
+  ) sync_thresh_val (
     .in_clk(aclk),
     .in_resetn(aresetn),
     .out_clk(spi_clk),
     .out_resetn(spi_resetn),
-    .din(integ_thresh_avg),
-    .dout(integ_thresh_avg_sync),
-    .dout_default(integ_thresh_avg_default)
+    .din(thresh_val),
+    .dout(thresh_val_sync),
+    .dout_default(thresh_val_default)
   );
 
-  // Integrator window (coherent)
+  // Threshold window (coherent)
   sync_coherent #(
     .WIDTH(32)
-  ) sync_integ_window (
+  ) sync_thresh_window (
     .in_clk(aclk),
     .in_resetn(aresetn),
     .out_clk(spi_clk),
     .out_resetn(spi_resetn),
-    .din(integ_window),
-    .dout(integ_window_sync),
-    .dout_default(integ_window_default)
+    .din(thresh_window),
+    .dout(thresh_window_sync),
+    .dout_default(thresh_window_default)
   );
 
   // DAC n_cs_high_time (coherent)

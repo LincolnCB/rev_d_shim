@@ -7,11 +7,33 @@
 ## Variably define the channel count (MUST BE 1 TO 8 INCLUSIVE)
 set board_count 4
 
-## Variably choose whether to include the integrator module
-# Set to 1 for include, 0 for not
-# Integrator takes up a large amount of LUT elements, which can be an issue at high channel counts
-set include_integrator 0
 
+## Variably choose complexity of threshold module
+# Set to:
+#   0 -- No threshold
+#   1 -- Threshold timer (simple time check for time above threshold)
+#   2 -- Threshold integrator (rolling current integration compared to threshold)
+#        Integrator takes up a large amount of LUT elements, which can be an issue at high channel counts
+set threshold_core_level 1
+
+
+## Variably choose whether to use an external clock
+set use_ext_clk 1
+
+
+## Variably define the default SPI clock frequency (MHz)
+set spi_clk_freq_mhz 20.000
+
+## Variably define the FIFO address widths (10 to 17 inclusive)
+# This sets the depth of the FIFOs as 2^ADDR_WIDTH
+# Larger FIFOs use more FPGA resources, but allow for longer bursts and more buffering.
+# This can hit the cap fast!
+set dac_cmd_fifo_addr_width 12
+set dac_data_fifo_addr_width 11
+set adc_cmd_fifo_addr_width 10
+set adc_data_fifo_addr_width 12
+set trig_cmd_fifo_addr_width 10
+set trig_data_fifo_addr_width 10
 
 
 ###############################################################################
@@ -26,35 +48,17 @@ if {$board_count < 1 || $board_count > 8} {
   exit 1
 }
 
-## Variably choose whether to use an external clock
-set use_ext_clk 1
-
 # If the external clock is not 0 or 1, then error out
 if {$use_ext_clk != 0 && $use_ext_clk != 1} {
   puts "Error: use_ext_clk must be 0 or 1."
   exit 1
 }
 
-## Variably define the default SPI clock frequency (MHz)
-set spi_clk_freq_mhz 20.000
-
 # If the default SPI clock frequency is not between 1 and 50 MHz, then error out
 if {$spi_clk_freq_mhz < 1.0 || $spi_clk_freq_mhz > 50.0} {
   puts "Error: spi_clk_freq_mhz must be between 1.0 and 50.0."
   exit 1
 }
-
-## Variably define the FIFO address widths (10 to 17 inclusive)
-# This sets the depth of the FIFOs as 2^ADDR_WIDTH
-# Larger FIFOs use more FPGA resources, but allow for longer bursts and more buffering.
-# This can hit the cap fast!
-set dac_cmd_fifo_addr_width 12
-set dac_data_fifo_addr_width 11
-set adc_cmd_fifo_addr_width 10
-set adc_data_fifo_addr_width 12
-set trig_cmd_fifo_addr_width 10
-set trig_data_fifo_addr_width 10
-
 
 ###############################################################################
 #
@@ -220,15 +224,16 @@ cell xilinx.com:ip:smartconnect:1.0 sys_cfg_axi_intercon {
 ## 32-bit offsets (see axi_sys_ctrl.v)
 # +0 System enable (1b cap)
 # +1 Buffer reset (26b)
-# +2 Integrator threshold average (unsigned, 15b, min 1, max 32767)
-# +3 Integrator window (unsigned, 32b, min 2048)
-# +4 Integrator enable (1b cap)
+# +2 Threshold average (unsigned, 15b, min 1, max 32767)
+# +3 Threshold window (unsigned, 32b, min 2048)
+# +4 Threshold enable (1b cap)
 # +5 Boot test skip (16b cap)
+# Window: 4.5 A (29491) over ~ 250 ms (5000000 at 20 MHz SPI clock)
 cell shim:user:axi_sys_ctrl axi_sys_ctrl {
-  INTEG_THRESHOLD_AVERAGE_DEFAULT 16384
-  INTEG_WINDOW_DEFAULT 5000000
-  INTEG_EN_DEFAULT 1
-  DAC_CAL_INIT_DEFAULT 14
+  THRESHOLD_VALUE_DEFAULT 29491
+  THRESHOLD_WINDOW_DEFAULT 5000000
+  THRESHOLD_EN_DEFAULT 1
+  DAC_CAL_INIT_DEFAULT 0
 } {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
@@ -253,9 +258,9 @@ cell shim:user:hw_manager hw_manager {
   pow_en_oob axi_sys_ctrl/pow_en_oob
   cmd_buf_reset_oob axi_sys_ctrl/cmd_buf_reset_oob
   data_buf_reset_oob axi_sys_ctrl/data_buf_reset_oob
-  integ_thresh_avg_oob axi_sys_ctrl/integ_thresh_avg_oob
-  integ_window_oob axi_sys_ctrl/integ_window_oob
-  integ_en_oob axi_sys_ctrl/integ_en_oob
+  thresh_val_oob axi_sys_ctrl/thresh_val_oob
+  thresh_window_oob axi_sys_ctrl/thresh_window_oob
+  thresh_en_oob axi_sys_ctrl/thresh_en_oob
   boot_test_skip_oob axi_sys_ctrl/boot_test_skip_oob
   debug_oob axi_sys_ctrl/debug_oob
   dac_cal_init_oob axi_sys_ctrl/dac_cal_init_oob
@@ -400,9 +405,9 @@ module spi_clk_domain spi_clk_domain {
   aresetn ps_rst/peripheral_aresetn
   spi_clk spi_clk/clk_o
   spi_en hw_manager/spi_en
-  integ_thresh_avg axi_sys_ctrl/integ_thresh_avg
-  integ_window axi_sys_ctrl/integ_window
-  integ_en axi_sys_ctrl/integ_en
+  thresh_val axi_sys_ctrl/thresh_val
+  thresh_window axi_sys_ctrl/thresh_window
+  thresh_en axi_sys_ctrl/thresh_en
   dac_n_cs_high_time dac_timing_calc/n_cs_high_time
   dac_min_delay_time dac_timing_calc/min_delay_time
   adc_n_cs_high_time adc_timing_calc/n_cs_high_time

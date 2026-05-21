@@ -22,9 +22,9 @@ STATUS_BIN_LABELS = {
     0x002: "STS_PS_SHUTDOWN",
     0x100: "STS_SPI_START_TIMEOUT",
     0x101: "STS_SPI_INIT_TIMEOUT",
-    0x200: "STS_INTEG_THRESH_AVG_OOB",
-    0x201: "STS_INTEG_WINDOW_OOB",
-    0x202: "STS_INTEG_EN_OOB",
+    0x200: "STS_THRESH_VAL_OOB",
+    0x201: "STS_THRESH_WINDOW_OOB",
+    0x202: "STS_THRESH_EN_OOB",
     0x203: "STS_SYS_EN_OOB",
     0x204: "STS_LOCK_VIOL",
     0x300: "STS_SHUTDOWN_SENSE",
@@ -217,18 +217,18 @@ def sample_per_board_signals_coverage(dut):
     pass
 
 # Coverage points for configuration and status signals
-@CoverPoint("hw_manager.integ_thresh_avg_oob",
-            xf = lambda dut: int(dut.integ_thresh_avg_oob.value),
+@CoverPoint("hw_manager.thresh_val_oob",
+            xf = lambda dut: int(dut.thresh_val_oob.value),
             bins = [0, 1],
             rel = lambda x, y: x == y,
             at_least = 1)
-@CoverPoint("hw_manager.integ_window_oob",
-            xf = lambda dut: int(dut.integ_window_oob.value),
+@CoverPoint("hw_manager.thresh_window_oob",
+            xf = lambda dut: int(dut.thresh_window_oob.value),
             bins = [0, 1],
             rel = lambda x, y: x == y,
             at_least = 1)
-@CoverPoint("hw_manager.integ_en_oob",
-            xf = lambda dut: int(dut.integ_en_oob.value),
+@CoverPoint("hw_manager.thresh_en_oob",
+            xf = lambda dut: int(dut.thresh_en_oob.value),
             bins = [0, 1],
             rel = lambda x, y: x == y,
             at_least = 1)

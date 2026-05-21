@@ -42,8 +42,10 @@ module axi_sts_register #
   localparam integer STS_SIZE = STS_DATA_WIDTH/AXI_DATA_WIDTH;
   localparam integer STS_WIDTH = STS_SIZE > 1 ? clogb2(STS_SIZE-1) : 1;
 
-  reg int_rvalid_reg, int_rvalid_next;
-  reg [AXI_DATA_WIDTH-1:0] int_rdata_reg, int_rdata_next;
+  reg  int_rvalid_reg;
+  wire int_rvalid_next;
+  reg  [AXI_DATA_WIDTH-1:0] int_rdata_reg;
+  wire [AXI_DATA_WIDTH-1:0] int_rdata_next;
 
   wire [AXI_DATA_WIDTH-1:0] int_data_mux [STS_SIZE-1:0];
 
@@ -70,22 +72,12 @@ module axi_sts_register #
     end
   end
 
-  always @*
-  begin
-    int_rvalid_next = int_rvalid_reg;
-    int_rdata_next = int_rdata_reg;
-
-    if(s_axi_arvalid)
-    begin
-      int_rvalid_next = 1'b1;
-      int_rdata_next = int_data_mux[s_axi_araddr[ADDR_LSB+STS_WIDTH-1:ADDR_LSB]];
-    end
-
-    if(s_axi_rready & int_rvalid_reg)
-    begin
-      int_rvalid_next = 1'b0;
-    end
-  end
+  assign int_rvalid_next =  (s_axi_rready & int_rvalid_reg) ? 1'b0
+                            : (s_axi_arvalid) ? 1'b1
+                            : int_rvalid_reg;
+  
+  assign int_rdata_next = (s_axi_arvalid) ? int_data_mux[s_axi_araddr[ADDR_LSB+STS_WIDTH-1:ADDR_LSB]]
+                          : int_rdata_reg;
 
   assign s_axi_rresp = 2'd0;
 

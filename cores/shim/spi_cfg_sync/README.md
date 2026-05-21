@@ -14,9 +14,9 @@ The `spi_cfg_sync` module synchronizes configuration signals from the AXI clock 
   - `spi_resetn`: Active-low reset for SPI domain.
 
 - **AXI Domain Configuration Inputs**
-  - `integ_thresh_avg [14:0]`: Integration threshold average configuration.
-  - `integ_window [31:0]`: Integration window configuration.
-  - `integ_en`: Integration enable signal.
+  - `thresh_val [14:0]`: Threshold average configuration.
+  - `thresh_window [31:0]`: Threshold window configuration.
+  - `thresh_en`: Threshold enable signal.
   - `spi_en`: SPI enable signal.
   - `block_bufs`: Block buffers enable signal.
   - `dac_n_cs_high_time [4:0]`: DAC chip select high time configuration.
@@ -28,9 +28,9 @@ The `spi_cfg_sync` module synchronizes configuration signals from the AXI clock 
 ### Outputs
 
 - **SPI Domain Synchronized Outputs**
-  - `integ_thresh_avg_sync [14:0]`: Synchronized integration threshold average.
-  - `integ_window_sync [31:0]`: Synchronized integration window.
-  - `integ_en_sync`: Synchronized integration enable.
+  - `thresh_val_sync [14:0]`: Synchronized threshold average.
+  - `thresh_window_sync [31:0]`: Synchronized threshold window.
+  - `thresh_en_sync`: Synchronized threshold enable.
   - `spi_en_sync`: Synchronized SPI enable.
   - `block_bufs_sync`: Synchronized block buffers enable.
   - `dac_n_cs_high_time_sync [4:0]`: Synchronized DAC chip select high time.
@@ -45,9 +45,9 @@ The `spi_cfg_sync` module synchronizes configuration signals from the AXI clock 
 - **Coherent synchronization** is used for multi-bit data that must be coherent across bits.
 - **Incoherent synchronization** is used for data where individual bits are not coherent with each other.
 - Default values are provided for each output in case of reset:
-  - `integ_thresh_avg_sync`: 0x1000
-  - `integ_window_sync`: 0x00010000
-  - `integ_en_sync`: 0
+  - `thresh_val_sync`: 0x1000
+  - `thresh_window_sync`: 0x00010000
+  - `thresh_en_sync`: 0
   - `spi_en_sync`: 0 (uses deeper synchronizer for extra delay)
   - `block_bufs_sync`: 1
   - `dac_n_cs_high_time_sync`: 31 (capped max)

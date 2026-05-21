@@ -24,9 +24,9 @@ The `hw_manager` module manages the hardware system's startup, operation, and sh
   - `pow_en_oob`: Power stage enable register out of bounds.
   - `cmd_buf_reset_oob`: Command buffer reset out of bounds.
   - `data_buf_reset_oob`: Data buffer reset out of bounds.
-  - `integ_thresh_avg_oob`: Integrator threshold average out of bounds.
-  - `integ_window_oob`: Integrator window out of bounds.
-  - `integ_en_oob`: Integrator enable register out of bounds.
+  - `thresh_val_oob`: Threshold average out of bounds.
+  - `thresh_window_oob`: Threshold window out of bounds.
+  - `thresh_en_oob`: Threshold enable register out of bounds.
   - `boot_test_skip_oob`: Boot test skip out of bounds.
   - `debug_oob`: Debug out of bounds.
   - `dac_cal_init_oob`: DAC calibration initial value out of bounds.
@@ -34,7 +34,7 @@ The `hw_manager` module manages the hardware system's startup, operation, and sh
 - **Shutdown Sense**
   - `shutdown_sense_sts [7:0]`: Shutdown sense (per board).
 
-- **Integrator Status**
+- **Threshold Status**
   - `over_thresh [7:0]`: DAC over threshold (per board).
   - `thresh_underflow [7:0]`: DAC threshold core FIFO underflow (per board).
   - `thresh_overflow [7:0]`: DAC threshold core FIFO overflow (per board).
@@ -88,7 +88,7 @@ The `hw_manager` module manages the hardware system's startup, operation, and sh
 ### State Machine Overview
 
 The state machine states are encoded as follows:
-- `4'd1`: `S_IDLE` - Waits for `ctrl_en` to go high. Checks out-of-bounds configuration values (`ctrl_en_oob`, `pow_en_oob`, `cmd_buf_reset_oob`, `data_buf_reset_oob`, `integ_thresh_avg_oob`, `integ_window_oob`, `integ_en_oob`, `boot_test_skip_oob`, `debug_oob`, `dac_cal_init_oob`). If any OOB condition is detected, transitions to `S_HALTING` with the corresponding status code. If checks pass, locks configuration and transitions to SPI reset confirmation.
+- `4'd1`: `S_IDLE` - Waits for `ctrl_en` to go high. Checks out-of-bounds configuration values (`ctrl_en_oob`, `pow_en_oob`, `cmd_buf_reset_oob`, `data_buf_reset_oob`, `thresh_val_oob`, `thresh_window_oob`, `thresh_en_oob`, `boot_test_skip_oob`, `debug_oob`, `dac_cal_init_oob`). If any OOB condition is detected, transitions to `S_HALTING` with the corresponding status code. If checks pass, locks configuration and transitions to SPI reset confirmation.
 - `4'd2`: `S_CONFIRM_SPI_RST` - Makes sure the SPI system is powered off (`spi_off`). If not powered off within `SPI_RESET_WAIT`, transitions to `S_HALTING` with a timeout status.
 - `4'd3`: `S_POWER_ON_CRTL_BRD` - Releases shutdown force (`n_shutdown_force` high) and waits for `SHUTDOWN_FORCE_DELAY`.
 - `4'd4`: `S_CONFIRM_SPI_START` - Enables SPI clock/subsystem and waits for the SPI subsystem to start (`spi_off` deasserted). If startup times out, or DAC/ADC boot failures are observed, transitions to `S_HALTING` with the appropriate status code.
@@ -104,9 +104,9 @@ The state machine states are encoded as follows:
 The system transitions through `S_HALTING` to `S_HALTED` and sets the appropriate status code if any of the following occur:
 - `ctrl_en` or `pow_en` goes low (processing system shutdown)
 - Configuration lock violation (`lock_viol`)
-- Out-of-bounds configuration values (`ctrl_en_oob`, `pow_en_oob`, `cmd_buf_reset_oob`, `data_buf_reset_oob`, `integ_thresh_avg_oob`, `integ_window_oob`, `integ_en_oob`, `boot_test_skip_oob`, `debug_oob`, `dac_cal_init_oob`)
+- Out-of-bounds configuration values (`ctrl_en_oob`, `pow_en_oob`, `cmd_buf_reset_oob`, `data_buf_reset_oob`, `thresh_val_oob`, `thresh_window_oob`, `thresh_en_oob`, `boot_test_skip_oob`, `debug_oob`, `dac_cal_init_oob`)
 - Shutdown detected via `shutdown_sense_sts` or `ext_en` deassertion
-- Integrator thresholds exceeded or hardware error underflow/overflow conditions
+- Thresholds exceeded or hardware error underflow/overflow conditions
 - Trigger buffer or command errors
 - DAC/ADC boot failure, buffer or command errors (per board)
 - Unexpected DAC/ADC triggers occur
@@ -134,9 +134,9 @@ Status codes are 25 bits wide and include:
 - `25'h0202`: `STS_POW_EN_OOB` - Power stage enable register out of bounds.
 - `25'h0203`: `STS_CMD_BUF_RESET_OOB` - Command buffer reset out of bounds.
 - `25'h0204`: `STS_DATA_BUF_RESET_OOB` - Data buffer reset out of bounds.
-- `25'h0205`: `STS_INTEG_THRESH_AVG_OOB` - Integrator threshold average out of bounds.
-- `25'h0206`: `STS_INTEG_WINDOW_OOB` - Integrator window out of bounds.
-- `25'h0207`: `STS_INTEG_EN_OOB` - Integrator enable register out of bounds.
+- `25'h0205`: `STS_THRESH_VAL_OOB` - Threshold average out of bounds.
+- `25'h0206`: `STS_THRESH_WINDOW_OOB` - Threshold window out of bounds.
+- `25'h0207`: `STS_THRESH_EN_OOB` - Threshold enable register out of bounds.
 - `25'h0208`: `STS_BOOT_TEST_SKIP_OOB` - Boot test skip out of bounds.
 - `25'h0209`: `STS_DEBUG_OOB` - Debug out of bounds.
 - `25'h020A`: `STS_DAC_CAL_INIT_OOB` - DAC calibration initial value out of bounds.

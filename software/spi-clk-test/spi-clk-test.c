@@ -81,13 +81,13 @@ int main()
   //   47:32  -- 16b Calibration offset
   //   63:48  --     Reserved
   volatile int16_t  *cal_offset      = (volatile int16_t  *)(cfg + 4);
-  //   95:64  -- 32b Integrator threshold
-  volatile uint32_t *integ_threshold = (volatile uint32_t *)(cfg + 8);
-  //  127:96  -- 32b Integrator span
-  volatile uint32_t *integ_span      = (volatile uint32_t *)(cfg + 12);
-  //  128     --  1b Integrator enable
+  //   95:64  -- 32b Threshold average
+  volatile uint32_t *thresh_val      = (volatile uint32_t *)(cfg + 8);
+  //  127:96  -- 32b Threshold window
+  volatile uint32_t *thresh_window   = (volatile uint32_t *)(cfg + 12);
+  //  128     --  1b Threshold Enable
   //  159:129 --     Reserved
-  volatile uint8_t  *integ_enable    = (volatile uint8_t  *)(cfg + 16);
+  volatile uint8_t  *thresh_en       = (volatile uint8_t  *)(cfg + 16);
   //  160     --  1b Hardware enable
   //  191:161 --     Reserved
   volatile uint8_t  *hardware_enable = (volatile uint8_t  *)(cfg + 20);

@@ -15,17 +15,17 @@ struct sys_ctrl_t create_sys_ctrl(bool verbose) {
   }
 
   // Initialize the system control structure with the mapped memory addresses
-  sys_ctrl.ctrl_enable             = sys_ctrl_ptr + CTRL_ENABLE_OFFSET;
-  sys_ctrl.power_enable            = sys_ctrl_ptr + POWER_ENABLE_OFFSET;
-  sys_ctrl.cmd_buf_reset           = sys_ctrl_ptr + CMD_BUF_RESET_OFFSET;
-  sys_ctrl.data_buf_reset          = sys_ctrl_ptr + DATA_BUF_RESET_OFFSET;
-  sys_ctrl.integ_threshold_average = sys_ctrl_ptr + INTEG_THRESHOLD_AVERAGE_OFFSET;
-  sys_ctrl.integ_window            = sys_ctrl_ptr + INTEG_WINDOW_OFFSET;
-  sys_ctrl.integ_enable            = sys_ctrl_ptr + INTEG_ENABLE_OFFSET;
-  sys_ctrl.boot_test_skip          = sys_ctrl_ptr + BOOT_TEST_SKIP_OFFSET;
-  sys_ctrl.debug                   = sys_ctrl_ptr + DEBUG_OFFSET;
-  sys_ctrl.dac_cal_init            = sys_ctrl_ptr + DAC_CAL_INIT_OFFSET;
-  sys_ctrl.do_dac_pre_delay        = sys_ctrl_ptr + DO_DAC_PRE_DELAY_OFFSET;
+  sys_ctrl.ctrl_en             = sys_ctrl_ptr + CTRL_ENABLE_OFFSET;
+  sys_ctrl.pow_en              = sys_ctrl_ptr + POWER_ENABLE_OFFSET;
+  sys_ctrl.cmd_buf_reset       = sys_ctrl_ptr + CMD_BUF_RESET_OFFSET;
+  sys_ctrl.data_buf_reset      = sys_ctrl_ptr + DATA_BUF_RESET_OFFSET;
+  sys_ctrl.thresh_val          = sys_ctrl_ptr + THRESHOLD_VALUE_OFFSET;
+  sys_ctrl.thresh_window       = sys_ctrl_ptr + THRESHOLD_WINDOW_OFFSET;
+  sys_ctrl.thresh_en           = sys_ctrl_ptr + THRESHOLD_ENABLE_OFFSET;
+  sys_ctrl.boot_test_skip      = sys_ctrl_ptr + BOOT_TEST_SKIP_OFFSET;
+  sys_ctrl.debug               = sys_ctrl_ptr + DEBUG_OFFSET;
+  sys_ctrl.dac_cal_init        = sys_ctrl_ptr + DAC_CAL_INIT_OFFSET;
+  sys_ctrl.do_dac_pre_delay    = sys_ctrl_ptr + DO_DAC_PRE_DELAY_OFFSET;
   
   return sys_ctrl;
 }
@@ -35,7 +35,7 @@ void sys_ctrl_turn_ctrl_on(struct sys_ctrl_t *sys_ctrl, bool verbose) {
   if (verbose) {
     printf("Turning on the control board...\n");
   }
-  *(sys_ctrl->ctrl_enable) = 1; // Set the system enable register to 1
+  *(sys_ctrl->ctrl_en) = 1; // Set the system enable register to 1
 }
 
 // Turn the power board on
@@ -43,7 +43,7 @@ void sys_ctrl_turn_pow_on(struct sys_ctrl_t *sys_ctrl, bool verbose) {
   if (verbose) {
     printf("Turning on the power board...\n");
   }
-  *(sys_ctrl->power_enable) = 1; // Set the power enable register to 1
+  *(sys_ctrl->pow_en) = 1; // Set the power enable register to 1
 }
 
 // Turn the system off
@@ -51,8 +51,8 @@ void sys_ctrl_turn_off(struct sys_ctrl_t *sys_ctrl, bool verbose) {
   if (verbose) {
     printf("Turning off the system...\n");
   }
-  *(sys_ctrl->ctrl_enable) = 0; // Set the system enable register to 0
-  *(sys_ctrl->power_enable) = 0;  // Set the power enable register to 0
+  *(sys_ctrl->ctrl_en) = 0; // Set the system enable register to 0
+  *(sys_ctrl->pow_en) = 0;  // Set the power enable register to 0
 }
 
 // Set the command buffer reset register (1 = reset) to a 17-bit mask
@@ -87,39 +87,39 @@ void sys_ctrl_set_data_buf_reset(struct sys_ctrl_t *sys_ctrl, uint32_t mask, boo
   }
 }
 
-// Set the integrator threshold average register to a 32-bit value
-void sys_ctrl_set_integ_threshold_average(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose) {
+// Set the threshold average register to a 32-bit value
+void sys_ctrl_set_thresh_val(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose) {
   if (verbose) {
-    printf("Setting integ_threshold_average to 0x%" PRIx32 "\n", value);
+    printf("Setting thresh_val to 0x%" PRIx32 "\n", value);
   }
-  // Write the 32-bit value to the integrator threshold average register
-  *(sys_ctrl->integ_threshold_average) = value;
+  // Write the 32-bit value to the threshold average register
+  *(sys_ctrl->thresh_val) = value;
   if (verbose) {
-    printf("integ_threshold_average set to 0x%" PRIx32 "\n", *(sys_ctrl->integ_threshold_average));
-  }
-}
-
-// Set the integrator window register to a 32-bit value
-void sys_ctrl_set_integ_window(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose) {
-  if (verbose) {
-    printf("Setting integ_window to 0x%" PRIx32 "\n", value);
-  }
-  // Write the 32-bit value to the integrator window register
-  *(sys_ctrl->integ_window) = value;
-  if (verbose) {
-    printf("integ_window set to 0x%" PRIx32 "\n", *(sys_ctrl->integ_window));
+    printf("thresh_val set to 0x%" PRIx32 "\n", *(sys_ctrl->thresh_val));
   }
 }
 
-// Set the integrator enable register to a 32-bit value
-void sys_ctrl_set_integ_enable(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose) {
+// Set the threshold window register to a 32-bit value
+void sys_ctrl_set_thresh_window(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose) {
   if (verbose) {
-    printf("Setting integ_enable to 0x%" PRIx32 "\n", value);
+    printf("Setting thresh_window to 0x%" PRIx32 "\n", value);
   }
-  // Write the 32-bit value to the integrator enable register
-  *(sys_ctrl->integ_enable) = value;
+  // Write the 32-bit value to the threshold window register
+  *(sys_ctrl->thresh_window) = value;
   if (verbose) {
-    printf("integ_enable set to 0x%" PRIx32 "\n", *(sys_ctrl->integ_enable));
+    printf("thresh_window set to 0x%" PRIx32 "\n", *(sys_ctrl->thresh_window));
+  }
+}
+
+// Set the threshold enable register to a 32-bit value
+void sys_ctrl_set_thresh_en(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose) {
+  if (verbose) {
+    printf("Setting thresh_en to 0x%" PRIx32 "\n", value);
+  }
+  // Write the 32-bit value to the threshold enable register
+  *(sys_ctrl->thresh_en) = value;
+  if (verbose) {
+    printf("thresh_en set to 0x%" PRIx32 "\n", *(sys_ctrl->thresh_en));
   }
 }
 

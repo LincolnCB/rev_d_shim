@@ -15,9 +15,9 @@ The `spi_sts_sync` module synchronizes a variety of status signals from the SPI 
 
 - **SPI Domain Status Inputs**
   - `spi_off`: Indicates the SPI subsystem is powered off.
-  - `over_thresh [7:0]`: Integrator over-threshold status.
-  - `thresh_underflow [7:0]`: Integrator threshold underflow status.
-  - `thresh_overflow [7:0]`: Integrator threshold overflow status.
+  - `over_thresh [7:0]`: Threshold core over-threshold status.
+  - `thresh_underflow [7:0]`: Threshold core threshold underflow status.
+  - `thresh_overflow [7:0]`: Threshold core threshold overflow status.
   - `bad_trig_cmd`: Bad trigger command detected.
   - `trig_data_buf_overflow`: Trigger data buffer overflow.
   - `dac_boot_fail [7:0]`: DAC boot failure status.
@@ -37,9 +37,9 @@ The `spi_sts_sync` module synchronizes a variety of status signals from the SPI 
 
 - **AXI Domain Synchronized Outputs**
   - `spi_off_sync`: Synchronized SPI off status.
-  - `over_thresh_sync [7:0]`: Synchronized integrator over-threshold status.
-  - `thresh_underflow_sync [7:0]`: Synchronized integrator threshold underflow status.
-  - `thresh_overflow_sync [7:0]`: Synchronized integrator threshold overflow status.
+  - `over_thresh_sync [7:0]`: Synchronized threshold core over-threshold status.
+  - `thresh_underflow_sync [7:0]`: Synchronized threshold core threshold underflow status.
+  - `thresh_overflow_sync [7:0]`: Synchronized threshold core threshold overflow status.
   - `bad_trig_cmd_sync`: Synchronized bad trigger command status.
   - `trig_data_buf_overflow_sync`: Synchronized trigger data buffer overflow status.
   - `dac_boot_fail_sync [7:0]`: Synchronized DAC boot failure status.

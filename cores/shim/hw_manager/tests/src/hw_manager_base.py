@@ -34,9 +34,9 @@ class hw_manager_base:
         0x0202: "STS_POW_EN_OOB",
         0x0203: "STS_CMD_BUF_RESET_OOB",
         0x0204: "STS_DATA_BUF_RESET_OOB",
-        0x0205: "STS_INTEG_THRESH_AVG_OOB",
-        0x0206: "STS_INTEG_WINDOW_OOB",
-        0x0207: "STS_INTEG_EN_OOB",
+        0x0205: "STS_THRESH_VAL_OOB",
+        0x0206: "STS_THRESH_WINDOW_OOB",
+        0x0207: "STS_THRESH_EN_OOB",
         0x0208: "STS_BOOT_TEST_SKIP_OOB",
         0x0209: "STS_DEBUG_OOB",
         0x020A: "STS_DAC_CAL_INIT_OOB",
@@ -116,9 +116,9 @@ class hw_manager_base:
         self.dut.pow_en_oob.value = 0
         self.dut.cmd_buf_reset_oob.value = 0
         self.dut.data_buf_reset_oob.value = 0
-        self.dut.integ_thresh_avg_oob.value = 0
-        self.dut.integ_window_oob.value = 0
-        self.dut.integ_en_oob.value = 0
+        self.dut.thresh_val_oob.value = 0
+        self.dut.thresh_window_oob.value = 0
+        self.dut.thresh_en_oob.value = 0
         self.dut.boot_test_skip_oob.value = 0
         self.dut.debug_oob.value = 0
         self.dut.dac_cal_init_oob.value = 0
@@ -126,7 +126,7 @@ class hw_manager_base:
         # Shutdown sense (8-bit per board)
         self.dut.shutdown_sense_sts.value = 0
 
-        # Integrator (8-bit per board)
+        # Threshold (8-bit per board)
         self.dut.over_thresh.value = 0
         self.dut.thresh_underflow.value = 0
         self.dut.thresh_overflow.value = 0
@@ -472,9 +472,9 @@ class hw_manager_base:
             prev_pow_en_oob = self.dut.pow_en_oob.value.integer
             prev_cmd_buf_reset_oob = self.dut.cmd_buf_reset_oob.value.integer
             prev_data_buf_reset_oob = self.dut.data_buf_reset_oob.value.integer
-            prev_integ_thresh_avg_oob = self.dut.integ_thresh_avg_oob.value.integer
-            prev_integ_window_oob = self.dut.integ_window_oob.value.integer
-            prev_integ_en_oob = self.dut.integ_en_oob.value.integer
+            prev_thresh_val_oob = self.dut.thresh_val_oob.value.integer
+            prev_thresh_window_oob = self.dut.thresh_window_oob.value.integer
+            prev_thresh_en_oob = self.dut.thresh_en_oob.value.integer
             prev_boot_test_skip_oob= self.dut.boot_test_skip_oob.value.integer
             prev_debug_oob= self.dut.debug_oob.value.integer
             prev_dac_cal_init_oob= self.dut.dac_cal_init_oob.value.integer
@@ -492,9 +492,9 @@ class hw_manager_base:
                     or prev_pow_en_oob
                     or prev_cmd_buf_reset_oob
                     or prev_data_buf_reset_oob
-                    or prev_integ_thresh_avg_oob
-                    or prev_integ_window_oob
-                    or prev_integ_en_oob
+                    or prev_thresh_val_oob
+                    or prev_thresh_window_oob
+                    or prev_thresh_en_oob
                     or prev_boot_test_skip_oob
                     or prev_debug_oob
                     or prev_dac_cal_init_oob
@@ -523,22 +523,22 @@ class hw_manager_base:
                             expected_status_code=self.get_status_value("STS_DATA_BUF_RESET_OOB")
                         )
                         break
-                    elif(prev_integ_thresh_avg_oob):
+                    elif(prev_thresh_val_oob):
                         await self.check_state_and_status(
                             expected_state=self.get_state_value("S_HALTING"),
-                            expected_status_code=self.get_status_value("STS_INTEG_THRESH_AVG_OOB")
+                            expected_status_code=self.get_status_value("STS_THRESH_VAL_OOB")
                         )
                         break
-                    elif(prev_integ_window_oob):
+                    elif(prev_thresh_window_oob):
                         await self.check_state_and_status(
                             expected_state=self.get_state_value("S_HALTING"),
-                            expected_status_code=self.get_status_value("STS_INTEG_WINDOW_OOB")
+                            expected_status_code=self.get_status_value("STS_THRESH_WINDOW_OOB")
                         )
                         break
-                    elif(prev_integ_en_oob):
+                    elif(prev_thresh_en_oob):
                         await self.check_state_and_status(
                             expected_state=self.get_state_value("S_HALTING"),
-                            expected_status_code=self.get_status_value("STS_INTEG_EN_OOB")
+                            expected_status_code=self.get_status_value("STS_THRESH_EN_OOB")
                         )
                         break
                     elif(prev_boot_test_skip_oob):

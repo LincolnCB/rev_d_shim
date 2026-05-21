@@ -9,7 +9,7 @@ module spi_sts_sync (
   //// Inputs from SPI domain
   // SPI system status
   input  wire        spi_off,
-  // Integrator threshold status
+  // Threshold core status
   input  wire [7:0]  over_thresh,
   input  wire [7:0]  thresh_underflow,
   input  wire [7:0]  thresh_overflow,
@@ -38,7 +38,7 @@ module spi_sts_sync (
   //// Synchronized outputs to AXI domain
   // SPI system status
   output wire        spi_off_sync,
-  // Integrator threshold status
+  // Threshold core status
   output wire [7:0]  over_thresh_sync,
   output wire [7:0]  thresh_underflow_sync,
   output wire [7:0]  thresh_overflow_sync,
@@ -76,7 +76,7 @@ module spi_sts_sync (
     .dout(spi_off_sync)
   );
 
-  // Integrator threshold status
+  // Threshold status
   sync_incoherent #(
     .WIDTH(8)
   ) sync_over_thresh (

@@ -4,8 +4,8 @@
 
 # Get the board count from the calling context
 set board_count [module_get_upvar board_count]
-# Get the include_integrator flag from the calling context
-set include_integrator [module_get_upvar include_integrator]
+# Get the threshold_core_level flag from the calling context
+set threshold_core_level [module_get_upvar threshold_core_level]
 
 # If the board count is not 8, then error out
 if {$board_count < 1 || $board_count > 8} {
@@ -24,9 +24,9 @@ create_bd_pin -dir I -type clock spi_clk
 
 # Configuration signals (need synchronization)
 create_bd_pin -dir I spi_en
-create_bd_pin -dir I -from 14 -to 0 integ_thresh_avg
-create_bd_pin -dir I -from 31 -to 0 integ_window
-create_bd_pin -dir I integ_en
+create_bd_pin -dir I -from 14 -to 0 thresh_val
+create_bd_pin -dir I -from 31 -to 0 thresh_window
+create_bd_pin -dir I thresh_en
 create_bd_pin -dir I -from  4 -to 0 dac_n_cs_high_time
 create_bd_pin -dir I -from 25 -to 0 dac_min_delay_time
 create_bd_pin -dir I -from  7 -to 0 adc_n_cs_high_time
@@ -39,7 +39,7 @@ create_bd_pin -dir I do_dac_pre_delay
 ## Status signals (need synchronization)
 # SPI system status
 create_bd_pin -dir O spi_off
-# Integrator threshold status
+# Threshold status
 create_bd_pin -dir O -from 7 -to 0 over_thresh
 create_bd_pin -dir O -from 7 -to 0 thresh_underflow
 create_bd_pin -dir O -from 7 -to 0 thresh_overflow
@@ -141,9 +141,9 @@ cell shim:user:spi_cfg_sync spi_cfg_sync {} {
   spi_resetn sync_reset/peripheral_aresetn
   spi_en spi_en
   block_bufs block_bufs
-  integ_thresh_avg integ_thresh_avg
-  integ_window integ_window
-  integ_en integ_en
+  thresh_val thresh_val
+  thresh_window thresh_window
+  thresh_en thresh_en
   dac_n_cs_high_time dac_n_cs_high_time
   dac_min_delay_time dac_min_delay_time
   adc_n_cs_high_time adc_n_cs_high_time
@@ -237,9 +237,9 @@ for {set i 0} {$i < $board_count} {incr i} {
   module spi_dac_channel dac_ch$i {
     spi_clk spi_clk
     resetn spi_rst_core/peripheral_aresetn
-    integ_window spi_cfg_sync/integ_window_sync
-    integ_thresh_avg spi_cfg_sync/integ_thresh_avg_sync
-    integ_en spi_cfg_sync/integ_en_sync
+    thresh_window spi_cfg_sync/thresh_window_sync
+    thresh_val spi_cfg_sync/thresh_val_sync
+    thresh_en spi_cfg_sync/thresh_en_sync
     dac_n_cs_high_time spi_cfg_sync/dac_n_cs_high_time_sync
     dac_min_delay_time spi_cfg_sync/dac_min_delay_time_sync
     dac_cal_init spi_cfg_sync/dac_cal_init_sync

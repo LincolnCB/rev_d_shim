@@ -24,15 +24,15 @@ module hw_manager #(
   input   wire          pow_en_oob,           // Power stage enable register out of bounds
   input   wire          cmd_buf_reset_oob,    // Command buffer reset out of bounds
   input   wire          data_buf_reset_oob,   // Data buffer reset out of bounds
-  input   wire          integ_thresh_avg_oob, // Integrator threshold average out of bounds
-  input   wire          integ_window_oob,     // Integrator window out of bounds
-  input   wire          integ_en_oob,         // Integrator enable register out of bounds
+  input   wire          thresh_val_oob,       // Threshold average out of bounds
+  input   wire          thresh_window_oob,    // Threshold window out of bounds
+  input   wire          thresh_en_oob,        // Threshold enable register out of bounds
   input   wire          boot_test_skip_oob,   // Boot test skip out of bounds
   input   wire          debug_oob,            // Debug reg out of bounds
   input   wire          dac_cal_init_oob,     // DAC calibration initial value out of bounds
   // Shutdown sense (per board)
   input   wire  [ 7:0]  shutdown_sense_sts, // Shutdown sense
-  // Integrator (per board)
+  // Threshold (per board)
   input   wire  [ 7:0]  over_thresh,      // DAC over threshold
   input   wire  [ 7:0]  thresh_underflow, // DAC threshold core FIFO underflow
   input   wire  [ 7:0]  thresh_overflow,  // DAC threshold core FIFO overflow
@@ -124,16 +124,16 @@ module hw_manager #(
               STS_POW_EN_OOB              = 25'h0202,
               STS_CMD_BUF_RESET_OOB       = 25'h0203,
               STS_DATA_BUF_RESET_OOB      = 25'h0204,
-              STS_INTEG_THRESH_AVG_OOB    = 25'h0205,
-              STS_INTEG_WINDOW_OOB        = 25'h0206,
-              STS_INTEG_EN_OOB            = 25'h0207,
+              STS_THRESH_VAL_OOB          = 25'h0205,
+              STS_THRESH_WINDOW_OOB       = 25'h0206,
+              STS_THRESH_EN_OOB           = 25'h0207,
               STS_BOOT_TEST_SKIP_OOB      = 25'h0208,
               STS_DEBUG_OOB               = 25'h0209,
               STS_DAC_CAL_INIT_OOB        = 25'h020A;
   // Shutdown sense
   localparam  STS_SHUTDOWN_SENSE          = 25'h0300,
               STS_EXT_SHUTDOWN            = 25'h0301;
-  // Integrator threshold core
+  // Threshold core
   localparam  STS_OVER_THRESH             = 25'h0400,
               STS_THRESH_UNDERFLOW        = 25'h0401,
               STS_THRESH_OVERFLOW         = 25'h0402;
@@ -198,9 +198,9 @@ module hw_manager #(
               || pow_en_oob
               || cmd_buf_reset_oob
               || data_buf_reset_oob
-              || integ_thresh_avg_oob
-              || integ_window_oob
-              || integ_en_oob
+              || thresh_val_oob
+              || thresh_window_oob
+              || thresh_en_oob
               || boot_test_skip_oob
               || debug_oob
               || dac_cal_init_oob
@@ -217,15 +217,15 @@ module hw_manager #(
               end else if (data_buf_reset_oob) begin // Data buffer reset out of bounds
                 state <= S_HALTING;
                 status_code <= STS_DATA_BUF_RESET_OOB;
-              end else if (integ_thresh_avg_oob) begin // Integrator threshold average out of bounds
+              end else if (thresh_val_oob) begin // Threshold average out of bounds
                 state <= S_HALTING;
-                status_code <= STS_INTEG_THRESH_AVG_OOB;
-              end else if (integ_window_oob) begin // Integrator window out of bounds
+                status_code <= STS_THRESH_VAL_OOB;
+              end else if (thresh_window_oob) begin // Threshold window out of bounds
                 state <= S_HALTING;
-                status_code <= STS_INTEG_WINDOW_OOB;
-              end else if (integ_en_oob) begin // Integrator enable out of bounds
+                status_code <= STS_THRESH_WINDOW_OOB;
+              end else if (thresh_en_oob) begin // Threshold enable out of bounds
                 state <= S_HALTING;
-                status_code <= STS_INTEG_EN_OOB;
+                status_code <= STS_THRESH_EN_OOB;
               end else if (boot_test_skip_oob) begin // Boot test skip out of bounds
                 state <= S_HALTING;
                 status_code <= STS_BOOT_TEST_SKIP_OOB;
@@ -383,7 +383,7 @@ module hw_manager #(
               // Shutdown sense
               || |shutdown_sense_sts
               || !ext_en
-              // Integrator threshold core
+              // Threshold core
               || |over_thresh
               || |thresh_underflow
               || |thresh_overflow
@@ -423,7 +423,7 @@ module hw_manager #(
               board_num <= extract_board_num(shutdown_sense_sts);
             end
             else if (!ext_en) status_code <= STS_EXT_SHUTDOWN;
-            // Integrator threshold core
+            // Threshold core
             else if (|over_thresh) begin
               status_code <= STS_OVER_THRESH;
               board_num <= extract_board_num(over_thresh);

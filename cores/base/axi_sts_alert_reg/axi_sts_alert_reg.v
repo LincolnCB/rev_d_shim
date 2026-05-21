@@ -62,8 +62,11 @@ module axi_sts_alert_reg #
   end
 
   // Internal registers for read valid and read data
-  reg int_rvalid_reg, int_rvalid_next;
-  reg [AXI_DATA_WIDTH-1:0] int_rdata_reg, int_rdata_next;
+  reg  int_rvalid_reg;
+  wire int_rvalid_next;
+  reg  [AXI_DATA_WIDTH-1:0] int_rdata_reg;
+  wire [AXI_DATA_WIDTH-1:0] int_rdata_next;
+
   // Register to hold the last read status data
   reg [STS_DATA_WIDTH-1:0] last_read_sts_data;
   // Array of status words split from sts_data
@@ -95,24 +98,12 @@ module axi_sts_alert_reg #
   end
 
   // Combinatorial logic for read valid and read data
-  always @*
-  begin
-    int_rvalid_next = int_rvalid_reg;
-    int_rdata_next = int_rdata_reg;
-
-    // If read address is valid, update next read data and set valid
-    if(s_axi_arvalid)
-    begin
-      int_rvalid_next = 1'b1;
-      int_rdata_next = int_data_mux[s_axi_araddr[ADDR_LSB+STS_WORDCOUNT_WIDTH-1:ADDR_LSB]];
-    end
-
-    // If read data is accepted, clear valid
-    if(s_axi_rready & int_rvalid_reg)
-    begin
-      int_rvalid_next = 1'b0;
-    end
-  end
+  assign int_rvalid_next =  (s_axi_rready & int_rvalid_reg) ? 1'b0 // If read data is accepted, clear valid
+                            : (s_axi_arvalid) ? 1'b1 // If read address is valid, set valid
+                            : int_rvalid_reg;
+  
+  assign int_rdata_next = (s_axi_arvalid) ? int_data_mux[s_axi_araddr[ADDR_LSB+STS_WORDCOUNT_WIDTH-1:ADDR_LSB]] // If read address is valid, update next read data
+                          : int_rdata_reg;
 
   // If reading from the status register, update the corresponding section of the last read status data
   always @(posedge aclk)

@@ -68,15 +68,15 @@
 #define STS_POW_EN_OOB               (uint32_t) 0x0202 // Power board enable register out of bounds.
 #define STS_CMD_BUF_RESET_OOB        (uint32_t) 0x0203 // Command buffer reset out of bounds.
 #define STS_DATA_BUF_RESET_OOB       (uint32_t) 0x0204 // Data buffer reset out of bounds.
-#define STS_INTEG_THRESH_AVG_OOB     (uint32_t) 0x0205 // Integrator threshold average out of bounds.
-#define STS_INTEG_WINDOW_OOB         (uint32_t) 0x0206 // Integrator window out of bounds.
-#define STS_INTEG_EN_OOB             (uint32_t) 0x0207 // Integrator enable register out of bounds.
+#define STS_THRESH_VAL_OOB           (uint32_t) 0x0205 // Threshold average out of bounds.
+#define STS_THRESH_WINDOW_OOB        (uint32_t) 0x0206 // Threshold window out of bounds.
+#define STS_THRESH_EN_OOB            (uint32_t) 0x0207 // Threshold enable register out of bounds.
 #define STS_BOOT_TEST_SKIP_OOB       (uint32_t) 0x0208 // Boot test skip out of bounds.
 #define STS_DEBUG_OOB                (uint32_t) 0x0209 // Debug out of bounds.
 // Shutdown sense
 #define STS_SHUTDOWN_SENSE           (uint32_t) 0x0300 // Shutdown sense detected.
 #define STS_EXT_SHUTDOWN             (uint32_t) 0x0301 // External shutdown triggered.
-// Integrator threshold core
+// Threshold core
 #define STS_OVER_THRESH              (uint32_t) 0x0400 // DAC over threshold.
 #define STS_THRESH_UNDERFLOW         (uint32_t) 0x0401 // DAC threshold FIFO underflow.
 #define STS_THRESH_OVERFLOW          (uint32_t) 0x0402 // DAC threshold FIFO overflow.

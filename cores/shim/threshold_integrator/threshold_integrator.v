@@ -6,7 +6,7 @@ module threshold_integrator (
   input   wire         resetn           ,
   input   wire         enable           ,
   input   wire [ 31:0] window           ,
-  input   wire [ 14:0] threshold_average,
+  input   wire [ 14:0] thresh_val       ,
   input   wire         sample_core_setup,
   input   wire [119:0] abs_sample_concat,
 
@@ -20,12 +20,14 @@ module threshold_integrator (
   //// Internal signals
   reg  [43:0] max_value           ;
   reg  [ 4:0] chunk_width         ;
+  reg  [ 4:0] chunk_width_counter ;
+  reg  [19:0] window_width_reg    ;
   reg  [24:0] chunk_mask          ;
   reg  [24:0] timer_init_value    ;
   reg  [24:0] inflow_chunk_timer  ;
   reg  [31:0] outflow_timer       ;
   reg  [ 3:0] fifo_in_queue_count ;
-  reg  [35:0] fifo_din            ;
+  wire [35:0] fifo_din            ;
   wire        fifo_full           ;
   wire        wr_en               ;
   reg  [ 3:0] fifo_out_queue_count;
@@ -47,17 +49,18 @@ module threshold_integrator (
   reg         add_sum_delta;
 
   // Registers for shift-add multiplication
-  reg  [43:0] window_reg;
-  reg  [14:0] threshold_average_shift;
+  reg  [43:0] window_mult_reg;
+  reg  [14:0] thresh_val_shift;
   reg  [ 4:0] max_value_mult_cnt;
 
   //// State encoding
-  localparam  IDLE          = 3'd0,
-              SETUP         = 3'd1,
-              WAIT          = 3'd2,
-              RUNNING       = 3'd3,
-              OUT_OF_BOUNDS = 3'd4,
-              ERROR         = 3'd5;
+  localparam  IDLE                 = 3'd0,
+              CALC_CHUNK_WIDTH     = 3'd1,
+              CALC_MAX_VALUE       = 3'd2,
+              WAIT_FOR_SAMPLE_CORE = 3'd3,
+              RUNNING              = 3'd4,
+              OUT_OF_BOUNDS        = 3'd5,
+              ERROR                = 3'd6;
 
   //// FIFO for rolling integration memory
   fifo_sync #(
@@ -82,13 +85,8 @@ module threshold_integrator (
   );
 
   //// FIFO I/O
-  always @* begin
-    if (fifo_in_queue_count != 0) begin
-      fifo_din = queued_fifo_in_chunk_sum[fifo_in_queue_count - 1];
-    end else begin
-      fifo_din = 36'b0;
-    end
-  end
+  assign fifo_din = (fifo_in_queue_count != 0) ? queued_fifo_in_chunk_sum[fifo_in_queue_count - 1] : 36'b0;
+
   assign wr_en = (fifo_in_queue_count != 0);
   assign rd_en = (fifo_out_queue_count != 0);
   assign calc_sum_delta = (outflow_timer[3:0] == 0);
@@ -114,8 +112,10 @@ module threshold_integrator (
       setup_done <= 0;
 
       // Shift-add multiplication registers
-      window_reg <= 0;
-      threshold_average_shift <= 0;
+      chunk_width_counter <= 0;
+      window_width_reg <= 0;
+      window_mult_reg <= 0;
+      thresh_val_shift <= 0;
       max_value_mult_cnt <= 0;
 
       // Set initial state
@@ -131,79 +131,49 @@ module threshold_integrator (
               over_thresh <= 1;
               state <= OUT_OF_BOUNDS;
             end else begin
-              // Calculate chunk width based on the window size
-              if (window[31]) begin
-                chunk_width <= 21;
-              end else if (window[30]) begin
-                chunk_width <= 20;
-              end else if (window[29]) begin
-                chunk_width <= 19;
-              end else if (window[28]) begin
-                chunk_width <= 18;
-              end else if (window[27]) begin
-                chunk_width <= 17;
-              end else if (window[26]) begin
-                chunk_width <= 16;
-              end else if (window[25]) begin
-                chunk_width <= 15;
-              end else if (window[24]) begin
-                chunk_width <= 14;
-              end else if (window[23]) begin
-                chunk_width <= 13;
-              end else if (window[22]) begin
-                chunk_width <= 12;
-              end else if (window[21]) begin
-                chunk_width <= 11;
-              end else if (window[20]) begin
-                chunk_width <= 10;
-              end else if (window[19]) begin
-                chunk_width <= 9;
-              end else if (window[18]) begin
-                chunk_width <= 8;
-              end else if (window[17]) begin
-                chunk_width <= 7;
-              end else if (window[16]) begin
-                chunk_width <= 6;
-              end else if (window[15]) begin
-                chunk_width <= 5;
-              end else if (window[14]) begin
-                chunk_width <= 4;
-              end else if (window[13]) begin
-                chunk_width <= 3;
-              end else if (window[12]) begin
-                chunk_width <= 2;
-              end else begin // window[11] must be 1 here if we already know window >= 2048
-                chunk_width <= 1;
-              end
-
-              // Prepare for shift-add multiplication in SETUP
-              window_reg <= {12'b0, window >> 4}; // Only adding every 16th clock cycle
-              threshold_average_shift <= threshold_average;
+              // Prepare for chunk width shift calculation in CALC_CHUNK_WIDTH
+              window_width_reg <= window[31:12]; // Start on bit 12 since it must at least be 2048 (2^11)
+              chunk_width_counter <= 1; // Start at 1 since the minimum chunk width is 1 (window of 2048 means chunk width of 1)
+              
+              // Prepare for shift-add multiplication in CALC_MAX_VALUE
+              window_mult_reg <= {12'b0, window >> 4}; // Only adding every 16th clock cycle
+              thresh_val_shift <= thresh_val;
               max_value_mult_cnt <= 0;
 
-              state <= SETUP;
+              state <= CALC_CHUNK_WIDTH;
             end
           end
         end // IDLE
 
-        // SETUP state, calculating max_value and chunk size
-        SETUP: begin
-          // Shift-add multiplication for max_value = threshold_average * window
-          if (|threshold_average_shift) begin
-            if (threshold_average_shift[0]) begin
-              max_value <= max_value + (window_reg << max_value_mult_cnt);
+        // CALC_CHUNK_WIDTH state, calculating chunk width by finding the MSB index of window_width_reg
+        CALC_CHUNK_WIDTH: begin
+          if (window_width_reg != 0) begin // Shift right until window_width_reg is 0, counting the number of shifts to find the MSB index
+            window_width_reg <= window_width_reg >> 1;
+            chunk_width_counter <= chunk_width_counter + 1;
+          end else begin // Finished finding MSB index, calculate chunk width and move to CALC_MAX_VALUE
+            chunk_width <= chunk_width_counter;
+            state <= CALC_MAX_VALUE;
+          end
+        end // CALC_CHUNK_WIDTH
+
+        // CALC_MAX_VALUE state, calculating max_value and chunk size
+        CALC_MAX_VALUE: begin
+          // Shift-add multiplication for max_value = thresh_val * window
+          if (|thresh_val_shift) begin
+            if (thresh_val_shift[0]) begin
+              max_value <= max_value + (window_mult_reg << max_value_mult_cnt);
             end
-            threshold_average_shift <= threshold_average_shift >> 1;
+            thresh_val_shift <= thresh_val_shift >> 1;
             max_value_mult_cnt <= max_value_mult_cnt + 1;
-          end else begin // Finished shift-add multiplication, set chunk mask / timer init from chunk width and go to WAIT for sample core
+          end else begin // Finished shift-add multiplication, set chunk mask / timer init from chunk width and go to WAIT_FOR_SAMPLE_CORE for sample core
             chunk_mask <= (25'b1 << chunk_width) - 1;
             timer_init_value <= (25'b1 << (chunk_width + 4)) - 1;
-            state <= WAIT;
+            state <= WAIT_FOR_SAMPLE_CORE;
           end
-        end // SETUP
+        end // CALC_MAX_VALUE
 
-        // WAIT state, waiting for sample core (DAC/ADC) to finish setting up
-        WAIT: begin
+        // WAIT_FOR_SAMPLE_CORE state, waiting for sample core (DAC/ADC) to finish setting up
+        WAIT_FOR_SAMPLE_CORE: begin
           if (sample_core_setup) begin
             // Initialize timers
             inflow_chunk_timer <= timer_init_value;
@@ -211,7 +181,7 @@ module threshold_integrator (
             setup_done <= 1;
             state <= RUNNING;
           end
-        end // WAIT
+        end // WAIT_FOR_SAMPLE_CORE
 
         // RUNNING state, main logic
         RUNNING: begin : running_state

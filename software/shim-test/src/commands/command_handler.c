@@ -61,9 +61,9 @@ static command_entry_t command_table[] = {
   {"set_debug", cmd_set_debug, {1, 1, {-1}, "Set debug register to a 16-bit value"}},
   {"set_cmd_buf_reset", cmd_set_cmd_buf_reset, {1, 1, {-1}, "Set command buffer reset register to a 17-bit value"}},
   {"set_data_buf_reset", cmd_set_data_buf_reset, {1, 1, {-1}, "Set data buffer reset register to a 17-bit value"}},
-  {"set_integ_window", cmd_set_integ_window, {1, 1, {-1}, "Set integrator window register to a 32-bit value"}},
-  {"set_integ_average", cmd_set_integ_average, {1, 1, {-1}, "Set integrator threshold average register to a 32-bit value"}},
-  {"set_integ_enable", cmd_set_integ_enable, {1, 1, {-1}, "Set integrator enable register to a 32-bit value"}},
+  {"set_thresh_window", cmd_set_thresh_window, {1, 1, {-1}, "Set threshold window register to a 32-bit value"}},
+  {"set_thresh_average", cmd_set_thresh_average, {1, 1, {-1}, "Set threshold average register to a 32-bit value"}},
+  {"set_thresh_en", cmd_set_thresh_en, {1, 1, {-1}, "Set threshold enable register to a 32-bit value"}},
   {"spi_clk_freq", cmd_spi_clk_freq, {0, 0, {-1}, "Show SPI clock frequency in MHz (and Hz if verbose)"}},
   {"get_min_delay_times", cmd_get_min_delay_times, {0, 0, {-1}, "Show minimum delay times for DAC and ADC in SPI clock cycles"}},
   

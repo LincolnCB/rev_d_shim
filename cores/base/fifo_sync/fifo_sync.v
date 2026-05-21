@@ -44,9 +44,9 @@ module fifo_sync #(
 
 
   // Write and read pointers
-  reg [ADDR_WIDTH:0] wr_ptr_bin;
-  reg [ADDR_WIDTH:0] rd_ptr_bin;
-  reg [ADDR_WIDTH:0] rd_ptr_bin_nxt;
+  reg  [ADDR_WIDTH:0] wr_ptr_bin;
+  reg  [ADDR_WIDTH:0] rd_ptr_bin;
+  wire [ADDR_WIDTH:0] rd_ptr_bin_nxt;
 
   // FIFO memory (BRAM instance)
   mem_sync #(
@@ -72,7 +72,7 @@ module fifo_sync #(
   end
 
   // Read logic
-  always @* rd_ptr_bin_nxt = rd_ptr_bin + {{(ADDR_WIDTH){1'b0}}, (rd_en & ~empty)};
+  assign rd_ptr_bin_nxt = rd_ptr_bin + {{(ADDR_WIDTH){1'b0}}, (rd_en & ~empty)};
   // Update read pointer on clock edge
   always @(posedge clk) begin
     if (!resetn) begin
