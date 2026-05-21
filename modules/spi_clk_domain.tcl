@@ -4,6 +4,8 @@
 
 # Get the board count from the calling context
 set board_count [module_get_upvar board_count]
+# Get the include_integrator flag from the calling context
+set include_integrator [module_get_upvar include_integrator]
 
 # If the board count is not 8, then error out
 if {$board_count < 1 || $board_count > 8} {

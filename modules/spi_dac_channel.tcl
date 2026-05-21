@@ -1,6 +1,9 @@
 ### DAC Channel Module
 ## This module implements a DAC channel with an integrator and SPI interface.
 
+# Get the include_integrator flag from the calling context
+set include_integrator [module_get_upvar include_integrator]
+
 # System signals
 create_bd_pin -dir I -type clock spi_clk
 create_bd_pin -dir I -type reset resetn
@@ -138,44 +141,28 @@ cell shim:user:ad5676_dac_ctrl dac_spi {
 ##################################################
 
 ### Integrator
-
-# Instantiate the threshold integrator module
-cell shim:user:threshold_integrator threshold_core {} {
-  clk spi_clk
-  resetn resetn
-  enable integ_en
-  window integ_window
-  threshold_average integ_thresh_avg
-  sample_core_done dac_spi/setup_done
-  abs_sample_concat dac_spi/abs_dac_val_concat
-  err_overflow thresh_overflow
-  err_underflow thresh_underflow
-  over_thresh over_thresh
-}
-
-# Negate integ_en for setup checking
-cell xilinx.com:ip:util_vector_logic n_integ_en {
-  C_SIZE 1
-  C_OPERATION not
-} {
-  Op1 integ_en
-}
-
-# Integrator marked done if integrator is done or disabled
-cell xilinx.com:ip:util_vector_logic integ_done {
-  C_SIZE 1
-  C_OPERATION or
-} {
-  Op1 n_integ_en/Res
-  Op2 threshold_core/setup_done
-}
-
 # Setup is done if integrator and DAC SPI controller are both done
-cell xilinx.com:ip:util_vector_logic setup_done_and {
-  C_SIZE 1
-  C_OPERATION and
-} {
-  Op1 integ_done/Res
-  Op2 dac_spi/setup_done
-  Res setup_done
+if {$include_integrator} {
+  module spi_dac_integrator dac_integrator {
+    integ_window integ_window
+    integ_thresh_avg integ_thresh_avg
+    integ_en integ_en
+    spi_clk spi_clk
+    resetn resetn
+    abs_sample_concat dac_spi/abs_dac_val_concat
+    sample_core_setup dac_spi/setup_done
+    over_thresh over_thresh
+    thresh_overflow thresh_overflow
+    thresh_underflow thresh_underflow
+  }
+  cell xilinx.com:ip:util_vector_logic setup_done_and {
+    C_SIZE 1
+    C_OPERATION and
+  } {
+    Op1 dac_integrator/setup_done
+    Op2 dac_spi/setup_done
+    Res setup_done
+  }
+} else {
+  wire setup_done dac_spi/setup_done
 }

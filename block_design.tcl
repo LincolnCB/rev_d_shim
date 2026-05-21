@@ -1,5 +1,24 @@
+###############################################################################
+#
+#   Build variables
+#
+###############################################################################
+
 ## Variably define the channel count (MUST BE 1 TO 8 INCLUSIVE)
 set board_count 4
+
+## Variably choose whether to include the integrator module
+# Set to 1 for include, 0 for not
+# Integrator takes up a large amount of LUT elements, which can be an issue at high channel counts
+set include_integrator 0
+
+
+
+###############################################################################
+#
+#   Checks
+#
+###############################################################################
 
 # If the board count is not 8, then error out
 if {$board_count < 1 || $board_count > 8} {
@@ -29,12 +48,13 @@ if {$spi_clk_freq_mhz < 1.0 || $spi_clk_freq_mhz > 50.0} {
 # This sets the depth of the FIFOs as 2^ADDR_WIDTH
 # Larger FIFOs use more FPGA resources, but allow for longer bursts and more buffering.
 # This can hit the cap fast!
-set dac_cmd_fifo_addr_width 13
+set dac_cmd_fifo_addr_width 12
 set dac_data_fifo_addr_width 11
 set adc_cmd_fifo_addr_width 10
-set adc_data_fifo_addr_width 13
+set adc_data_fifo_addr_width 12
 set trig_cmd_fifo_addr_width 10
 set trig_data_fifo_addr_width 10
+
 
 ###############################################################################
 #

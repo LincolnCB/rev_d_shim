@@ -7,7 +7,7 @@ module threshold_integrator (
   input   wire         enable           ,
   input   wire [ 31:0] window           ,
   input   wire [ 14:0] threshold_average,
-  input   wire         sample_core_done ,
+  input   wire         sample_core_setup,
   input   wire [119:0] abs_sample_concat,
 
   // Outputs
@@ -204,7 +204,7 @@ module threshold_integrator (
 
         // WAIT state, waiting for sample core (DAC/ADC) to finish setting up
         WAIT: begin
-          if (sample_core_done) begin
+          if (sample_core_setup) begin
             // Initialize timers
             inflow_chunk_timer <= timer_init_value;
             outflow_timer <= window - 1;
