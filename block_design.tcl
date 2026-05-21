@@ -29,8 +29,8 @@ if {$spi_clk_freq_mhz < 1.0 || $spi_clk_freq_mhz > 50.0} {
 # This sets the depth of the FIFOs as 2^ADDR_WIDTH
 # Larger FIFOs use more FPGA resources, but allow for longer bursts and more buffering.
 # This can hit the cap fast!
-set dac_cmd_fifo_addr_width 14
-set dac_data_fifo_addr_width 12
+set dac_cmd_fifo_addr_width 13
+set dac_data_fifo_addr_width 11
 set adc_cmd_fifo_addr_width 10
 set adc_data_fifo_addr_width 13
 set trig_cmd_fifo_addr_width 10
@@ -149,7 +149,8 @@ cell xilinx.com:ip:xlconstant:1.1 const_1 {
 # Pullup for UART1 RX
 # Enable I2C0 on the correct MIO pins
 # Set FCLK0 to 100 MHz
-# Turn off FCLK1-3 and reset1-3
+# Enable FCLK1 and set to 5 MHz for boot SPI clock
+# Turn off FCLK2-3 and reset1-3
 # Ethernet needs more setup, so leave disabled for now
   # PCW_ENET0_PERIPHERAL_ENABLE 1
   # PCW_ENET0_ENET0_IO {MIO 16 .. 27}
@@ -164,7 +165,8 @@ init_ps ps {
   PCW_I2C0_PERIPHERAL_ENABLE 1
   PCW_I2C0_I2C0_IO {MIO 38 .. 39}
   PCW_FPGA0_PERIPHERAL_FREQMHZ 100
-  PCW_EN_CLK1_PORT 0
+  PCW_EN_CLK1_PORT 1
+  PCW_FPGA1_PERIPHERAL_FREQMHZ 5
   PCW_EN_CLK2_PORT 0
   PCW_EN_CLK3_PORT 0
   PCW_EN_RST1_PORT 0
@@ -270,7 +272,7 @@ if {$use_ext_clk} {
   # MMCM (handles down to 10 MHz input)
   # Includes power down and dynamic reconfiguration
   # Safe clock startup prevents clock output when not locked
-  cell xilinx.com:ip:clk_wiz:6.0 spi_main_clk {
+  cell xilinx.com:ip:clk_wiz:6.0 spi_clk_gen {
     PRIMITIVE MMCM
     USE_DYN_RECONFIG true
     USE_SAFE_CLOCK_STARTUP true
@@ -282,27 +284,12 @@ if {$use_ext_clk} {
     s_axi_aclk ps/FCLK_CLK0
     s_axi_aresetn ps_rst/peripheral_aresetn
     s_axi_lite sys_cfg_axi_intercon/M02_AXI
-    clk_in1 Scanner_30MHz_In
-  }
-  # SPI boot clock (locked to 7 MHz for DAC boot)
-  cell xilinx.com:ip:clk_wiz:6.0 spi_boot_clk {
-    PRIMITIVE PLL
-    USE_DYN_RECONFIG false
-    USE_SAFE_CLOCK_STARTUP true
-    PRIM_IN_FREQ 30
-    CLKOUT1_REQUESTED_OUT_FREQ 7.0
-    FEEDBACK_SOURCE FDBK_AUTO
-    CLKOUT1_DRIVES BUFGCE
-    RESET_PORT resetn
-    RESET_TYPE ACTIVE_LOW
-  } {
-    resetn ps_rst/peripheral_aresetn
     clk_in1 Scanner_30MHz_In
   }
 } else {
   # Use FCLK_CLK0 as the clock input
   # (Vivado gives 99999893 Hz as the actual generated frequency)
-  cell xilinx.com:ip:clk_wiz:6.0 spi_main_clk {
+  cell xilinx.com:ip:clk_wiz:6.0 spi_clk_gen {
     PRIMITIVE MMCM
     USE_DYN_RECONFIG true
     USE_SAFE_CLOCK_STARTUP true
@@ -316,27 +303,12 @@ if {$use_ext_clk} {
     s_axi_lite sys_cfg_axi_intercon/M02_AXI
     clk_in1 ps/FCLK_CLK0
   }
-  cell xilinx.com:ip:clk_wiz:6.0 spi_boot_clk {
-    PRIMITIVE PLL
-    USE_DYN_RECONFIG false
-    USE_SAFE_CLOCK_STARTUP true
-    PRIM_IN_FREQ 99.999893
-    CLKOUT1_REQUESTED_OUT_FREQ 7.0
-    FEEDBACK_SOURCE FDBK_AUTO
-    CLKOUT1_DRIVES BUFGCE
-    RESET_PORT resetn
-    RESET_TYPE ACTIVE_LOW
-  } {
-    resetn ps_rst/peripheral_aresetn
-    clk_in1 ps/FCLK_CLK0
-  }
 }
-addr 0x40200000 2048 spi_main_clk/s_axi_lite ps/M_AXI_GP0
+addr 0x40200000 2048 spi_clk_gen/s_axi_lite ps/M_AXI_GP0
 
-## SPI clock mux between bootup and main clock
 cell base:user:clock_mux spi_clk {} {
-  clk_0_i spi_main_clk/clk_out1
-  clk_1_i spi_boot_clk/clk_out1
+  clk_0_i spi_clk_gen/clk_out1
+  clk_1_i ps/FCLK_CLK1
 }
 
 
@@ -542,7 +514,7 @@ cell xilinx.com:ip:xlconstant:1.1 pad_17 {
 cell xilinx.com:ip:xlconcat:2.1 debug_1 {
   NUM_PORTS 5
 } {
-  In0 spi_main_clk/locked
+  In0 spi_clk_gen/locked
   In1 hw_manager/spi_off
   In2 dac_timing_calc/n_cs_high_time
   In3 adc_timing_calc/n_cs_high_time

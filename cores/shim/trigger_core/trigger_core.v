@@ -37,7 +37,15 @@ module trigger_core #(
       $error("Invalid value for TRIGGER_LOCKOUT_DEFAULT parameter: %d. Must be between %d and %d.", TRIGGER_LOCKOUT_DEFAULT, TRIGGER_LOCKOUT_MIN, 28'hFFFFFFF);
   end
 
-  // Command encoding
+  // FSM states
+  localparam S_RESET       = 3'd0;
+  localparam S_IDLE        = 3'd1;
+  localparam S_SYNC_CH     = 3'd2;
+  localparam S_EXPECT_TRIG = 3'd3;
+  localparam S_DELAY       = 3'd4;
+  localparam S_ERROR       = 3'd5;
+
+  // Command types
   localparam CMD_SYNC_CH         = 3'd1;
   localparam CMD_SET_LOCKOUT     = 3'd2;
   localparam CMD_EXPECT_EXT_TRIG = 3'd3;
@@ -45,14 +53,6 @@ module trigger_core #(
   localparam CMD_FORCE_TRIG      = 3'd5;
   localparam CMD_RESET_COUNT     = 3'd6;
   localparam CMD_CANCEL          = 3'd7;
-
-  // State encoding
-  localparam S_RESET       = 3'd0;
-  localparam S_IDLE        = 3'd1;
-  localparam S_SYNC_CH     = 3'd2;
-  localparam S_EXPECT_TRIG = 3'd3;
-  localparam S_DELAY       = 3'd4;
-  localparam S_ERROR       = 3'd5;
 
   // State machine info
   reg  [ 2:0] state;

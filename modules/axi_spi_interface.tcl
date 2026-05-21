@@ -57,6 +57,7 @@ for {set i 0} {$i < $board_count} {incr i} {
   create_bd_pin -dir I -from 31 -to 0 dac_ch${i}_data
   create_bd_pin -dir I dac_ch${i}_data_wr_en
   create_bd_pin -dir O dac_ch${i}_data_full
+  create_bd_pin -dir O dac_ch${i}_data_almost_full
 
   # ADC command channel
   create_bd_pin -dir O -from 31 -to 0 adc_ch${i}_cmd
@@ -67,12 +68,14 @@ for {set i 0} {$i < $board_count} {incr i} {
   create_bd_pin -dir I -from 31 -to 0 adc_ch${i}_data
   create_bd_pin -dir I adc_ch${i}_data_wr_en
   create_bd_pin -dir O adc_ch${i}_data_full
+  create_bd_pin -dir O adc_ch${i}_data_almost_full
 }
 
 # Trigger command channel
 create_bd_pin -dir O -from 31 -to 0 trig_cmd
 create_bd_pin -dir I trig_cmd_rd_en
 create_bd_pin -dir O trig_cmd_empty
+create_bd_pin -dir O trig_cmd_almost_empty
 
 # Trigger data channel
 create_bd_pin -dir I -from 31 -to 0 trig_data
@@ -233,6 +236,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     wr_data dac_ch${i}_data
     wr_en dac_ch${i}_data_wr_en
     full dac_ch${i}_data_full
+    almost_full dac_ch${i}_data_almost_full
   }
   # 32-bit DAC data FIFO status word
   cell xilinx.com:ip:xlconcat:2.1 dac_data_fifo_${i}_sts_word {
@@ -349,6 +353,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     wr_data adc_ch${i}_data
     wr_en adc_ch${i}_data_wr_en
     full adc_ch${i}_data_full
+    almost_full adc_ch${i}_data_almost_full
   }
   # 32-bit ADC data FIFO status word
   cell xilinx.com:ip:xlconcat:2.1 adc_data_fifo_${i}_sts_word {

@@ -92,16 +92,17 @@ cell base:user:diff_in_buf miso_sck_ibuf {
   diff_in_p miso_sck_p
   diff_in_n miso_sck_n
 }
-#######################################
-# TODO: Requires inversion. This will be a hardware fix next iteration (written 2026-05-19)
-cell xilinx.com:ip:util_vector_logic miso_sck_pol {
-  C_SIZE 8
-  C_OPERATION not
-} {
-  Op1 miso_sck_ibuf/d_out
-  Res miso_sck
-}
-#######################################
+# #######################################
+# # TODO: Requires inversion. This will be a hardware fix next iteration (written 2026-05-19)
+# cell xilinx.com:ip:util_vector_logic miso_sck_pol {
+#   C_SIZE 8
+#   C_OPERATION not
+# } {
+#   Op1 miso_sck_ibuf/d_out
+#   Res miso_sck
+# }
+# #######################################
+wire miso_sck_ibuf/d_out miso_sck
 
 # (MOSI_SCK)
 create_bd_pin -dir I -from 7 -to 0 -type clock mosi_sck

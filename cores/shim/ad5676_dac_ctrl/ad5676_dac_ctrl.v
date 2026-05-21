@@ -106,6 +106,7 @@ module ad5676_dac_ctrl #(
   localparam CMD_DAC_WR_CH = 3'd3;
   localparam CMD_GET_CAL   = 3'd4;
   localparam CMD_ZERO      = 3'd5;
+  localparam CMD_DAC_CHECK = 3'd6;
   localparam CMD_CANCEL    = 3'd7;
 
   // Command bit positions

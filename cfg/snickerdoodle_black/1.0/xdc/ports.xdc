@@ -308,9 +308,19 @@ set_property PACKAGE_PIN U20 [get_ports {MOSI_SCK_n[0]}]
 
 
 #------------------------------------------------------------
-# Internal clock constraints
+# Internal clock definition and constraints
 #------------------------------------------------------------
+
+create_clock -name miso_sck_0 -period 20 [get_ports MISO_SCK_p[0]]
+create_clock -name miso_sck_1 -period 20 [get_ports MISO_SCK_p[1]]
+create_clock -name miso_sck_2 -period 20 [get_ports MISO_SCK_p[2]]
+create_clock -name miso_sck_3 -period 20 [get_ports MISO_SCK_p[3]]
+create_clock -name miso_sck_4 -period 20 [get_ports MISO_SCK_p[4]]
+create_clock -name miso_sck_5 -period 20 [get_ports MISO_SCK_p[5]]
+create_clock -name miso_sck_6 -period 20 [get_ports MISO_SCK_p[6]]
+create_clock -name miso_sck_7 -period 20 [get_ports MISO_SCK_p[7]]
 
 set_clock_groups -name clk_group_scanner -asynchronous -group [get_clocks Scanner_30MHz_In]
 set_clock_groups -name clk_group_fpga -asynchronous -group [get_clocks clk_fpga_0]
-set_clock_groups -logically_exclusive -group [get_clocks -of_object [get_pins -hierarchical spi_main_clk/clk_out1]] -group [get_clocks -of_object [get_pins -hierarchical spi_boot_clk/clk_out1]]
+set_clock_groups -name miso_sck_group -asynchronous -group [get_clocks miso_sck*]
+set_clock_groups -logically_exclusive -group [get_clocks -of_object [get_pins -hierarchical ps/FCLK_CLK1]] -group [get_clocks -of_object [get_pins -hierarchical spi_clk_gen/clk_out1]]
