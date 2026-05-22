@@ -4,7 +4,7 @@ module ads816x_adc_ctrl (
   input  wire        clk,
   input  wire        resetn,
 
-  input  wire        boot_test_skip, // Skip the boot test sequence
+  input  wire        boot_test_skip, // Skip the boot test readback
   input  wire        debug,          // Debug mode flag
   input  wire [7:0]  n_cs_high_time, // n_cs high time in clock cycles (max 255)
   input  wire [24:0] min_delay_time, // Minimum delay time for ADC read commands in clock cycles
@@ -61,7 +61,7 @@ module ads816x_adc_ctrl (
   // FSM states
   localparam S_RESET     = 4'd0;
   localparam S_INIT      = 4'd1;
-  localparam S_TEST_WR   = 4'd2;
+  localparam S_SET_OTF   = 4'd2;
   localparam S_REQ_RD    = 4'd3;
   localparam S_TEST_RD   = 4'd4;
   localparam S_IDLE      = 4'd5;
@@ -251,11 +251,11 @@ module ads816x_adc_ctrl (
   always @(posedge clk) begin
     if (!resetn)                                                state <= S_RESET; // Reset to initial state
     else if (error)                                             state <= S_ERROR; // Check for error states
-    else if (state == S_RESET)                                  state <= boot_test_skip ? S_IDLE : S_INIT; // Skip boot test if requested
-    else if (state == S_INIT)                                   state <= S_TEST_WR; // Transition to TEST_WR first in initialization
-    else if (state == S_TEST_WR && adc_spi_cmd_done)            state <= S_REQ_RD; // Transition to REQ_RD after writing test value
+    else if (state == S_RESET)                                  state <= S_INIT; // Begin initialization
+    else if (state == S_INIT)                                   state <= S_SET_OTF; // Transition to TEST_WR first in initialization
+    else if (state == S_SET_OTF && adc_spi_cmd_done)            state <= boot_test_skip ? S_IDLE : S_REQ_RD; // Transition to REQ_RD after writing test value
     else if (state == S_REQ_RD && adc_spi_cmd_done)             state <= S_TEST_RD; // Transition to TEST_RD after requesting read
-    else if (state == S_TEST_RD && !n_miso_data_ready_mosi_clk) state <= S_IDLE; // Transition to IDLE after reading test value (mismatch will set error flag)
+    else if (state == S_TEST_RD && !n_miso_data_ready_mosi_clk) state <= boot_readback_match ? S_IDLE : S_ERROR; // Transition to IDLE after reading test value, otherwise error
     else if (cancel_wait)                                       state <= S_IDLE; // Cancel the current wait state if cancel command is received
     else if (cmd_done)                                          state <= next_cmd_state; // Transition to state of next command if command is finished
     else if (state == S_ADC_RD && adc_rd_done)                  state <= wait_for_trig ? S_TRIG_WAIT : S_DELAY; // If the ADC read is done, go to the proper wait state
@@ -267,7 +267,7 @@ module ads816x_adc_ctrl (
   // Setup done
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) setup_done <= 1'b0;
-    else if (boot_test_skip) setup_done <= 1'b1; // If boot test is skipped, set setup done immediately
+    else if (boot_test_skip && state == S_SET_OTF && adc_spi_cmd_done) setup_done <= 1'b1; // If boot test is skipped, setup is done after setting OTF mode
     else if ((state == S_TEST_RD) && !n_miso_data_ready_mosi_clk && boot_readback_match) setup_done <= 1'b1;
   end
 
@@ -399,7 +399,7 @@ module ads816x_adc_ctrl (
   assign last_adc_word = (state == S_ADC_RD && adc_word_idx == 8) || (state == S_ADC_RD_CH && adc_word_idx == 1);
   assign adc_spi_cmd_done = ((state == S_ADC_RD)
                              || (state == S_ADC_RD_CH)
-                             || (state == S_TEST_WR)
+                             || (state == S_SET_OTF)
                              || (state == S_REQ_RD)
                              || (state == S_TEST_RD))
                             && !n_cs && !running_n_cs_timer && spi_bit == 0;
@@ -421,7 +421,7 @@ module ads816x_adc_ctrl (
   assign start_spi_cmd =  (do_next_cmd && command == CMD_ADC_RD)
                           || (do_next_cmd && command == CMD_ADC_RD_CH)
                           || (state == S_INIT)
-                          || (state == S_TEST_WR && adc_spi_cmd_done)
+                          || (state == S_SET_OTF && adc_spi_cmd_done && !boot_test_skip)
                           || (state == S_REQ_RD && adc_spi_cmd_done)
                           || (state == S_ADC_RD && adc_spi_cmd_done && !last_adc_word)
                           || (state == S_ADC_RD_CH && adc_spi_cmd_done && !last_adc_word);
@@ -472,8 +472,8 @@ module ads816x_adc_ctrl (
     // If just exiting reset, load the shift register with the command to set On-the-Fly mode
     else if (state == S_INIT) begin
       mosi_shift_reg <= spi_reg_write_cmd(ADDR_OTF_CFG, SET_OTF_CFG_DATA);
-    // Read back the On-the-Fly mode register
-    end else if (state == S_TEST_WR && adc_spi_cmd_done) begin
+    // Read back the On-the-Fly mode register (unless boot test is skipped)
+    end else if (state == S_SET_OTF && adc_spi_cmd_done && !boot_test_skip) begin
       mosi_shift_reg <= spi_reg_read_cmd(ADDR_OTF_CFG);
     // No-op during the word when reading back the On-the-Fly mode register
     end else if (state == S_REQ_RD && adc_spi_cmd_done) begin

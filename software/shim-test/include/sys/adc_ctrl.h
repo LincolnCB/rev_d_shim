@@ -28,7 +28,7 @@ typedef enum {
 // ADC state codes
 #define ADC_STATE_RESET      0
 #define ADC_STATE_INIT       1
-#define ADC_STATE_TEST_WR    2
+#define ADC_STATE_SET_OTF    2
 #define ADC_STATE_REQ_RD     3
 #define ADC_STATE_TEST_RD    4
 #define ADC_STATE_IDLE       5

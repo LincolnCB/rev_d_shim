@@ -106,7 +106,6 @@ module ad5676_dac_ctrl #(
   localparam CMD_DAC_WR_CH = 3'd3;
   localparam CMD_GET_CAL   = 3'd4;
   localparam CMD_ZERO      = 3'd5;
-  localparam CMD_DAC_CHECK = 3'd6;
   localparam CMD_CANCEL    = 3'd7;
 
   // Command bit positions
@@ -297,7 +296,7 @@ module ad5676_dac_ctrl #(
   always @(posedge clk) begin
     if (!resetn)                                                state <= S_RESET; // Reset to initial state
     else if (error)                                             state <= S_ERROR; // Check for error states
-    else if (state == S_RESET)                                  state <= boot_test_skip ? S_IDLE : S_INIT; // Skip boot test if requested
+    else if (state == S_RESET)                                  state <= boot_test_skip ? S_SET_MID : S_INIT; // Skip boot test if requested
     else if (state == S_INIT)                                   state <= S_TEST_WR; // Transition to TEST_WR first in initialization
     else if (state == S_TEST_WR && dac_spi_cmd_done)            state <= S_REQ_RD; // Transition to REQ_RD after writing test value
     else if (state == S_REQ_RD && dac_spi_cmd_done)             state <= S_TEST_RD; // Transition to TEST_RD after requesting read
@@ -313,7 +312,6 @@ module ad5676_dac_ctrl #(
   // Setup done
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) setup_done <= 1'b0; // Reset setup done on reset or error
-    else if (boot_test_skip) setup_done <= 1'b1; // If boot test is skipped, set setup done immediately
     else if (state == S_SET_MID && dac_wr_done) setup_done <= 1'b1;
   end
 
@@ -642,8 +640,8 @@ module ad5676_dac_ctrl #(
     // If finished with the read request, load the shift register with a write to reset the test value
     end else if (state == S_REQ_RD && dac_spi_cmd_done) begin
       mosi_shift_reg <= spi_write_cmd(1, DAC_TEST_CH, cal_midrange[DAC_TEST_CH]);
-    // When setting channels to midrange (test read done or CMD_ZERO), load the shift register with the first channel's midrange value
-    end else if ((state == S_TEST_RD && dac_spi_cmd_done) || (do_next_cmd && command == CMD_ZERO)) begin
+    // When setting channels to midrange (test read done/skipped or CMD_ZERO), load the shift register with the first channel's midrange value
+    end else if ((state == S_TEST_RD && dac_spi_cmd_done) || (state == S_RESET && boot_test_skip) || (do_next_cmd && command == CMD_ZERO)) begin
       mosi_shift_reg <= spi_write_cmd(0, 0, cal_midrange[0]);
     // When finished setting midrange values for a channel, load the next until all channels are set
     end else if (state == S_SET_MID && dac_spi_cmd_done && !last_dac_channel) begin

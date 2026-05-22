@@ -131,8 +131,8 @@ char* adc_format_state(uint8_t state_code, bool verbose) {
     case ADC_STATE_INIT:
       strcat(buffer, "Init");
       break;
-    case ADC_STATE_TEST_WR:
-      strcat(buffer, "Test Write");
+    case ADC_STATE_SET_OTF:
+      strcat(buffer, "Set OTF mode");
       break;
     case ADC_STATE_REQ_RD:
       strcat(buffer, "Request Read");

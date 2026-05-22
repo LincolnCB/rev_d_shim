@@ -24,7 +24,7 @@ class shim_ads816x_adc_ctrl_base:
     STATE_ENCODING = {
         'S_RESET'    : 0,
         'S_INIT'     : 1,
-        'S_TEST_WR'  : 2,
+        'S_SET_OTF'  : 2,
         'S_REQ_RD'   : 3,
         'S_TEST_RD'  : 4,
         'S_IDLE'     : 5,
@@ -1207,8 +1207,8 @@ class shim_ads816x_adc_ctrl_base:
             elif prev_state == self.STATE_ENCODING['S_RESET']:
                 exp_state = self.STATE_ENCODING['S_IDLE'] if prev_boot_test_skip else self.STATE_ENCODING['S_INIT']
             elif prev_state == self.STATE_ENCODING['S_INIT']:
-                exp_state = self.STATE_ENCODING['S_TEST_WR']
-            elif prev_state == self.STATE_ENCODING['S_TEST_WR'] and prev_adc_spi_cmd_done:
+                exp_state = self.STATE_ENCODING['S_SET_OTF']
+            elif prev_state == self.STATE_ENCODING['S_SET_OTF'] and prev_adc_spi_cmd_done:
                 exp_state = self.STATE_ENCODING['S_REQ_RD']
             elif prev_state == self.STATE_ENCODING['S_REQ_RD'] and prev_adc_spi_cmd_done:
                 exp_state = self.STATE_ENCODING['S_TEST_RD']
@@ -1422,7 +1422,7 @@ class shim_ads816x_adc_ctrl_base:
             # check adc_spi_cmd_done
             cond_spi_state = (curr_state == self.STATE_ENCODING['S_ADC_RD'] or
                               curr_state == self.STATE_ENCODING['S_ADC_RD_CH'] or
-                              curr_state == self.STATE_ENCODING['S_TEST_WR'] or
+                              curr_state == self.STATE_ENCODING['S_SET_OTF'] or
                               curr_state == self.STATE_ENCODING['S_REQ_RD'] or
                               curr_state == self.STATE_ENCODING['S_TEST_RD'])
             
@@ -1464,7 +1464,7 @@ class shim_ads816x_adc_ctrl_base:
             # check start_spi_cmd
             cond_cmd_rd = (curr_do_next_cmd and (curr_command == self.CMD_ENCODING['ADC_RD'] or curr_command == self.CMD_ENCODING['ADC_RD_CH']))
             cond_init = (curr_state == self.STATE_ENCODING['S_INIT'])
-            cond_test_wr = (curr_state == self.STATE_ENCODING['S_TEST_WR'] and curr_adc_spi_cmd_done)
+            cond_test_wr = (curr_state == self.STATE_ENCODING['S_SET_OTF'] and curr_adc_spi_cmd_done)
             cond_req_rd = (curr_state == self.STATE_ENCODING['S_REQ_RD'] and curr_adc_spi_cmd_done)
             cond_adc_rd_cont = ((curr_state == self.STATE_ENCODING['S_ADC_RD'] or curr_state == self.STATE_ENCODING['S_ADC_RD_CH']) and 
                                 curr_adc_spi_cmd_done and not curr_last_adc_word)

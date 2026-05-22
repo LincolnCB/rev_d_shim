@@ -44,7 +44,7 @@ The state machine in `ads816x_adc_ctrl` uses the following codes:
 |:----------:|:-------------|:----------------------------------------------------------------------------|
 | `0`        | `S_RESET`    | Reset state; waits for `resetn` deassertion.                                |
 | `1`        | `S_INIT`     | Initialization; starts SPI register write for boot test.                    |
-| `2`        | `S_TEST_WR`  | Boot test: writes On-The-Fly mode to ADC register.                          |
+| `2`        | `S_SET_OTF`  | Necessary initialization: writes On-The-Fly mode to ADC                     |
 | `3`        | `S_REQ_RD`   | Boot test: requests readback of On-The-Fly register.                        |
 | `4`        | `S_TEST_RD`  | Boot test: reads back register value and checks for match.                  |
 | `5`        | `S_IDLE`     | Idle; waits for new command from buffer.                                    |
@@ -67,7 +67,7 @@ The boot test sequence is as follows:
 
 1. **`S_RESET -> S_INIT`**: After exiting reset, the core prepares to write the On-The-Fly mode register.
 
-2. **`S_INIT -> S_TEST_WR`**: Writes the On-The-Fly mode command to the ADC.
+2. **`S_INIT -> S_SET_OTF`**: Writes the On-The-Fly mode command to the ADC.
   - SPI command composition:
     - `[23:19]` = `00001` (SPI register write command)
     - `[18:8]`  = `00000101010` (address for On-The-Fly mode register, `0x2A`)
@@ -78,7 +78,7 @@ The boot test sequence is as follows:
     0x082A01
     ```
 
-3. **`S_TEST_WR -> S_REQ_RD`**: After write completion, requests readback of the On-The-Fly mode register.
+3. **`S_SET_OTF -> S_REQ_RD`**: After write completion, requests readback of the On-The-Fly mode register.
   - SPI command composition:
     - `[23:19]` = `00010` (SPI register read command)
     - `[18:8]`  = `00000101010` (address for On-The-Fly mode register, `0x2A`)
