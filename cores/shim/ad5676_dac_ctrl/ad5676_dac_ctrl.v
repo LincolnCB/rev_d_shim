@@ -185,6 +185,7 @@ module ad5676_dac_ctrl #(
   reg         running_spi_bit;
   // SPI MOSI shift register
   reg  [23:0] mosi_shift_reg;
+  reg         mosi_prepped;
 
   //// ---- DAC MISO SPI control
   reg  [14:0] miso_shift_reg;
@@ -373,7 +374,7 @@ module ad5676_dac_ctrl #(
                   || (state == S_PRE_DELAY && delay_timer < min_delay_latched) // Something went wrong and the PRE_DELAY didn't end when it should
                   || (ldac_unsafe && ldac_shared) // LDAC misalignment
                   || (do_next_cmd && next_cmd_state == S_ERROR) // Bad command
-                  || (((cmd_done && expect_next) || read_next_dac_val_pair) && !next_cmd_ready) // Command buffer underflow
+                  || (cmd_done && expect_next && !next_cmd_ready) // Command buffer underflow
                   || (try_data_write && data_buf_full) // Data buffer overflow
                   || cal_oob // Calibration value out of bounds
                   || dac_val_oob; // DAC value out of bounds
@@ -411,7 +412,7 @@ module ad5676_dac_ctrl #(
   // Command buffer underflow
   always @(posedge clk) begin
     if (!resetn) cmd_buf_underflow <= 1'b0;
-    else if (((cmd_done && expect_next) || read_next_dac_val_pair) && !next_cmd_ready) cmd_buf_underflow <= 1'b1; // Underflow if expecting buffer item but buffer is empty
+    else if (cmd_done && expect_next && !next_cmd_ready) cmd_buf_underflow <= 1'b1; // Underflow if expecting buffer item but buffer is empty
   end
   // Data buffer overflow
   always @(posedge clk) begin
@@ -516,7 +517,7 @@ module ad5676_dac_ctrl #(
              && dac_spi_cmd_done
              && second_dac_channel_of_pair 
              && !last_dac_channel) read_next_dac_val_pair <= 1'b1;
-    else read_next_dac_val_pair <= 1'b0;
+    else if (read_next_dac_val_pair && next_cmd_ready) read_next_dac_val_pair <= 1'b0;
   end
   // DAC write done
   assign dac_wr_done = last_dac_channel && dac_spi_cmd_done;
@@ -595,11 +596,13 @@ module ad5676_dac_ctrl #(
     if (!resetn) n_cs_high_time_latched <= 5'd0;
     else if (state == S_RESET) n_cs_high_time_latched <= (n_cs_high_time > 5'd3) ? n_cs_high_time : 5'd3; // Minimum of 3 cycles high
   end
-  // ~(Chip Select) timer
+  // ~(Chip Select) timer. Will stall if waiting for a DAC word to be available, which could cause timing to fail.
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) n_cs_timer <= 5'd0;
     else if (start_spi_cmd) n_cs_timer <= n_cs_high_time_latched - 1;
-    else if (n_cs_timer > 0) n_cs_timer <= n_cs_timer - 1;
+    else if (n_cs_timer > 1) n_cs_timer <= n_cs_timer - 1;
+    // Only go to 0 when the MOSI shift reg is prepped. For DAC_WR, this could be delayed if the buffer is slow, so check that moment too
+    else if (n_cs_timer == 1 && (mosi_prepped || (state == S_DAC_WR && dac_vals_ready))) n_cs_timer <= 5'd0;
   end
   // ~(Chip Select) timer running flags
   always @(posedge clk) begin
@@ -628,33 +631,46 @@ module ad5676_dac_ctrl #(
   // SPI MOSI shift register
   always @(posedge clk) begin
     // Reset shift register on reset or error
-    if (!resetn || state == S_ERROR) mosi_shift_reg <= 24'd0; 
-     // Shift bits out
-    else if (spi_bit > 0) mosi_shift_reg <= {mosi_shift_reg[22:0], 1'b0};
+    if (!resetn || state == S_ERROR) begin
+      mosi_shift_reg <= 24'd0;
+      mosi_prepped <= 1'b0;
+    // Shift bits out
+    end else if (spi_bit > 0) begin
+      mosi_shift_reg <= {mosi_shift_reg[22:0], 1'b0};
+      mosi_prepped <= 1'b0;
+    end
     // If just exiting reset load the shift register with the test value for boot-up sequence
     else if (state == S_INIT) begin
       mosi_shift_reg <= spi_write_cmd(1, DAC_TEST_CH, DAC_TEST_VAL);
+      mosi_prepped <= 1'b1;
     // If finished with the test write, load the shift register with the read request
     end else if (state == S_TEST_WR && dac_spi_cmd_done) begin
       mosi_shift_reg <= spi_read_cmd(DAC_TEST_CH);
+      mosi_prepped <= 1'b1;
     // If finished with the read request, load the shift register with a write to reset the test value
     end else if (state == S_REQ_RD && dac_spi_cmd_done) begin
       mosi_shift_reg <= spi_write_cmd(1, DAC_TEST_CH, cal_midrange[DAC_TEST_CH]);
+      mosi_prepped <= 1'b1;
     // When setting channels to midrange (test read done/skipped or CMD_ZERO), load the shift register with the first channel's midrange value
     end else if ((state == S_TEST_RD && dac_spi_cmd_done) || (state == S_RESET && boot_test_skip) || (do_next_cmd && command == CMD_ZERO)) begin
       mosi_shift_reg <= spi_write_cmd(0, 0, cal_midrange[0]);
+      mosi_prepped <= 1'b1;
     // When finished setting midrange values for a channel, load the next until all channels are set
     end else if (state == S_SET_MID && dac_spi_cmd_done && !last_dac_channel) begin
       mosi_shift_reg <= spi_write_cmd(0, dac_channel + 1, cal_midrange[dac_channel + 1]);
+      mosi_prepped <= 1'b1;
     // For single-channel DAC commands, load the shift register with just the one DAC value
     end else if (state == S_DAC_WR_CH && dac_vals_ready) begin
       mosi_shift_reg <= spi_write_cmd(0, dac_channel, signed_to_offset(first_dac_val_cal_signed));
+      mosi_prepped <= 1'b1;
     // For full 8-channel DAC commands, load the shift register with the first DAC value of the pair when calibrated values are ready
     end else if (state == S_DAC_WR && dac_vals_ready) begin
       mosi_shift_reg <= spi_write_cmd(1, dac_channel, signed_to_offset(first_dac_val_cal_signed));
+      mosi_prepped <= 1'b1;
     // When finished writing the first channel of a pair, load the shift register with the second DAC value of the pair
     end else if (state == S_DAC_WR && !second_dac_channel_of_pair && dac_spi_cmd_done ) begin
       mosi_shift_reg <= spi_write_cmd(1, dac_channel + 1, signed_to_offset(second_dac_val_cal_signed));
+      mosi_prepped <= 1'b1;
     end
   end
   // Start MISO read in MOSI clock domain
