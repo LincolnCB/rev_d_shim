@@ -54,20 +54,33 @@ module ad5676_dac_timing_calc (
   reg  [31:0] min_cycles_for_t_update;
   reg  [31:0] min_cycles_for_t_min_n_cs_high;
   reg  [31:0] final_result;
-  
-  // Multiplication state machine (shift-add algorithm)
-  reg  [ 3:0] mult_count;
-  reg  [15:0] mult_shift;    // Shift a bit through this to control multiplication
-  reg  [31:0] multiplicand;  // The constant (T_UPDATE_NiS or T_MIN_N_CS_HIGH_NiS)
-  reg  [31:0] multiplier;    // The frequency value
-  reg  [63:0] mult_accumulator;
+
+  // Reusable shift-add multiplier controls
+  reg  [31:0] multiplicand;
+  reg  [31:0] multiplier;
+  reg         mult_start;
+  wire [63:0] mult_result;
+  wire        mult_done;
   wire [63:0] mult_result_rounded_up;
 
   ///////////////////////////////////////////////////////////////////////////////
   // Logic
   ///////////////////////////////////////////////////////////////////////////////
 
-  assign mult_result_rounded_up = mult_accumulator + 64'h3FFFFFFF; // Add 2^30 - 1 for rounding
+  shift_add_mult #(
+    .MULTIPLICAND_WIDTH(32),
+    .MULTIPLIER_WIDTH(32)
+  ) u_shift_add_mult (
+    .clk(clk),
+    .resetn(resetn),
+    .start(mult_start),
+    .multiplicand(multiplicand),
+    .multiplier(multiplier),
+    .result(mult_result),
+    .done(mult_done)
+  );
+
+  assign mult_result_rounded_up = mult_result + 64'h3FFFFFFF; // Add 2^30 - 1 for rounding
 
   always @(posedge clk) begin
     if (!resetn) begin
@@ -80,12 +93,12 @@ module ad5676_dac_timing_calc (
       min_cycles_for_t_update <= 32'd0;
       min_cycles_for_t_min_n_cs_high <= 32'd0;
       final_result <= 32'd0;
-      mult_count <= 4'd0;
-      mult_shift <= 16'd0;
       multiplicand <= 32'd0;
       multiplier <= 32'd0;
-      mult_accumulator <= 64'd0;
+      mult_start <= 1'b0;
     end else begin
+      mult_start <= 1'b0;
+
       case (state)
         S_IDLE: begin
           done <= 1'b0;
@@ -97,9 +110,7 @@ module ad5676_dac_timing_calc (
             // Setup multiplication for T_UPDATE_NiS * spi_clk_freq_hz
             multiplicand <= T_UPDATE_NiS;
             multiplier <= spi_clk_freq_hz;
-            mult_count <= 4'd0;
-            mult_shift <= 16'd0;
-            mult_accumulator <= 64'd0;
+            mult_start <= 1'b1;
           end
         end
 
@@ -112,28 +123,17 @@ module ad5676_dac_timing_calc (
           end else if (!calc) begin
             // calc went low, reset
             state <= S_IDLE;
-          end else begin
-            if (mult_shift < T_UPDATE_NiS) begin
-              // Shift-add multiplication: if current bit of multiplicand is 1, add shifted multiplier
-              if (multiplicand[mult_count]) begin
-                mult_accumulator <= mult_accumulator + ({32'd0, multiplier} << mult_count);
-              end
-              mult_shift <= 16'd1 << mult_count;
-              mult_count <= mult_count + 1;
-            end else begin
-              // Multiplication complete, add 2^30 - 1 for rounding, then shift right by 30 bits (equivalent to divide by 2^30)
-              // Set the min cycles for t_update to be the result minus SPI command bits (24), min of 0
-              min_cycles_for_t_update <= (mult_result_rounded_up[61:30]) > {7'd0, SPI_CMD_BITS} ? (mult_result_rounded_up[61:30] - {7'd0, SPI_CMD_BITS}) : 0;
-              
-              // Setup multiplication for T_MIN_N_CS_HIGH_NiS * spi_clk_freq_hz_latched
-              multiplicand <= T_MIN_N_CS_HIGH_NiS;
-              multiplier <= spi_clk_freq_hz_latched;
-              mult_count <= 4'd0;
-              mult_shift <= 16'd0;
-              mult_accumulator <= 64'd0;
-              
-              state <= S_CALC_MIN_HIGH;
-            end
+          end else if (mult_done) begin
+            // Multiplication complete, add 2^30 - 1 for rounding, then shift right by 30 bits (equivalent to divide by 2^30)
+            // Set the min cycles for t_update to be the result minus SPI command bits (24), min of 0
+            min_cycles_for_t_update <= (mult_result_rounded_up[61:30]) > {7'd0, SPI_CMD_BITS} ? (mult_result_rounded_up[61:30] - {7'd0, SPI_CMD_BITS}) : 0;
+
+            // Setup multiplication for T_MIN_N_CS_HIGH_NiS * spi_clk_freq_hz_latched
+            multiplicand <= T_MIN_N_CS_HIGH_NiS;
+            multiplier <= spi_clk_freq_hz_latched;
+            mult_start <= 1'b1;
+
+            state <= S_CALC_MIN_HIGH;
           end
         end
 
@@ -146,20 +146,11 @@ module ad5676_dac_timing_calc (
           end else if (!calc) begin
             // calc went low, reset
             state <= S_IDLE;
-          end else begin
-            if (mult_shift < T_MIN_N_CS_HIGH_NiS) begin
-              // Shift-add multiplication: if current bit of multiplicand is 1, add shifted multiplier
-              if (multiplicand[mult_count]) begin
-                mult_accumulator <= mult_accumulator + ({32'd0, multiplier} << mult_count);
-              end
-              mult_shift <= 16'd1 << mult_count;
-              mult_count <= mult_count + 1;
-            end else begin
-              // Multiplication complete, add 2^30 - 1 for rounding, then shift right by 30 bits (equivalent to divide by 2^30)
-              // Ensure n_cs high time is at least 3 cycles to do DAC value loading and calibration
-              min_cycles_for_t_min_n_cs_high <= (mult_result_rounded_up[61:30] < 3) ? 32'd3 : mult_result_rounded_up[61:30];
-              state <= S_CALC_RESULT;
-            end
+          end else if (mult_done) begin
+            // Multiplication complete, add 2^30 - 1 for rounding, then shift right by 30 bits (equivalent to divide by 2^30)
+            // Ensure n_cs high time is at least 3 cycles to do DAC value loading and calibration
+            min_cycles_for_t_min_n_cs_high <= (mult_result_rounded_up[61:30] < 3) ? 32'd3 : mult_result_rounded_up[61:30];
+            state <= S_CALC_RESULT;
           end
         end
 

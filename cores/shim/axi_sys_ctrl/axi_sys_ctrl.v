@@ -45,7 +45,7 @@ module axi_sys_ctrl #
   output wire  do_dac_pre_delay_oob,
   output reg   lock_viol,
 
-  // AXI4-Line subordinate port
+  // AXI4-Lite subordinate port
   input  wire [AXI_ADDR_WIDTH-1:0]  s_axi_awaddr,  // AXI4-Lite subordinate: Write address
   input  wire                       s_axi_awvalid, // AXI4-Lite subordinate: Write address valid
   output wire                       s_axi_awready, // AXI4-Lite subordinate: Write address ready

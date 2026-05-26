@@ -108,7 +108,7 @@ int main()
   volatile uint32_t *spi_clk_reset   = (volatile uint32_t *)(spi_clk + 0x0);
   volatile uint32_t *spi_clk_status  = (volatile uint32_t *)(spi_clk + 0x4);
   volatile uint32_t *spi_clk_cfg_0   = (volatile uint32_t *)(spi_clk + 0x200);
-  volatile uint32_t *spi_clk_cfg_1   = (volatile uint32_t *)(spi_clk + 0x208);
+  volatile uint32_t *spi_clk_cfg_2   = (volatile uint32_t *)(spi_clk + 0x208);
   volatile uint32_t *spi_clk_phase   = (volatile uint32_t *)(spi_clk + 0x20C);
   volatile uint32_t *spi_clk_duty    = (volatile uint32_t *)(spi_clk + 0x210);
   volatile uint32_t *spi_clk_enable  = (volatile uint32_t *)(spi_clk + 0x25C);
@@ -192,12 +192,12 @@ int main()
 
     } else if(strcmp(token, "clk_div1") == 0) { // clk_div1 command
       if (verbose) {
-        printf("Accessing the clock divider 1 (in Clock Configuration Register 2 -- %08x)\n", (uint32_t) spi_clk_cfg_1);
+        printf("Accessing the clock divider 1 (in Clock Configuration Register 2 -- %08x)\n", (uint32_t) spi_clk_cfg_2);
       }
       token = strtok(NULL, " ");
       if(token == NULL) {
-        uint32_t int_div = *spi_clk_cfg_1 & 0xFF;
-        uint32_t frac_div = (*spi_clk_cfg_1 >> 8) & 0x3FF;
+        uint32_t int_div = *spi_clk_cfg_2 & 0xFF;
+        uint32_t frac_div = (*spi_clk_cfg_2 >> 8) & 0x3FF;
         printf("Current clk_div1 values: int_val = %u, frac_val = %u\n", int_div, frac_div);
         printf("Equivalent divider: %f\n", (double)int_div + (double)frac_div / 1000.0);
         printf("To change the divider, use the same command but specify int_val and optionally frac_val.\n");
@@ -222,7 +222,7 @@ int main()
       }
 
       printf("Setting clk_div1 values: int_val = %u, frac_val = %u\n", int_val, frac_val);
-      *spi_clk_cfg_1 = *spi_clk_cfg_1 & ~0x0003FFFF | (int_val) | (frac_val << 8);
+      *spi_clk_cfg_2 = *spi_clk_cfg_2 & ~0x0003FFFF | (int_val) | (frac_val << 8);
 
     } else if(strcmp(token, "clk_phase") == 0) { // clk_phase command
       if (verbose) {
@@ -287,7 +287,7 @@ int main()
       }
       printf("Clock Configuration Registers:\n");
       printf("  0: %08x\n", (uint32_t) spi_clk_cfg_0);
-      printf("  2: %08x\n", (uint32_t) spi_clk_cfg_1);
+      printf("  2: %08x\n", (uint32_t) spi_clk_cfg_2);
       printf("  3: %08x\n", (uint32_t) spi_clk_phase);
       printf("  4: %08x\n", (uint32_t) spi_clk_duty);
       printf("  23: %08x\n", (uint32_t) spi_clk_enable);
@@ -297,8 +297,8 @@ int main()
       uint32_t int_mult = (*spi_clk_cfg_0 >> 8) & 0xFF;
       uint32_t frac_mult = (*spi_clk_cfg_0 >> 16) & 0x3FF;
       uint32_t int_div_0 = *spi_clk_cfg_0 & 0xFF;
-      uint32_t int_div_1 = *spi_clk_cfg_1 & 0xFF;
-      uint32_t frac_div_1 = (*spi_clk_cfg_1 >> 8) & 0x3FF;
+      uint32_t int_div_1 = *spi_clk_cfg_2 & 0xFF;
+      uint32_t frac_div_1 = (*spi_clk_cfg_2 >> 8) & 0x3FF;
       int32_t phase = *spi_clk_phase;
       uint32_t duty = *spi_clk_duty;
       uint32_t locked = *spi_clk_status & 0x1;

@@ -82,13 +82,13 @@ module ads816x_adc_timing_calc #(
   reg  [31:0] min_cycles_for_t_conv;
   reg  [31:0] min_cycles_for_t_cycle;
   reg  [31:0] final_result;
-  
-  // Multiplication state machine (shift-add algorithm)
-  reg  [ 3:0] mult_count;      // 4 bits sufficient for max 16 bits
-  reg  [15:0] mult_shift;      // Shift a bit through this to control multiplication
-  reg  [31:0] multiplicand;    // The constant (T_CONV_NiS or T_CYCLE_NiS or MISO_DELAY_NiS)
-  reg  [31:0] multiplier;      // The frequency value
-  reg  [63:0] mult_accumulator;
+
+  // Reusable shift-add multiplier controls
+  reg  [31:0] multiplicand;
+  reg  [31:0] multiplier;
+  reg         mult_start;
+  wire [63:0] mult_result;
+  wire        mult_done;
   wire [63:0] mult_result_rounded_up;
 
   // MISO half-clock delay calculation intermediate
@@ -98,7 +98,20 @@ module ads816x_adc_timing_calc #(
   // Logic
   ///////////////////////////////////////////////////////////////////////////////
 
-  assign mult_result_rounded_up = mult_accumulator + 64'h3FFFFFFF; // Add 2^30 - 1 for rounding
+  shift_add_mult #(
+    .MULTIPLICAND_WIDTH(32),
+    .MULTIPLIER_WIDTH(32)
+  ) u_shift_add_mult (
+    .clk(clk),
+    .resetn(resetn),
+    .start(mult_start),
+    .multiplicand(multiplicand),
+    .multiplier(multiplier),
+    .result(mult_result),
+    .done(mult_done)
+  );
+
+  assign mult_result_rounded_up = mult_result + 64'h3FFFFFFF; // Add 2^30 - 1 for rounding
 
   always @(posedge clk) begin
     if (!resetn) begin
@@ -113,12 +126,12 @@ module ads816x_adc_timing_calc #(
       min_cycles_for_t_conv <= 32'd0;
       min_cycles_for_t_cycle <= 32'd0;
       final_result <= 32'd0;
-      mult_count <= 4'd0;
-      mult_shift <= 16'd0;
       multiplicand <= 32'd0;
       multiplier <= 32'd0;
-      mult_accumulator <= 64'd0;
+      mult_start <= 1'b0;
     end else begin
+      mult_start <= 1'b0;
+
       case (state)
         S_IDLE: begin
           done <= 1'b0;
@@ -130,9 +143,7 @@ module ads816x_adc_timing_calc #(
             // Setup multiplication for T_CONV_NiS * spi_clk_freq_hz
             multiplicand <= T_CONV_NiS;
             multiplier <= spi_clk_freq_hz;
-            mult_count <= 4'd0;
-            mult_shift <= 16'd0;
-            mult_accumulator <= 64'd0;
+            mult_start <= 1'b1;
           end
         end
 
@@ -145,27 +156,17 @@ module ads816x_adc_timing_calc #(
           end else if (!calc) begin
             // calc went low, reset
             state <= S_IDLE;
-          end else begin
-            if (mult_shift < T_CONV_NiS) begin
-              // Shift-add multiplication: if current bit of multiplicand is 1, add shifted multiplier
-              if (multiplicand[mult_count]) begin
-                mult_accumulator <= mult_accumulator + ({32'd0, multiplier} << mult_count);
-              end
-              mult_shift <= 16'd1 << mult_count;
-              mult_count <= mult_count + 1;
-            end else begin
-              // Multiplication complete, add 2^30 - 1 for rounding, then shift right by 30 bits (equivalent to divide by 2^30)
-              // Ensure n_cs high time is at least 3 cycles to give the ADC core enough time to send data
-              min_cycles_for_t_conv <= (mult_result_rounded_up[61:30]) < 3 ? 3 : (mult_result_rounded_up[61:30]);
-              // Setup multiplication for T_CYCLE_NiS * spi_clk_freq_hz_latched
-              multiplicand <= T_CYCLE_NiS;
-              multiplier <= spi_clk_freq_hz_latched;
-              mult_count <= 4'd0;
-              mult_shift <= 16'd0;
-              mult_accumulator <= 64'd0;
-              
-              state <= S_CALC_CYCLE;
-            end
+          end else if (mult_done) begin
+            // Multiplication complete, add 2^30 - 1 for rounding, then shift right by 30 bits (equivalent to divide by 2^30)
+            // Ensure n_cs high time is at least 3 cycles to give the ADC core enough time to send data
+            min_cycles_for_t_conv <= (mult_result_rounded_up[61:30]) < 3 ? 3 : (mult_result_rounded_up[61:30]);
+
+            // Setup multiplication for T_CYCLE_NiS * spi_clk_freq_hz_latched
+            multiplicand <= T_CYCLE_NiS;
+            multiplier <= spi_clk_freq_hz_latched;
+            mult_start <= 1'b1;
+
+            state <= S_CALC_CYCLE;
           end
         end
 
@@ -178,26 +179,16 @@ module ads816x_adc_timing_calc #(
           end else if (!calc) begin
             // calc went low, reset
             state <= S_IDLE;
-          end else begin
-            if (mult_shift < T_CYCLE_NiS) begin
-              // Shift-add multiplication: if current bit of multiplicand is 1, add shifted multiplier
-              if (multiplicand[mult_count]) begin
-                mult_accumulator <= mult_accumulator + ({32'd0, multiplier} << mult_count);
-              end
-              mult_shift <= 16'd1 << mult_count;
-              mult_count <= mult_count + 1;
-            end else begin
-              // Multiplication complete, add 2^30 - 1 for rounding, then shift right by 30 bits (equivalent to divide by 2^30)
-              // Set the min cycles for t_cycle to be the result minus OTF command bits (16), min of 0
-              min_cycles_for_t_cycle <= (mult_result_rounded_up[61:30]) > {7'd0, OTF_CMD_BITS} ? ((mult_result_rounded_up[61:30]) - {7'd0, OTF_CMD_BITS}) : 0;
-              // Setup multiplication for MISO_DELAY_NiS * spi_clk_freq_hz_latched
-              multiplicand <= MISO_DELAY_NiS;
-              multiplier <= spi_clk_freq_hz_latched;
-              mult_count <= 4'd0;
-              mult_shift <= 16'd0;
-              mult_accumulator <= 64'd0;
-              state <= S_CALC_RESULT;
-            end
+          end else if (mult_done) begin
+            // Multiplication complete, add 2^30 - 1 for rounding, then shift right by 30 bits (equivalent to divide by 2^30)
+            // Set the min cycles for t_cycle to be the result minus OTF command bits (16), min of 0
+            min_cycles_for_t_cycle <= (mult_result_rounded_up[61:30]) > {7'd0, OTF_CMD_BITS} ? ((mult_result_rounded_up[61:30]) - {7'd0, OTF_CMD_BITS}) : 0;
+
+            // Setup multiplication for MISO_DELAY_NiS * spi_clk_freq_hz_latched
+            multiplicand <= MISO_DELAY_NiS;
+            multiplier <= spi_clk_freq_hz_latched;
+            mult_start <= 1'b1;
+            state <= S_CALC_RESULT;
           end
         end
 
@@ -229,25 +220,17 @@ module ads816x_adc_timing_calc #(
             state <= S_IDLE;
           end else if (!calc) begin
             state <= S_IDLE;
-          end else begin
-            // Calculate MISO delay: multiply spi_clk_freq_hz by MISO_DELAY_NiS, then add MISO_DELAY_OFFSET for rounding, then shift right by 30 bits
-            if (mult_shift < MISO_DELAY_NiS) begin
-              if (multiplicand[mult_count]) begin
-                mult_accumulator <= mult_accumulator + ({32'd0, multiplier} << mult_count);
-              end
-              mult_shift <= 16'd1 << mult_count;
-              mult_count <= mult_count + 1;
+          end else if (mult_done) begin
+            // Cap n_cs_high_time at 255 (at the maximum 50MHz SPI clock, 255 + 16 bits is 5420ns, which is over the maximum 4000ns required)
+            if (final_result > 255) begin
+              n_cs_high_time <= 8'd255;
             end else begin
-              // Cap n_cs_high_time at 255 (at the maximum 50MHz SPI clock, 255 + 16 bits is 5420ns, which is over the maximum 4000ns required)
-              if (final_result > 255) begin
-                n_cs_high_time <= 8'd255;
-              end else begin
-                n_cs_high_time <= final_result[7:0]; // Truncate to 8 bits
-              end
-              // Store MISO delay calculation result
-              miso_delay_calc <= (mult_accumulator + MISO_DELAY_OFFSET);
-              state <= S_FIND_MIN_DELAY;
+              n_cs_high_time <= final_result[7:0]; // Truncate to 8 bits
             end
+
+            // Store MISO delay calculation result
+            miso_delay_calc <= (mult_result + MISO_DELAY_OFFSET);
+            state <= S_FIND_MIN_DELAY;
           end
         end
 
