@@ -4,13 +4,13 @@ module shift_add_mult #(
   parameter integer MULTIPLICAND_WIDTH = 32,
   parameter integer MULTIPLIER_WIDTH   = 32
 ) (
-  input  wire        clk,
-  input  wire        resetn,
-  input  wire        start,
-  input  wire [MULTIPLICAND_WIDTH-1:0] multiplicand,
-  input  wire [MULTIPLIER_WIDTH-1:0]   multiplier,
+  input  wire                                           clk,
+  input  wire                                           resetn,
+  input  wire                                           start,
+  input  wire [MULTIPLICAND_WIDTH-1                 :0] multiplicand,
+  input  wire [MULTIPLIER_WIDTH-1                   :0] multiplier,
   output reg  [MULTIPLICAND_WIDTH+MULTIPLIER_WIDTH-1:0] result,
-  output reg         done
+  output reg                                            done
 );
 
   // Function to calculate the ceiling of log2(value)

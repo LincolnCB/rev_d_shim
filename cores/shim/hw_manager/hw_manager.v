@@ -15,53 +15,59 @@ module hw_manager #(
   // Inputs
   input   wire          ctrl_en,        // Control board enable (turn the system on)
   input   wire          pow_en,         // Power stage enable (turn on power stage)
-  input   wire          spi_off,        // SPI system powered off
-  input   wire          calc_n_cs_done, // DAC/ADC n_cs timing calculation done
   input   wire          ext_en,         // External enable (deadman shutdown)
   // Pre-start configuration values
-  input   wire          lock_viol,            // Configuration lock violation
-  input   wire          ctrl_en_oob,          // Control board enable register out of bounds
-  input   wire          pow_en_oob,           // Power stage enable register out of bounds
-  input   wire          cmd_buf_reset_oob,    // Command buffer reset out of bounds
-  input   wire          data_buf_reset_oob,   // Data buffer reset out of bounds
-  input   wire          thresh_val_oob,       // Threshold average out of bounds
-  input   wire          thresh_window_oob,    // Threshold window out of bounds
-  input   wire          thresh_en_oob,        // Threshold enable register out of bounds
-  input   wire          boot_test_skip_oob,   // Boot test skip out of bounds
-  input   wire          debug_oob,            // Debug reg out of bounds
-  input   wire          dac_cal_init_oob,     // DAC calibration initial value out of bounds
+  input   wire          lock_viol,               // Configuration lock violation
+  input   wire          ctrl_en_oob,             // Control board enable register out of bounds
+  input   wire          pow_en_oob,              // Power stage enable register out of bounds
+  input   wire          cmd_buf_reset_oob,       // Command buffer reset out of bounds
+  input   wire          data_buf_reset_oob,      // Data buffer reset out of bounds
+  input   wire          thresh_val_oob,          // Threshold average out of bounds
+  input   wire          thresh_window_oob,       // Threshold window out of bounds
+  input   wire          thresh_en_oob,           // Threshold enable register out of bounds
+  input   wire          boot_test_skip_oob,      // Boot test skip out of bounds
+  input   wire          debug_oob,               // Debug reg out of bounds
+  input   wire          dac_cal_init_oob,        // DAC calibration initial value out of bounds
+  // SPI clock manager checks
+  input   wire          spi_clk_locked,          // SPI clock manager PLL locked
+  input   wire          spi_clk_reconf_in_prog,  // SPI clock reconfiguration in progress
+  input   wire          spi_clk_div_by_zero,     // SPI clock divided by 0 (invalid)
+  input   wire          spi_clk_freq_oob,        // SPI clock frequency out of bounds
+  // SPI subsystem status
+  input   wire          spi_off,                 // SPI system powered off
+  input   wire          calc_n_cs_done,          // DAC/ADC n_cs timing calculation done
   // Shutdown sense (per board)
-  input   wire  [ 7:0]  shutdown_sense_sts, // Shutdown sense
+  input   wire  [ 7:0]  shutdown_sense_sts,      // Shutdown sense
   // Threshold (per board)
-  input   wire  [ 7:0]  over_thresh,      // DAC over threshold
-  input   wire  [ 7:0]  thresh_underflow, // DAC threshold core FIFO underflow
-  input   wire  [ 7:0]  thresh_overflow,  // DAC threshold core FIFO overflow
+  input   wire  [ 7:0]  over_thresh,             // DAC over threshold
+  input   wire  [ 7:0]  thresh_underflow,        // DAC threshold core FIFO underflow
+  input   wire  [ 7:0]  thresh_overflow,         // DAC threshold core FIFO overflow
   // Trigger buffer and commands
   input   wire          bad_trig_cmd,            // Bad trigger command
   input   wire          trig_cmd_buf_overflow,   // Trigger command buffer overflow
   input   wire          trig_data_buf_underflow, // Trigger data buffer underflow
   input   wire          trig_data_buf_overflow,  // Trigger data buffer overflow
   // DAC buffers and commands (per board)
-  input   wire  [ 7:0]  dac_boot_fail,          // DAC boot failure
-  input   wire  [ 7:0]  bad_dac_cmd,            // Bad DAC command
-  input   wire  [ 7:0]  dac_cal_oob,            // DAC calibration out of bounds
-  input   wire  [ 7:0]  dac_val_oob,            // DAC value out of bounds
-  input   wire  [ 7:0]  dac_cmd_buf_underflow,  // DAC command buffer underflow
-  input   wire  [ 7:0]  dac_cmd_buf_overflow,   // DAC command buffer overflow
-  input   wire  [ 7:0]  dac_data_buf_underflow, // DAC data buffer underflow
-  input   wire  [ 7:0]  dac_data_buf_overflow,  // DAC data buffer overflow
-  input   wire  [ 7:0]  unexp_dac_trig,         // Unexpected DAC trigger
-  input   wire  [ 7:0]  ldac_misalign,          // LDAC misalignment
-  input   wire  [ 7:0]  dac_delay_too_short,    // DAC delay too short
+  input   wire  [ 7:0]  dac_boot_fail,           // DAC boot failure
+  input   wire  [ 7:0]  bad_dac_cmd,             // Bad DAC command
+  input   wire  [ 7:0]  dac_cal_oob,             // DAC calibration out of bounds
+  input   wire  [ 7:0]  dac_val_oob,             // DAC value out of bounds
+  input   wire  [ 7:0]  dac_cmd_buf_underflow,   // DAC command buffer underflow
+  input   wire  [ 7:0]  dac_cmd_buf_overflow,    // DAC command buffer overflow
+  input   wire  [ 7:0]  dac_data_buf_underflow,  // DAC data buffer underflow
+  input   wire  [ 7:0]  dac_data_buf_overflow,   // DAC data buffer overflow
+  input   wire  [ 7:0]  unexp_dac_trig,          // Unexpected DAC trigger
+  input   wire  [ 7:0]  ldac_misalign,           // LDAC misalignment
+  input   wire  [ 7:0]  dac_delay_too_short,     // DAC delay too short
   // ADC buffers and commands (per board)
-  input   wire  [ 7:0]  adc_boot_fail,          // ADC boot failure
-  input   wire  [ 7:0]  bad_adc_cmd,            // Bad ADC command
-  input   wire  [ 7:0]  adc_cmd_buf_underflow,  // ADC command buffer underflow
-  input   wire  [ 7:0]  adc_cmd_buf_overflow,   // ADC command buffer overflow
-  input   wire  [ 7:0]  adc_data_buf_underflow, // ADC data buffer underflow
-  input   wire  [ 7:0]  adc_data_buf_overflow,  // ADC data buffer overflow
-  input   wire  [ 7:0]  unexp_adc_trig,         // Unexpected ADC trigger
-  input   wire  [ 7:0]  adc_delay_too_short,    // ADC delay too short
+  input   wire  [ 7:0]  adc_boot_fail,           // ADC boot failure
+  input   wire  [ 7:0]  bad_adc_cmd,             // Bad ADC command
+  input   wire  [ 7:0]  adc_cmd_buf_underflow,   // ADC command buffer underflow
+  input   wire  [ 7:0]  adc_cmd_buf_overflow,    // ADC command buffer overflow
+  input   wire  [ 7:0]  adc_data_buf_underflow,  // ADC data buffer underflow
+  input   wire  [ 7:0]  adc_data_buf_overflow,   // ADC data buffer overflow
+  input   wire  [ 7:0]  unexp_adc_trig,          // Unexpected ADC trigger
+  input   wire  [ 7:0]  adc_delay_too_short,     // ADC delay too short
 
   // Outputs
   output  reg           unlock_cfg,        // Lock configuration
@@ -129,7 +135,11 @@ module hw_manager #(
               STS_THRESH_EN_OOB           = 25'h0207,
               STS_BOOT_TEST_SKIP_OOB      = 25'h0208,
               STS_DEBUG_OOB               = 25'h0209,
-              STS_DAC_CAL_INIT_OOB        = 25'h020A;
+              STS_DAC_CAL_INIT_OOB        = 25'h020A,
+              STS_SPI_CLK_LOCKED_FAIL     = 25'h020B,
+              STS_SPI_CLK_RECONF_IN_PROG  = 25'h020C,
+              STS_SPI_CLK_DIV_0           = 25'h020D,
+              STS_SPI_CLK_OOB             = 25'h020E;
   // Shutdown sense
   localparam  STS_SHUTDOWN_SENSE          = 25'h0300,
               STS_EXT_SHUTDOWN            = 25'h0301;
@@ -205,36 +215,51 @@ module hw_manager #(
               || debug_oob
               || dac_cal_init_oob
             ) begin
+              // Halt before enabling anything
+              state <= S_HALTING;
+
               if (ctrl_en_oob) begin // Control board enable out of bounds
-                state <= S_HALTING;
                 status_code <= STS_CTRL_EN_OOB;
               end else if (pow_en_oob) begin // Power stage enable out of bounds
-                state <= S_HALTING;
                 status_code <= STS_POW_EN_OOB;
               end else if (cmd_buf_reset_oob) begin // Command buffer reset out of bounds
-                state <= S_HALTING;
                 status_code <= STS_CMD_BUF_RESET_OOB;
               end else if (data_buf_reset_oob) begin // Data buffer reset out of bounds
-                state <= S_HALTING;
                 status_code <= STS_DATA_BUF_RESET_OOB;
               end else if (thresh_val_oob) begin // Threshold average out of bounds
-                state <= S_HALTING;
                 status_code <= STS_THRESH_VAL_OOB;
               end else if (thresh_window_oob) begin // Threshold window out of bounds
-                state <= S_HALTING;
                 status_code <= STS_THRESH_WINDOW_OOB;
               end else if (thresh_en_oob) begin // Threshold enable out of bounds
-                state <= S_HALTING;
                 status_code <= STS_THRESH_EN_OOB;
               end else if (boot_test_skip_oob) begin // Boot test skip out of bounds
-                state <= S_HALTING;
                 status_code <= STS_BOOT_TEST_SKIP_OOB;
               end else if (debug_oob) begin // Debug reg out of bounds
-                state <= S_HALTING;
                 status_code <= STS_DEBUG_OOB;
               end else if (dac_cal_init_oob) begin // DAC calibration initial value out of bounds
-                state <= S_HALTING;
                 status_code <= STS_DAC_CAL_INIT_OOB;
+              end else begin
+                status_code <= STS_EMPTY; // Should be unreachable
+              end
+            end else if (
+              // Check for SPI clock manager issues
+              !spi_clk_locked
+              || spi_clk_reconf_in_prog
+              || spi_clk_div_by_zero
+              || spi_clk_freq_oob
+            ) begin
+              state <= S_HALTING;
+
+              if (!spi_clk_locked) begin // SPI clock manager PLL not locked
+                status_code <= STS_SPI_CLK_LOCKED_FAIL;
+              end else if (spi_clk_reconf_in_prog) begin // SPI clock reconfiguration in progress
+                status_code <= STS_SPI_CLK_RECONF_IN_PROG;
+              end else if (spi_clk_div_by_zero) begin // SPI clock divided by 0 (invalid)
+                status_code <= STS_SPI_CLK_DIV_0;
+              end else if (spi_clk_freq_oob) begin // SPI clock frequency out of bounds
+                status_code <= STS_SPI_CLK_OOB;
+              end else begin
+                status_code <= STS_EMPTY; // Should be unreachable
               end
             end else begin // Lock the cfg registers and start the SPI clock to confirm the SPI subsystem is initialized
               state <= S_CONFIRM_SPI_RST;

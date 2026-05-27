@@ -45,7 +45,6 @@ module shift_sub_div #(
       if (!busy) begin
         done <= 1'b0;
         if (start) begin
-          dividend_latched <= dividend;
           divisor_latched <= divisor;
           dividend_shift <= dividend;
           quotient_work <= {DIVIDEND_WIDTH{1'b0}};
