@@ -250,15 +250,9 @@ module ad5676_dac_ctrl #(
   //// ---- State machine transitions
   // Allow a cancel command to cancel a delay or trigger wait:
   //   Skips the trigger counter or delay timer to 0 next cycle, ending the wait immediately
-  assign cancel_wait =  (state == S_DELAY || state == S_TRIG_WAIT || state == S_PRE_DELAY)
+  assign cancel_wait =  (state == S_DELAY || state == S_TRIG_WAIT)
                         && next_cmd_ready
                         && command == CMD_CANCEL;
-  // Trigger wait is done when trigger counter occurs at 1, or finish immediately if trigger counter was 0
-  assign trig_wait_done = (trigger && trigger_counter == 1) || trigger_counter == 0;
-  // Delay wait is done when delay timer reaches 0
-  assign delay_wait_done = (delay_timer == 0);
-  // Pre-delay wait is done when delay timer reaches min_delay_latched
-  assign pre_delay_wait_done = (delay_timer == min_delay_latched);
   // Current command is finished
   assign cmd_done = (state == S_IDLE && next_cmd_ready) // IDLE and next command is ready
                     // Waiting and wait is fully done
@@ -318,6 +312,11 @@ module ad5676_dac_ctrl #(
 
 
   //// ---- Delay timer
+  // Delay wait is done when delay timer reaches 0
+  assign delay_wait_done = (delay_timer == 0);
+  // Pre-delay wait is done when delay timer reaches min_delay_latched
+  assign pre_delay_wait_done = (delay_timer == min_delay_latched);
+  // Latch the minimum delay time when booting
   always @(posedge clk) begin
     if (!resetn) min_delay_latched <= 25'd0;
     else if (state == S_RESET) min_delay_latched <= (min_delay_time > 25'd216) ? min_delay_time : 25'd216; // Absolute minimum delay is 216 cycles (8 * (24 + 3))
@@ -325,12 +324,7 @@ module ad5676_dac_ctrl #(
   // CANCEL command can skip to the end of the wait
   always @(posedge clk) begin
     // Reset delay timer on reset, error, or canceling a wait
-    if (!resetn || state == S_ERROR) delay_timer <= 25'd0;
-    // Skip forward if cancel_wait depending on whether in DELAY or PRE_DELAY
-    else if (cancel_wait) begin
-      if (state == S_DELAY) delay_timer <= 25'd0;
-      else if (state == S_PRE_DELAY) delay_timer <= min_delay_latched;
-    end
+    if (!resetn || state == S_ERROR || cancel_wait) delay_timer <= 25'd0;
     // If the next command is a DAC write or no-op with a delay wait, load the delay timer from command word
     else if (do_next_cmd 
              && ((command == CMD_DAC_WR) || (command == CMD_NO_OP)) 
@@ -346,6 +340,8 @@ module ad5676_dac_ctrl #(
 
 
   //// ---- Trigger counter
+  // Trigger wait is done when trigger counter occurs at 1, or finish immediately if trigger counter was 0
+  assign trig_wait_done = (trigger && trigger_counter == 1) || trigger_counter == 0;
   // CANCEL command can skip to the end of the wait
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR || cancel_wait) trigger_counter <= 25'd0;
