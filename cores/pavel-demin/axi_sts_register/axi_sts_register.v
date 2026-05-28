@@ -75,7 +75,7 @@ module axi_sts_register #
   assign int_rvalid_next =  (s_axi_rready & int_rvalid_reg) ? 1'b0
                             : (s_axi_arvalid) ? 1'b1
                             : int_rvalid_reg;
-  
+
   assign int_rdata_next = (s_axi_arvalid) ? int_data_mux[s_axi_araddr[ADDR_LSB+STS_WIDTH-1:ADDR_LSB]]
                           : int_rdata_reg;
 

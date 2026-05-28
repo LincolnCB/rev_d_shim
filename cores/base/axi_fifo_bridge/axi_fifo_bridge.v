@@ -46,9 +46,9 @@ module axi_fifo_bridge #(
 
   // Validate parameters
   initial begin
-    if (AXI_ADDR_WIDTH <= 0) 
+    if (AXI_ADDR_WIDTH <= 0)
       $error("Invalid value for AXI_ADDR_WIDTH parameter: %d. Must be greater than 0.", AXI_ADDR_WIDTH);
-    if (AXI_DATA_WIDTH <= 0 || AXI_DATA_WIDTH % 8 != 0) 
+    if (AXI_DATA_WIDTH <= 0 || AXI_DATA_WIDTH % 8 != 0)
       $error("Invalid value for AXI_DATA_WIDTH parameter: %d. Must be greater than 0 and a multiple of 8.", AXI_DATA_WIDTH);
     if (ENABLE_WRITE != 0 && ENABLE_WRITE != 1)
       $error("Invalid value for ENABLE_WRITE parameter: %d. Must be 0 or 1.", ENABLE_WRITE);

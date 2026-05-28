@@ -43,7 +43,7 @@ The module implements a 5-state finite state machine:
 
 1. **S_IDLE (0)**: Waiting for calculation request
 2. **S_CALC_CONV (1)**: Calculate minimum cycles for conversion time
-3. **S_CALC_CYCLE (2)**: Calculate minimum cycles for cycle time  
+3. **S_CALC_CYCLE (2)**: Calculate minimum cycles for cycle time
 4. **S_CALC_RESULT (3)**: Determine final result from both calculations
 5. **S_DONE (4)**: Output final result and wait for calc deassertion
 
@@ -74,7 +74,7 @@ The module uses optimized shift-add multiplication to avoid DSP resource usage a
 - **Automatic Rounding**: Adds 2^30 - 1 before bit shifting to ensure proper rounding up
 - **Optimized Multiplication**: Shift-add algorithm iterates only for significant bits:
   - ADS8168: 10-11 iterations instead of 32
-  - ADS8167: 11-12 iterations instead of 32  
+  - ADS8167: 11-12 iterations instead of 32
   - ADS8166: 12-13 iterations instead of 32
 - **Resource Efficient**: Uses wire for intermediate rounding calculations, no DSP blocks required
 

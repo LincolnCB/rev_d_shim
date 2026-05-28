@@ -26,7 +26,7 @@ struct sys_ctrl_t create_sys_ctrl(bool verbose) {
   sys_ctrl.debug               = sys_ctrl_ptr + DEBUG_OFFSET;
   sys_ctrl.dac_cal_init        = sys_ctrl_ptr + DAC_CAL_INIT_OFFSET;
   sys_ctrl.do_dac_pre_delay    = sys_ctrl_ptr + DO_DAC_PRE_DELAY_OFFSET;
-  
+
   return sys_ctrl;
 }
 
@@ -164,13 +164,13 @@ void sys_ctrl_set_dac_cal_init(struct sys_ctrl_t *sys_ctrl, int16_t value, bool 
 void sys_ctrl_toggle_dac_pre_delay(struct sys_ctrl_t *sys_ctrl, bool verbose) {
   uint32_t current_value = *(sys_ctrl->do_dac_pre_delay);
   uint32_t new_value = current_value ^ 0x1; // Toggle the last bit
-  
+
   if (verbose) {
     printf("Toggling DAC pre-delay bit from 0x%" PRIx32 " to 0x%" PRIx32 "\n", current_value, new_value);
   }
-  
+
   *(sys_ctrl->do_dac_pre_delay) = new_value;
-  
+
   if (verbose) {
     printf("DAC pre-delay bit set to 0x%" PRIx32 "\n", *(sys_ctrl->do_dac_pre_delay));
   }

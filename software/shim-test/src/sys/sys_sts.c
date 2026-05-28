@@ -10,17 +10,17 @@
 // Function to create system status structure
 struct sys_sts_t create_sys_sts(bool verbose) {
   struct sys_sts_t sys_sts;
-  
+
   // Map system status register
   volatile uint32_t *sys_sts_ptr = map_32bit_memory(SYS_STS, SYS_STS_WORDCOUNT, "System Status", verbose);
   if (sys_sts_ptr == NULL) {
     fprintf(stderr, "Failed to map system status memory region.\n");
     exit(EXIT_FAILURE);
   }
-  
+
   // Initialize the system status structure with the mapped memory addresses
   sys_sts.hw_status_reg = sys_sts_ptr + HW_STS_REG_OFFSET;
-  
+
   // Initialize FIFO status pointers for each board
   for (int i = 0; i < 8; i++) {
     sys_sts.dac_cmd_fifo_sts[i] = sys_sts_ptr + DAC_CMD_FIFO_STS_OFFSET(i);
@@ -28,24 +28,24 @@ struct sys_sts_t create_sys_sts(bool verbose) {
     sys_sts.adc_cmd_fifo_sts[i] = sys_sts_ptr + ADC_CMD_FIFO_STS_OFFSET(i);
     sys_sts.adc_data_fifo_sts[i] = sys_sts_ptr + ADC_DATA_FIFO_STS_OFFSET(i);
   }
-  
+
   // Initialize trigger FIFO status pointers
   sys_sts.trig_cmd_fifo_sts = sys_sts_ptr + TRIG_CMD_FIFO_STS_OFFSET;
   sys_sts.trig_data_fifo_sts = sys_sts_ptr + TRIG_DATA_FIFO_STS_OFFSET;
 
   // Initialize SPI clock frequency pointer
   sys_sts.spi_clk_freq_hz = sys_sts_ptr + SPI_CLK_FREQ_OFFSET;
-  
+
   // Initialize trigger counter pointer
   sys_sts.trig_counter = sys_sts_ptr + TRIG_COUNTER_OFFSET;
-  
+
   // Initialize debug register
   sys_sts.debug = sys_sts_ptr + DEBUG_REG_OFFSET;
 
   // Initialize DAC and ADC minimum delay time registers
   sys_sts.dac_min_delay_time = sys_sts_ptr + DEBUG_DAC_MIN_DELAY_TIME_OFFSET;
   sys_sts.adc_min_delay_time = sys_sts_ptr + DEBUG_ADC_MIN_DELAY_TIME_OFFSET;
-  
+
   return sys_sts;
 }
 
@@ -300,7 +300,7 @@ void print_debug_register(struct sys_sts_t *sys_sts) {
     printf("%u", (value >> bit) & 1);
   }
   printf(")\n");
-  
+
   // Print specific bit interpretations
   printf("  SPI Clock Locked: %s\n", (value & (1 << DEBUG_SPI_CLK_LOCKED_BIT)) ? "Yes" : "No");
   printf("  SPI Off: %s\n", (value & (1 << DEBUG_SPI_OFF_BIT)) ? "Yes" : "No");
@@ -389,14 +389,14 @@ uint32_t sys_sts_get_adc_min_delay_time(struct sys_sts_t *sys_sts, bool verbose)
   }
   return *(sys_sts->adc_min_delay_time);
 }
-  
+
 
 
 // Print FIFO status details
 void print_fifo_status(uint32_t fifo_status, const char *fifo_name) {
   printf("%s FIFO Status:\n", fifo_name);
   printf("  Present: %s\n", FIFO_PRESENT(fifo_status) ? "Yes" : "No");
-  
+
   // Only print detailed status if FIFO is present
   if (FIFO_PRESENT(fifo_status)) {
     printf("  Word Count: %u\n", FIFO_STS_WORD_COUNT(fifo_status));
@@ -452,18 +452,18 @@ static void *hw_manager_irq_thread_func(void *arg) {
 
     if (read(fd, &irq_count, sizeof(irq_count)) == sizeof(irq_count)) {
       printf("\nHardware manager interrupt received! (count: %u)\n", irq_count);
-      
+
       // Get and print the hardware status
       uint32_t hw_status = sys_sts_get_hw_status(irq_data->sys_sts, irq_data->verbose);
       print_hw_status(hw_status, irq_data->verbose);
-      
+
       // Clear the interrupt
       if (write(fd, &clear_value, sizeof(clear_value)) < 0) {
         perror("Failed to clear interrupt after handling");
       } else if (irq_data->verbose) {
         printf("Interrupt cleared successfully\n");
       }
-      
+
       // Check if hardware status is "running" - if not, exit the monitoring loop
       if (HW_STS_STATE(hw_status) != S_RUNNING) {
         if (irq_data->verbose) {
@@ -471,7 +471,7 @@ static void *hw_manager_irq_thread_func(void *arg) {
         }
         break;
       }
-      
+
       // If still running, continue monitoring for next interrupt
       if (irq_data->verbose) {
         printf("Hardware still running - continuing interrupt monitoring\n");
@@ -483,11 +483,11 @@ static void *hw_manager_irq_thread_func(void *arg) {
   }
 
   close(fd);
-  
+
   if (irq_data->verbose) {
     printf("Hardware manager interrupt monitor thread exiting\n");
   }
-  
+
   pthread_exit(NULL);
 }
 

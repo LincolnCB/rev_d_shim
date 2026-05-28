@@ -3,10 +3,10 @@
 module ad5676_dac_timing_calc (
   input  wire        clk,
   input  wire        resetn,
-  
+
   input  wire [31:0] spi_clk_freq_hz, // SPI clock frequency in Hz
   input  wire        calc,            // Start calculation signal
-  
+
   output reg  [4:0]  n_cs_high_time, // Calculated n_cs high time in cycles (3 to 31)
   output reg  [24:0] min_delay_time, // Minimum delay time for DAC update commands in cycles
   output reg         done,           // Calculation complete
@@ -49,7 +49,7 @@ module ad5676_dac_timing_calc (
 
   reg  [ 2:0] state;
   reg  [31:0] spi_clk_freq_hz_latched;
-  
+
   // Intermediate calculation results
   reg  [31:0] min_cycles_for_t_update;
   reg  [31:0] min_cycles_for_t_min_n_cs_high;
@@ -106,7 +106,7 @@ module ad5676_dac_timing_calc (
           if (calc) begin
             spi_clk_freq_hz_latched <= spi_clk_freq_hz;
             state <= S_CALC_UPDATE;
-            
+
             // Setup multiplication for T_UPDATE_NiS * spi_clk_freq_hz
             multiplicand <= T_UPDATE_NiS;
             multiplier <= spi_clk_freq_hz;

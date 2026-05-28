@@ -34,12 +34,12 @@ async def test_basic_write_read(dut):
     start_coverage_monitor(dut)  # Start coverage monitoring
     await tb.reset()
     tb.dut._log.info("STARTING TEST: Basic Write/Read Operation")
-    
+
     # Test single write/read
     test_data = random.randint(0, tb.MAX_DATA_VALUE)
     success = await tb.write(test_data)
     assert success, "Write should succeed on empty FIFO"
-    
+
     # Read the data back
     read_data, expected_data, success = await tb.read()
     assert success, "Read should succeed on non-empty FIFO"
@@ -55,15 +55,15 @@ async def back_to_back_read_after_write(dut):
     start_coverage_monitor(dut)  # Start coverage monitoring
     await tb.reset()
     tb.dut._log.info("STARTING TEST: Back-to-Back Read After Write")
-    
+
     test_data = random.randint(0, tb.MAX_DATA_VALUE)
-    
+
     # Write single data item
     await RisingEdge(dut.clk)
     dut.wr_data.value = test_data
     dut.wr_en.value = 1
     tb.dut._log.info(f"Writing data: 0x{test_data:X}")
-    
+
     # Read data will be available after two clock cycles
     await RisingEdge(dut.clk)
     dut.wr_en.value = 0
@@ -93,7 +93,7 @@ async def test_fwft_behavior(dut):
     start_coverage_monitor(dut)  # Start coverage monitoring
     await tb.reset()
     tb.dut._log.info("STARTING TEST: First Word Fall Through (FWFT) Behavior")
-    
+
     # Write first data item
     test_data1 = random.randint(0, tb.MAX_DATA_VALUE)
     test_data2 = random.randint(0, tb.MAX_DATA_VALUE)
@@ -104,20 +104,20 @@ async def test_fwft_behavior(dut):
     await ReadWrite()  # Wait for combinational logic to settle
     read_data = int(dut.rd_data.value)
     assert read_data == test_data1, f"FWFT: Data not immediately available. Expected 0x{test_data1:X}, got 0x{read_data:X}"
-    
+
     # Write second data item
     await tb.write(test_data2)
-    
+
     # rd_data should still show first item
     await RisingEdge(dut.clk)
     await ReadWrite()
     read_data = int(dut.rd_data.value)
     assert read_data == test_data1, f"FWFT: First data should still be visible. Expected 0x{test_data1:X}, got 0x{read_data:X}"
-    
+
     # Read first item
     read_data, expected_data, success = await tb.read()
     assert success and read_data == test_data1, "First read failed"
-    
+
     # Second item should now be visible
     await ReadWrite()
     read_data = int(dut.rd_data.value)
@@ -130,7 +130,7 @@ async def test_full_and_empty_conditions(dut):
     start_coverage_monitor(dut)  # Start coverage monitoring
     await tb.reset()
     tb.dut._log.info("STARTING TEST: Full and Empty Conditions")
-    
+
     fill_data = await tb.generate_random_data(tb.FIFO_DEPTH)
     written_count = await tb.write_burst(fill_data)
     assert written_count == tb.FIFO_DEPTH, f"Expected to write {tb.FIFO_DEPTH} items, but wrote {written_count}"
@@ -158,12 +158,12 @@ async def test_almost_full_empty_conditions(dut):
     tb = await setup_testbench(dut)
     await tb.reset()
     tb.dut._log.info("STARTING TEST: Almost Full and Almost Empty Conditions")
-    
+
     # Fill FIFO to almost full
     fill_data = await tb.generate_random_data(tb.FIFO_DEPTH - tb.ALMOST_FULL_THRESHOLD)
     written_count = await tb.write_burst(fill_data)
     assert written_count == tb.FIFO_DEPTH - tb.ALMOST_FULL_THRESHOLD, f"Expected to write {tb.FIFO_DEPTH - tb.ALMOST_FULL_THRESHOLD} items, but wrote {written_count}"
-    
+
     await ReadOnly()
     assert dut.almost_full.value == 1, "FIFO should be almost full after writing items"
     assert dut.full.value == 0, "FIFO should not be full after writing items"
@@ -176,7 +176,7 @@ async def test_almost_full_empty_conditions(dut):
 
     for read_value, expected_value in read_results:
         assert read_value == expected_value, f"Data mismatch: read=0x{read_value:X}, expected=0x{expected_value:X}"
-    
+
     await ReadOnly()
     assert dut.almost_empty.value == 1, "FIFO should be almost empty after reading items"
     assert dut.empty.value == 0, "FIFO should not be empty after reading items"
@@ -210,8 +210,8 @@ async def test_random_simultaneous_read_write(dut):
 
         # Start simultaneous writes
         write_task = cocotb.start_soon(tb.write_burst(random_data))
-        
-        # Start simultaneous reads 
+
+        # Start simultaneous reads
         read_task = cocotb.start_soon(tb.read_burst(number_of_random_reads))
 
         # Wait for the write task to complete
@@ -219,7 +219,7 @@ async def test_random_simultaneous_read_write(dut):
 
         # Wait for the read task to complete
         read_results = await read_task
-        
+
         # Verify the read results
         for read_value, expected_value in read_results:
             #assert read_value in initial_data or read_value in random_data, f"Unexpected read value: 0x{read_value:X}"
@@ -261,7 +261,7 @@ async def test_random_simultaneous_read_write_w_one_initial_data(dut):
         # Start simultaneous writes
         write_task = cocotb.start_soon(tb.write_burst(random_data))
 
-        # Start simultaneous reads 
+        # Start simultaneous reads
         await RisingEdge(dut.clk)
         read_task = cocotb.start_soon(tb.read_burst(number_of_random_reads))
 
@@ -270,7 +270,7 @@ async def test_random_simultaneous_read_write_w_one_initial_data(dut):
 
         # Wait for the read task to complete
         read_results = await read_task
-        
+
         # Verify the read results
         for read_value, expected_value in read_results:
             #assert read_value in initial_data or read_value in random_data, f"Unexpected read value: 0x{read_value:X}"

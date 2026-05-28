@@ -60,8 +60,8 @@ module axi_clock_timing_snoop # (
 // https://docs.amd.com/r/en-US/pg065-clk-wiz/Port-Descriptions
 
 // Software Reset Register
-//  To activate software reset, the value 0x0000_000A must be written to the register. 
-//  Any other access, read or write, has undefined results. 
+//  To activate software reset, the value 0x0000_000A must be written to the register.
+//  Any other access, read or write, has undefined results.
 localparam [10:0] ADDR_SRR = 11'h000;
 reg  [31:0] axi_srr_reg;
 wire sreset = (axi_srr_reg == 32'h0000_000A);
@@ -75,7 +75,7 @@ wire resetn = ~sreset & aresetn; // Combine software reset with external reset, 
 //     Integer part of multiplier value i.e. For 8.125, this value is 8 = 0x8.
 //   Bit[25:16] = CLKFBOUT_FRAC Multiply (3)
 //     Fractional part of multiplier value i.e. For 8.125, this value is 125 = 0x7D.
-//     The value of CLKFBOUT fractional divide can be from 0 to 875 representing the fractional multiplied by 1000. 
+//     The value of CLKFBOUT fractional divide can be from 0 to 875 representing the fractional multiplied by 1000.
 localparam [10:0] ADDR_CLK_CFG_0 = 11'h200;
 reg  [31:0] axi_clk_cfg_0_reg;
 wire [7:0] divclk_divide = axi_clk_cfg_0_reg[7:0];
@@ -88,7 +88,7 @@ wire [9:0] clkfbout_frac_mult = axi_clk_cfg_0_reg[25:16];
 //     For example, for 2.250, this value is 2 = 0x2
 //   Bit[17:8] = CLKOUT0_FRAC Divide (3)
 //     Fractional part of clkout0 divide value
-//     For example, for 2.250, this value is 250 = 0xFA 
+//     For example, for 2.250, this value is 250 = 0xFA
 localparam [10:0] ADDR_CLK_CFG_2 = 11'h208;
 reg  [31:0] axi_clk_cfg_2_reg;
 wire [7:0] clkout0_divide = axi_clk_cfg_2_reg[7:0];
@@ -97,12 +97,12 @@ wire [9:0] clkout0_frac_divide = axi_clk_cfg_2_reg[17:8];
 
 // Clock Configuration Register 23 (Load Register)
 //   Bit[0] = LOAD / SEN
-//     Loads Clock Configuration Register values to the internal register used for dynamic reconfiguration and initiates reconfiguration state machine. 
-//     This bit should be asserted when the required settings are already written into Clock Configuration Registers. 
+//     Loads Clock Configuration Register values to the internal register used for dynamic reconfiguration and initiates reconfiguration state machine.
+//     This bit should be asserted when the required settings are already written into Clock Configuration Registers.
 //     This bit retains to 0, when the dynamic reconfiguration is done and the clock is locked.
 //   Bit[1] = SADDR
 //     When written 0, default configuration done in the Clocking Wizard GUI is loaded for dynamic reconfiguration.
-//     When written 1, setting provided in the Clock Configuration Registers are used for dynamic reconfiguration. 
+//     When written 1, setting provided in the Clock Configuration Registers are used for dynamic reconfiguration.
 localparam [10:0] ADDR_CLK_CFG_23 = 11'h25C;
 reg  [31:0] axi_clk_cfg_23_reg;
 wire clk_cfg_load = axi_clk_cfg_23_reg[0];
@@ -110,7 +110,7 @@ wire clk_cfg_use_default = axi_clk_cfg_23_reg[1];
 
 // Max fractional value for multiplier/divider (represents 0.875)
 localparam [9:0] FRAC_MAX = 10'd875;
-localparam       SPI_CLK_FREQ_HZ_DEFAULT = (SOURCE_CLK_FREQ_HZ * (CLKFBOUT_MULT_DEFAULT * 1000 + CLKFBOUT_FRAC_MULT_DEFAULT)) 
+localparam       SPI_CLK_FREQ_HZ_DEFAULT = (SOURCE_CLK_FREQ_HZ * (CLKFBOUT_MULT_DEFAULT * 1000 + CLKFBOUT_FRAC_MULT_DEFAULT))
                                             / (DIVCLK_DIVIDE_DEFAULT * (CLKOUT0_DIVIDE_DEFAULT * 1000 + CLKOUT0_FRAC_DIVIDE_DEFAULT));
 // Make sure the defaults are valid values
 initial begin
@@ -256,7 +256,7 @@ always @(posedge aclk) begin
     if (s_axi_awvalid && s_axi_wvalid && (s_axi_awaddr == ADDR_CLK_CFG_23)) begin
       axi_clk_cfg_23_reg <= s_axi_wdata;
     end else if (reconfig_done) begin
-      // Clear the load bit when reconfiguration 
+      // Clear the load bit when reconfiguration
       axi_clk_cfg_23_reg[0] <= 1'b0;
     end
   end
@@ -403,7 +403,7 @@ always @(posedge aclk) begin
 end
 
 
-// Assign all AXI4-Lite manager signals to directly forward 
+// Assign all AXI4-Lite manager signals to directly forward
 //  from subordinate port for snooping and vice versa
 assign m_axi_awaddr = s_axi_awaddr;
 assign m_axi_awvalid = s_axi_awvalid;

@@ -43,14 +43,14 @@ int cmd_read_trig_data(const char** args, int arg_count, const command_flag_t* f
     printf("Trigger data FIFO is not present. Cannot read data.\n");
     return -1;
   }
-  
+
   if (FIFO_STS_EMPTY(sys_sts_get_trig_data_fifo_status(ctx->sys_sts, *(ctx->verbose)))) {
     printf("Trigger data FIFO is empty. Cannot read data.\n");
     return -1;
   }
-  
+
   bool read_all = has_flag(flags, flag_count, FLAG_ALL);
-  
+
   if (read_all) {
     printf("Reading all data from trigger FIFO...\n");
     int count = 0;
@@ -110,12 +110,12 @@ int cmd_trig_set_lockout(const char** args, int arg_count, const command_flag_t*
     fprintf(stderr, "Invalid lockout cycles for trig_set_lockout: '%s'. Must be a number.\n", args[0]);
     return -1;
   }
-  
+
   if (cycles == 0 || cycles > 0x0FFFFFFF) {
     fprintf(stderr, "Lockout cycles out of range: %u (valid range: 1 - 268435455)\n", cycles);
     return -1;
   }
-  
+
   trigger_cmd_set_lockout(ctx->trigger_ctrl, cycles, *(ctx->verbose));
   printf("Trigger set lockout command sent with %u cycles.\n", cycles);
   return 0;
@@ -128,12 +128,12 @@ int cmd_trig_delay(const char** args, int arg_count, const command_flag_t* flags
     fprintf(stderr, "Invalid delay cycles for trig_delay: '%s'. Must be a number.\n", args[0]);
     return -1;
   }
-  
+
   if (cycles > 0x0FFFFFFF) {
     fprintf(stderr, "Delay cycles out of range: %u (valid range: 0 - 268435455)\n", cycles);
     return -1;
   }
-  
+
   trigger_cmd_delay(ctx->trigger_ctrl, cycles, *(ctx->verbose));
   printf("Trigger delay command sent with %u cycles.\n", cycles);
   return 0;
@@ -146,12 +146,12 @@ int cmd_trig_expect_ext(const char** args, int arg_count, const command_flag_t* 
     fprintf(stderr, "Invalid count for trig_expect_ext: '%s'. Must be a number.\n", args[0]);
     return -1;
   }
-  
+
   if (count > 0x0FFFFFFF) {
     fprintf(stderr, "Count out of range: %u (valid range: 0 - 268435455)\n", count);
     return -1;
   }
-  
+
   bool log = (arg_count > 1 && strcmp(args[1], "log") == 0);
   trigger_cmd_expect_ext(ctx->trigger_ctrl, count, log, *(ctx->verbose));
   printf("Trigger expect external command sent with count %u%s.\n", count, log ? " with logging" : "");
@@ -169,14 +169,14 @@ static void* trigger_data_stream_thread(void* arg) {
   bool verbose = *(ctx->verbose);
 
   if (verbose) {
-    printf("Trigger Stream Thread: Starting to write %llu samples to file '%s' (%s format)\n", 
+    printf("Trigger Stream Thread: Starting to write %llu samples to file '%s' (%s format)\n",
            sample_count, file_path, binary_mode ? "binary" : "ASCII");
   }
 
   // Open file for writing (binary or text mode based on format)
   FILE* file = fopen(file_path, binary_mode ? "wb" : "w");
   if (file == NULL) {
-    fprintf(stderr, "Trigger Stream Thread: Failed to open file '%s' for writing: %s\n", 
+    fprintf(stderr, "Trigger Stream Thread: Failed to open file '%s' for writing: %s\n",
            file_path, strerror(errno));
     goto cleanup;
   }
@@ -253,44 +253,44 @@ int cmd_stream_trig_data_to_file(const char** args, int arg_count, const command
     fprintf(stderr, "Invalid sample count for stream_trig_data_to_file: '%s'. Must be greater than 0.\n", args[0]);
     return -1;
   }
-  
+
   // Check for binary mode flag
   bool binary_mode = has_flag(flags, flag_count, FLAG_BIN);
-  
+
   // Check if stream is already running
   if (ctx->trig_data_stream_running) {
     printf("Trigger data streaming is already running. Stop it first.\n");
     return -1;
   }
-  
+
   if (*(ctx->verbose)) {
-    printf("Setting up trigger data streaming: %llu samples, %s mode\n", 
+    printf("Setting up trigger data streaming: %llu samples, %s mode\n",
            sample_count, binary_mode ? "binary" : "ASCII");
   }
-  
+
   // Check trigger data FIFO presence
   if (FIFO_PRESENT(sys_sts_get_trig_data_fifo_status(ctx->sys_sts, *(ctx->verbose))) == 0) {
     printf("Trigger data FIFO is not present. Cannot stream data.\n");
     return -1;
   }
-  
+
   if (*(ctx->verbose)) {
     printf("Trigger data FIFO is present and ready for streaming\n");
   }
-  
+
   // For output files, use the path directly (no glob pattern resolution needed)
   // Just clean and expand the path to handle ~ and relative paths
   char full_path[1024];
   clean_and_expand_path(args[1], full_path, sizeof(full_path));
-  
+
   // Modify file extension based on format
   char final_path[1024];
   strcpy(final_path, full_path);
-  
+
   // If no extension is provided, add default extension based on format
   char* dot = strrchr(final_path, '.');
   char* slash = strrchr(final_path, '/');
-  
+
   // Check if there's a dot after the last slash (or no slash at all)
   if (dot == NULL || (slash != NULL && dot < slash)) {
     // No extension found, add default
@@ -301,43 +301,43 @@ int cmd_stream_trig_data_to_file(const char** args, int arg_count, const command
     }
   }
   // If extension exists, user specified it explicitly, so keep it
-  
+
   if (*(ctx->verbose)) {
     printf("Final output file path: %s\n", final_path);
   }
-  
+
   // Allocate thread data structure
   trigger_data_stream_params_t* stream_data = malloc(sizeof(trigger_data_stream_params_t));
   if (stream_data == NULL) {
     fprintf(stderr, "Failed to allocate memory for trigger stream data\n");
     return -1;
   }
-  
+
   if (*(ctx->verbose)) {
     printf("Allocated trigger stream data structure\n");
   }
-  
+
   stream_data->ctx = ctx;
   snprintf(stream_data->file_path, sizeof(stream_data->file_path), "%s", final_path);
   stream_data->sample_count = sample_count;
   stream_data->should_stop = &(ctx->trig_data_stream_stop);
   stream_data->binary_mode = binary_mode;
-  
+
   if (*(ctx->verbose)) {
     printf("Initialized trigger stream parameters\n");
   }
-  
+
   // Set file permissions for group access
   set_file_permissions(final_path, *(ctx->verbose));
-  
+
   // Initialize stop flag and mark stream as running
   ctx->trig_data_stream_stop = false;
   ctx->trig_data_stream_running = true;
-  
+
   if (*(ctx->verbose)) {
     printf("Set trigger stream flags, creating thread\n");
   }
-  
+
   // Create the streaming thread
   if (pthread_create(&(ctx->trig_data_stream_thread), NULL, trigger_data_stream_thread, stream_data) != 0) {
     fprintf(stderr, "Failed to create trigger data streaming thread\n");
@@ -345,10 +345,10 @@ int cmd_stream_trig_data_to_file(const char** args, int arg_count, const command
     free(stream_data);
     return -1;
   }
-  
+
   if (*(ctx->verbose)) {
     printf("Created trigger data streaming thread successfully\n");
-    printf("Started trigger data streaming to file '%s' (%llu samples, %s format)\n", 
+    printf("Started trigger data streaming to file '%s' (%llu samples, %s format)\n",
            final_path, sample_count, binary_mode ? "binary" : "ASCII");
   }
   return 0;
@@ -360,18 +360,18 @@ int cmd_stop_trig_data_stream(const char** args, int arg_count, const command_fl
     printf("Trigger data streaming is not currently running.\n");
     return 0;
   }
-  
+
   printf("Stopping trigger data streaming...\n");
-  
+
   // Signal the thread to stop
   ctx->trig_data_stream_stop = true;
-  
+
   // Wait for the thread to finish
   if (pthread_join(ctx->trig_data_stream_thread, NULL) != 0) {
     fprintf(stderr, "Failed to join trigger data streaming thread\n");
     return -1;
   }
-  
+
   printf("Trigger data streaming has been stopped.\n");
   return 0;
 }
@@ -382,48 +382,48 @@ static void* trigger_monitor_thread(void* arg) {
   time_t last_display = time(NULL);
   uint32_t last_trigger_count = 0;  // Since we reset count after sync, start from 0
   bool completed_message_shown = false;
-  
+
   if (params->verbose) {
     printf("Trigger monitor thread started. Expected: %u triggers\n",
            params->expected_total_triggers);
   }
-  
+
   while (!*(params->should_stop)) {
     usleep(500000); // 500ms polling interval
-    
+
     uint32_t current_trigger_count = sys_sts_get_trig_counter(params->sys_sts, false);
     // Since we reset the count after sync_ch, current_trigger_count is the actual triggers received
-    
+
     // Check if 3 seconds have passed since last display
     time_t current_time = time(NULL);
     if (current_time - last_display >= 3) {
-      printf("Trigger count: %u/%u\n", 
+      printf("Trigger count: %u/%u\n",
              current_trigger_count, params->expected_total_triggers);
       fflush(stdout);
       last_display = current_time;
     }
-    
+
     // Check if we've reached the expected trigger count
     if (current_trigger_count >= params->expected_total_triggers) {
       if (!completed_message_shown) {
-        printf("\nExpected trigger count reached: %u/%u\n", 
+        printf("\nExpected trigger count reached: %u/%u\n",
                current_trigger_count, params->expected_total_triggers);
         fflush(stdout);
         completed_message_shown = true;
-        
+
         // Auto-stop monitoring after reaching expected count
         printf("Trigger monitoring auto-stopping after reaching expected count.\n");
         break;
       }
     }
-    
+
     last_trigger_count = current_trigger_count;
   }
-  
+
   if (params->verbose) {
     printf("Trigger monitor thread stopping\n");
   }
-  
+
   pthread_exit(NULL);
 }
 
@@ -435,25 +435,25 @@ int start_trigger_monitor(struct sys_sts_t* sys_sts, uint32_t expected_triggers,
     pthread_join(g_trigger_monitor_tid, NULL);
     g_trigger_monitor_active = false;
   }
-  
+
   g_trigger_monitor_should_stop = false;
-  
+
   static trigger_monitor_params_t monitor_params;
   monitor_params.sys_sts = sys_sts;
   monitor_params.expected_total_triggers = expected_triggers;
   monitor_params.should_stop = &g_trigger_monitor_should_stop;
   monitor_params.verbose = verbose;
-  
+
   int thread_result = pthread_create(&g_trigger_monitor_tid, NULL, trigger_monitor_thread, &monitor_params);
-  
+
   if (thread_result != 0) {
     printf("Failed to create trigger monitor thread: %s\n", strerror(thread_result));
     return -1;
   }
-  
+
   pthread_detach(g_trigger_monitor_tid);
   g_trigger_monitor_active = true;
-  
+
   return 0;
 }
 
@@ -480,6 +480,6 @@ bool is_trigger_monitor_active(void) {
 // Command function to stop trigger monitor
 int cmd_stop_trigger_monitor(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   (void)args; (void)arg_count; (void)flags; (void)flag_count; (void)ctx; // Suppress unused parameter warnings
-  
+
   return stop_trigger_monitor();
 }

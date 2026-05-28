@@ -189,7 +189,7 @@ Cancels the current wait or delay if issued while the core is in DELAY or TRIG_W
 
 ### ADC Samples
 
-During and shortly after the `S_ADC_RD` state, the core receives 16-bit SIGNED integer ADC samples on MISO. The samples are packed by pairs into 32-bit words for output to the data buffer. For a pair of samples (N, N+1), the output word is formatted as 
+During and shortly after the `S_ADC_RD` state, the core receives 16-bit SIGNED integer ADC samples on MISO. The samples are packed by pairs into 32-bit words for output to the data buffer. For a pair of samples (N, N+1), the output word is formatted as
 ```
 [data_word] = {sample N+1 [15:0], sample N [15:0]}
 ```

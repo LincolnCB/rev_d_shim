@@ -21,7 +21,7 @@ class hw_manager_base:
         9: "S_HALTING",
         10: "S_HALTED"
     }
-    
+
     # Status codes dictionary
     STATUS_CODES = {
         0x0000: "STS_EMPTY",
@@ -74,7 +74,7 @@ class hw_manager_base:
         self.time_unit = time_unit
         self.clk_period = clk_period
         self.dut = dut
-        
+
         # Get parameters from the DUT
         self.SHUTDOWN_FORCE_DELAY = int(self.dut.SHUTDOWN_FORCE_DELAY.value)
         self.SHUTDOWN_RESET_PULSE = int(self.dut.SHUTDOWN_RESET_PULSE.value)
@@ -102,7 +102,7 @@ class hw_manager_base:
 
         # Create clock
         cocotb.start_soon(Clock(self.dut.clk, clk_period, units=time_unit).start(start_high=False))  # Default is 250 MHz clock
-        
+
         # Set default values for all inputs
         self.dut.ctrl_en.value = 0
         self.dut.pow_en.value = 0
@@ -179,27 +179,27 @@ class hw_manager_base:
             if name == status_name:
                 return value
         raise ValueError(f"UNKNOWN_STATUS_NAME: {status_name}")
-    
+
     def get_board_num_from_status_word(self, status_word):
         status_word_int = int(status_word)
         return (status_word_int >> 29) & 0x7
-    
+
     def extract_board_num(self, signal):
         signal_int = int(signal) & 0xFF
         for i in range(8):
             if signal_int & (1 << i):
                 return i
         return 0
-    
+
     def extract_state_and_status(self):
         state_val = int(self.dut.state.value)  # Convert to int
         status_word = int(self.dut.status_word.value)  # Convert to int
         status_code = (status_word >> 4) & 0x1FFFFFF
         board_num = (status_word >> 29) & 0x7
-        
+
         state_name = self.get_state_name(state_val)
         status_name = self.get_status_name(status_code)
-        
+
         return {
             "state_value": state_val,
             "state_name": state_name,
@@ -208,11 +208,11 @@ class hw_manager_base:
             "board_num": board_num,
             "status_word": status_word
         }
-    
+
     def print_current_status(self):
         status_info = self.extract_state_and_status()
         time = cocotb.utils.get_sim_time(units=self.time_unit)
-        
+
         self.dut._log.info(f"------------ CURRENT STATUS AT TIME = {time}  ------------")
         self.dut._log.info(f"State: {status_info['state_name']} ({status_info['state_value']})")
         self.dut._log.info(f"Status: {status_info['status_name']} ({status_info['status_code']})")
@@ -281,17 +281,17 @@ class hw_manager_base:
 
         return state, status_code, board_num
 
-    
+
     async def check_state(self, expected_state):
         """Check the state of the hardware manager"""
         status_info = self.extract_state_and_status()
         state = status_info["state_value"]
-        
+
         assert state == expected_state, f"Expected state {self.get_state_name(expected_state)}({expected_state}), " \
             f"got {self.get_state_name(state)}({state})"
-        
+
         return state
-    
+
     async def wait_cycles(self, cycles):
         """Wait for specified number of clock cycles"""
         for _ in range(cycles):
@@ -318,7 +318,7 @@ class hw_manager_base:
         inital_state = self.dut.state.value
 
         for i in range(max_cycles):
-            
+
             await ReadOnly()  # Ensure all signals are updated before checking state
             current_state = self.dut.state.value
 
@@ -336,9 +336,9 @@ class hw_manager_base:
             if not allow_intermediate_states and i > 0 and current_state != inital_state:
                 assert current_state == expected_state, \
                     f"Reached unexpected state {last_state_name}({current_state}) while waiting for {expected_state_name}({expected_state})"
-                
+
             await RisingEdge(self.dut.clk)
-            
+
         # If we reach here, we timed out waiting for the expected state
         self.dut._log.info(f"BEFORE FAILURE:")
         self.print_current_status()  # Print final status before failure
@@ -351,7 +351,7 @@ class hw_manager_base:
     async def state_scoreboard_dispatcher(self):
         """
         Dispatches a scoreboard for each state if the previous state is not the same as the current state to test execution of each state.
-        Each scoreboard also monitors the relevant input wires of the DUT. 
+        Each scoreboard also monitors the relevant input wires of the DUT.
         """
         forked_tasks = []
         prev_state = None
@@ -430,7 +430,7 @@ class hw_manager_base:
                     task = cocotb.start_soon(sb_with_timeout(self.halted_scoreboard(), self.timeout_time, "HALTED"))
                     halted_forked = True
                     self.dut._log.info(f"Reached unknown state {curr_state}, defaulting to HALTED scoreboard")
-                
+
             if task is not None:
                 forked_tasks.append(task)
 
@@ -584,7 +584,7 @@ class hw_manager_base:
         assert self.dut.unlock_cfg.value.integer == 0, \
         f"Expected unlock_cfg to be 0 in S_CONFIRM_SPI_RST, got {self.dut.unlock_cfg.value.integer}"
 
-        while True: 
+        while True:
             await RisingEdge(self.dut.clk)
             # Following are input wires of the DUT this state depends on.
             prev_ext_en = self.dut.ext_en.value.integer
@@ -1210,7 +1210,7 @@ class hw_manager_base:
             prev_pow_en = self.dut.pow_en.value.integer
             prev_ps_interrupt = self.dut.ps_interrupt.value.integer
             await ReadOnly()
-            
+
             if(prev_ps_interrupt):
                 # Interrupt should be reset
                 assert self.dut.ps_interrupt.value.integer == 0, \
@@ -1372,4 +1372,4 @@ class hw_manager_base:
         await ReadWrite()
         await self.check_state(self.get_state_value("S_HALTED"))
 
-            
+

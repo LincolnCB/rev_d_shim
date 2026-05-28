@@ -31,7 +31,7 @@ double dac_to_amps(int16_t dac_value) {
 uint32_t parse_value(const char* str, char** endptr) {
   const char* arg = str;
   while (*arg == ' ' || *arg == '\t') arg++; // Skip leading whitespace
-  
+
   if (strncmp(arg, "0b", 2) == 0) {
     return (uint32_t)strtol(arg + 2, endptr, 2);
   } else {
@@ -59,10 +59,10 @@ int has_flag(const command_flag_t* flags, int flag_count, command_flag_t target_
 // Resolve file patterns with glob wildcards
 int resolve_file_pattern(const char* pattern, char* resolved_path, size_t resolved_path_size) {
   glob_t glob_result;
-  
+
   // Try to expand the pattern
   int glob_ret = glob(pattern, GLOB_ERR, NULL, &glob_result);
-  
+
   if (glob_ret == 0 && glob_result.gl_pathc > 0) {
     if (glob_result.gl_pathc == 1) {
       // Single match - use it directly
@@ -76,25 +76,25 @@ int resolve_file_pattern(const char* pattern, char* resolved_path, size_t resolv
       for (size_t i = 0; i < glob_result.gl_pathc; i++) {
         printf("  %zu: %s\n", i + 1, glob_result.gl_pathv[i]);
       }
-      
+
       printf("Enter your choice (1-%zu): ", glob_result.gl_pathc);
       fflush(stdout);
-      
+
       int choice;
       if (scanf("%d", &choice) != 1 || choice < 1 || choice > (int)glob_result.gl_pathc) {
         printf("Invalid choice. Using first match: %s\n", glob_result.gl_pathv[0]);
         choice = 1;
       }
-      
+
       // Clear remaining characters from input buffer (including newline)
       int c;
       while ((c = getchar()) != '\n' && c != EOF);
-      
+
       // Use the selected match (convert to 0-based index)
       strncpy(resolved_path, glob_result.gl_pathv[choice - 1], resolved_path_size - 1);
       resolved_path[resolved_path_size - 1] = '\0';
       printf("Selected: %s\n", resolved_path);
-      
+
       globfree(&glob_result);
       return 0;
     }
@@ -172,23 +172,23 @@ void print_trigger_data(uint64_t data) {
 void clean_and_expand_path(const char* input_path, char* full_path, size_t full_path_size) {
   const char* rel_path = input_path;
   const char* shim_home_dir = "/home/shim";
-  
+
   // Remove leading and trailing quotation marks
   char cleaned_path[1024];
   strncpy(cleaned_path, rel_path, sizeof(cleaned_path) - 1);
   cleaned_path[sizeof(cleaned_path) - 1] = '\0';
-  
+
   // Remove leading quotes
   if (cleaned_path[0] == '"' || cleaned_path[0] == '\'') {
     memmove(cleaned_path, cleaned_path + 1, strlen(cleaned_path));
   }
-  
+
   // Remove trailing quotes
   size_t len = strlen(cleaned_path);
   if (len > 0 && (cleaned_path[len - 1] == '"' || cleaned_path[len - 1] == '\'')) {
     cleaned_path[len - 1] = '\0';
   }
-  
+
   // Expand path
   if (cleaned_path[0] == '~' && cleaned_path[1] == '/') {
     snprintf(full_path, full_path_size, "%s/%s", shim_home_dir, cleaned_path + 2);
@@ -208,7 +208,7 @@ void set_file_permissions(const char* file_path, bool verbose) {
   // Set permissions to 666 (owner: rw, group: rw, others: rw)
   if (chmod(file_path, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH) != 0) {
     if (verbose) {
-      fprintf(stderr, "Warning: Could not set permissions for file '%s': %s\n", 
+      fprintf(stderr, "Warning: Could not set permissions for file '%s': %s\n",
               file_path, strerror(errno));
     }
   } else if (verbose) {
@@ -220,7 +220,7 @@ void set_file_permissions(const char* file_path, bool verbose) {
 int prompt_file_selection(const char* prompt_text, const char* default_file,
                          char* resolved_path, size_t resolved_path_size) {
   char input_buffer[1024];
-  
+
   // Display prompt with default if provided
   printf("%s", prompt_text);
   if (default_file != NULL && strlen(default_file) > 0) {
@@ -228,39 +228,39 @@ int prompt_file_selection(const char* prompt_text, const char* default_file,
   }
   printf(": ");
   fflush(stdout);
-  
+
   // Read user input
   if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
     fprintf(stderr, "Failed to read file input.\n");
     return -1;
   }
-  
+
   // Remove newline from input
   size_t len = strlen(input_buffer);
   if (len > 0 && input_buffer[len - 1] == '\n') {
     input_buffer[len - 1] = '\0';
   }
-  
+
   // Check for default selection (empty string or ".")
-  if ((strlen(input_buffer) == 0 || strcmp(input_buffer, ".") == 0) && 
+  if ((strlen(input_buffer) == 0 || strcmp(input_buffer, ".") == 0) &&
       default_file != NULL && strlen(default_file) > 0) {
     // Use default file directly (assuming it's already resolved)
     strncpy(resolved_path, default_file, resolved_path_size - 1);
     resolved_path[resolved_path_size - 1] = '\0';
     return 0;
   }
-  
+
   // Handle empty input when no default is available
   if (strlen(input_buffer) == 0) {
     fprintf(stderr, "No file specified and no default available.\n");
     return -1;
   }
-  
+
   // Resolve the input pattern/path
   if (resolve_file_pattern(input_buffer, resolved_path, resolved_path_size) != 0) {
     fprintf(stderr, "Failed to resolve file pattern: '%s'\n", input_buffer);
     return -1;
   }
-  
+
   return 0;
 }

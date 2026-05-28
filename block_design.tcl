@@ -240,7 +240,7 @@ cell shim:user:axi_sys_ctrl axi_sys_ctrl {
   S_AXI sys_cfg_axi_intercon/M00_AXI
 }
 addr 0x40000000 128 axi_sys_ctrl/S_AXI ps/M_AXI_GP0
-  
+
 
 ###############################################################################
 
@@ -410,7 +410,7 @@ cell xilinx.com:ip:util_vector_logic lock_viol_or {
   Op2 axi_sys_ctrl/lock_viol
   Res hw_manager/lock_viol
 }
-  
+
 
 ### SPI clock domain
 module spi_clk_domain spi_clk_domain {

@@ -426,7 +426,7 @@ async def test_adc_rd_repeating(dut):
 async def example_simulation(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: example_simulation")
-    
+
     # Build a sequence of commands to simulate
     cmd_word_list = []
     cmd_word_list.append(tb.build_set_ord(channels=[0,1,2,3,4,5,6,7]))

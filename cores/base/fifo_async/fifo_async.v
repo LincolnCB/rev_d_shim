@@ -1,3 +1,5 @@
+`timescale 1 ns / 1 ps
+
 // Thanks to Thomas Witzel, H. Fatih Uǧurdaǧ, and Kutay Bulun :)
 module fifo_async #(
   parameter FORCE_BRAM = 0, // Set to 1 to force BRAM usage
@@ -31,7 +33,7 @@ module fifo_async #(
   initial begin
     if (FORCE_BRAM != 0 && FORCE_BRAM != 1)
       $error("Invalid value for FORCE_BRAM parameter: %d. Must be 0 or 1.", FORCE_BRAM);
-    if (DATA_WIDTH <= 0) 
+    if (DATA_WIDTH <= 0)
       $error("Invalid value for DATA_WIDTH parameter: %d. Must be greater than 0.", DATA_WIDTH);
     if (ADDR_WIDTH <= 0)
       $error("Invalid value for ADDR_WIDTH parameter: %d. Must be greater than 0.", ADDR_WIDTH);
@@ -43,12 +45,12 @@ module fifo_async #(
              ALMOST_EMPTY_THRESHOLD, ADDR_WIDTH, FIFO_DEPTH);
   end
 
-  // Function to convert binary to Gray code
+  // Function to convert binary to gray code
   function [ADDR_WIDTH:0] binary_to_gray(input [ADDR_WIDTH:0] bin);
     binary_to_gray = (bin >> 1) ^ bin;
   endfunction
 
-  // Function to convert Gray code to binary
+  // Function to convert gray code to binary
   function [ADDR_WIDTH:0] gray_to_binary(input [ADDR_WIDTH:0] gray);
     integer i;
     begin
@@ -61,10 +63,12 @@ module fifo_async #(
   // Write and read pointers
   reg [ADDR_WIDTH:0] wr_ptr_bin;
   reg [ADDR_WIDTH:0] wr_ptr_gray; // the gray code version of the pointer is used for synchronization
+  wire [ADDR_WIDTH:0] wr_ptr_bin_rd_clk;
 
   reg  [ADDR_WIDTH:0] rd_ptr_bin;
   wire [ADDR_WIDTH:0] rd_ptr_bin_next;
   reg  [ADDR_WIDTH:0] rd_ptr_gray; // the gray code version of the pointer is used for synchronization
+  wire [ADDR_WIDTH:0] rd_ptr_bin_wr_clk;
 
   // FIFO memory (BRAM instance)
   mem_async #(
@@ -117,7 +121,6 @@ module fifo_async #(
       wr_ptr_gray_rd_clk_sync2 <= wr_ptr_gray_rd_clk_sync1;
     end
   end
-  wire [ADDR_WIDTH:0] wr_ptr_bin_rd_clk;
   assign wr_ptr_bin_rd_clk = gray_to_binary(wr_ptr_gray_rd_clk_sync2);
 
   // Use double-flop synchronizers for rd_ptr in write clock domain
@@ -131,7 +134,6 @@ module fifo_async #(
       rd_ptr_gray_wr_clk_sync2 <= rd_ptr_gray_wr_clk_sync1;
     end
   end
-  wire [ADDR_WIDTH:0] rd_ptr_bin_wr_clk;
   assign rd_ptr_bin_wr_clk = gray_to_binary(rd_ptr_gray_wr_clk_sync2);
 
   // Generate full and empty flags

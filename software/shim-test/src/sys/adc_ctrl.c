@@ -26,17 +26,17 @@ uint32_t adc_read_word(struct adc_ctrl_t *adc_ctrl, uint8_t board) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
     return 0; // Return 0 for invalid board
   }
-  
+
   // Additional safety check for null pointer
   if (adc_ctrl->buffer[board] == NULL) {
     fprintf(stderr, "Error: ADC buffer[%d] is NULL. Cannot read data.\n", board);
     return 0;
   }
-  
+
   // Use volatile access to prevent compiler optimization and ensure actual memory read
   volatile uint32_t *buffer_ptr = adc_ctrl->buffer[board];
   uint32_t value = *buffer_ptr;
-  
+
   return value;
 }
 
@@ -45,12 +45,12 @@ char* adc_format_debug(uint32_t adc_value, bool verbose) {
   static char buffer[512];  // Static buffer for return string
   char temp_buffer[256];
   buffer[0] = '\0';  // Initialize as empty string
-  
+
   if (verbose) {
     snprintf(temp_buffer, sizeof(temp_buffer), "ADC Debug word: 0x%08X\n", adc_value);
     strcat(buffer, temp_buffer);
   }
-  
+
   uint8_t debug_code = ADC_DBG(adc_value);
   switch (debug_code) {
     case ADC_DBG_MISO_DATA: {
@@ -72,10 +72,10 @@ char* adc_format_debug(uint32_t adc_value, bool verbose) {
     case ADC_DBG_REPEAT: {
       char *cmd_str = adc_format_command((uint8_t)(ADC_DBG_COMMAND(adc_value)), verbose);
       if (ADC_DBG_REPEAT_BIT(adc_value)) {
-        snprintf(temp_buffer, sizeof(temp_buffer), "Debug: Repeat (Count = %d) command %s with Repeat Bit set", 
+        snprintf(temp_buffer, sizeof(temp_buffer), "Debug: Repeat (Count = %d) command %s with Repeat Bit set",
                  adc_value & 0xFFFF, cmd_str);
       } else {
-        snprintf(temp_buffer, sizeof(temp_buffer), "Debug: Repeat (Count = %d) command %s with Repeat Bit clear", 
+        snprintf(temp_buffer, sizeof(temp_buffer), "Debug: Repeat (Count = %d) command %s with Repeat Bit clear",
                  adc_value & 0xFFFF, cmd_str);
       }
       strcat(buffer, temp_buffer);
@@ -94,10 +94,10 @@ char* adc_format_debug(uint32_t adc_value, bool verbose) {
     case ADC_DBG_CMD_DONE: {
       if (ADC_DBG_NEXT_CMD_READY(adc_value)) {
         char *cmd_str = adc_format_command((uint8_t)(ADC_DBG_COMMAND(adc_value)), verbose);
-        snprintf(temp_buffer, sizeof(temp_buffer), "Debug: Command Done with next command ready: %s -- Remaining repeat count: %d", 
+        snprintf(temp_buffer, sizeof(temp_buffer), "Debug: Command Done with next command ready: %s -- Remaining repeat count: %d",
                  cmd_str, adc_value & 0xFFFF);
       } else {
-        snprintf(temp_buffer, sizeof(temp_buffer), "Debug: Command Done with no next command ready -- Remaining repeat count: %d", 
+        snprintf(temp_buffer, sizeof(temp_buffer), "Debug: Command Done with no next command ready -- Remaining repeat count: %d",
                  adc_value & 0xFFFF);
       }
       strcat(buffer, temp_buffer);
@@ -109,7 +109,7 @@ char* adc_format_debug(uint32_t adc_value, bool verbose) {
       break;
     }
   }
-  
+
   return buffer;
 }
 
@@ -117,13 +117,13 @@ char* adc_format_debug(uint32_t adc_value, bool verbose) {
 char* adc_format_state(uint8_t state_code, bool verbose) {
   static char buffer[64];  // Static buffer for return string
   buffer[0] = '\0';  // Initialize as empty string
-  
+
   if (verbose) {
     char temp[32];
     snprintf(temp, sizeof(temp), "ADC State code: %d\n", state_code);
     strcat(buffer, temp);
   }
-  
+
   switch (state_code) {
     case ADC_STATE_RESET:
       strcat(buffer, "RESET");
@@ -165,7 +165,7 @@ char* adc_format_state(uint8_t state_code, bool verbose) {
       break;
     }
   }
-  
+
   return buffer;
 }
 
@@ -173,13 +173,13 @@ char* adc_format_state(uint8_t state_code, bool verbose) {
 char* adc_format_command(uint8_t cmd_code, bool verbose) {
   static char buffer[64];  // Static buffer for return string
   buffer[0] = '\0';  // Initialize as empty string
-  
+
   if (verbose) {
     char temp[32];
     snprintf(temp, sizeof(temp), "ADC Command code: %d\n", cmd_code);
     strcat(buffer, temp);
   }
-  
+
   switch (cmd_code) {
     case ADC_CMD_NO_OP: {
       strcat(buffer, "NO_OP");
@@ -208,7 +208,7 @@ char* adc_format_command(uint8_t cmd_code, bool verbose) {
       break;
     }
   }
-  
+
   return buffer;
 }
 
@@ -226,7 +226,7 @@ void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, adc_wait_mode_t tr
                       ((trig == ADC_TRIGGER_WAIT ? 1 : 0) << ADC_CMD_TRIG_BIT) |
                       ((cont == ADC_CONTINUE ? 1 : 0) << ADC_CMD_CONT_BIT) |
                       (value & 0x1FFFFFF);
-  
+
   if (verbose) {
     printf("ADC[%d] NO_OP command word: 0x%08X\n", board, cmd_word);
   }
@@ -247,7 +247,7 @@ void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, adc_wait_mode_t 
                       ((cont == ADC_CONTINUE ? 1 : 0) << ADC_CMD_CONT_BIT) |
                       (((repeat_count > 0) ? 1 : 0) << ADC_CMD_REPEAT_BIT) |
                       (value & 0x1FFFFFF);
-  
+
   if (verbose) {
     printf("ADC[%d] ADC_RD command word: 0x%08X\n", board, cmd_word);
   }
@@ -270,11 +270,11 @@ void adc_cmd_adc_rd_ch(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t ch, u
     fprintf(stderr, "Invalid ADC channel: %d. Must be 0-7.\n", ch);
     return;
   }
-  
+
   uint32_t cmd_word = (ADC_CMD_ADC_RD_CH << ADC_CMD_CMD_LSB ) |
                       (((repeat_count > 0) ? 1 : 0) << ADC_CMD_REPEAT_BIT) |
                       ((ch & 0x7) << 0);
-  
+
   if (verbose) {
     printf("ADC[%d] ADC_RD_CH command word: 0x%08X (channel: %d)\n", board, cmd_word, ch);
   }
@@ -312,7 +312,7 @@ void adc_cmd_set_ord(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t channel
                       ((channel_order[0] & 0x7) <<  0    );
 
   if (verbose) {
-    printf("ADC[%d] SET_ORD command word: 0x%08X (order: [%d,%d,%d,%d,%d,%d,%d,%d])\n", 
+    printf("ADC[%d] SET_ORD command word: 0x%08X (order: [%d,%d,%d,%d,%d,%d,%d,%d])\n",
            board, cmd_word, channel_order[0], channel_order[1], channel_order[2], channel_order[3],
            channel_order[4], channel_order[5], channel_order[6], channel_order[7]);
   }
@@ -324,9 +324,9 @@ void adc_cmd_cancel(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool verbose) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
     return;
   }
-  
+
   uint32_t cmd_word = (ADC_CMD_CANCEL << ADC_CMD_CMD_LSB);
-  
+
   if (verbose) {
     printf("ADC[%d] CANCEL command word: 0x%08X\n", board, cmd_word);
   }
@@ -338,16 +338,16 @@ char* adc_format_single(uint32_t data_word, bool verbose) {
   static char buffer[64];  // Static buffer for return string
   char temp_buffer[32];
   buffer[0] = '\0';  // Initialize as empty string
-  
+
   if (verbose) {
     snprintf(temp_buffer, sizeof(temp_buffer), "ADC Data word: 0x%08X\n", data_word);
     strcat(buffer, temp_buffer);
   }
-  
+
   int16_t signed_value = (int16_t)(data_word & 0xFFFF);
   snprintf(temp_buffer, sizeof(temp_buffer), "%d", signed_value);
   strcat(buffer, temp_buffer);
-  
+
   return buffer;
 }
 
@@ -356,17 +356,17 @@ char* adc_format_pair(uint32_t data_word, bool verbose) {
   static char buffer[64];  // Static buffer for return string
   char temp_buffer[32];
   buffer[0] = '\0';  // Initialize as empty string
-  
+
   if (verbose) {
     snprintf(temp_buffer, sizeof(temp_buffer), "ADC Data word: 0x%08X\n", data_word);
     strcat(buffer, temp_buffer);
   }
-  
+
   int16_t first_value = (int16_t)(data_word & 0xFFFF);
   int16_t second_value = (int16_t)((data_word >> 16) & 0xFFFF);
-  
+
   snprintf(temp_buffer, sizeof(temp_buffer), "%d, %d", first_value, second_value);
   strcat(buffer, temp_buffer);
-  
+
   return buffer;
 }

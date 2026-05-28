@@ -99,7 +99,7 @@ async def test_full_and_empty_conditions(dut):
         # Flag monitors and checkers
         write_side_flag_checker = cocotb.start_soon(tb.write_side_flag_monitor())
         read_side_flag_checker = cocotb.start_soon(tb.read_side_flag_monitor())
-        
+
         # Work on write domain to fill the FIFO
         fill_data = await tb.generate_random_data(tb.FIFO_DEPTH)
         written_count = await tb.write_burst(fill_data)
@@ -147,12 +147,12 @@ async def test_almost_full_empty_conditions(dut):
         rd_reset_task = cocotb.start_soon(tb.rd_reset())
         await wr_reset_task
         await rd_reset_task
-        
+
         # Work on write domain to fill FIFO to almost full
         fill_data = await tb.generate_random_data(tb.FIFO_DEPTH - tb.ALMOST_FULL_THRESHOLD)
         written_count = await tb.write_burst(fill_data)
         assert written_count == tb.FIFO_DEPTH - tb.ALMOST_FULL_THRESHOLD, f"Expected to write {tb.FIFO_DEPTH - tb.ALMOST_FULL_THRESHOLD} items, but wrote {written_count}"
-        
+
         await ReadOnly()
         assert dut.almost_full.value == 1, "FIFO should be almost full after writing items"
         assert dut.fifo_count_wr_clk.value == tb.FIFO_DEPTH - tb.ALMOST_FULL_THRESHOLD, "FIFO count should match FIFO_DEPTH - ALMOST_FULL_THRESHOLD"
@@ -166,7 +166,7 @@ async def test_almost_full_empty_conditions(dut):
 
         for read_value, expected_value in read_results:
             assert read_value == expected_value, f"Data mismatch: read=0x{read_value:X}, expected=0x{expected_value:X}"
-        
+
         await ReadOnly()
         assert dut.almost_empty.value == 1, "FIFO should be almost empty after reading items"
         assert dut.fifo_count_rd_clk.value == tb.ALMOST_EMPTY_THRESHOLD, "FIFO count should match ALMOST_EMPTY_THRESHOLD"

@@ -134,7 +134,7 @@ module threshold_integrator (
               // Prepare for chunk width shift calculation in CALC_CHUNK_WIDTH
               window_width_reg <= window[31:12]; // Start on bit 12 since it must at least be 2048 (2^11)
               chunk_width_counter <= 1; // Start at 1 since the minimum chunk width is 1 (window of 2048 means chunk width of 1)
-              
+
               // Prepare for shift-add multiplication in CALC_MAX_VALUE
               window_mult_reg <= {12'b0, window >> 4}; // Only adding every 16th clock cycle
               thresh_val_shift <= thresh_val;
@@ -195,7 +195,7 @@ module threshold_integrator (
             err_underflow <= 1;
             state <= ERROR;
           end
-          
+
           // Over threshold logic
           if (|channel_over_thresh) begin
             over_thresh <= 1;

@@ -280,8 +280,8 @@ def sample_trigger_buf_and_cmd_coverage(dut):
             items = ["hw_manager.state", "hw_manager.ps_interrupt"],
             ign_bins= [ ("RELEASE_SD_F", None),
                         ("PULSE_SD_RST", None),
-                        ("SD_RST_DELAY", None), 
-                        ("CONFIRM_SPI_INIT", None), 
+                        ("SD_RST_DELAY", None),
+                        ("CONFIRM_SPI_INIT", None),
                         ("CONFIRM_SPI_START", None),
                         ("IDLE", None)])
 def sample_ps_interrupt_cross_coverage(dut):

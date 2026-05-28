@@ -16,7 +16,7 @@ uint32_t *map_32bit_memory(uint32_t base_addr, size_t wordcount, char *name, boo
 
   // File descriptor for /dev/mem
   int dev_mem_fd;
-  
+
   // Open /dev/mem to access physical memory
   if (verbose) printf("Opening /dev/mem...\n");
   if((dev_mem_fd = open("/dev/mem", O_RDWR)) < 0) {
@@ -31,7 +31,7 @@ uint32_t *map_32bit_memory(uint32_t base_addr, size_t wordcount, char *name, boo
   // Map the memory region
   if (verbose) printf("Mapping %zu pages of size %ld bytes...\n", num_pages, page_size);
   uint32_t *mapped_memory = (uint32_t *)mmap(NULL, num_pages * page_size, PROT_READ | PROT_WRITE, MAP_SHARED, dev_mem_fd, base_addr);
-  
+
   // Check if the mapping was successful
   if (mapped_memory == MAP_FAILED) {
     perror("mmap");

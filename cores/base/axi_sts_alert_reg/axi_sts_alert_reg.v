@@ -101,7 +101,7 @@ module axi_sts_alert_reg #
   assign int_rvalid_next =  (s_axi_rready & int_rvalid_reg) ? 1'b0 // If read data is accepted, clear valid
                             : (s_axi_arvalid) ? 1'b1 // If read address is valid, set valid
                             : int_rvalid_reg;
-  
+
   assign int_rdata_next = (s_axi_arvalid) ? int_data_mux[s_axi_araddr[ADDR_LSB+STS_WORDCOUNT_WIDTH-1:ADDR_LSB]] // If read address is valid, update next read data
                           : int_rdata_reg;
 

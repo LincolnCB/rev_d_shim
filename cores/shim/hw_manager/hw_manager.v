@@ -562,7 +562,7 @@ module hw_manager #(
             ps_interrupt <= 0;
           end // if (ps_interrupt)
           // If the BOTH system enables go low, go to S_IDLE and clear the status code
-          if (!ctrl_en && !pow_en) begin 
+          if (!ctrl_en && !pow_en) begin
             state <= S_IDLE;
             status_code <= STS_OK;
             board_num <= 0;

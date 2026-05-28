@@ -227,7 +227,7 @@ cell shim:user:trigger_core trig_core {
   trig_counter spi_sts_sync/trig_counter
   bad_cmd spi_sts_sync/bad_trig_cmd
   data_buf_overflow spi_sts_sync/trig_data_buf_overflow
-} 
+}
 
 ##################################################
 
@@ -307,7 +307,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     dout adc_ch${i}/debug
   }
 }
-  
+
 # Waiting for trigger signals
 cell xilinx.com:ip:xlconcat:2.1 dac_waiting_for_trig_concat {
   NUM_PORTS 8

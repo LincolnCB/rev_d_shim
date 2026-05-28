@@ -66,7 +66,7 @@ int main()
   uint32_t sts_page_count = map_memory(fd, &sts, AXI_STS, STS_SIZE, "STS register");
   // SPI_CLK interface
   uint32_t spi_clk_page_count = map_memory(fd, &spi_clk, AXI_SPI_CLK, SPI_CLK_SIZE, "SPI_CLK interface");
-  
+
   // File can be closed after mapping without affecting the mapped memory
   close(fd);
   printf("Mapping complete. Page counts: CFG = %u, STS = %u, SPI_CLK = %u\n", cfg_page_count, sts_page_count, spi_clk_page_count);

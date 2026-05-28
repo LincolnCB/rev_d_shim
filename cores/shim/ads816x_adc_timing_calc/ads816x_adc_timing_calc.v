@@ -5,10 +5,10 @@ module ads816x_adc_timing_calc #(
 )(
   input  wire        clk,
   input  wire        resetn,
-  
+
   input  wire [31:0] spi_clk_freq_hz, // SPI clock frequency in Hz
   input  wire        calc,            // Start calculation signal
-  
+
   output reg  [7:0]  n_cs_high_time,     // Calculated n_cs high time in cycles (3 to 255)
   output reg  [24:0] min_delay_time,     // Minimum delay time for ADC read commands in cycles (minus 1)
   output reg  [2:0]  miso_halfclk_delay, // Calculated MISO half-clock delay (floor((spi_clk_freq * 4 + 1476395008) >> 30)), capped at 7
@@ -77,7 +77,7 @@ module ads816x_adc_timing_calc #(
 
   reg  [ 3:0] state;
   reg  [31:0] spi_clk_freq_hz_latched;
-  
+
   // Intermediate calculation results
   reg  [31:0] min_cycles_for_t_conv;
   reg  [31:0] min_cycles_for_t_cycle;
@@ -139,7 +139,7 @@ module ads816x_adc_timing_calc #(
           if (calc) begin
             spi_clk_freq_hz_latched <= spi_clk_freq_hz;
             state <= S_CALC_CONV;
-            
+
             // Setup multiplication for T_CONV_NiS * spi_clk_freq_hz
             multiplicand <= T_CONV_NiS;
             multiplier <= spi_clk_freq_hz;

@@ -70,7 +70,7 @@ module spi_cfg_sync (
     .din(block_bufs),
     .dout(block_bufs_sync)
   );
-  
+
   // Threshold enable (incoherent)
   sync_incoherent #(
     .WIDTH(1)
@@ -201,5 +201,5 @@ module spi_cfg_sync (
     .din(do_dac_pre_delay),
     .dout(do_dac_pre_delay_sync)
   );
-  
+
 endmodule

@@ -58,7 +58,7 @@ async def test_idle_to_out_of_bounds(dut):
     await ReadOnly()
 
     assert int(dut.state.value) == 4, f"Expected state after disallowed window size: 4 (OUT_OF_BOUNDS), got: {int(tb.dut.state.value)} ({tb.get_state_name(tb.dut.state.value)})"
-    assert dut.over_thresh.value == 1, "Expected over_thresh to be asserted after disallowed window size" 
+    assert dut.over_thresh.value == 1, "Expected over_thresh to be asserted after disallowed window size"
 
     # Give time to coroutines to finish and kill their tasks
     await RisingEdge(dut.clk)
@@ -293,6 +293,6 @@ async def test_channel_cal_operation(dut):
 
     for _ in range(51000):
         await RisingEdge(dut.clk)
-        
-        
+
+
 

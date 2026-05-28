@@ -167,7 +167,7 @@ module axi_sys_ctrl #
   genvar j, k;
 
   assign int_wvalid_wire = s_axi_awvalid & s_axi_wvalid;
-  
+
   generate
     for(j = 0; j < CFG_SIZE; j = j + 1)
     begin : WORDS
@@ -175,7 +175,7 @@ module axi_sys_ctrl #
       assign int_ce_wire[j] = int_wvalid_wire & (s_axi_awaddr[ADDR_LSB+CFG_WIDTH-1:ADDR_LSB] == j);
       for(k = 0; k < AXI_DATA_WIDTH; k = k + 1)
       begin : BITS
-        
+
         // Flipflops for AXI data
         FDRE #(
           .INIT(1'b0)
@@ -220,10 +220,10 @@ module axi_sys_ctrl #
   assign pow_en_oob = $unsigned(int_data_wire[POW_EN_32_OFFSET*32+POW_EN_WIDTH-1:POW_EN_32_OFFSET*32]) > POW_EN_MAX;
   assign cmd_buf_reset_oob = $unsigned(int_data_wire[CMD_BUF_RESET_32_OFFSET*32+CMD_BUF_RESET_WIDTH-1:CMD_BUF_RESET_32_OFFSET*32]) > CMD_BUF_RESET_MAX;
   assign data_buf_reset_oob = $unsigned(int_data_wire[DATA_BUF_RESET_32_OFFSET*32+DATA_BUF_RESET_WIDTH-1:DATA_BUF_RESET_32_OFFSET*32]) > DATA_BUF_RESET_MAX;
-  assign thresh_val_oob = $unsigned(int_data_wire[THRESHOLD_VALUE_32_OFFSET*32+THRESHOLD_VALUE_WIDTH-1-:THRESHOLD_VALUE_WIDTH]) < $unsigned(THRESHOLD_VALUE_MIN) 
+  assign thresh_val_oob = $unsigned(int_data_wire[THRESHOLD_VALUE_32_OFFSET*32+THRESHOLD_VALUE_WIDTH-1-:THRESHOLD_VALUE_WIDTH]) < $unsigned(THRESHOLD_VALUE_MIN)
                              || $unsigned(int_data_wire[THRESHOLD_VALUE_32_OFFSET*32+THRESHOLD_VALUE_WIDTH-1-:THRESHOLD_VALUE_WIDTH]) > $unsigned(THRESHOLD_VALUE_MAX)
                              || $unsigned(int_data_wire[THRESHOLD_VALUE_32_OFFSET*32+THRESHOLD_VALUE_WIDTH-1-:THRESHOLD_VALUE_WIDTH]) > $unsigned(32767);
-  assign thresh_window_oob = $unsigned(int_data_wire[THRESHOLD_WINDOW_32_OFFSET*32+THRESHOLD_WINDOW_WIDTH-1-:THRESHOLD_WINDOW_WIDTH]) < $unsigned(THRESHOLD_WINDOW_MIN) 
+  assign thresh_window_oob = $unsigned(int_data_wire[THRESHOLD_WINDOW_32_OFFSET*32+THRESHOLD_WINDOW_WIDTH-1-:THRESHOLD_WINDOW_WIDTH]) < $unsigned(THRESHOLD_WINDOW_MIN)
                          || $unsigned(int_data_wire[THRESHOLD_WINDOW_32_OFFSET*32+THRESHOLD_WINDOW_WIDTH-1-:THRESHOLD_WINDOW_WIDTH]) > $unsigned(THRESHOLD_WINDOW_MAX);
   assign thresh_en_oob = $unsigned(int_data_wire[THRESHOLD_EN_32_OFFSET*32+31:THRESHOLD_EN_32_OFFSET*32]) > THRESHOLD_EN_MAX;
   assign boot_test_skip_oob = $unsigned(int_data_wire[BOOT_TEST_SKIP_32_OFFSET*32+BOOT_TEST_SKIP_WIDTH-1:BOOT_TEST_SKIP_32_OFFSET*32]) > BOOT_TEST_SKIP_MAX;
@@ -234,7 +234,7 @@ module axi_sys_ctrl #
 
   // Address and value bound compliance sent to write response
   // Send SLVERR if there are any violations
-  assign int_bresp_wire = 
+  assign int_bresp_wire =
     (s_axi_awaddr[ADDR_LSB+CFG_WIDTH-1:ADDR_LSB] == CTRL_EN_32_OFFSET) ? (ctrl_en_oob ? 2'b10 : 2'b00) :
     (s_axi_awaddr[ADDR_LSB+CFG_WIDTH-1:ADDR_LSB] == POW_EN_32_OFFSET) ? (pow_en_oob ? 2'b10 : 2'b00) :
     (s_axi_awaddr[ADDR_LSB+CFG_WIDTH-1:ADDR_LSB] == CMD_BUF_RESET_32_OFFSET) ? (cmd_buf_reset_oob ? 2'b10 : 2'b00) :
@@ -247,13 +247,13 @@ module axi_sys_ctrl #
     (s_axi_awaddr[ADDR_LSB+CFG_WIDTH-1:ADDR_LSB] == DAC_CAL_INIT_32_OFFSET) ? ((locked || dac_cal_init_oob) ? 2'b10 : 2'b00) :
     (s_axi_awaddr[ADDR_LSB+CFG_WIDTH-1:ADDR_LSB] == DO_DAC_PRE_DELAY_32_OFFSET) ? ((locked || do_dac_pre_delay_oob) ? 2'b10 : 2'b00) :
     2'b10;
-  
+
   assign ctrl_en = int_data_wire[CTRL_EN_32_OFFSET*32];
   assign pow_en = int_data_wire[POW_EN_32_OFFSET*32];
 
   // Lock violation wire
   // ctrl_en, pow_en, cmd_buf_reset, and data_buf_reset are not locked, so they are not checked
-  assign int_lock_viol_wire = 
+  assign int_lock_viol_wire =
             thresh_val != int_data_wire[THRESHOLD_VALUE_32_OFFSET*32+THRESHOLD_VALUE_WIDTH-1:THRESHOLD_VALUE_32_OFFSET*32]
             || thresh_window != int_data_wire[THRESHOLD_WINDOW_32_OFFSET*32+THRESHOLD_WINDOW_WIDTH-1:THRESHOLD_WINDOW_32_OFFSET*32]
             || thresh_en != int_data_wire[THRESHOLD_EN_32_OFFSET*32]
@@ -324,7 +324,7 @@ module axi_sys_ctrl #
   assign int_bvalid_next =  (s_axi_bready & int_bvalid_reg) ? 1'b0
                             : (int_wvalid_wire) ? 1'b1
                             : int_bvalid_reg;
-  
+
   assign s_axi_bresp =  (s_axi_bready & int_bvalid_reg) ? 1'b0
                         :(int_wvalid_wire) ? int_bresp_wire
                         : 2'b0;

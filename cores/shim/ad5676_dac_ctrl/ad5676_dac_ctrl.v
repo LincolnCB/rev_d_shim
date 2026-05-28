@@ -38,7 +38,9 @@ module ad5676_dac_ctrl #(
   output reg         bad_cmd,
   output reg         cal_oob,
   output reg         dac_val_oob,
-  
+  output reg [31:0]  last_received_cmd,
+  output reg [31:0]  commands_since_reset,
+
   output reg [119:0] abs_dac_val_concat,
 
   output reg         n_cs,
@@ -120,7 +122,7 @@ module ad5676_dac_ctrl #(
   localparam DBG_SPI_BIT          = 4'd4;
   localparam DBG_DAC_WRITE        = 4'd5;
   localparam CAL_DATA             = 4'd8;
-  
+
 
   ///////////////////////////////////////////////////////////////////////////////
   // Internal Signals
@@ -269,21 +271,21 @@ module ad5676_dac_ctrl #(
                           // If command is NO_OP, either wait for trigger or delay depending on TRIG_BIT
                           : (command == CMD_NO_OP) ? (cmd_word[TRIG_BIT] ? S_TRIG_WAIT : S_DELAY)
                           // If command is SET_CAL, go to IDLE
-                          : (command == CMD_SET_CAL) ? S_IDLE 
+                          : (command == CMD_SET_CAL) ? S_IDLE
                           // DAC_WR command goes to either DAC_WR, TRIG_WAIT, or DELAY depending on command
                           //   If TRIG_BIT is set or delay time is exactly minimum, begin DAC write immediately
                           //   Otherwise, go do pre-delay state first
                           : (command == CMD_DAC_WR) ? ((cmd_word[TRIG_BIT] || cmd_word[24:0] == min_delay_latched || !do_pre_delay) ? S_DAC_WR : S_PRE_DELAY)
                           // If command is single-channel DAC write, go to DAC_WR_CH state
                           : (command == CMD_DAC_WR_CH) ? S_DAC_WR_CH
-                          // If command is CANCEL, go to IDLE 
+                          // If command is CANCEL, go to IDLE
                           : (command == CMD_CANCEL) ? S_IDLE
                           // If command is GET_CAL, go to IDLE
                           : (command == CMD_GET_CAL) ? S_IDLE
                           // If command is ZERO, go to SET_MID to set all channels to midrange
                           : (command == CMD_ZERO) ? S_SET_MID
                           // If command is not recognized, go to ERROR state
-                          : S_ERROR; 
+                          : S_ERROR;
   // Waiting for trigger flag
   assign waiting_for_trig = (state == S_TRIG_WAIT);
   // State transition
@@ -311,6 +313,19 @@ module ad5676_dac_ctrl #(
   end
 
 
+  //// ---- Command history tracking for debugging
+  always @(posedge clk) begin
+    if (!resetn) begin
+      last_received_cmd <= 32'd0;
+      commands_since_reset <= 32'd0;
+    end else if (do_next_cmd) begin
+      last_received_cmd <= cmd_word;
+      // Increment commands since reset, but saturate at max value instead of overflowing.
+      commands_since_reset <= &commands_since_reset ? commands_since_reset : commands_since_reset + 1;
+    end
+  end
+
+
   //// ---- Delay timer
   // Delay wait is done when delay timer reaches 0
   assign delay_wait_done = (delay_timer == 0);
@@ -326,8 +341,8 @@ module ad5676_dac_ctrl #(
     // Reset delay timer on reset, error, or canceling a wait
     if (!resetn || state == S_ERROR || cancel_wait) delay_timer <= 25'd0;
     // If the next command is a DAC write or no-op with a delay wait, load the delay timer from command word
-    else if (do_next_cmd 
-             && ((command == CMD_DAC_WR) || (command == CMD_NO_OP)) 
+    else if (do_next_cmd
+             && ((command == CMD_DAC_WR) || (command == CMD_NO_OP))
              && !cmd_word[TRIG_BIT]) begin
       if (cmd_word[24:0] < min_delay_latched) begin
         delay_timer <= 25'h1FFFFFF; // Error will be flagged. Max the delay in the meantime.
@@ -346,8 +361,8 @@ module ad5676_dac_ctrl #(
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR || cancel_wait) trigger_counter <= 25'd0;
     // If the next command is a DAC write or no-op with a trigger wait, load the trigger counter from command word
-    else if (do_next_cmd 
-             && ((command == CMD_DAC_WR) || (command == CMD_NO_OP)) 
+    else if (do_next_cmd
+             && ((command == CMD_DAC_WR) || (command == CMD_NO_OP))
              && cmd_word[TRIG_BIT]) begin
       trigger_counter <= cmd_word[24:0];
     // Immediate write commands immediately finish
@@ -363,8 +378,8 @@ module ad5676_dac_ctrl #(
   assign error = (state == S_TEST_RD && ~n_miso_data_ready_mosi_clk && ~boot_readback_match) // Readback mismatch (boot fail)
                   || (state != S_TRIG_WAIT && trigger && trigger_counter <= 1) // Unexpected final trigger
                   || (state == S_DAC_WR && !dac_wr_done && !wait_for_trig && delay_wait_done) // Delay too short
-                  || (do_next_cmd 
-                      && ((command == CMD_DAC_WR) || (command == CMD_NO_OP)) 
+                  || (do_next_cmd
+                      && ((command == CMD_DAC_WR) || (command == CMD_NO_OP))
                       && !cmd_word[TRIG_BIT]
                       && (cmd_word[24:0] < min_delay_latched)) // Delay in command too short
                   || (state == S_PRE_DELAY && delay_timer < min_delay_latched) // Something went wrong and the PRE_DELAY didn't end when it should
@@ -378,7 +393,7 @@ module ad5676_dac_ctrl #(
   assign boot_readback_match = (miso_data_mosi_clk == DAC_TEST_VAL); // Readback matches the test value
   always @(posedge clk) begin
     if (!resetn) boot_fail <= 1'b0; // Reset boot fail on reset
-    if (state == S_TEST_RD && ~n_miso_data_ready_mosi_clk) boot_fail <= ~boot_readback_match; 
+    if (state == S_TEST_RD && ~n_miso_data_ready_mosi_clk) boot_fail <= ~boot_readback_match;
   end
   // Unexpected trigger
   always @(posedge clk) begin
@@ -388,8 +403,8 @@ module ad5676_dac_ctrl #(
   // Delay too short
   always @(posedge clk) begin
     if (!resetn) delay_too_short <= 1'b0;
-    else if (do_next_cmd 
-             && ((command == CMD_DAC_WR) || (command == CMD_NO_OP)) 
+    else if (do_next_cmd
+             && ((command == CMD_DAC_WR) || (command == CMD_NO_OP))
              && !cmd_word[TRIG_BIT]
              && (cmd_word[24:0] < min_delay_latched)) delay_too_short <= 1'b1; // Delay too short if loading delay timer with a value below the minimum
     else if (state == S_DAC_WR && !dac_wr_done && !wait_for_trig && delay_wait_done) delay_too_short <= 1'b1; // Delay too short if delay timer is zero before DAC write is done
@@ -449,8 +464,8 @@ module ad5676_dac_ctrl #(
     if (!resetn || state == S_ERROR) abs_dac_val_concat <= 120'd0; // Reset concatenation on reset or error
     // Concatenate absolute DAC values as LDAC is asserted
     else if (cmd_done && (do_ldac || state == S_DAC_WR_CH)) begin
-      abs_dac_val_concat <= {abs_dac_val[7][14:0], abs_dac_val[6][14:0], abs_dac_val[5][14:0], 
-                             abs_dac_val[4][14:0], abs_dac_val[3][14:0], abs_dac_val[2][14:0], 
+      abs_dac_val_concat <= {abs_dac_val[7][14:0], abs_dac_val[6][14:0], abs_dac_val[5][14:0],
+                             abs_dac_val[4][14:0], abs_dac_val[3][14:0], abs_dac_val[2][14:0],
                              abs_dac_val[1][14:0], abs_dac_val[0][14:0]};
     end
   end
@@ -507,11 +522,11 @@ module ad5676_dac_ctrl #(
     if (!resetn || state == S_ERROR) read_next_dac_val_pair <= 1'b0;
     // If next command is DAC write, immediately read next DAC word (two channels)
     else if (start_8ch_dac_wr) read_next_dac_val_pair <= 1'b1;
-    // If done writing to DAC and finished the second channel of the update pair, 
+    // If done writing to DAC and finished the second channel of the update pair,
     //   but it's not the last pair, read the next word (pair of channels)
     else if (state == S_DAC_WR
              && dac_spi_cmd_done
-             && second_dac_channel_of_pair 
+             && second_dac_channel_of_pair
              && !last_dac_channel) read_next_dac_val_pair <= 1'b1;
     else if (read_next_dac_val_pair && next_cmd_ready) read_next_dac_val_pair <= 1'b0;
   end

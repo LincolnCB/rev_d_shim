@@ -8,7 +8,7 @@ module fifo_sync #(
 )(
   input  wire                   clk,
   input  wire                   resetn,
-  
+
   input  wire [DATA_WIDTH-1:0]  wr_data,
   input  wire                   wr_en,
   output wire                   full,
@@ -30,7 +30,7 @@ module fifo_sync #(
   initial begin
     if (FORCE_BRAM != 0 && FORCE_BRAM != 1)
       $error("Invalid value for FORCE_BRAM parameter: %d. Must be 0 or 1.", FORCE_BRAM);
-    if (DATA_WIDTH <= 0) 
+    if (DATA_WIDTH <= 0)
       $error("Invalid value for DATA_WIDTH parameter: %d. Must be greater than 0.", DATA_WIDTH);
     if (ADDR_WIDTH <= 0)
       $error("Invalid value for ADDR_WIDTH parameter: %d. Must be greater than 0.", ADDR_WIDTH);
@@ -55,9 +55,9 @@ module fifo_sync #(
     .ADDR_WIDTH(ADDR_WIDTH)
   ) mem (
     .clk(clk),
-    .wr_addr(wr_ptr_bin[ADDR_WIDTH-1:0]), 
+    .wr_addr(wr_ptr_bin[ADDR_WIDTH-1:0]),
     .wr_data(wr_data),
-    .wr_en(wr_en), 
+    .wr_en(wr_en),
     .rd_addr(rd_ptr_bin_nxt[ADDR_WIDTH-1:0]),
     .rd_data(rd_data)
   );

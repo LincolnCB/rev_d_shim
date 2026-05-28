@@ -26,7 +26,7 @@ module threshold_timer (
               WAIT  = 3'd1,
               RUNNING = 3'd2,
               OUT_OF_BOUNDS = 3'd3;
-  
+
   always @(posedge clk) begin
     if (!resetn) begin
       // Reset all registers and outputs
@@ -103,8 +103,8 @@ module threshold_timer (
 
 endmodule
 
-          
 
-          
-          
+
+
+
 

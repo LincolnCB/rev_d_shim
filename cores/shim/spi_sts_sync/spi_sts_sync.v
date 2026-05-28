@@ -5,7 +5,7 @@ module spi_sts_sync (
   input  wire        aresetn,    // Active low reset signal
   input  wire        spi_clk,    // SPI domain clock
   input  wire        spi_resetn, // Active low reset signal for SPI domain
-  
+
   //// Inputs from SPI domain
   // SPI system status
   input  wire        spi_off,

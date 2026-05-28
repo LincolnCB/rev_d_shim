@@ -61,19 +61,19 @@ int cmd_read_adc_pair(const char** args, int arg_count, const command_flag_t* fl
     fprintf(stderr, "Invalid board number for read_adc_data: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
-  
+
   if (FIFO_PRESENT(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))) == 0) {
     printf("ADC data FIFO for board %d is not present. Cannot read data.\n", board);
     return -1;
   }
-  
+
   if (FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
     printf("ADC data FIFO for board %d is empty. Cannot read data.\n", board);
     return -1;
   }
-  
+
   bool read_all = has_flag(flags, flag_count, FLAG_ALL);
-  
+
   if (read_all) {
     printf("Reading all data from ADC FIFO for board %d...\n", board);
     int count = 0;
@@ -98,14 +98,14 @@ int cmd_read_adc_single(const char** args, int arg_count, const command_flag_t* 
     fprintf(stderr, "Invalid board number for read_adc_single: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
-  
+
   if (FIFO_PRESENT(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))) == 0) {
     printf("ADC data FIFO for board %d is not present. Cannot read data.\n", board);
     return -1;
   }
-  
+
   bool read_all = has_flag(flags, flag_count, FLAG_ALL);
-  
+
   if (read_all) {
     printf("Reading all available ADC data for board %d...\n", board);
     int count = 0;
@@ -122,7 +122,7 @@ int cmd_read_adc_single(const char** args, int arg_count, const command_flag_t* 
       printf("ADC data FIFO for board %d is empty. Cannot read data.\n", board);
       return -1;
     }
-    
+
     uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
     if (*(ctx->verbose)) printf("Read ADC data from board %d: 0x%" PRIx32 "\n", board, data);
     printf("%s\n", adc_format_single(data, *(ctx->verbose)));
@@ -136,19 +136,19 @@ int cmd_read_adc_dbg(const char** args, int arg_count, const command_flag_t* fla
     fprintf(stderr, "Invalid board number for read_adc_dbg: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
-  
+
   if (FIFO_PRESENT(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))) == 0) {
     printf("ADC data FIFO for board %d is not present. Cannot read data.\n", board);
     return -1;
   }
-  
+
   if (FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
     printf("ADC data FIFO for board %d is empty. Cannot read data.\n", board);
     return -1;
   }
-  
+
   bool read_all = has_flag(flags, flag_count, FLAG_ALL);
-  
+
   if (read_all) {
     printf("Reading all debug information from ADC FIFO for board %d...\n", board);
     while (!FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
@@ -166,43 +166,43 @@ int cmd_read_adc_dbg(const char** args, int arg_count, const command_flag_t* fla
 // ADC command operations
 int cmd_adc_noop(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   bool use_all = (strcmp(args[0], "all") == 0);
-  
+
   bool is_trigger;
   uint32_t value;
   if (parse_trigger_mode(args[1], args[2], &is_trigger, &value) < 0) {
     return -1;
   }
-  
+
   if (value > 0x0FFFFFFF) {
     fprintf(stderr, "Value out of range: %u (valid range: 0 - %u)\n", value, 0x0FFFFFFF);
     return -1;
   }
-  
+
   bool cont = has_flag(flags, flag_count, FLAG_CONTINUE);
-  
+
   if (use_all) {
     // Check which boards are connected by checking FIFOs
     bool connected_boards[8] = {false};
     int connected_count = 0;
-    
+
     for (int board = 0; board < 8; board++) {
       uint32_t adc_cmd_fifo_status = sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, false);
       uint32_t adc_data_fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, false);
-      
+
       if (FIFO_PRESENT(adc_cmd_fifo_status) && FIFO_PRESENT(adc_data_fifo_status)) {
         connected_boards[board] = true;
         connected_count++;
       }
     }
-    
+
     if (connected_count == 0) {
       printf("No boards are connected.\n");
       return 0;
     }
-    
-    printf("Sending ADC no-op command to %d connected board(s) with %s mode, value %u%s:\n", 
+
+    printf("Sending ADC no-op command to %d connected board(s) with %s mode, value %u%s:\n",
            connected_count, is_trigger ? "trigger" : "delay", value, cont ? ", continuous" : "");
-    
+
     for (int board = 0; board < 8; board++) {
       if (!connected_boards[board]) continue;
 
@@ -215,12 +215,12 @@ int cmd_adc_noop(const char** args, int arg_count, const command_flag_t* flags, 
       fprintf(stderr, "Invalid board number for adc_noop: '%s'. Must be 0-7.\n", args[0]);
       return -1;
     }
-    
+
     adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, is_trigger ? ADC_TRIGGER_WAIT : ADC_DELAY_WAIT, cont ? ADC_CONTINUE : ADC_NO_CONTINUE, value, *(ctx->verbose));
-    printf("ADC no-op command sent to board %d with %s mode, value %u%s.\n", 
+    printf("ADC no-op command sent to board %d with %s mode, value %u%s.\n",
            board, is_trigger ? "trigger" : "delay", value, cont ? ", continuous" : "");
   }
-  
+
   return 0;
 }
 
@@ -230,7 +230,7 @@ int cmd_adc_cancel(const char** args, int arg_count, const command_flag_t* flags
     fprintf(stderr, "Invalid board number for adc_cancel: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
-  
+
   adc_cmd_cancel(ctx->adc_ctrl, (uint8_t)board, *(ctx->verbose));
   printf("ADC cancel command sent to board %d.\n", board);
   return 0;
@@ -242,7 +242,7 @@ int cmd_adc_set_ord(const char** args, int arg_count, const command_flag_t* flag
     fprintf(stderr, "Invalid board number for adc_set_ord: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
-  
+
   // Parse 8 channel order values (must be 0-7)
   uint8_t channel_order[8];
   for (int i = 0; i < 8; i++) {
@@ -258,9 +258,9 @@ int cmd_adc_set_ord(const char** args, int arg_count, const command_flag_t* flag
     }
     channel_order[i] = (uint8_t)val;
   }
-  
+
   adc_cmd_set_ord(ctx->adc_ctrl, (uint8_t)board, channel_order, *(ctx->verbose));
-  printf("ADC channel order set for board %d: [%d, %d, %d, %d, %d, %d, %d, %d]\n", 
+  printf("ADC channel order set for board %d: [%d, %d, %d, %d, %d, %d, %d, %d]\n",
          board, channel_order[0], channel_order[1], channel_order[2], channel_order[3],
          channel_order[4], channel_order[5], channel_order[6], channel_order[7]);
   return 0;
@@ -273,19 +273,19 @@ int cmd_do_adc_rd(const char** args, int arg_count, const command_flag_t* flags,
     fprintf(stderr, "Invalid board number for adc_rd: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
-  
+
   // Parse trigger mode (args[1]) and value (args[2])
   bool is_trigger;
   uint32_t value;
   if (parse_trigger_mode(args[1], args[2], &is_trigger, &value) < 0) {
     return -1;
   }
-  
+
   if (value > 0x1FFFFFFF) {
     fprintf(stderr, "Invalid value for adc_rd: %u. Must be 0 to 536870911.\n", value);
     return -1;
   }
-  
+
   // Parse optional repeat_count (default 0, meaning it plays once)
   long repeat_count = 0;
   if (arg_count >= 4) {
@@ -296,13 +296,13 @@ int cmd_do_adc_rd(const char** args, int arg_count, const command_flag_t* flags,
       return -1;
     }
   }
-  
-  printf("Performing ADC read on board %d (%s mode, value %u, repeat_count %ld)...\n", 
+
+  printf("Performing ADC read on board %d (%s mode, value %u, repeat_count %ld)...\n",
          board, is_trigger ? "trigger" : "delay", value, repeat_count);
-  
+
   adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, is_trigger ? ADC_TRIGGER_WAIT : ADC_DELAY_WAIT, ADC_NO_CONTINUE, value, (uint32_t)repeat_count, *(ctx->verbose));
-  
-  printf("ADC read command sent to board %d: adc_rd(%s, %u, repeat_count=%ld).\n", 
+
+  printf("ADC read command sent to board %d: adc_rd(%s, %u, repeat_count=%ld).\n",
          board, is_trigger ? "trigger" : "delay", value, repeat_count);
   return 0;
 }
@@ -312,7 +312,7 @@ int cmd_do_adc_rd_ch(const char** args, int arg_count, const command_flag_t* fla
   if (validate_channel_number(args[0], &board, &channel) < 0) {
     return -1;
   }
-  
+
   // Parse optional repeat_count (default 0)
   long repeat_count = 0;
   if (arg_count >= 2) {
@@ -323,14 +323,14 @@ int cmd_do_adc_rd_ch(const char** args, int arg_count, const command_flag_t* fla
       return -1;
     }
   }
-  
-  printf("Reading ADC channel %d (board %d, channel %d, repeat_count %ld)...\n", 
+
+  printf("Reading ADC channel %d (board %d, channel %d, repeat_count %ld)...\n",
          atoi(args[0]), board, channel, repeat_count);
-  
+
   // Read the specific ADC channel with repeat count
   adc_cmd_adc_rd_ch(ctx->adc_ctrl, (uint8_t)board, (uint8_t)channel, (uint32_t)repeat_count, *(ctx->verbose));
-  
-  printf("ADC read channel command sent for channel %d (board %d, channel %d, repeat_count=%ld).\n", 
+
+  printf("ADC read channel command sent for channel %d (board %d, channel %d, repeat_count=%ld).\n",
          atoi(args[0]), board, channel, repeat_count);
   return 0;
 }
@@ -345,35 +345,35 @@ static void* adc_data_stream_thread(void* arg) {
   volatile bool* should_stop = stream_data->should_stop;
   bool binary_mode = stream_data->binary_mode;
   bool verbose = *(ctx->verbose);
-  
+
   if (verbose) {
-    printf("ADC Data Stream Thread[%d]: Starting to write %llu words to file '%s' (%s format)\n", 
+    printf("ADC Data Stream Thread[%d]: Starting to write %llu words to file '%s' (%s format)\n",
            board, word_count, file_path, binary_mode ? "binary" : "ASCII");
   }
-  
+
   // Open file for writing (binary or text mode based on format)
   FILE* file = fopen(file_path, binary_mode ? "wb" : "w");
   if (file == NULL) {
-    fprintf(stderr, "ADC Data Stream Thread[%d]: Failed to open file '%s' for writing: %s\n", 
+    fprintf(stderr, "ADC Data Stream Thread[%d]: Failed to open file '%s' for writing: %s\n",
            board, file_path, strerror(errno));
     goto cleanup;
   }
-  
+
   uint64_t words_written = 0;
   uint32_t write_buffer[256]; // Buffer for writing data
   int samples_on_line = 0; // Track samples per line for formatting (ASCII mode only)
-  
+
   while (words_written < word_count && !(*should_stop)) {
     // Check data FIFO status
     uint32_t data_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, board, false);
-    
+
     if (FIFO_PRESENT(data_status) == 0) {
       fprintf(stderr, "ADC Data Stream Thread[%d]: Data FIFO not present, stopping stream\n", board);
       break;
     }
-    
+
     uint32_t words_available = FIFO_STS_WORD_COUNT(data_status);
-    
+
     if (words_available > 0) {
       // Determine how many words to read (up to buffer size and remaining count)
       uint32_t words_to_read = words_available;
@@ -383,18 +383,18 @@ static void* adc_data_stream_thread(void* arg) {
       if (words_written + words_to_read > word_count) {
         words_to_read = (uint32_t)(word_count - words_written);
       }
-      
+
       // Read data from FIFO
       for (uint32_t i = 0; i < words_to_read; i++) {
         write_buffer[i] = adc_read_word(ctx->adc_ctrl, board);
       }
-      
+
       // Write data based on format mode
       if (binary_mode) {
         // Binary mode: write raw 32-bit words directly
         size_t written = fwrite(write_buffer, sizeof(uint32_t), words_to_read, file);
         if (written != words_to_read) {
-          fprintf(stderr, "ADC Data Stream Thread[%d]: Failed to write to file: %s\n", 
+          fprintf(stderr, "ADC Data Stream Thread[%d]: Failed to write to file: %s\n",
                  board, strerror(errno));
           break;
         }
@@ -402,31 +402,31 @@ static void* adc_data_stream_thread(void* arg) {
         // ASCII mode: convert and write samples as text
         for (uint32_t i = 0; i < words_to_read; i++) {
           uint32_t word = write_buffer[i];
-          
+
           // Extract two 16-bit samples from the 32-bit word
           int16_t sample1 = (int16_t)(word & 0xFFFF);        // Bits 15:0
           int16_t sample2 = (int16_t)((word >> 16) & 0xFFFF); // Bits 31:16
-          
+
           // Write sample1
           if (samples_on_line > 0) {
             fprintf(file, " ");
           }
           fprintf(file, "%d", sample1);
           samples_on_line++;
-          
+
           // Check if we need a new line
           if (samples_on_line >= 8) {
             fprintf(file, "\n");
             samples_on_line = 0;
           }
-          
+
           // Write sample2
           if (samples_on_line > 0) {
             fprintf(file, " ");
           }
           fprintf(file, "%d", sample2);
           samples_on_line++;
-          
+
           // Check if we need a new line
           if (samples_on_line >= 8) {
             fprintf(file, "\n");
@@ -434,12 +434,12 @@ static void* adc_data_stream_thread(void* arg) {
           }
         }
       }
-      
+
       // Flush the file to ensure data is written
       fflush(file);
-      
+
       words_written += words_to_read;
-      
+
       if (verbose && words_written % 10000 == 0) {
         printf("ADC Data Stream Thread[%d]: Written %llu/%llu words (%.1f%%)\n",
                board, words_written, word_count,
@@ -450,7 +450,7 @@ static void* adc_data_stream_thread(void* arg) {
       usleep(100);
     }
   }
-  
+
   if (file) {
     // Add final newline if needed (ASCII mode only, if last line has samples but isn't complete)
     if (!binary_mode && samples_on_line > 0) {
@@ -458,7 +458,7 @@ static void* adc_data_stream_thread(void* arg) {
     }
     fclose(file);
   }
-  
+
   if (*should_stop) {
     printf("ADC Data Stream Thread[%d]: Stream stopped by user after writing %llu words\n",
            board, words_written);
@@ -466,7 +466,7 @@ static void* adc_data_stream_thread(void* arg) {
     printf("ADC Data Stream Thread[%d]: Stream completed, wrote %llu words to file '%s'\n",
            board, words_written, file_path);
   }
-  
+
 cleanup:
   ctx->adc_data_stream_running[board] = false;
   free(stream_data);
@@ -480,7 +480,7 @@ int cmd_stream_adc_data_to_file(const char** args, int arg_count, const command_
     fprintf(stderr, "Invalid board number for stream_adc_data_to_file: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
-  
+
   // Parse word count
   char* endptr;
   uint64_t word_count = parse_value(args[1], &endptr);
@@ -488,43 +488,43 @@ int cmd_stream_adc_data_to_file(const char** args, int arg_count, const command_
     fprintf(stderr, "Invalid word count for stream_adc_data_to_file: '%s'. Must be a valid integer.\n", args[1]);
     return -1;
   }
-  
+
   // Check for binary mode flag
   bool binary_mode = has_flag(flags, flag_count, FLAG_BIN);
-  
+
   // Check if stream is already running
   if (ctx->adc_data_stream_running[board]) {
     printf("ADC data stream for board %d is already running.\n", board);
     return -1;
   }
-  
+
   if (*(ctx->verbose)) {
     printf("Checking ADC data FIFO status for board %d...\n", board);
   }
-  
+
   // Check data FIFO presence
   if (FIFO_PRESENT(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))) == 0) {
     printf("ADC data FIFO for board %d is not present. Cannot start streaming.\n", board);
     return -1;
   }
-  
+
   if (*(ctx->verbose)) {
     printf("ADC data FIFO for board %d is present. Proceeding with file setup...\n", board);
   }
-  
+
   // For output files, use the path directly (no glob pattern resolution needed)
   // Just clean and expand the path to handle ~ and relative paths
   char full_path[1024];
   clean_and_expand_path(args[2], full_path, sizeof(full_path));
-  
+
   // Modify file extension based on format
   char final_path[1024];
   strcpy(final_path, full_path);
-  
+
   // If no extension is provided, add default extension based on format
   char* dot = strrchr(final_path, '.');
   char* slash = strrchr(final_path, '/');
-  
+
   // Check if there's a dot after the last slash (or no slash at all)
   if (dot == NULL || (slash != NULL && dot < slash)) {
     // No extension, add default
@@ -535,46 +535,46 @@ int cmd_stream_adc_data_to_file(const char** args, int arg_count, const command_
     }
   }
   // If extension exists, user specified it explicitly, so keep it
-  
+
   if (*(ctx->verbose)) {
-    printf("Output file path: '%s' -> '%s' (%s format)\n", 
+    printf("Output file path: '%s' -> '%s' (%s format)\n",
            args[2], final_path, binary_mode ? "binary" : "ASCII");
   }
-  
+
   // Allocate thread data structure
   adc_data_stream_params_t* stream_data = malloc(sizeof(adc_data_stream_params_t));
   if (stream_data == NULL) {
     fprintf(stderr, "Failed to allocate memory for stream data\n");
     return -1;
   }
-  
+
   if (*(ctx->verbose)) {
     printf("Allocated stream data structure, setting up parameters...\n");
   }
-  
+
   stream_data->ctx = ctx;
   stream_data->board = (uint8_t)board;
   snprintf(stream_data->file_path, sizeof(stream_data->file_path), "%s", final_path);
   stream_data->word_count = word_count;
   stream_data->should_stop = &(ctx->adc_data_stream_stop[board]);
   stream_data->binary_mode = binary_mode;
-  
+
   if (*(ctx->verbose)) {
-    printf("Stream parameters: board=%d, word_count=%llu, file='%s', format=%s\n", 
+    printf("Stream parameters: board=%d, word_count=%llu, file='%s', format=%s\n",
            board, word_count, final_path, binary_mode ? "binary" : "ASCII");
   }
-  
+
   // Set file permissions for group access
   set_file_permissions(final_path, *(ctx->verbose));
-  
+
   // Initialize stop flag and mark stream as running
   ctx->adc_data_stream_stop[board] = false;
   ctx->adc_data_stream_running[board] = true;
-  
+
   if (*(ctx->verbose)) {
     printf("Initialized stream flags, creating pthread...\n");
   }
-  
+
   // Create the streaming thread
   if (pthread_create(&(ctx->adc_data_stream_threads[board]), NULL, adc_data_stream_thread, stream_data) != 0) {
     fprintf(stderr, "Failed to create ADC data streaming thread for board %d: %s\n", board, strerror(errno));
@@ -582,10 +582,10 @@ int cmd_stream_adc_data_to_file(const char** args, int arg_count, const command_
     free(stream_data);
     return -1;
   }
-  
+
   if (*(ctx->verbose)) {
     printf("Successfully created streaming thread for board %d\n", board);
-    printf("Started ADC data streaming for board %d to file '%s' (%llu words, %s format)\n", 
+    printf("Started ADC data streaming for board %d to file '%s' (%llu words, %s format)\n",
            board, final_path, word_count, binary_mode ? "binary" : "ASCII");
   }
   return 0;
@@ -598,24 +598,24 @@ int cmd_stop_adc_data_stream(const char** args, int arg_count, const command_fla
     fprintf(stderr, "Invalid board number for stop_adc_data_stream: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
-  
+
   // Check if stream is running
   if (!ctx->adc_data_stream_running[board]) {
     printf("ADC data stream for board %d is not running.\n", board);
     return -1;
   }
-  
+
   printf("Stopping ADC data streaming for board %d...\n", board);
-  
+
   // Signal the thread to stop
   ctx->adc_data_stream_stop[board] = true;
-  
+
   // Wait for the thread to finish
   if (pthread_join(ctx->adc_data_stream_threads[board], NULL) != 0) {
     fprintf(stderr, "Failed to join ADC data streaming thread for board %d: %s\n", board, strerror(errno));
     return -1;
   }
-  
+
   printf("ADC data streaming for board %d has been stopped.\n", board);
   return 0;
 }
@@ -627,38 +627,38 @@ static int parse_adc_command_file(const char* file_path, adc_command_t** command
     fprintf(stderr, "Failed to open ADC command file '%s': %s\n", file_path, strerror(errno));
     return -1;
   }
-  
+
   // First pass: count lines and validate format
   char line[512];
   int line_num = 0;
   int valid_lines = 0;
-  
+
   while (fgets(line, sizeof(line), file)) {
     line_num++;
-    
+
     // Skip empty lines and comments
     char* trimmed = line;
     while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
     if (*trimmed == '\n' || *trimmed == '\r' || *trimmed == '\0' || *trimmed == '#') {
       continue;
     }
-    
+
     // Check if line starts with T, D, O, NT, or ND
-    if (*trimmed != 'T' && *trimmed != 'D' && *trimmed != 'O' && 
+    if (*trimmed != 'T' && *trimmed != 'D' && *trimmed != 'O' &&
         strncmp(trimmed, "NT", 2) != 0 && strncmp(trimmed, "ND", 2) != 0) {
       fprintf(stderr, "Invalid line %d: must start with 'T', 'D', 'O', 'NT', or 'ND'\n", line_num);
       fclose(file);
       return -1;
     }
-    
+
     // Parse the line to validate format
     char mode;
     uint32_t value, repeat_count;
     uint8_t s1, s2, s3, s4, s5, s6, s7, s8;
-    
+
     if (*trimmed == 'O') {
       // Order command: O s1 s2 s3 s4 s5 s6 s7 s8
-      int parsed = sscanf(trimmed, "%c %hhu %hhu %hhu %hhu %hhu %hhu %hhu %hhu", 
+      int parsed = sscanf(trimmed, "%c %hhu %hhu %hhu %hhu %hhu %hhu %hhu %hhu",
                          &mode, &s1, &s2, &s3, &s4, &s5, &s6, &s7, &s8);
       if (parsed != 9) {
         fprintf(stderr, "Invalid line %d: 'O' command must have 8 order values\n", line_num);
@@ -697,31 +697,31 @@ static int parse_adc_command_file(const char* file_path, adc_command_t** command
       if (parsed == 2) {
         repeat_count = 0; // Default repeat count
       }
-      
+
       // Validate value range
       if (value > 0x1FFFFFF) {
         fprintf(stderr, "Invalid line %d: value %u out of range (max 0x1FFFFFF or 33554431)\n", line_num, value);
         fclose(file);
         return -1;
       }
-      
-      // Validate repeat_count range  
+
+      // Validate repeat_count range
       if (repeat_count > 0x1FFFFFF) {
         fprintf(stderr, "Invalid line %d: repeat_count %u out of range (max 0x1FFFFFF or 33554431)\n", line_num, repeat_count);
         fclose(file);
         return -1;
       }
     }
-    
+
     valid_lines++;
   }
-  
+
   if (valid_lines == 0) {
     fprintf(stderr, "No valid commands found in ADC command file\n");
     fclose(file);
     return -1;
   }
-  
+
   // Allocate memory for commands
   *commands = malloc(valid_lines * sizeof(adc_command_t));
   if (*commands == NULL) {
@@ -729,29 +729,29 @@ static int parse_adc_command_file(const char* file_path, adc_command_t** command
     fclose(file);
     return -1;
   }
-  
+
   // Second pass: actually parse the commands
   rewind(file);
   line_num = 0;
   *command_count = 0;
-  
+
   while (fgets(line, sizeof(line), file)) {
     line_num++;
-    
+
     // Skip empty lines and comments
     char* trimmed = line;
     while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
     if (*trimmed == '\n' || *trimmed == '\r' || *trimmed == '\0' || *trimmed == '#') {
       continue;
     }
-    
+
     adc_command_t* cmd = &(*commands)[*command_count];
-    
+
     if (*trimmed == 'O') {
       cmd->type = ADC_ORDER_CMD;
       uint8_t s1, s2, s3, s4, s5, s6, s7, s8;
       char dummy_char;
-      sscanf(trimmed, "%c %hhu %hhu %hhu %hhu %hhu %hhu %hhu %hhu", 
+      sscanf(trimmed, "%c %hhu %hhu %hhu %hhu %hhu %hhu %hhu %hhu",
              &dummy_char, &s1, &s2, &s3, &s4, &s5, &s6, &s7, &s8);
       cmd->order[0] = s1; cmd->order[1] = s2; cmd->order[2] = s3; cmd->order[3] = s4;
       cmd->order[4] = s5; cmd->order[5] = s6; cmd->order[6] = s7; cmd->order[7] = s8;
@@ -787,10 +787,10 @@ static int parse_adc_command_file(const char* file_path, adc_command_t** command
         cmd->order[i] = 0;
       }
     }
-    
+
     (*command_count)++;
   }
-  
+
   fclose(file);
   return 0;
 }
@@ -908,7 +908,7 @@ int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const co
     fprintf(stderr, "Invalid board number for stream_adc_commands_from_file: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
-  
+
   // Parse optional iteration count for command (default is 1)
   int iterations = 1;
   if (arg_count >= 3) {
@@ -919,47 +919,47 @@ int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const co
       return -1;
     }
   }
-  
+
   // Check for simple flag
   bool simple_mode = has_flag(flags, flag_count, FLAG_SIMPLE);
-  
+
   // Check if stream is already running
   if (ctx->adc_cmd_stream_running[board]) {
     printf("ADC command stream for board %d is already running.\n", board);
     return -1;
   }
-  
+
   // Check ADC command FIFO presence
   if (FIFO_PRESENT(sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))) == 0) {
     printf("ADC command FIFO for board %d is not present. Cannot start streaming.\n", board);
     return -1;
   }
-  
+
   // Resolve glob pattern if present
   char resolved_path[1024];
   if (resolve_file_pattern(args[1], resolved_path, sizeof(resolved_path)) != 0) {
     return -1;
   }
-  
+
   // Clean and expand file path
   char full_path[1024];
   clean_and_expand_path(resolved_path, full_path, sizeof(full_path));
-  
+
   // Parse and validate the ADC command file
   adc_command_t* commands = NULL;
   int command_count = 0;
-  
+
   if (parse_adc_command_file(full_path, &commands, &command_count) != 0) {
     return -1; // Error already printed by parse_adc_command_file
   }
-  
+
   if (*(ctx->verbose)) {
     printf("Parsed %d commands from ADC command file '%s'\n", command_count, full_path);
     if (simple_mode) {
       printf("Using simple mode (unrolling repeats)\n");
     }
   }
-  
+
   // Allocate thread data structure
   adc_command_stream_params_t* stream_data = malloc(sizeof(adc_command_stream_params_t));
   if (stream_data == NULL) {
@@ -967,7 +967,7 @@ int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const co
     free(commands);
     return -1;
   }
-  
+
   stream_data->ctx = ctx;
   stream_data->board = (uint8_t)board;
   snprintf(stream_data->file_path, sizeof(stream_data->file_path), "%s", full_path);
@@ -976,11 +976,11 @@ int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const co
   stream_data->command_count = command_count;
   stream_data->iterations = iterations;
   stream_data->simple_mode = simple_mode;
-  
+
   // Initialize stop flag and mark stream as running
   ctx->adc_cmd_stream_stop[board] = false;
   ctx->adc_cmd_stream_running[board] = true;
-  
+
   // Create the streaming thread
   if (pthread_create(&(ctx->adc_cmd_stream_threads[board]), NULL, adc_cmd_stream_thread, stream_data) != 0) {
     fprintf(stderr, "Failed to create ADC command streaming thread for board %d: %s\n", board, strerror(errno));
@@ -989,9 +989,9 @@ int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const co
     free(stream_data);
     return -1;
   }
-  
+
   if (*(ctx->verbose)) {
-    printf("Started ADC command streaming for board %d from file '%s' (%d iteration%s)%s\n", 
+    printf("Started ADC command streaming for board %d from file '%s' (%d iteration%s)%s\n",
            board, full_path, iterations, iterations == 1 ? "" : "s",
            simple_mode ? " in simple mode" : "");
   }
@@ -1005,24 +1005,24 @@ int cmd_stop_adc_cmd_stream(const char** args, int arg_count, const command_flag
     fprintf(stderr, "Invalid board number for stop_adc_cmd_stream: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
-  
+
   // Check if stream is running
   if (!ctx->adc_cmd_stream_running[board]) {
     printf("ADC command stream for board %d is not running.\n", board);
     return -1;
   }
-  
+
   printf("Stopping ADC command streaming for board %d...\n", board);
-  
+
   // Signal the thread to stop
   ctx->adc_cmd_stream_stop[board] = true;
-  
+
   // Wait for the thread to finish
   if (pthread_join(ctx->adc_cmd_stream_threads[board], NULL) != 0) {
     fprintf(stderr, "Failed to join ADC command streaming thread for board %d: %s\n", board, strerror(errno));
     return -1;
   }
-  
+
   printf("ADC command streaming for board %d has been stopped.\n", board);
   return 0;
 }
@@ -1032,17 +1032,17 @@ uint64_t calculate_expected_adc_words(const char* file_path, int iterations, boo
   // Parse the ADC command file using existing parser
   adc_command_t* commands = NULL;
   int command_count = 0;
-  
+
   if (parse_adc_command_file(file_path, &commands, &command_count) != 0) {
     return 0;
   }
-  
+
   // Count ADC words based on command types:
   // - ADC_TRIGGER_CMD: generates 4 ADC words per trigger count (value field), multiplied by (repeat_count + 1)
   // - ADC_DELAY_CMD: generates 4 ADC words per total runs (repeat_count + 1)
   // - ADC_NOOP_TRIGGER_CMD, ADC_NOOP_DELAY_CMD, ADC_ORDER_CMD: generate 0 ADC words
   uint64_t adc_words_per_execution = 0;
-  
+
   for (int i = 0; i < command_count; i++) {
     switch (commands[i].type) {
       case ADC_TRIGGER_CMD:
@@ -1060,16 +1060,16 @@ uint64_t calculate_expected_adc_words(const char* file_path, int iterations, boo
         break;
     }
   }
-  
+
   free(commands);
-  
+
   // Calculate total ADC words: adc_words_per_execution * total_iterations
   uint64_t total_adc_words = adc_words_per_execution * iterations;
-  
+
   if (verbose) {
-    printf("Calculated %llu ADC words per execution, %llu total ADC words (%d iterations)\n", 
+    printf("Calculated %llu ADC words per execution, %llu total ADC words (%d iterations)\n",
            adc_words_per_execution, total_adc_words, iterations);
   }
-  
+
   return total_adc_words;
 }

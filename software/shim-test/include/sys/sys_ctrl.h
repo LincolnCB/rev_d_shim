@@ -11,7 +11,7 @@
 // System control and configuration register
 #define SYS_CTRL_BASE             (uint32_t) 0x40000000
 #define SYS_CTRL_WORDCOUNT        (uint32_t) 10 // Size in 32-bit words
-// 32-bit offsets within the system control and configuration register 
+// 32-bit offsets within the system control and configuration register
 #define CTRL_ENABLE_OFFSET        (uint32_t) 0
 #define POWER_ENABLE_OFFSET       (uint32_t) 1
 #define CMD_BUF_RESET_OFFSET      (uint32_t) 2

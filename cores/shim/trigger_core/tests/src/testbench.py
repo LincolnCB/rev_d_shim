@@ -146,7 +146,7 @@ async def test_expect_ext_trig_cmd(dut):
 
     # Actual Reset
     await tb.reset()
-    
+
     cmd_list = []
 
     # Command to set trig_lockout with a valid value
@@ -424,7 +424,7 @@ async def test_back_to_back_force_trig_cmd(dut):
     await tb.reset()
 
     cmd_list = []
-    
+
     for _i in range(100):
         # Command to force trigger
         cmd_list.append(tb.command_word_generator(5, 0))

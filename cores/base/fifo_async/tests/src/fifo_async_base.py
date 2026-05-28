@@ -21,8 +21,8 @@ class fifo_async_base:
         self.dut._log.info(f"STARTING FIFO PARAMETERS: DATA_WIDTH={self.DATA_WIDTH}, ADDR_WIDTH={self.ADDR_WIDTH}, "
                       f"DEPTH={self.FIFO_DEPTH}, ALMOST_FULL_THRESHOLD={self.ALMOST_FULL_THRESHOLD}, "
                       f"ALMOST_EMPTY_THRESHOLD={self.ALMOST_EMPTY_THRESHOLD}")
-        self.dut._log.info(f"Read Clock Period: {rd_clk_period} {time_unit}") 
-        self.dut._log.info(f"Write Clock Period: {wr_clk_period} {time_unit}")                   
+        self.dut._log.info(f"Read Clock Period: {rd_clk_period} {time_unit}")
+        self.dut._log.info(f"Write Clock Period: {wr_clk_period} {time_unit}")
 
         # Queue to store expected data for verification
         self.expected_data_q = deque()
@@ -121,7 +121,7 @@ class fifo_async_base:
                 await RisingEdge(self.dut.wr_clk)
                 self.dut.wr_en.value = 0 # Deassert write enable
                 break  # Exit loop after successful write
-    
+
     async def read(self):
         """
         Reads a single data item from the FWFT sync FIFO.
@@ -137,7 +137,7 @@ class fifo_async_base:
             if self.dut.empty.value == 1:
                 self.dut._log.info("Want to read but FIFO is empty. Will try again in the next read cycle.")
                 fifo_empty = True
-            
+
             if not fifo_empty:
                 self.dut.rd_en.value = 1
 
@@ -179,12 +179,12 @@ class fifo_async_base:
             self.dut.wr_en.value = 1
             self.expected_data_q.append(data)  # Add to expected queue immediately
             written_count += 1
-        
+
         await RisingEdge(self.dut.wr_clk)
         self.dut.wr_en.value = 0  # Deassert write enable after burst write
         self.dut._log.info(f"Burst write complete. Total items written: {written_count}")
         return written_count
-    
+
     async def read_burst(self, count):
         """
         Reads a burst of data items from the FIFO.
@@ -219,7 +219,7 @@ class fifo_async_base:
         self.dut.rd_en.value = 0  # Deassert read enable after burst read
         self.dut._log.info(f"Burst read complete. Total items read: {len(read_items)}")
         return read_items
-    
+
     async def write_back_to_back(self, data_list):
         """
         Writes a list of data items to the FIFO back-to-back.
@@ -232,8 +232,8 @@ class fifo_async_base:
 
         while data_index < number_of_writes:
             await RisingEdge(self.dut.wr_clk) # Wait for clock edge
-            self.dut.wr_data.value = data_list[data_index] 
-            
+            self.dut.wr_data.value = data_list[data_index]
+
             await ReadWrite() # Allow 'full' to settle after the edge
 
             if self.dut.full.value == 1:
@@ -245,7 +245,7 @@ class fifo_async_base:
                 self.expected_data_q.append(int(data_list[data_index])) # Add to expected queue
                 self.dut._log.info(f"Writing data: 0x{data_list[data_index]:X}")
                 data_index += 1 # Advance to next data only on successful write
-        
+
         # After all data has been attempted to be written, ensure wr_en is de-asserted.
         # Wait one more cycle to ensure the last asserted wr_en takes effect.
         await RisingEdge(self.dut.wr_clk)
@@ -274,19 +274,19 @@ class fifo_async_base:
                 # FIFO is not empty, proceed with read
                 self.dut.rd_en.value = 1 # Assert rd_en for this cycle
                 await ReadOnly() # Wait for combinational logic for rd_data to settle
-                
+
                 read_val = self.dut.rd_data.value
                 expected_val = self.expected_data_q.popleft() # Pop from expected queue
                 read_items.append((int(read_val), int(expected_val)))
                 self.dut._log.info(f"Reading data. Expected: 0x{expected_val:X}, Actual: 0x{int(read_val):X}")
                 read_index += 1 # Advance read count
-        
+
         # After all reads are complete, ensure rd_en is de-asserted.
         # Wait one more cycle to ensure the last asserted rd_en takes effect.
         await RisingEdge(self.dut.rd_clk)
         self.dut.rd_en.value = 0
         return read_items
-    
+
     async def read_side_flag_monitor(self):
         """
         Monitors and checks the FIFO read side flags (empty, almost empty) depending on fifo_count_rd_clk.
@@ -351,7 +351,7 @@ class fifo_async_base:
             list: A list of random integers.
         """
         return [random.randint(0, self.MAX_DATA_VALUE) for _ in range(count)]
-    
+
     def print_expected_data(self):
         """
         Prints the current expected data queue for debugging.
@@ -360,5 +360,4 @@ class fifo_async_base:
         for data in self.expected_data_q:
             self.dut._log.info(f"0x{data:X}")
 
-                           
-    
+

@@ -1,15 +1,15 @@
 @@ -15,7 +15,7 @@
  #
- # sudo 
+ # sudo
  #
 -# CONFIG_sudo is not set
 +CONFIG_sudo=y
  # CONFIG_sudo-dbg is not set
  # CONFIG_sudo-dev is not set
- 
+
 @@ -156,10 +156,10 @@
  #
- # i2c-tools 
+ # i2c-tools
  #
 -# CONFIG_i2c-tools is not set
 -# CONFIG_i2c-tools-dev is not set
@@ -19,12 +19,12 @@
 +CONFIG_i2c-tools-dev=y
 +CONFIG_i2c-tools-dbg=y
 +CONFIG_i2c-tools-misc=y
- 
+
  #
- # init-ifupdown 
+ # init-ifupdown
 @@ -194,7 +194,7 @@
  #
- # kmod 
+ # kmod
  #
 -# CONFIG_kmod is not set
 +CONFIG_kmod=y
@@ -33,25 +33,25 @@
  # CONFIG_kmod-dev is not set
 @@ -490,7 +490,7 @@
  #
- # lrzsz 
+ # lrzsz
  #
 -# CONFIG_lrzsz is not set
 +CONFIG_lrzsz=y
  # CONFIG_lrzsz-dbg is not set
  # CONFIG_lrzsz-dev is not set
- 
+
 @@ -2192,7 +2192,7 @@
  #
- # gcc-runtime 
+ # gcc-runtime
  #
 -# CONFIG_libstdcPLUSPLUS is not set
 +CONFIG_libstdcPLUSPLUS=y
  # CONFIG_libstdcPLUSPLUS-dev is not set
- 
+
  #
 @@ -2215,7 +2215,7 @@
  #
- # gdb 
+ # gdb
  #
 -# CONFIG_gdb is not set
 +CONFIG_gdb=y
@@ -60,7 +60,7 @@
  # CONFIG_gdbserver is not set
 @@ -2586,33 +2586,33 @@
  #
- # python3 
+ # python3
  #
 -# CONFIG_python3 is not set
 +CONFIG_python3=y

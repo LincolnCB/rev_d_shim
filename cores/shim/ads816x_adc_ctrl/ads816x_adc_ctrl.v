@@ -28,6 +28,8 @@ module ads816x_adc_ctrl (
   output reg         unexp_trig,
   output reg         delay_too_short,
   output reg         bad_cmd,
+  output reg  [31:0] last_received_cmd,
+  output reg  [31:0] commands_since_reset,
 
   output reg         n_cs,
   output wire        mosi,
@@ -277,7 +279,7 @@ module ads816x_adc_ctrl (
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) start_repeat <= 1'b0;
     else if (start_repeat) start_repeat <= 1'b0; // Clear start_repeat after using it
-    else if (do_next_cmd && ((command == CMD_ADC_RD) || (command == CMD_ADC_RD_CH))) 
+    else if (do_next_cmd && ((command == CMD_ADC_RD) || (command == CMD_ADC_RD_CH)))
       start_repeat <= (cancel_repeat || start_repeat) ? 1'b0 : cmd_word[REPEAT_BIT];
   end
   always @(posedge clk) begin
@@ -288,7 +290,20 @@ module ads816x_adc_ctrl (
     if (!resetn || state == S_ERROR) repeat_counter <= 32'd0;
     else if (repeating && cmd_done) repeat_counter <= repeat_counter - 1;
     else if (start_repeat) repeat_counter <= cmd_buf_word[31:0];
-  end 
+  end
+
+
+  //// ---- Command history tracking for debugging
+  always @(posedge clk) begin
+    if (!resetn) begin
+      last_received_cmd <= 32'd0;
+      commands_since_reset <= 32'd0;
+    end else if (do_next_cmd) begin
+      last_received_cmd <= cmd_word;
+      // Increment commands since reset, but saturate at max value instead of overflowing.
+      commands_since_reset <= &commands_since_reset ? commands_since_reset : commands_since_reset + 1;
+    end
+  end
 
 
   //// ---- Delay timer
@@ -311,7 +326,7 @@ module ads816x_adc_ctrl (
     end else if (delay_timer > 0) delay_timer <= delay_timer - 1;
   end
 
- 
+
   //// ---- Trigger counter
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR || cancel_wait) trigger_counter <= 25'd0;
@@ -340,7 +355,7 @@ module ads816x_adc_ctrl (
   assign boot_readback_match = (miso_data_mosi_clk[15:8] == SET_OTF_CFG_DATA); // Readback matches the test value
   always @(posedge clk) begin
     if (!resetn) boot_fail <= 1'b0; // Reset boot fail on reset
-    if (state == S_TEST_RD && !n_miso_data_ready_mosi_clk) boot_fail <= ~boot_readback_match; 
+    if (state == S_TEST_RD && !n_miso_data_ready_mosi_clk) boot_fail <= ~boot_readback_match;
   end
   // Unexpected trigger
   always @(posedge clk) begin
@@ -477,7 +492,7 @@ module ads816x_adc_ctrl (
       mosi_shift_reg <= spi_reg_read_cmd(ADDR_OTF_CFG);
     // No-op during the word when reading back the On-the-Fly mode register
     end else if (state == S_REQ_RD && adc_spi_cmd_done) begin
-      mosi_shift_reg <= 24'd0; 
+      mosi_shift_reg <= 24'd0;
     // When starting an 8ch command, start with index 0
     end else if (do_next_cmd && (next_cmd_state == S_ADC_RD)) begin
       mosi_shift_reg <= {spi_req_otf_sample_cmd(sample_order[adc_word_idx[2:0]]), 8'd0};
@@ -500,7 +515,7 @@ module ads816x_adc_ctrl (
   // (should show up 1 cycle later on readback MISO clock than equivalent MOSI clock cycle, plus 2 for the synchronizer)
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) start_miso_mosi_clk <= 1'b0; // Reset start MISO read signal on reset or error
-    else if ((state == S_TEST_RD 
+    else if ((state == S_TEST_RD
               || ((state == S_ADC_RD || state == S_ADC_RD_CH) && adc_word_idx > 0))
              && n_cs_timer == N_CS_MISO_START_TIME) start_miso_mosi_clk <= 1'b1;
     else start_miso_mosi_clk <= 1'b0;
@@ -629,11 +644,11 @@ module ads816x_adc_ctrl (
     if (!resetn) data_word <= 32'd0; // Reset data word on reset
     else if (try_data_write && !data_buf_full) begin
       // If ADC data pair is ready, write the two MISO data words to the data buffer
-      if (adc_pair_data_ready) begin 
+      if (adc_pair_data_ready) begin
         data_word <= {offset_to_signed(miso_data_mosi_clk[15:0]), miso_data_storage};
       // If single ADC sample is ready, write single MISO data word with upper 16 bits zeroed
       end else if (adc_ch_data_ready) begin
-        data_word <= {16'd0, offset_to_signed(miso_data_mosi_clk[15:0])}; 
+        data_word <= {16'd0, offset_to_signed(miso_data_mosi_clk[15:0])};
       // Write MISO data with debug code
       end else if (debug_miso_data) begin
         data_word <= {DBG_MISO_DATA, 12'd0, miso_data_mosi_clk[15:0]};
@@ -658,7 +673,7 @@ module ads816x_adc_ctrl (
 
 
   //// ---- Functions for command clarity
-  // Convert from offset to signed     
+  // Convert from offset to signed
   // Given a 16-bit 0-65535 number, treat 32768 (0x8000) as 0, 1 as -32767, and 65535 (0xFFFF) as 32767
   function signed [15:0] offset_to_signed(input [15:0] raw_dac_val);
     reg signed [16:0] shift;

@@ -384,7 +384,7 @@ async def test_cancel(dut):
     cmd_buf_task.kill()
     scoreboard_task.kill()
     transition_monitor_task.kill()\
-    
+
 @cocotb.test()
 async def example_simulation(dut):
     tb = await setup_testbench(dut)

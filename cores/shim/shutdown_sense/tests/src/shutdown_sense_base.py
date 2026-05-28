@@ -35,11 +35,11 @@ class shutdown_sense_base:
             # Monitor the current state of the DUT compared to expected values
             assert self.dut.shutdown_sense_sel.value == shutdown_sense_sel_expected_next, \
                 f"Expected shutdown_sense_sel: {int(shutdown_sense_sel_expected_next)}, got: {int(self.dut.shutdown_sense_sel.value)}"
-            
+
             for i in range(8):
                 assert self.dut.shutdown_sense[i].value == shutdown_sense_expected_next[i], \
                     f"Expected shutdown_sense[{i}]: {int(shutdown_sense_expected_next[i])}, got: {int(self.dut.shutdown_sense[i].value)}"
-            
+
             self.dut._log.info(f"MONITOR THIS CYCLE:")
             self.dut._log.info(f"DUT shutdown_sense_en: {int(self.dut.shutdown_sense_en.value)}")
             self.dut._log.info(f"DUT shutdown_sense_pin: {int(self.dut.shutdown_sense_pin.value)}")
@@ -47,7 +47,7 @@ class shutdown_sense_base:
                                f"EXPECTED shutdown_sense_sel: {shutdown_sense_sel_expected_next}")
             self.dut._log.info(f"DUT shutdown_sense: {[int(sense.value) for sense in self.dut.shutdown_sense]}, "
                                f"EXPECTED shutdown_sense: {list(reversed(shutdown_sense_expected_next))}")
-            
+
             # Update the next cycle's expected values based on the current state of the DUT
             if self.dut.shutdown_sense_en.value == 0:
                 shutdown_sense_expected_next = [0, 0, 0, 0, 0, 0, 0, 0]

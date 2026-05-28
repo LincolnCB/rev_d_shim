@@ -127,7 +127,7 @@ int main(int argc, char *argv[])
 
   //////////////////// Cleanup ////////////////////
   printf("Cleaning up and exiting...\n");
-  
+
   // Stop all running ADC streaming threads
   printf("Stopping all ADC streams...\n");
   for (int i = 0; i < 8; i++) {
@@ -159,7 +159,7 @@ int main(int argc, char *argv[])
       }
     }
   }
-  
+
   // Stop trigger data stream if running
   if (cmd_ctx.trig_data_stream_running) {
     printf("Stopping trigger data stream...\n");
@@ -170,7 +170,7 @@ int main(int argc, char *argv[])
       printf("Trigger data stream stopped.\n");
     }
   }
-  
+
   // Stop fieldmap if running
   if (cmd_ctx.fieldmap_running) {
     printf("Stopping fieldmap data collection...\n");
@@ -181,7 +181,7 @@ int main(int argc, char *argv[])
       printf("Fieldmap data collection stopped.\n");
     }
   }
-  
+
   // Close log file if logging is active
   if (cmd_ctx.logging_enabled && cmd_ctx.log_file != NULL) {
     printf("Closing command log file...\n");
@@ -189,7 +189,7 @@ int main(int argc, char *argv[])
     cmd_ctx.log_file = NULL;
     cmd_ctx.logging_enabled = false;
   }
-  
+
   sys_ctrl_turn_off(&sys_ctrl, verbose);
   printf("System turned off.\n");
 

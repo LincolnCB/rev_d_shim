@@ -15,7 +15,7 @@ class fwft_fifo_model:
 
     def get_depth(self):
         return self.DEPTH
-    
+
     def get_num_items(self):
         return len(self.fifo)
 
@@ -24,13 +24,13 @@ class fwft_fifo_model:
 
     def is_empty(self):
         return len(self.fifo) == 0
-    
+
     def is_almost_empty(self):
         return len(self.fifo) <= 2
-    
+
     def is_full(self):
         return len(self.fifo) >= self.DEPTH
-    
+
     def is_almost_full(self):
         return len(self.fifo) >= (self.DEPTH - 2)
 

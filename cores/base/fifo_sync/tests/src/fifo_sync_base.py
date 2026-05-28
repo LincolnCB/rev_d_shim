@@ -26,7 +26,7 @@ class fifo_sync_base:
         self.expected_data_q = deque()
 
         # Start the clock
-        cocotb.start_soon(Clock(self.dut.clk, clk_period, units=time_unit).start()) 
+        cocotb.start_soon(Clock(self.dut.clk, clk_period, units=time_unit).start())
 
         # Initialize input signals
         self.dut.wr_en.value = 0
@@ -73,7 +73,7 @@ class fifo_sync_base:
         self.dut.wr_en.value = 0 # Deassert write enable
 
         return True
-    
+
     async def read(self):
         """
         Reads a single data item from the FWFT sync FIFO.
@@ -87,7 +87,7 @@ class fifo_sync_base:
         if self.dut.empty.value == 1:
             self.dut._log.info("Attempted to read but FIFO is empty. Skipping read.")
             return (None, None, False)
-        
+
         self.dut.rd_en.value = 1
 
         await ReadOnly()  # Wait for combinational logic to settle
@@ -98,7 +98,7 @@ class fifo_sync_base:
 
         self.dut._log.info(f"Reading data. Expected: 0x{expected_val:X}, Actual: 0x{int(read_val):X}")
 
-        
+
 
         await RisingEdge(self.dut.clk) # Wait for the read enable to take effect (pointer update)
         self.dut.rd_en.value = 0 # Deassert read enable
@@ -131,12 +131,12 @@ class fifo_sync_base:
             self.dut.wr_en.value = 1
             self.expected_data_q.append(data)  # Add to expected queue immediately
             written_count += 1
-        
+
         await RisingEdge(self.dut.clk)
         self.dut.wr_en.value = 0  # Deassert write enable after burst write
         self.dut._log.info(f"Burst write complete. Total items written: {written_count}")
         return written_count
-    
+
     async def read_burst(self, count):
         """
         Reads a burst of data items from the FIFO.
@@ -171,7 +171,7 @@ class fifo_sync_base:
         self.dut.rd_en.value = 0  # Deassert read enable after burst read
         self.dut._log.info(f"Burst read complete. Total items read: {len(read_items)}")
         return read_items
-    
+
     async def print_fifo_status(self):
         """
         Prints the current status of the FIFO including full, empty, almost full, and almost empty flags.
@@ -192,7 +192,7 @@ class fifo_sync_base:
             list: A list of random integers.
         """
         return [random.randint(0, self.MAX_DATA_VALUE) for _ in range(count)]
-    
+
     def print_expected_data(self):
         """
         Prints the current expected data queue for debugging.
@@ -201,5 +201,4 @@ class fifo_sync_base:
         for data in self.expected_data_q:
             self.dut._log.info(f"0x{data:X}")
 
-                           
-    
+

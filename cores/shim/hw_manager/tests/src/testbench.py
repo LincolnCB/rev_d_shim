@@ -19,7 +19,7 @@ async def test_idle(dut):
 
     # Reset
     await tb.reset()
-    
+
     state_scoreboard_task = cocotb.start_soon(tb.state_scoreboard_dispatcher())
     await state_scoreboard_task
 

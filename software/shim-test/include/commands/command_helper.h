@@ -36,11 +36,11 @@ typedef struct command_context {
   struct dac_ctrl_t* dac_ctrl;
   struct adc_ctrl_t* adc_ctrl;
   struct trigger_ctrl_t* trigger_ctrl;
-  
+
   // System state
   bool* verbose;
   bool* should_exit;
-  
+
   // ADC streaming management
   pthread_t adc_data_stream_threads[8];      // Thread handles for ADC data streaming (reading to file)
   bool adc_data_stream_running[8];           // Status of each ADC data stream thread
@@ -48,7 +48,7 @@ typedef struct command_context {
   pthread_t adc_cmd_stream_threads[8];       // Thread handles for ADC command streaming (from file)
   bool adc_cmd_stream_running[8];            // Status of each ADC command stream thread
   volatile bool adc_cmd_stream_stop[8];      // Stop signals for each ADC command stream thread
-  
+
   // DAC streaming management
   pthread_t dac_cmd_stream_threads[8];      // Thread handles for DAC command streaming
   bool dac_cmd_stream_running[8];           // Status of each DAC command stream thread
@@ -56,21 +56,21 @@ typedef struct command_context {
   pthread_t dac_debug_stream_threads[8];    // Thread handles for DAC debug data streaming (reading to file)
   bool dac_debug_stream_running[8];         // Status of each DAC debug data stream thread
   volatile bool dac_debug_stream_stop[8];   // Stop signals for each DAC debug data stream thread
-  
+
   // Trigger streaming management
   pthread_t trig_data_stream_thread;        // Thread handle for trigger data streaming
   bool trig_data_stream_running;            // Status of trigger data stream thread
   volatile bool trig_data_stream_stop;      // Stop signal for trigger data stream thread
-  
+
   // Fieldmap data collection management
   pthread_t fieldmap_thread;                // Thread handle for fieldmap data collection
   bool fieldmap_running;                    // Status of fieldmap thread
   volatile bool fieldmap_stop;              // Stop signal for fieldmap thread
-  
+
   // Command logging
   FILE* log_file;                       // File handle for command logging
   bool logging_enabled;                 // Whether command logging is active
-  
+
   // ADC bias calibration storage (64 channels, 8 boards * 8 channels each)
   double adc_bias[64];                  // ADC bias values for each channel (0-63)
   bool adc_bias_valid[64];              // Whether each ADC bias value is valid

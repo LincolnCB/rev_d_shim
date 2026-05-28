@@ -35,12 +35,12 @@ char* dac_format_data(uint32_t dac_value, bool verbose) {
   static char buffer[512];  // Static buffer for return string
   char temp_buffer[256];
   buffer[0] = '\0';  // Initialize as empty string
-  
+
   if (verbose) {
     snprintf(temp_buffer, sizeof(temp_buffer), "DAC Data word: 0x%08X\n", dac_value);
     strcat(buffer, temp_buffer);
   }
-  
+
   uint8_t data_code = DAC_DATA_CODE(dac_value);
   switch (data_code) {
     case DAC_DBG_MISO_DATA: {
@@ -88,7 +88,7 @@ char* dac_format_data(uint32_t dac_value, bool verbose) {
           strcpy(cmd_str, "Unknown Command");
           break;
       }
-      snprintf(temp_buffer, sizeof(temp_buffer), "Debug: DAC SPI Word Writing = 0x%06X\n  Command: %s to Register: %1d, Data: %05d", 
+      snprintf(temp_buffer, sizeof(temp_buffer), "Debug: DAC SPI Word Writing = 0x%06X\n  Command: %s to Register: %1d, Data: %05d",
                dac_value & 0xFFFFFF, cmd_str, DAC_SPI_REG_ADDR(dac_value), DAC_SPI_DATA(dac_value));
       strcat(buffer, temp_buffer);
       break;
@@ -106,7 +106,7 @@ char* dac_format_data(uint32_t dac_value, bool verbose) {
       break;
     }
   }
-  
+
   return buffer;
 }
 
@@ -114,13 +114,13 @@ char* dac_format_data(uint32_t dac_value, bool verbose) {
 char* dac_format_state(uint8_t state_code, bool verbose) {
   static char buffer[64];  // Static buffer for return string
   buffer[0] = '\0';  // Initialize as empty string
-  
+
   if (verbose) {
     char temp[32];
     snprintf(temp, sizeof(temp), "DAC State code: %d\n", state_code);
     strcat(buffer, temp);
   }
-  
+
   switch (state_code) {
     case DAC_STATE_RESET:
       strcat(buffer, "RESET");
@@ -168,7 +168,7 @@ char* dac_format_state(uint8_t state_code, bool verbose) {
       break;
     }
   }
-  
+
   return buffer;
 }
 
@@ -187,7 +187,7 @@ void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, dac_wait_mode_t tr
                       ((trig == DAC_TRIGGER_WAIT ? 1 : 0) << DAC_CMD_TRIG_BIT) |
                       ((cont == DAC_CONTINUE ? 1 : 0) << DAC_CMD_CONT_BIT) |
                       (value & 0x1FFFFFF);
-  
+
   if (verbose) {
     printf("DAC[%d] NO_OP command word: 0x%08X\n", board, cmd_word);
   }
@@ -203,13 +203,13 @@ void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[
     fprintf(stderr, "Invalid command value: %u. Must be 0 to 33554431 (25-bit value).\n", value);
     return;
   }
-  
+
   uint32_t cmd_word = (DAC_CMD_DAC_WR << DAC_CMD_CMD_LSB ) |
                       ((trig == DAC_TRIGGER_WAIT ? 1 : 0) << DAC_CMD_TRIG_BIT) |
                       ((cont == DAC_CONTINUE ? 1 : 0) << DAC_CMD_CONT_BIT) |
                       ((ldac == DAC_LDAC ? 1 : 0) << DAC_CMD_LDAC_BIT) |
                       (value & 0x1FFFFFF);
-  
+
   if (verbose) {
     printf("DAC[%d] DAC_WR command word: 0x%08X\n", board, cmd_word);
   }
@@ -222,7 +222,7 @@ void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[
     int16_t val1 = ch_vals[i + 1];
     uint32_t word = (((uint32_t)(uint16_t)val1 << 16) & 0xFFFF0000) | (((uint32_t)(uint16_t)val0) & 0x0000FFFF);
     if (verbose) {
-      printf("DAC[%d] Channel data word %d: 0x%08X (ch%d=0x%04X, ch%d=0x%04X)\n", 
+      printf("DAC[%d] Channel data word %d: 0x%08X (ch%d=0x%04X, ch%d=0x%04X)\n",
              board, i/2, word, i, val0, i+1, val1);
     }
     *(dac_ctrl->buffer[board]) = word;
@@ -244,7 +244,7 @@ void dac_cmd_dac_wr_ch(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t ch, i
                       (ch_val & 0xFFFF);   // Channel value
 
   if (verbose) {
-    printf("DAC[%d] DAC_WR_CH command word: 0x%08X (channel %d, value=%d, bits=0x%04X)\n", 
+    printf("DAC[%d] DAC_WR_CH command word: 0x%08X (channel %d, value=%d, bits=0x%04X)\n",
            board, cmd_word, ch, ch_val, (uint16_t)ch_val & 0xFFFF);
   }
   *(dac_ctrl->buffer[board]) = cmd_word;
@@ -265,7 +265,7 @@ void dac_cmd_set_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t ch, int
                       (cal & 0xFFFF);      // Calibration value
 
   if (verbose) {
-    printf("DAC[%d] SET_CAL command word: 0x%08X (channel %d, cal=%d, bits=0x%04X)\n", 
+    printf("DAC[%d] SET_CAL command word: 0x%08X (channel %d, cal=%d, bits=0x%04X)\n",
            board, cmd_word, ch, cal, (uint16_t)cal & 0xFFFF);
   }
   *(dac_ctrl->buffer[board]) = cmd_word;
@@ -285,7 +285,7 @@ void dac_cmd_get_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel
                       (channel << 16); // Channel index
 
   if (verbose) {
-    printf("DAC[%d] GET_CAL command word: 0x%08X (channel %d)\n", 
+    printf("DAC[%d] GET_CAL command word: 0x%08X (channel %d)\n",
            board, cmd_word, channel);
   }
   *(dac_ctrl->buffer[board]) = cmd_word;
