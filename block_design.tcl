@@ -510,33 +510,42 @@ wire axi_spi_interface/trig_data_buf_underflow hw_manager/trig_data_buf_underflo
 
 ###############################################################################
 
-### Status register (2048 bits)
+### Status register (4096 bits)
 cell pavel-demin:user:axi_sts_register status_reg {
-  STS_DATA_WIDTH 2048
+  STS_DATA_WIDTH 4096
 } {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
   S_AXI sys_cfg_axi_intercon/M01_AXI
 }
-addr 0x40100000 256 status_reg/S_AXI ps/M_AXI_GP0
+# 512 bytes (4096 bits)
+addr 0x40100000 512 status_reg/S_AXI ps/M_AXI_GP0
 ## Concatenation
-#    31 : 0    --  32b Hardware status code (31:29 board num, 28:4 status code, 3:0 internal state)
-#   575 : 32   -- 544b Command FIFO status (32 bits per buffer, ordered as DAC0, ADC0, ..., DAC7, ADC7, Trigger)
-#  1119 : 576  -- 544b Data FIFO status (32 bits per buffer, ordered as DAC0, ADC0, ..., DAC7, ADC7, Trigger)
-#  1151 : 1120 --  32b SPI clock frequency in Hz
-#  1183 : 1152 --  32b Trigger counter (number of triggers received)
-#  1215 : 1184 --  32b Debug 1 (SPI clock locked, spi_off, DAC/ADC ~CS high time)
-#  1247 : 1216 --  32b DAC minimum delay time (in SPI clock cycles)
-#  1279 : 1248 --  32b ADC minimum delay time (in SPI clock cycles)
-#  2047 : 1279 -- RESERVED (0)
+#  0    31 : 0    --  32b Hardware status code (31:29 board num, 28:4 status code, 3:0 internal state)
+#  1   575 : 32   -- 544b Command FIFO status (32 bits per buffer, ordered as DAC0, ADC0, ..., DAC7, ADC7, Trigger)
+#  2  1119 : 576  -- 544b Data FIFO status (32 bits per buffer, ordered as DAC0, ADC0, ..., DAC7, ADC7, Trigger)
+#  3  1151 : 1120 --  32b SPI clock frequency in Hz
+#  4  1183 : 1152 --  32b Trigger counter (number of triggers received)
+#  5  1215 : 1184 --  32b Debug 1 (SPI clock locked, spi_off, DAC/ADC ~CS high time)
+#  6  1247 : 1216 --  32b DAC minimum delay time (in SPI clock cycles)
+#  7  1279 : 1248 --  32b ADC minimum delay time (in SPI clock cycles)
+#  8  1535 : 1280 -- 256b DAC last received command (32 bits per channel, ordered as DAC0, ..., DAC7)
+#  9  1791 : 1536 -- 256b ADC last received command (32 bits per channel, ordered as ADC0, ..., ADC7)
+# 10  2047 : 1792 -- 256b DAC commands since reset  (32 bits per channel, ordered as DAC0, ..., DAC7)
+# 11  2303 : 2048 -- 256b ADC commands since reset  (32 bits per channel, ordered as ADC0, ..., ADC7)
+# 12  4095 : 2304 -- RESERVED (zero-filled)
 cell xilinx.com:ip:xlconcat:2.1 sts_concat {
-  NUM_PORTS 9
+  NUM_PORTS 13
 } {
   In0 hw_manager/status_word
   In1 axi_spi_interface/cmd_fifo_sts
   In2 axi_spi_interface/data_fifo_sts
   In3 spi_clk_snoop/spi_clk_freq_hz
   In4 spi_clk_domain/trig_counter
+  In9 spi_clk_domain/last_received_dac_cmds_concat
+  In10 spi_clk_domain/last_received_adc_cmds_concat
+  In11 spi_clk_domain/dac_cmds_since_reset_concat
+  In12 spi_clk_domain/adc_cmds_since_reset_concat
   dout status_reg/sts_data
 }
 # Debug 1 tracks the following:
@@ -582,7 +591,7 @@ cell xilinx.com:ip:xlconcat:2.1 adc_min_delay_time_concat {
 # Pad reserved bits
 cell xilinx.com:ip:xlconstant:1.1 pad_sts_reserved {
   CONST_VAL 0
-  CONST_WIDTH [expr {2048 - 1280}]
+  CONST_WIDTH [expr {4096 - 2304}]
 } {
   dout sts_concat/In8
 }

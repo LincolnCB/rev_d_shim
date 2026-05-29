@@ -36,6 +36,8 @@ create_bd_pin -dir O data_buf_overflow
 create_bd_pin -dir O unexp_trig
 create_bd_pin -dir O ldac_misalign
 create_bd_pin -dir O delay_too_short
+create_bd_pin -dir O -from 31 -to 0 last_received_cmd
+create_bd_pin -dir O -from 31 -to 0 cmds_since_reset
 
 # Commands and data
 create_bd_pin -dir I -from 31 -to 0 dac_cmd
@@ -130,6 +132,8 @@ cell shim:user:ad5676_dac_ctrl dac_spi {
   bad_cmd bad_cmd
   cal_oob cal_oob
   dac_val_oob dac_val_oob
+  last_received_cmd last_received_cmd
+  cmds_since_reset cmds_since_reset
   n_cs n_cs
   mosi mosi
   miso miso

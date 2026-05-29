@@ -21,6 +21,8 @@ create_bd_pin -dir O cmd_buf_underflow
 create_bd_pin -dir O data_buf_overflow
 create_bd_pin -dir O unexp_trig
 create_bd_pin -dir O delay_too_short
+create_bd_pin -dir O -from 31 -to 0 last_received_cmd
+create_bd_pin -dir O -from 31 -to 0 cmds_since_reset
 
 # Commands and data
 create_bd_pin -dir I -from 31 -to 0 adc_cmd
@@ -98,6 +100,8 @@ cell shim:user:ads816x_adc_ctrl adc_spi {} {
   setup_done setup_done
   boot_fail boot_fail
   bad_cmd bad_cmd
+  last_received_cmd last_received_cmd
+  cmds_since_reset cmds_since_reset
   cmd_buf_underflow cmd_buf_underflow
   data_buf_overflow data_buf_overflow
   unexp_trig unexp_trig

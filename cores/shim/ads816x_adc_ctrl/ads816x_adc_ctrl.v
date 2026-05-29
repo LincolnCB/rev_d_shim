@@ -29,7 +29,7 @@ module ads816x_adc_ctrl (
   output reg         delay_too_short,
   output reg         bad_cmd,
   output reg  [31:0] last_received_cmd,
-  output reg  [31:0] commands_since_reset,
+  output reg  [31:0] cmds_since_reset,
 
   output reg         n_cs,
   output wire        mosi,
@@ -297,11 +297,11 @@ module ads816x_adc_ctrl (
   always @(posedge clk) begin
     if (!resetn) begin
       last_received_cmd <= 32'd0;
-      commands_since_reset <= 32'd0;
+      cmds_since_reset <= 32'd0;
     end else if (do_next_cmd) begin
       last_received_cmd <= cmd_word;
       // Increment commands since reset, but saturate at max value instead of overflowing.
-      commands_since_reset <= &commands_since_reset ? commands_since_reset : commands_since_reset + 1;
+      cmds_since_reset <= &cmds_since_reset ? cmds_since_reset : cmds_since_reset + 1;
     end
   end
 

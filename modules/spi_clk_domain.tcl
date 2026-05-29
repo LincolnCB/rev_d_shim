@@ -57,6 +57,8 @@ create_bd_pin -dir O -from 7 -to 0 dac_data_buf_overflow
 create_bd_pin -dir O -from 7 -to 0 unexp_dac_trig
 create_bd_pin -dir O -from 7 -to 0 ldac_misalign
 create_bd_pin -dir O -from 7 -to 0 dac_delay_too_short
+create_bd_pin -dir O -from 255 -to 0 last_received_dac_cmds_concat
+create_bd_pin -dir O -from 255 -to 0 dac_cmds_since_reset_concat
 # ADC channel status
 create_bd_pin -dir O -from 7 -to 0 adc_boot_fail
 create_bd_pin -dir O -from 7 -to 0 bad_adc_cmd
@@ -64,6 +66,8 @@ create_bd_pin -dir O -from 7 -to 0 adc_cmd_buf_underflow
 create_bd_pin -dir O -from 7 -to 0 adc_data_buf_overflow
 create_bd_pin -dir O -from 7 -to 0 unexp_adc_trig
 create_bd_pin -dir O -from 7 -to 0 adc_delay_too_short
+create_bd_pin -dir O -from 255 -to 0 last_received_adc_cmds_concat
+create_bd_pin -dir O -from 255 -to 0 adc_cmds_since_reset_concat
 
 # Commands and data
 for {set i 0} {$i < $board_count} {incr i} {
@@ -175,12 +179,16 @@ cell shim:user:spi_sts_sync spi_sts_sync {} {
   unexp_dac_trig_sync unexp_dac_trig
   ldac_misalign_sync ldac_misalign
   dac_delay_too_short_sync dac_delay_too_short
+  last_received_dac_cmds_concat_sync last_received_dac_cmds_concat
+  dac_cmds_since_reset_concat_sync dac_cmds_since_reset_concat
   adc_boot_fail_sync adc_boot_fail
   bad_adc_cmd_sync bad_adc_cmd
   adc_cmd_buf_underflow_sync adc_cmd_buf_underflow
   adc_data_buf_overflow_sync adc_data_buf_overflow
   unexp_adc_trig_sync unexp_adc_trig
   adc_delay_too_short_sync adc_delay_too_short
+  last_received_adc_cmds_concat_sync last_received_adc_cmds_concat
+  adc_cmds_since_reset_concat_sync adc_cmds_since_reset_concat
 }
 ## SPI system reset
 # Create proc_sys_reset for SPI-system-wide reset
@@ -655,6 +663,32 @@ for {set i $board_count} {$i < 8} {incr i} {
   wire dac_delay_too_short_concat/In${i} const_0/dout
 }
 
+## last_received_dac_cmds_concat
+cell xilinx.com:ip:xlconcat:2.1 last_received_dac_cmds_concat {
+  NUM_PORTS 8
+} {
+  dout spi_sts_sync/last_received_dac_cmds_concat
+}
+for {set i 0} {$i < $board_count} {incr i} {
+  wire last_received_dac_cmds_concat/In${i} dac_ch${i}/last_received_cmd
+}
+for {set i $board_count} {$i < 8} {incr i} {
+  wire last_received_dac_cmds_concat/In${i} const_0/dout
+}
+
+## dac_cmds_since_reset_concat
+cell xilinx.com:ip:xlconcat:2.1 dac_cmds_since_reset_concat {
+  NUM_PORTS 8
+} {
+  dout spi_sts_sync/dac_cmds_since_reset_concat
+}
+for {set i 0} {$i < $board_count} {incr i} {
+  wire dac_cmds_since_reset_concat/In${i} dac_ch${i}/cmds_since_reset
+}
+for {set i $board_count} {$i < 8} {incr i} {
+  wire dac_cmds_since_reset_concat/In${i} const_0/dout
+}
+
 ## adc_boot_fail
 cell xilinx.com:ip:xlconcat:2.1 adc_boot_fail_concat {
   NUM_PORTS 8
@@ -731,4 +765,30 @@ for {set i 0} {$i < $board_count} {incr i} {
 }
 for {set i $board_count} {$i < 8} {incr i} {
   wire adc_delay_too_short_concat/In${i} const_0/dout
+}
+
+## last_received_adc_cmds_concat
+cell xilinx.com:ip:xlconcat:2.1 last_received_adc_cmds_concat {
+  NUM_PORTS 8
+} {
+  dout spi_sts_sync/last_received_adc_cmds_concat
+}
+for {set i 0} {$i < $board_count} {incr i} {
+  wire last_received_adc_cmds_concat/In${i} adc_ch${i}/last_received_cmd
+}
+for {set i $board_count} {$i < 8} {incr i} {
+  wire last_received_adc_cmds_concat/In${i} const_0/dout
+}
+
+## adc_cmds_since_reset_concat
+cell xilinx.com:ip:xlconcat:2.1 adc_cmds_since_reset_concat {
+  NUM_PORTS 8
+} {
+  dout spi_sts_sync/adc_cmds_since_reset_concat
+}
+for {set i 0} {$i < $board_count} {incr i} {
+  wire adc_cmds_since_reset_concat/In${i} adc_ch${i}/cmds_since_reset
+}
+for {set i $board_count} {$i < 8} {incr i} {
+  wire adc_cmds_since_reset_concat/In${i} const_0/dout
 }
