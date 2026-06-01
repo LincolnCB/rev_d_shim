@@ -1,7 +1,7 @@
-**Updated 2025-09-22**
+**Updated 2026-05-29**
 # AD5676 DAC Control Core
 
-The `ad5676_dac_ctrl` module implements command-driven control for the Analog Devices AD5676 DAC in the Rev D shim firmware. It manages SPI transactions, command sequencing, per-channel calibration, error detection, and synchronization for all 8 DAC channels.
+The `ad5676_dac_ctrl` module implements command-driven control for the Analog Devices AD5676 DAC in the Rev D shim firmware. It manages the boot-time register test, SPI transactions, command sequencing, per-channel calibration, error detection, and synchronization for all 8 DAC channels.
 
 ## Supported Device
 
@@ -25,11 +25,13 @@ The `ad5676_dac_ctrl` module implements command-driven control for the Analog De
 
 ### Outputs
 
-- `setup_done`: Indicates successful boot/setup (set immediately if `boot_test_skip` is asserted).
+- `setup_done`: Indicates successful boot/setup after the boot sequence or skipped midrange initialization completes.
 - `cmd_buf_rd_en`: Enables reading the next command word.
 - `waiting_for_trig`: Indicates waiting for trigger.
 - `data_buf_wr_en`: Enables writing a data word to the output buffer.
 - `data_word [31:0]`: Packed debug or readback data.
+- `last_received_cmd [31:0]`: Most recently accepted command word.
+- `cmds_since_reset [31:0]`: Saturating count of commands accepted since reset.
 - Error flags: `boot_fail`, `cmd_buf_underflow`, `data_buf_overflow`, `unexp_trig`, `ldac_misalign`, `delay_too_short`, `bad_cmd`, `cal_oob`, `dac_val_oob`.
 - `abs_dac_val_concat [119:0]`: Concatenated absolute DAC values (8 × 15 bits).
 - `n_cs`: SPI chip select (active low).
@@ -59,7 +61,7 @@ State transitions are managed based on command type, trigger, delay, and error c
 
 ### Boot Test
 
-If `boot_test_skip` is asserted, boot-time SPI register test is skipped and `setup_done` is set immediately. The core will go from `S_RESET` to `S_IDLE` directly.
+If `boot_test_skip` is asserted, boot-time SPI register test is skipped, but the core still runs the midrange initialization sequence before asserting `setup_done`.
 
 Otherwise, the core performs a boot test by writing a known value to a DAC channel and reading it back to verify correct operation. If the readback does not match the expected value, the core transitions to `S_ERROR`.
 
@@ -112,7 +114,9 @@ The boot test sequence is as follows:
 
 5. `S_TEST_RD -> S_SET_MID`: If readback matches expected value, write midrange value to all DAC channels; otherwise, transitions to `S_ERROR` and sets `boot_fail`.
 
-6. `S_SET_MID -> S_IDLE`: After all channels are set to midrange, setup is complete (set `setup_done`).
+6. `S_SET_MID -> S_IDLE`: After all channels are set to midrange, setup is complete and `setup_done` is asserted.
+
+When `boot_test_skip` is asserted, the core transitions from `S_RESET` directly to `S_SET_MID` and performs only step 6.
 
 ## Operation
 
@@ -161,21 +165,21 @@ Sets per-channel signed calibration value. Calibration is applied to DAC updates
 - `[28]` — **TRIGGER WAIT**
 - `[27]` — **CONTINUE**
 - `[26]` — **LDAC**
-- `[24:0]` — **Value**: If TRIGGER WAIT is set, this is the trigger counter (number of triggers to wait for) after DAC update; otherwise, it is the delay timer (number of clock cycles to wait after DAC update, zero is allowed).
+- `[24:0]` — **Value**: If TRIGGER WAIT is set, this is the trigger counter (number of triggers to wait for) after the DAC update; otherwise, it is the minimum delay before the DAC write sequence may begin. When `do_pre_delay` is asserted and the value is above the latched minimum delay, the core waits in `S_PRE_DELAY` before starting the SPI writes.
 
-Initiates a DAC update sequence. The core expects 4 subsequent words, each containing two 16-bit DAC values (SIGNED 16 bit integers): `[31:16]` for channel N+1, `[15:0]` for channel N. Channels are updated in pairs: (0,1), (2,3), (4,5), (6,7). LDAC is pulsed after all channels are updated if the LDAC flag is set.
+Initiates an 8-channel DAC update sequence. The core expects 4 subsequent words, each containing two 16-bit DAC values (SIGNED 16 bit integers): `[31:16]` for channel N+1, `[15:0]` for channel N. Channels are updated in pairs: (0,1), (2,3), (4,5), (6,7). If `do_pre_delay` is enabled and the programmed delay is greater than the latched minimum delay, the core waits before beginning the SPI transaction; otherwise it starts immediately. If TRIGGER WAIT is set, the trigger wait happens after the write completes.
 
-After the DAC update, the core either waits for the specified number of triggers or delay cycles, depending on the TRIGGER WAIT flag. The trigger counter represents the exact number of triggers to wait for, so a value of 0 means finish immediately (no triggers), and a value of 1 means wait for one trigger.
+If TRIGGER WAIT is set, the core waits for the specified number of triggers after the write completes. The trigger counter represents the exact number of triggers to wait for, so a value of 0 means finish immediately (no triggers), and a value of 1 means wait for one trigger.
 
 **State transitions:**
-- `S_IDLE -> S_DAC_WR -> S_TRIG_WAIT/S_DELAY -> S_IDLE/S_ERROR/next_cmd_state`
+- `S_IDLE -> S_PRE_DELAY/S_DAC_WR -> S_TRIG_WAIT/S_IDLE/next_cmd_state`
 - Transition to the next command state if one is present. Otherwise, go to `S_ERROR` if CONTINUE is set, or return to `S_IDLE` if not.
 
 #### DAC_WR_CH (`3'd3`)
 - `[18:16]` — **Channel Index** (0–7)
 - `[15:0]` — **DAC Value**
 
-Writes a single DAC channel with the specified value (SIGNED 16-bit integer). Has no delays or trigger waits after completion, and immediately pulses LDAC.
+Writes a single DAC channel with the specified value (SIGNED 16-bit integer). It completes immediately, does not wait for triggers or delays, and does not pulse LDAC automatically.
 
 **State transitions:**
 - `S_IDLE -> S_DAC_WR_CH -> S_IDLE/next_cmd_state`
@@ -191,7 +195,7 @@ Reads the current calibration value for the specified channel. Outputs the calib
 - Transition to the next command state if one is present. Otherwise return to `S_IDLE`.
 
 #### ZERO (`3'd5`)
-Sets all DAC channels to their calibrated midrange (zero) values. This command uses the per-channel calibration values to compute the appropriate offset values for each channel and writes them all sequentially. Has no delays or trigger waits after completion, and immediately pulses LDAC after all channels are updated.
+Sets all DAC channels to their calibrated midrange (zero) values. This command uses the per-channel calibration values to compute the appropriate offset values for each channel and writes them all sequentially. It completes without trigger or delay waits and does not pulse LDAC automatically.
 
 This command is functionally equivalent to the `S_SET_MID` state used during boot initialization.
 
@@ -210,11 +214,12 @@ Cancels current wait or delay if issued while the core is in DELAY or TRIG_WAIT 
 ### Debug Mode
 
 If `debug` is asserted, the core outputs debug information in addition to calibration readback. On a given clock cycle, the core will choose what to output in the following priority order:
-1. If a calibration data request occurs (GET_CAL or SET_CAL command), output a word using Data Code 8 (`CAL_DATA`), including the channel index and calibration value.
+1. If a calibration read request occurs (`GET_CAL`), output a word using Data Code 8 (`CAL_DATA`), including the channel index and calibration value.
 2. If a MISO data word is read during boot test, output a word using Debug Code 1 (`DBG_MISO_DATA`), including the MISO data.
 3. If a state transition occurs, output a word using Debug Code 2 (`DBG_STATE_TRANSITION`), including the previous and current state.
 4. If the chip select timer starts, output a word using Debug Code 3 (`DBG_N_CS_TIMER`), including the timer value.
 5. If the SPI bit counter changes from 0 to nonzero, output a word using Debug Code 4 (`DBG_SPI_BIT`), including the SPI bit value.
+6. If a DAC SPI word is about to be issued, output a word using Debug Code 5 (`DBG_DAC_WRITE`), including the 24-bit SPI command.
 
 Debug output format:
 - `[31:28]` - Data/Debug Code (see below)
@@ -226,11 +231,12 @@ Debug output format:
 | 2               | `DBG_STATE_TRANSITION` | `[7:4]` prev_state, `[3:0]` state           |
 | 3               | `DBG_N_CS_TIMER`       | `[7:0]` n_cs_timer value                    |
 | 4               | `DBG_SPI_BIT`          | `[4:0]` spi_bit value                       |
+| 5               | `DBG_DAC_WRITE`        | `[23:0]` upcoming SPI command               |
 | 8               | `CAL_DATA`             | `[18:16]` channel, `[15:0]` calibration val |
 
-If none of the above conditions are met, the output word is zero and nothing is written to the data buffer.
+If none of the above conditions are met, the output word is zero and no debug information is written to the data buffer.
 
-**Note:** Calibration data (code 8) is output for both SET_CAL and GET_CAL commands, regardless of debug mode setting.
+**Note:** Calibration data (code 8) is output for `GET_CAL` commands regardless of debug mode setting.
 
 ## Calibration
 
@@ -253,7 +259,8 @@ If none of the above conditions are met, the output word is zero and nothing is 
 ## Notes
 
 - SPI timing and chip select are managed to meet AD5676 requirements.
-- The `n_cs_high_time` input is latched when the state machine is in `S_RESET` to ensure stable timing parameters throughout operation.
+- The `n_cs_high_time` input is latched when the state machine is in `S_RESET` and clamped to a minimum of 3 cycles to ensure stable timing parameters throughout operation.
+- The `min_delay_time` input is latched when the state machine is in `S_RESET` and clamped to a minimum of 216 cycles.
 - Offset/signed conversions handled internally (see source for conversion functions).
   - **Offset format**: 0x0000 to 0xFFFF (0 to 65535)
   - **Signed format**: -32768 to +32767

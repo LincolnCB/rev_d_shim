@@ -109,9 +109,14 @@ wire clk_cfg_load = axi_clk_cfg_23_reg[0];
 wire clk_cfg_use_default = axi_clk_cfg_23_reg[1];
 
 // Max fractional value for multiplier/divider (represents 0.875)
-localparam [9:0] FRAC_MAX = 10'd875;
-localparam       SPI_CLK_FREQ_HZ_DEFAULT = (SOURCE_CLK_FREQ_HZ * (CLKFBOUT_MULT_DEFAULT * 1000 + CLKFBOUT_FRAC_MULT_DEFAULT))
-                                            / (DIVCLK_DIVIDE_DEFAULT * (CLKOUT0_DIVIDE_DEFAULT * 1000 + CLKOUT0_FRAC_DIVIDE_DEFAULT));
+localparam [ 9:0] FRAC_MAX = 10'd875;
+localparam [63:0] SPI_CLK_NUM =
+  (64'd1 * SOURCE_CLK_FREQ_HZ) *
+  ((64'd1 * CLKFBOUT_MULT_DEFAULT) * 64'd1000 + (64'd1 * CLKFBOUT_FRAC_MULT_DEFAULT));
+localparam [63:0] SPI_CLK_DENOM =
+  (64'd1 * DIVCLK_DIVIDE_DEFAULT) *
+  ((64'd1 * CLKOUT0_DIVIDE_DEFAULT) * 64'd1000 + (64'd1 * CLKOUT0_FRAC_DIVIDE_DEFAULT));
+localparam [31:0] SPI_CLK_FREQ_HZ_DEFAULT = SPI_CLK_NUM / SPI_CLK_DENOM;
 // Make sure the defaults are valid values
 initial begin
   // First check basic validity
@@ -156,7 +161,10 @@ initial begin
     $error("MAX_SPI_CLK_FREQ_HZ must be less than %d to fit within 31 bits for calculations", (1 << 31));
   end
   if (SPI_CLK_FREQ_HZ_DEFAULT >= MAX_SPI_CLK_FREQ_HZ) begin
-    $error("Default calculated SPI clock frequency must be less than MAX_SPI_CLK_FREQ_HZ (%d Hz)", MAX_SPI_CLK_FREQ_HZ);
+    $error("Default calculated SPI clock frequency (%d) must be less than MAX_SPI_CLK_FREQ_HZ (%d Hz)", SPI_CLK_FREQ_HZ_DEFAULT, MAX_SPI_CLK_FREQ_HZ);
+  end
+  if (SPI_CLK_FREQ_HZ_DEFAULT <= 1_000_000) begin
+    $error("Default calculated SPI clock frequency (%d) should be greater than 1 MHz", SPI_CLK_FREQ_HZ_DEFAULT);
   end
 end
 

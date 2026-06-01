@@ -166,6 +166,21 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
       case STS_DEBUG_OOB:
         printf("Status: Debug out of bounds\n");
         break;
+      case STS_DAC_CAL_INIT_OOB:
+        printf("Status: DAC calibration initial value out of bounds\n");
+        break;
+      case STS_SPI_CLK_LOCKED_FAIL:
+        printf("Status: SPI clock manager PLL not locked\n");
+        break;
+      case STS_SPI_CLK_RECONF_IN_PROG:
+        printf("Status: SPI clock reconfiguration in progress\n");
+        break;
+      case STS_SPI_CLK_DIV_0:
+        printf("Status: SPI clock divided by zero\n");
+        break;
+      case STS_SPI_CLK_OOB:
+        printf("Status: SPI clock frequency out of bounds\n");
+        break;
       case STS_SHUTDOWN_SENSE:
         printf("Status: Shutdown sense detected\n");
         print_board_number = true;

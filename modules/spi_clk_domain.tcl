@@ -126,6 +126,10 @@ cell xilinx.com:ip:xlconstant:1.1 const_0 {
 cell xilinx.com:ip:xlconstant:1.1 const_1 {
   CONST_VAL 1
 } {}
+cell xilinx.com:ip:xlconstant:1.1 const_0_32bit {
+  CONST_WIDTH 32
+  CONST_VAL 0
+} {}
 
 ##################################################
 
@@ -663,17 +667,17 @@ for {set i $board_count} {$i < 8} {incr i} {
   wire dac_delay_too_short_concat/In${i} const_0/dout
 }
 
-## last_received_dac_cmds_concat
-cell xilinx.com:ip:xlconcat:2.1 last_received_dac_cmds_concat {
+## last_received_dac_cmds_concat core
+cell xilinx.com:ip:xlconcat:2.1 last_received_dac_cmds_concat_core {
   NUM_PORTS 8
 } {
   dout spi_sts_sync/last_received_dac_cmds_concat
 }
 for {set i 0} {$i < $board_count} {incr i} {
-  wire last_received_dac_cmds_concat/In${i} dac_ch${i}/last_received_cmd
+  wire last_received_dac_cmds_concat_core/In${i} dac_ch${i}/last_received_cmd
 }
 for {set i $board_count} {$i < 8} {incr i} {
-  wire last_received_dac_cmds_concat/In${i} const_0/dout
+  wire last_received_dac_cmds_concat_core/In${i} const_0_32bit/dout
 }
 
 ## dac_cmds_since_reset_concat
@@ -686,7 +690,7 @@ for {set i 0} {$i < $board_count} {incr i} {
   wire dac_cmds_since_reset_concat/In${i} dac_ch${i}/cmds_since_reset
 }
 for {set i $board_count} {$i < 8} {incr i} {
-  wire dac_cmds_since_reset_concat/In${i} const_0/dout
+  wire dac_cmds_since_reset_concat/In${i} const_0_32bit/dout
 }
 
 ## adc_boot_fail
@@ -777,18 +781,18 @@ for {set i 0} {$i < $board_count} {incr i} {
   wire last_received_adc_cmds_concat/In${i} adc_ch${i}/last_received_cmd
 }
 for {set i $board_count} {$i < 8} {incr i} {
-  wire last_received_adc_cmds_concat/In${i} const_0/dout
+  wire last_received_adc_cmds_concat/In${i} const_0_32bit/dout
 }
 
-## adc_cmds_since_reset_concat
-cell xilinx.com:ip:xlconcat:2.1 adc_cmds_since_reset_concat {
+## adc_cmds_since_reset_concat core
+cell xilinx.com:ip:xlconcat:2.1 adc_cmds_since_reset_concat_core {
   NUM_PORTS 8
 } {
   dout spi_sts_sync/adc_cmds_since_reset_concat
 }
 for {set i 0} {$i < $board_count} {incr i} {
-  wire adc_cmds_since_reset_concat/In${i} adc_ch${i}/cmds_since_reset
+  wire adc_cmds_since_reset_concat_core/In${i} adc_ch${i}/cmds_since_reset
 }
 for {set i $board_count} {$i < 8} {incr i} {
-  wire adc_cmds_since_reset_concat/In${i} const_0/dout
+  wire adc_cmds_since_reset_concat_core/In${i} const_0_32bit/dout
 }

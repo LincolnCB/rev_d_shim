@@ -73,6 +73,11 @@
 #define STS_THRESH_EN_OOB            (uint32_t) 0x0207 // Threshold enable register out of bounds.
 #define STS_BOOT_TEST_SKIP_OOB       (uint32_t) 0x0208 // Boot test skip out of bounds.
 #define STS_DEBUG_OOB                (uint32_t) 0x0209 // Debug out of bounds.
+#define STS_DAC_CAL_INIT_OOB         (uint32_t) 0x020A // DAC calibration initial value out of bounds.
+#define STS_SPI_CLK_LOCKED_FAIL      (uint32_t) 0x020B // SPI clock manager PLL not locked.
+#define STS_SPI_CLK_RECONF_IN_PROG   (uint32_t) 0x020C // SPI clock reconfiguration in progress.
+#define STS_SPI_CLK_DIV_0            (uint32_t) 0x020D // SPI clock divided by zero.
+#define STS_SPI_CLK_OOB              (uint32_t) 0x020E // SPI clock frequency out of bounds.
 // Shutdown sense
 #define STS_SHUTDOWN_SENSE           (uint32_t) 0x0300 // Shutdown sense detected.
 #define STS_EXT_SHUTDOWN             (uint32_t) 0x0301 // External shutdown triggered.

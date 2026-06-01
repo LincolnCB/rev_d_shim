@@ -5,7 +5,7 @@
 ###############################################################################
 
 ## Variably define the channel count (MUST BE 1 TO 8 INCLUSIVE)
-set board_count 4
+set board_count 1
 
 
 ## Variably choose complexity of threshold module
@@ -18,7 +18,7 @@ set threshold_core_level 1
 
 
 ## Variably choose whether to use an external clock
-set use_ext_clk 1
+set use_ext_clk 0
 
 
 ## Variably define the default SPI clock frequency (MHz)
