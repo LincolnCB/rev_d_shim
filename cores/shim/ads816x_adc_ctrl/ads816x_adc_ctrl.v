@@ -3,6 +3,7 @@
 module ads816x_adc_ctrl (
   input  wire        clk,
   input  wire        resetn,
+  input  wire        halt,
 
   input  wire        boot_test_skip, // Skip the boot test readback
   input  wire        debug,          // Debug mode flag

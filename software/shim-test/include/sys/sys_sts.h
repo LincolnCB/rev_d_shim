@@ -33,6 +33,16 @@
 #define DEBUG_SPI_OFF_BIT        1  // SPI off status bit
 #define DEBUG_DAC_CS_HIGH_TIME(word) (((word) >> 2) & 0x1F) // DAC ~CS high time (5 bits)
 #define DEBUG_ADC_CS_HIGH_TIME(word) (((word) >> 7) & 0xFF) // ADC ~CS high time (8 bits)
+#define DEBUG_SPI_SNOOP_RECONF_STATE(word) (((word) >> 15) & 0xF) // SPI clock snoop reconfiguration state (4 bits)
+// Reconfiguration state machine states
+#define SNOOP_STATE_IDLE           0 // Idle state, waiting for reconfiguration trigger
+#define SNOOP_STATE_STARTING       1 // Starting reconfiguration
+#define SNOOP_STATE_GET_FULL_DIV_1 2 // Getting full divider part 1
+#define SNOOP_STATE_GET_FULL_DIV_2 3 // Getting full divider part 2
+#define SNOOP_STATE_GET_FULL_MULT  4 // Getting full multiplier
+#define SNOOP_STATE_CALC_MULT      5 // Calculating multiplier
+#define SNOOP_STATE_CALC_DIV       6 // Calculating divider
+
 // Minimum delay times (in SPI clock cycles)
 #define DEBUG_DAC_MIN_DELAY_TIME_OFFSET (uint32_t) 39 // DAC minimum delay time offset
 #define DEBUG_ADC_MIN_DELAY_TIME_OFFSET (uint32_t) 40 // ADC minimum delay time offset

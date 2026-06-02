@@ -7,7 +7,7 @@ module spi_cfg_sync (
   input  wire        sync_resetn, // Active low reset signal for SPI domain
 
   // Inputs from axi_sys_ctrl (AXI domain)
-  input  wire        spi_resetn,
+  input  wire        spi_en,
   input  wire        spi_halt,
   input  wire        block_bufs,
   input  wire [14:0] thresh_val,
@@ -23,7 +23,7 @@ module spi_cfg_sync (
   input  wire        do_dac_pre_delay,
 
   // Synchronized outputs to SPI domain
-  output wire        spi_resetn_sync,
+  output wire        spi_en_sync,
   output wire        spi_halt_sync,
   output wire        block_bufs_sync,
   output wire [14:0] thresh_val_sync,
@@ -56,11 +56,11 @@ module spi_cfg_sync (
   sync_incoherent #(
     .WIDTH(1),
     .DEPTH(4) // Use deeper synchronizer to give extra delay for this signal
-  ) sync_spi_resetn (
+  ) sync_spi_en (
     .clk(spi_clk),
     .resetn(sync_resetn),
-    .din(spi_resetn),
-    .dout(spi_resetn_sync)
+    .din(spi_en),
+    .dout(spi_en_sync)
   );
 
   // SPI halt (incoherent)

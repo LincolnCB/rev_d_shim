@@ -9,8 +9,8 @@
 #define TRIG_FIFO                 (uint32_t) 0x80100000
 
 // Trigger FIFO depths
-#define TRIG_CMD_FIFO_WORDCOUNT   (uint32_t) 1024 // Size in 32-bit words
-#define TRIG_DATA_FIFO_WORDCOUNT  (uint32_t) 1024 // Size in 32-bit words
+#define TRIG_CMD_FIFO_WORDCOUNT   (uint32_t)(1 << 10) // 1024 words (2^10)
+#define TRIG_DATA_FIFO_WORDCOUNT  (uint32_t)(1 << 10) // 1024 words (2^10)
 
 // Trigger command codes (top 3 bits of command word)
 #define TRIG_CMD_SYNC_CH      0x1  // Synchronize channels

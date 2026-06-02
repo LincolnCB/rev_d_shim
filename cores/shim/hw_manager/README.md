@@ -73,7 +73,7 @@ The `hw_manager` module manages the hardware system's startup, operation, and sh
 - **System Control**
   - `unlock_cfg`: Lock configuration.
   - `spi_clk_gate`: SPI clock gate.
-  - `spi_resetn`: SPI subsystem enable.
+  - `spi_en`: SPI subsystem enable.
   - `spi_halt`: SPI subsystem halt (halt SPI subsystem without resetting it).
   - `shutdown_sense_en`: Shutdown sense enable.
   - `block_bufs`: Block command/data buffers (active high).

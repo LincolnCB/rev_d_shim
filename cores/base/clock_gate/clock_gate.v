@@ -23,7 +23,7 @@ generate
       );
     end else begin : g_local_clk
       BUFR #(
-        .BUFR_DIVIDE("BYPASS"),
+        .BUFR_DIVIDE("1"),
         .SIM_DEVICE("7SERIES")
       ) regional_clock_buffer (
         .I(clk[i]),

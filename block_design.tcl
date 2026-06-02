@@ -28,10 +28,10 @@ set spi_clk_freq_mhz 20.000
 # This sets the depth of the FIFOs as 2^ADDR_WIDTH
 # Larger FIFOs use more FPGA resources, but allow for longer bursts and more buffering.
 # This can hit the cap fast!
-set dac_cmd_fifo_addr_width 12
-set dac_data_fifo_addr_width 11
+set dac_cmd_fifo_addr_width 13
+set dac_data_fifo_addr_width 12
 set adc_cmd_fifo_addr_width 10
-set adc_data_fifo_addr_width 12
+set adc_data_fifo_addr_width 13
 set trig_cmd_fifo_addr_width 10
 set trig_data_fifo_addr_width 10
 
@@ -436,7 +436,7 @@ module spi_clk_domain spi_clk_domain {
   aclk ps/FCLK_CLK0
   aresetn ps_rst/peripheral_aresetn
   spi_clk spi_clk/clk_o
-  spi_resetn hw_manager/spi_resetn
+  spi_en hw_manager/spi_en
   spi_halt hw_manager/spi_halt
   thresh_val axi_sys_ctrl/thresh_val
   thresh_window axi_sys_ctrl/thresh_window
@@ -543,19 +543,21 @@ cell pavel-demin:user:axi_sts_register status_reg {
 #    1    --  1b `spi_off` signal
 #  6 : 2  --  5b DAC ~CS high time
 # 14 : 7  --  8b ADC ~CS high time
-# 31 : 15 -- 17b RESERVED (0)
-cell xilinx.com:ip:xlconstant:1.1 pad_17 {
+# 18 : 15 --  4b SPI clock snoop reconfiguration calculation state
+# 31 : 19 -- 13b RESERVED (0)
+cell xilinx.com:ip:xlconstant:1.1 pad_13 {
   CONST_VAL 0
-  CONST_WIDTH 17
+  CONST_WIDTH 13
 } {}
 cell xilinx.com:ip:xlconcat:2.1 debug_1 {
-  NUM_PORTS 5
+  NUM_PORTS 6
 } {
   In0 spi_clk_gen/locked
   In1 hw_manager/spi_off
   In2 dac_timing_calc/n_cs_high_time
   In3 adc_timing_calc/n_cs_high_time
-  In4 pad_17/dout
+  In4 spi_clk_snoop/reconfig_state
+  In5 pad_13/dout
 }
 # Minimum delay times
 cell xilinx.com:ip:xlconstant:1.1 pad_7 {

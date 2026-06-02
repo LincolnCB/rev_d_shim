@@ -11,13 +11,13 @@ The `spi_cfg_sync` module synchronizes configuration signals from the AXI clock 
   - `aclk`: AXI domain clock signal.
   - `aresetn`: Active-low reset for AXI domain.
   - `spi_clk`: SPI domain clock signal.
-  - `spi_resetn`: Active-low reset for SPI domain.
+  - `sync_resetn`: Active-low reset for SPI domain synchronization.
 
 - **AXI Domain Configuration Inputs**
   - `thresh_val [14:0]`: Threshold average configuration.
   - `thresh_window [31:0]`: Threshold window configuration.
   - `thresh_en`: Threshold enable signal.
-  - `spi_resetn`: SPI reset signal (negated)
+  - `spi_en`: SPI enable signal
   - `block_bufs`: Block buffers enable signal.
   - `dac_n_cs_high_time [4:0]`: DAC chip select high time configuration.
   - `adc_n_cs_high_time [7:0]`: ADC chip select high time configuration.
@@ -31,7 +31,7 @@ The `spi_cfg_sync` module synchronizes configuration signals from the AXI clock 
   - `thresh_val_sync [14:0]`: Synchronized threshold average.
   - `thresh_window_sync [31:0]`: Synchronized threshold window.
   - `thresh_en_sync`: Synchronized threshold enable.
-  - `spi_resetn_sync`: Synchronized SPI resetn.
+  - `spi_en_sync`: Synchronized SPI enable.
   - `block_bufs_sync`: Synchronized block buffers enable.
   - `dac_n_cs_high_time_sync [4:0]`: Synchronized DAC chip select high time.
   - `adc_n_cs_high_time_sync [7:0]`: Synchronized ADC chip select high time.
@@ -48,7 +48,7 @@ The `spi_cfg_sync` module synchronizes configuration signals from the AXI clock 
   - `thresh_val_sync`: 0x1000
   - `thresh_window_sync`: 0x00010000
   - `thresh_en_sync`: 0
-  - `spi_resetn_sync`: 0 (uses deeper synchronizer for extra delay)
+  - `spi_en_sync`: 0
   - `block_bufs_sync`: 1
   - `dac_n_cs_high_time_sync`: 31 (capped max)
   - `adc_n_cs_high_time_sync`: 255 (capped max)
@@ -60,5 +60,5 @@ The `spi_cfg_sync` module synchronizes configuration signals from the AXI clock 
 
 - The `sync_coherent` module is used for timing-critical multi-bit configuration signals that need coherency across bits.
 - The `sync_incoherent` module is used for control signals and masks where bit coherency is not required.
-- The `spi_resetn` signal uses a deeper synchronizer (4 stages) to provide extra delay for this signal.
+- The `spi_en` signal uses a deeper synchronizer (4 stages) to provide extra delay for this signal.
 - For more details, refer to the Verilog source code.

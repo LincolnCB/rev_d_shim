@@ -341,6 +341,33 @@ void print_debug_register(struct sys_sts_t *sys_sts) {
   printf("  SPI Off: %s\n", (value & (1 << DEBUG_SPI_OFF_BIT)) ? "Yes" : "No");
   printf("  DAC ~CS High Time: %u cycles\n", DEBUG_DAC_CS_HIGH_TIME(value));
   printf("  ADC ~CS High Time: %u cycles\n", DEBUG_ADC_CS_HIGH_TIME(value));
+  printf("  SPI Snoop Reconfiguration State: %u\n", DEBUG_SPI_SNOOP_RECONF_STATE(value));
+  switch(DEBUG_SPI_SNOOP_RECONF_STATE(value)) {
+    case SNOOP_STATE_IDLE:
+      printf("    (Idle)\n");
+      break;
+    case SNOOP_STATE_STARTING:
+      printf("    (Starting Reconfiguration)\n");
+      break;
+    case SNOOP_STATE_GET_FULL_DIV_1:
+      printf("    (Getting Full Divider Part 1)\n");
+      break;
+    case SNOOP_STATE_GET_FULL_DIV_2:
+      printf("    (Getting Full Divider Part 2)\n");
+      break;
+    case SNOOP_STATE_GET_FULL_MULT:
+      printf("    (Getting Full Multiplier)\n");
+      break;
+    case SNOOP_STATE_CALC_MULT:
+      printf("    (Calculating Multiplication)\n");
+      break;
+    case SNOOP_STATE_CALC_DIV:
+      printf("    (Calculating Division)\n");
+      break;
+    default:
+      printf("    (Unknown State)\n");
+      break;
+  }
 }
 
 // Get DAC command FIFO status for a specific board

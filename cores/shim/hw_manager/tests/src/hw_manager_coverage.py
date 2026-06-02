@@ -94,8 +94,8 @@ def sample_state_and_status_coverage(dut):
             bins = [True, False],
             rel = lambda x, y: x == y,
             at_least = 1)
-@CoverPoint("hw_manager.spi_resetn",
-            xf = lambda dut: int(dut.spi_resetn.value),
+@CoverPoint("hw_manager.spi_en",
+            xf = lambda dut: int(dut.spi_en.value),
             bins = [True, False],
             rel = lambda x, y: x == y,
             at_least = 1)

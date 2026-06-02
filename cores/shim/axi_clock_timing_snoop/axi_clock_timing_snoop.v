@@ -15,6 +15,7 @@ module axi_clock_timing_snoop # (
 
   output wire [31:0] source_clk_freq_hz, // Source clock frequency in Hz (for reference)
   output reg  [31:0] spi_clk_freq_hz,    // Calculated SPI clock frequency in Hz
+  output reg  [ 3:0] reconfig_state,
   output reg         reconf_in_prog,     // Reconfiguration in progress
   output reg         div_by_zero,        // Indicates if a divide-by-zero error occurred during calculations
   output reg         freq_too_high,      // Indicates if the calculated frequency exceeds the maximum
@@ -64,8 +65,7 @@ module axi_clock_timing_snoop # (
 //  To activate software reset, the value 0x0000_000A must be written to the register.
 //  Any other access, read or write, has undefined results.
 localparam [10:0] ADDR_SRR = 11'h000;
-reg  [31:0] axi_srr_reg;
-wire sreset = (axi_srr_reg == 32'h0000_000A);
+wire sreset = (s_axi_awvalid && s_axi_wvalid && (s_axi_awaddr == ADDR_SRR) && (s_axi_wdata == 32'h0000_000A));
 wire resetn = ~sreset & aresetn; // Combine software reset with external reset, active low
 
 
@@ -105,9 +105,8 @@ wire [9:0] clkout0_frac_divide = axi_clk_cfg_2_reg[17:8];
 //     When written 0, default configuration done in the Clocking Wizard GUI is loaded for dynamic reconfiguration.
 //     When written 1, setting provided in the Clock Configuration Registers are used for dynamic reconfiguration.
 localparam [10:0] ADDR_CLK_CFG_23 = 11'h25C;
-reg  [31:0] axi_clk_cfg_23_reg;
-wire clk_cfg_load = axi_clk_cfg_23_reg[0];
-wire clk_cfg_use_default = axi_clk_cfg_23_reg[1];
+wire clk_cfg_load = s_axi_awvalid && s_axi_wvalid && (s_axi_awaddr == ADDR_CLK_CFG_23) && s_axi_wdata[0];
+wire clk_cfg_use_default = clk_cfg_load && !s_axi_wdata[1];
 
 // Max fractional value for multiplier/divider (represents 0.875)
 localparam [ 9:0] FRAC_MAX = 10'd875;
@@ -190,9 +189,6 @@ localparam [3:0] S_GET_FULL_MULT  = 3'd4;
 localparam [3:0] S_CALC_MULT      = 3'd5;
 localparam [3:0] S_CALC_DIV       = 3'd6;
 
-// Reconfiguration calculation registers
-wire reconfig_done;
-reg  [ 3:0] reconfig_state;
 // Latched values
 reg [ 7:0] divclk_divide_latched;
 reg [ 7:0] clkfbout_mult_latched;
@@ -247,15 +243,9 @@ shift_sub_div #(
 // Capture AXI writes to relevant registers
 always @(posedge aclk) begin
   if (!resetn) begin
-    axi_srr_reg <= 32'd0;
     axi_clk_cfg_0_reg <= {CLKFBOUT_FRAC_MULT_DEFAULT_W, CLKFBOUT_MULT_DEFAULT_W, DIVCLK_DIVIDE_DEFAULT_W};
     axi_clk_cfg_2_reg <= {CLKOUT0_FRAC_DIVIDE_DEFAULT_W, CLKOUT0_DIVIDE_DEFAULT_W};
-    axi_clk_cfg_23_reg <= 32'd0;
   end else begin
-    // Software Reset Register
-    if (s_axi_awvalid && s_axi_wvalid && (s_axi_awaddr == ADDR_SRR)) begin
-      axi_srr_reg <= s_axi_wdata;
-    end
     // Clock Configuration Register 0
     if (s_axi_awvalid && s_axi_wvalid && (s_axi_awaddr == ADDR_CLK_CFG_0)) begin
       axi_clk_cfg_0_reg <= s_axi_wdata;
@@ -264,18 +254,10 @@ always @(posedge aclk) begin
     if (s_axi_awvalid && s_axi_wvalid && (s_axi_awaddr == ADDR_CLK_CFG_2)) begin
       axi_clk_cfg_2_reg <= s_axi_wdata;
     end
-    // Clock Configuration Register 23
-    if (s_axi_awvalid && s_axi_wvalid && (s_axi_awaddr == ADDR_CLK_CFG_23)) begin
-      axi_clk_cfg_23_reg <= s_axi_wdata;
-    end else if (reconfig_done) begin
-      // Clear the load bit when reconfiguration
-      axi_clk_cfg_23_reg[0] <= 1'b0;
-    end
   end
 end
 
 // Calculation state machine
-assign reconfig_done = (reconfig_state == S_CALC_DIV) && div_done;
 always @(posedge aclk) begin
   if (!resetn) begin
     reconf_in_prog <= 1'b0;
@@ -327,21 +309,17 @@ always @(posedge aclk) begin
       end
 
       S_GET_FULL_DIV_1: begin
-        if (mult_start && !mult_done) begin
-          mult_start <= 1'b0;
-        end else if (mult_done) begin
+        if (mult_done) begin
           // result = divclk_divide * (clkout0_divide * 1000 + clkout0_frac_divide)
           mult_multiplicand <= divclk_divide_latched;
           mult_multiplier <= mult_result + clkout0_frac_divide_latched;
           mult_start <= 1'b1;
           reconfig_state <= S_GET_FULL_DIV_2;
-        end
+        end else if (mult_start) mult_start <= 1'b0;
       end
 
       S_GET_FULL_DIV_2: begin
-        if (mult_start && !mult_done) begin
-          mult_start <= 1'b0;
-        end else if (mult_done) begin
+        if (mult_done) begin
           // clk_div = divclk_divide * (clkout0_divide * 1000 + clkout0_frac_divide)
           clk_div <= mult_result;
           // result = clkfbout_mult * 1000
@@ -349,38 +327,32 @@ always @(posedge aclk) begin
           mult_multiplier <= 1000;
           mult_start <= 1'b1;
           reconfig_state <= S_GET_FULL_MULT;
-        end
+        end else if (mult_start) mult_start <= 1'b0;
       end
 
       S_GET_FULL_MULT: begin
-        if (mult_start && !mult_done) begin
-          mult_start <= 1'b0;
-        end else if (mult_done) begin
+        if (mult_done) begin
           // result = source_clk_freq_hz * (clkfbout_mult * 1000 + clkfbout_frac_mult)
           mult_multiplicand <= mult_result + clkfbout_frac_mult_latched;
           mult_multiplier <= source_clk_freq_hz;
           mult_start <= 1'b1;
           reconfig_state <= S_CALC_MULT;
-        end
+        end else if (mult_start) mult_start <= 1'b0;
       end
 
       S_CALC_MULT: begin
-        if (mult_start && !mult_done) begin
-          mult_start <= 1'b0;
-        end else if (mult_done) begin
+        if (mult_done) begin
           // result = source_clk_freq_hz * (clkfbout_mult * 1000 + clkfbout_frac_mult)
           //          / (divclk_divide * (clkout0_divide * 1000 + clkout0_frac_divide))
           div_dividend <= mult_result;
           div_divisor <= clk_div;
           div_start <= 1'b1;
           reconfig_state <= S_CALC_DIV;
-        end
+        end else if (mult_start) mult_start <= 1'b0;
       end
 
       S_CALC_DIV: begin
-        if (div_start && !div_done) begin
-          div_start <= 1'b0;
-        end else if (div_done) begin
+        if (div_done) begin
           if (!div_by_zero) begin
             if (div_quotient > MAX_SPI_CLK_FREQ_HZ) begin
               freq_too_high <= 1'b1;
@@ -394,7 +366,7 @@ always @(posedge aclk) begin
           end
           reconf_in_prog <= 1'b0;
           reconfig_state <= S_IDLE;
-        end
+        end else if (div_start) div_start <= 1'b0;
       end
 
       default: begin

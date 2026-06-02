@@ -23,7 +23,7 @@ create_bd_pin -dir I -type reset aresetn
 create_bd_pin -dir I -type clock spi_clk
 
 # Configuration signals (need synchronization)
-create_bd_pin -dir I spi_resetn
+create_bd_pin -dir I spi_en
 create_bd_pin -dir I spi_halt
 create_bd_pin -dir I -from 14 -to 0 thresh_val
 create_bd_pin -dir I -from 31 -to 0 thresh_window
@@ -148,7 +148,7 @@ cell shim:user:spi_cfg_sync spi_cfg_sync {} {
   aresetn aresetn
   spi_clk spi_clk
   sync_resetn sync_rst_core/peripheral_aresetn
-  spi_resetn spi_resetn
+  spi_en spi_en
   spi_halt spi_halt
   block_bufs block_bufs
   thresh_val thresh_val
@@ -199,7 +199,7 @@ cell shim:user:spi_sts_sync spi_sts_sync {} {
 ## SPI system reset
 # Create proc_sys_reset for SPI-system-wide reset
 cell xilinx.com:ip:proc_sys_reset:5.0 spi_rst_core {} {
-  ext_reset_in spi_cfg_sync/spi_resetn_sync
+  ext_reset_in spi_cfg_sync/spi_en_sync
   slowest_sync_clk spi_clk
 }
 

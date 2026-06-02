@@ -11,7 +11,7 @@ The `spi_sts_sync` module synchronizes a variety of status signals from the SPI 
   - `aclk`: AXI (PS) clock signal.
   - `aresetn`: Active-low reset signal for the AXI domain.
   - `spi_clk`: SPI domain clock signal.
-  - `spi_resetn`: Active-low reset signal for the SPI domain.
+  - `sync_resetn`: Active-low reset signal for the SPI domain synchronization.
 
 - **SPI Domain Status Inputs**
   - `spi_off`: Indicates the SPI subsystem is powered off.
