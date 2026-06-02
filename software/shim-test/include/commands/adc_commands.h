@@ -45,6 +45,8 @@ typedef struct {
 // ADC FIFO status commands
 int cmd_adc_cmd_fifo_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_adc_data_fifo_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+int cmd_adc_last_received_cmd(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+int cmd_adc_cmds_since_reset(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
 // ADC data reading commands
 int cmd_read_adc_pair(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);

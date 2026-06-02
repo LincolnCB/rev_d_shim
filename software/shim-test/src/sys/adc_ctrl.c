@@ -70,7 +70,27 @@ char* adc_format_debug(uint32_t adc_value, bool verbose) {
       break;
     }
     case ADC_DBG_REPEAT: {
-      char *cmd_str = adc_format_command((uint8_t)(ADC_DBG_COMMAND(adc_value)), verbose);
+      char cmd_str[32];
+      switch (ADC_DBG_COMMAND(adc_value)) {
+        case ADC_CMD_NO_OP:
+          strcpy(cmd_str, "NO_OP");
+          break;
+        case ADC_CMD_SET_ORD:
+          strcpy(cmd_str, "SET_ORD");
+          break;
+        case ADC_CMD_ADC_RD:
+          strcpy(cmd_str, "ADC_RD");
+          break;
+        case ADC_CMD_ADC_RD_CH:
+          strcpy(cmd_str, "ADC_RD_CH");
+          break;
+        case ADC_CMD_CANCEL:
+          strcpy(cmd_str, "CANCEL");
+          break;
+        default:
+          strcpy(cmd_str, "Unknown Command");
+          break;
+      }
       if (ADC_DBG_REPEAT_BIT(adc_value)) {
         snprintf(temp_buffer, sizeof(temp_buffer), "Debug: Repeat (Count = %d) command %s with Repeat Bit set",
                  adc_value & 0xFFFF, cmd_str);
@@ -93,7 +113,27 @@ char* adc_format_debug(uint32_t adc_value, bool verbose) {
     }
     case ADC_DBG_CMD_DONE: {
       if (ADC_DBG_NEXT_CMD_READY(adc_value)) {
-        char *cmd_str = adc_format_command((uint8_t)(ADC_DBG_COMMAND(adc_value)), verbose);
+        char cmd_str[32];
+        switch (ADC_DBG_COMMAND(adc_value)) {
+          case ADC_CMD_NO_OP:
+            strcpy(cmd_str, "NO_OP");
+            break;
+          case ADC_CMD_SET_ORD:
+            strcpy(cmd_str, "SET_ORD");
+            break;
+          case ADC_CMD_ADC_RD:
+            strcpy(cmd_str, "ADC_RD");
+            break;
+          case ADC_CMD_ADC_RD_CH:
+            strcpy(cmd_str, "ADC_RD_CH");
+            break;
+          case ADC_CMD_CANCEL:
+            strcpy(cmd_str, "CANCEL");
+            break;
+          default:
+            strcpy(cmd_str, "Unknown Command");
+            break;
+        }
         snprintf(temp_buffer, sizeof(temp_buffer), "Debug: Command Done with next command ready: %s -- Remaining repeat count: %d",
                  cmd_str, adc_value & 0xFFFF);
       } else {
@@ -169,32 +209,58 @@ char* adc_format_state(uint8_t state_code, bool verbose) {
   return buffer;
 }
 
-// Interpret and format uint8_t command code as string
-char* adc_format_command(uint8_t cmd_code, bool verbose) {
-  static char buffer[64];  // Static buffer for return string
+// Interpret and format an ADC command word by decoding command-specific fields
+char* adc_format_command(uint32_t cmd_word, bool verbose) {
+  static char buffer[512];  // Static buffer for return string
+  char temp[160];
+  uint8_t cmd_code = (uint8_t)((cmd_word >> ADC_CMD_CMD_LSB) & 0x7);
+  uint8_t trig = (uint8_t)((cmd_word >> ADC_CMD_TRIG_BIT) & 0x1);
+  uint8_t cont = (uint8_t)((cmd_word >> ADC_CMD_CONT_BIT) & 0x1);
+  uint8_t repeat = (uint8_t)((cmd_word >> ADC_CMD_REPEAT_BIT) & 0x1);
+
   buffer[0] = '\0';  // Initialize as empty string
 
   if (verbose) {
-    char temp[32];
-    snprintf(temp, sizeof(temp), "ADC Command code: %d\n", cmd_code);
+    snprintf(temp, sizeof(temp), "ADC Command word: 0x%08X\n", cmd_word);
     strcat(buffer, temp);
   }
 
   switch (cmd_code) {
     case ADC_CMD_NO_OP: {
-      strcat(buffer, "NO_OP");
+      snprintf(temp, sizeof(temp),
+               "NO_OP (trig=%u, cont=%u, value=0x%07X / %u)",
+               trig, cont, (cmd_word & 0x1FFFFFF), (cmd_word & 0x1FFFFFF));
+      strcat(buffer, temp);
       break;
     }
     case ADC_CMD_SET_ORD: {
-      strcat(buffer, "SET_ORD");
+      uint8_t ord0 = (uint8_t)((cmd_word >> 0) & 0x7);
+      uint8_t ord1 = (uint8_t)((cmd_word >> 3) & 0x7);
+      uint8_t ord2 = (uint8_t)((cmd_word >> 6) & 0x7);
+      uint8_t ord3 = (uint8_t)((cmd_word >> 9) & 0x7);
+      uint8_t ord4 = (uint8_t)((cmd_word >> 12) & 0x7);
+      uint8_t ord5 = (uint8_t)((cmd_word >> 15) & 0x7);
+      uint8_t ord6 = (uint8_t)((cmd_word >> 18) & 0x7);
+      uint8_t ord7 = (uint8_t)((cmd_word >> 21) & 0x7);
+      snprintf(temp, sizeof(temp),
+               "SET_ORD (order=[%u,%u,%u,%u,%u,%u,%u,%u])",
+               ord0, ord1, ord2, ord3, ord4, ord5, ord6, ord7);
+      strcat(buffer, temp);
       break;
     }
     case ADC_CMD_ADC_RD: {
-      strcat(buffer, "ADC_RD");
+      snprintf(temp, sizeof(temp),
+               "ADC_RD (trig=%u, cont=%u, repeat=%u, value=0x%07X / %u)",
+               trig, cont, repeat, (cmd_word & 0x1FFFFFF), (cmd_word & 0x1FFFFFF));
+      strcat(buffer, temp);
       break;
     }
     case ADC_CMD_ADC_RD_CH: {
-      strcat(buffer, "ADC_RD_CH");
+      uint8_t channel = (uint8_t)(cmd_word & 0x7);
+      snprintf(temp, sizeof(temp),
+               "ADC_RD_CH (channel=%u, repeat=%u)",
+               channel, repeat);
+      strcat(buffer, temp);
       break;
     }
     case ADC_CMD_CANCEL: {
@@ -202,8 +268,9 @@ char* adc_format_command(uint8_t cmd_code, bool verbose) {
       break;
     }
     default: {
-      char temp[32];
-      snprintf(temp, sizeof(temp), "Unknown Command: %d", cmd_code);
+      snprintf(temp, sizeof(temp),
+               "Unknown Command: %u (trig=%u, cont=%u, repeat=%u, low25=0x%07X)",
+               cmd_code, trig, cont, repeat, (cmd_word & 0x1FFFFFF));
       strcat(buffer, temp);
       break;
     }

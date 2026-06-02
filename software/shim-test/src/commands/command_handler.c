@@ -70,6 +70,8 @@ static command_entry_t command_table[] = {
   // ===== DAC COMMANDS (from dac_commands.h) =====
   {"dac_cmd_fifo_sts", cmd_dac_cmd_fifo_sts, {1, 1, {-1}, "Show DAC command FIFO status for specified board (0-7)"}},
   {"dac_data_fifo_sts", cmd_dac_data_fifo_sts, {1, 1, {-1}, "Show DAC data FIFO status for specified board (0-7)"}},
+  {"dac_last_received_cmd", cmd_dac_last_received_cmd, {1, 1, {-1}, "Show and decode last received DAC command for specified board (0-7)"}},
+  {"dac_cmds_since_reset", cmd_dac_cmds_since_reset, {1, 1, {-1}, "Show DAC command count since last reset for specified board (0-7)"}},
   {"read_dac_data", cmd_read_dac_data, {1, 1, {FLAG_ALL, -1}, "Read and print data (debug or calibration) from specified board (0-7)"}},
   {"dac_noop", cmd_dac_noop, {3, 3, {FLAG_CONTINUE, -1}, "Send DAC no-op command: <board|all> <\"trig\"|\"delay\"> <value> [--continue]"}},
   {"dac_cancel", cmd_dac_cancel, {1, 1, {-1}, "Send DAC cancel command to specified board (0-7)"}},
@@ -88,6 +90,8 @@ static command_entry_t command_table[] = {
   // ===== ADC COMMANDS (from adc_commands.h) =====
   {"adc_cmd_fifo_sts", cmd_adc_cmd_fifo_sts, {1, 1, {-1}, "Show ADC command FIFO status for specified board (0-7)"}},
   {"adc_data_fifo_sts", cmd_adc_data_fifo_sts, {1, 1, {-1}, "Show ADC data FIFO status for specified board (0-7)"}},
+  {"adc_last_received_cmd", cmd_adc_last_received_cmd, {1, 1, {-1}, "Show and decode last received ADC command for specified board (0-7)"}},
+  {"adc_cmds_since_reset", cmd_adc_cmds_since_reset, {1, 1, {-1}, "Show ADC command count since last reset for specified board (0-7)"}},
   {"read_adc_pair", cmd_read_adc_pair, {1, 1, {FLAG_ALL, -1}, "Read paired ADC channel sample(s) from specified board (0-7) [--all]"}},
   {"read_adc_single", cmd_read_adc_single, {1, 1, {FLAG_ALL, -1}, "Read single ADC channel data sample(s) from specified board (0-7) [--all]"}},
   {"read_adc_dbg", cmd_read_adc_dbg, {1, 1, {FLAG_ALL, -1}, "Read and print debug information for ADC data from specified board (0-7)"}},

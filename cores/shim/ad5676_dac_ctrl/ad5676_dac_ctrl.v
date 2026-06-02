@@ -6,6 +6,7 @@ module ad5676_dac_ctrl #(
 )(
   input  wire        clk,
   input  wire        resetn,
+  input  wire        halt,
 
   input  wire        boot_test_skip, // Skip the boot test sequence
   input  wire        debug,          // Debug mode flag
@@ -292,7 +293,7 @@ module ad5676_dac_ctrl #(
   // Next state
   always @(posedge clk) begin
     if (!resetn)                                                state <= S_RESET; // Reset to initial state
-    else if (error)                                             state <= S_ERROR; // Check for error states
+    else if (error || halt)                                     state <= S_ERROR; // Check for error states
     else if (state == S_RESET)                                  state <= boot_test_skip ? S_SET_MID : S_INIT; // Skip boot test if requested
     else if (state == S_INIT)                                   state <= S_TEST_WR; // Transition to TEST_WR first in initialization
     else if (state == S_TEST_WR && dac_spi_cmd_done)            state <= S_REQ_RD; // Transition to REQ_RD after writing test value

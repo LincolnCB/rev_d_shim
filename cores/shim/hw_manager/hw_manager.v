@@ -72,7 +72,8 @@ module hw_manager #(
   // Outputs
   output  reg           unlock_cfg,        // Lock configuration
   output  reg           spi_clk_gate,      // SPI clock power (negated)
-  output  reg           spi_en,            // SPI subsystem enable
+  output  reg           spi_resetn,        // SPI subsystem reset (negated)
+  output  reg           spi_halt,          // SPI subsystem halt
   output  reg           shutdown_sense_en, // Shutdown sense enable
   output  reg           block_bufs,        // Block PL side of command/data buffers
   output  reg           n_shutdown_force,  // Shutdown force (negated)
@@ -184,7 +185,8 @@ module hw_manager #(
       shutdown_sense_en <= 0;
       unlock_cfg <= 1;
       spi_clk_gate <= 0;
-      spi_en <= 0;
+      spi_resetn <= 0;
+      spi_halt <= 0;
       block_bufs <= 1;
       status_code <= STS_OK;
       board_num <= 0;
@@ -305,7 +307,7 @@ module hw_manager #(
           end else if (timer >= SHUTDOWN_FORCE_DELAY) begin
             state <= S_CONFIRM_SPI_START;
             timer <= 0;
-            spi_en <= 1;
+            spi_resetn <= 1;
             spi_clk_gate <= 1;
           end else begin
             timer <= timer + 1;
@@ -550,7 +552,7 @@ module hw_manager #(
           shutdown_sense_en <= 0;
           unlock_cfg <= 1;
           spi_clk_gate <= 0;
-          spi_en <= 0;
+          spi_halt <= 1;
           block_bufs <= 1;
           ps_interrupt <= 1;
         end // S_HALTING
@@ -565,6 +567,8 @@ module hw_manager #(
           if (!ctrl_en && !pow_en) begin
             state <= S_IDLE;
             status_code <= STS_OK;
+            spi_resetn <= 0;
+            spi_halt <= 0;
             board_num <= 0;
             unlock_cfg <= 1;
           end
@@ -578,7 +582,7 @@ module hw_manager #(
           shutdown_sense_en <= 0;
           unlock_cfg <= 1;
           spi_clk_gate <= 0;
-          spi_en <= 0;
+          spi_halt <= 1;
           block_bufs <= 1;
           status_code <= STS_EMPTY;
           board_num <= 0;

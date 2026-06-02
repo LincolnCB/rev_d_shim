@@ -13,10 +13,11 @@ module axi_clock_timing_snoop # (
   input  wire        aclk,
   input  wire        aresetn,
 
-  output reg  [31:0] spi_clk_freq_hz, // Calculated SPI clock frequency in Hz
-  output reg         reconf_in_prog,  // Reconfiguration in progress
-  output reg         div_by_zero,     // Indicates if a divide-by-zero error occurred during calculations
-  output reg         freq_too_high,   // Indicates if the calculated frequency exceeds the maximum
+  output wire [31:0] source_clk_freq_hz, // Source clock frequency in Hz (for reference)
+  output reg  [31:0] spi_clk_freq_hz,    // Calculated SPI clock frequency in Hz
+  output reg         reconf_in_prog,     // Reconfiguration in progress
+  output reg         div_by_zero,        // Indicates if a divide-by-zero error occurred during calculations
+  output reg         freq_too_high,      // Indicates if the calculated frequency exceeds the maximum
 
   // AXI4-Lite subordinate port
   input  wire [10:0]  s_axi_awaddr,  // AXI4-Lite subordinate: Write address
@@ -176,6 +177,9 @@ localparam [ 9:0] CLKFBOUT_FRAC_MULT_DEFAULT_W = CLKFBOUT_FRAC_MULT_DEFAULT[9:0]
 localparam [ 7:0] CLKOUT0_DIVIDE_DEFAULT_W = CLKOUT0_DIVIDE_DEFAULT[7:0];
 localparam [ 9:0] CLKOUT0_FRAC_DIVIDE_DEFAULT_W = CLKOUT0_FRAC_DIVIDE_DEFAULT[9:0];
 localparam [31:0] SPI_CLK_FREQ_HZ_DEFAULT_W = SPI_CLK_FREQ_HZ_DEFAULT;
+
+// Output the source clock frequency as a reference
+assign source_clk_freq_hz = SOURCE_CLK_FREQ_HZ_W;
 
 // Reconfiguration state machine states
 localparam [3:0] S_IDLE           = 3'd0;
@@ -354,7 +358,7 @@ always @(posedge aclk) begin
         end else if (mult_done) begin
           // result = source_clk_freq_hz * (clkfbout_mult * 1000 + clkfbout_frac_mult)
           mult_multiplicand <= mult_result + clkfbout_frac_mult_latched;
-          mult_multiplier <= SOURCE_CLK_FREQ_HZ_W;
+          mult_multiplier <= source_clk_freq_hz;
           mult_start <= 1'b1;
           reconfig_state <= S_CALC_MULT;
         end

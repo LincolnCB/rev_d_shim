@@ -172,6 +172,81 @@ char* dac_format_state(uint8_t state_code, bool verbose) {
   return buffer;
 }
 
+// Interpret and format a DAC command word by decoding command-specific fields
+char* dac_format_command(uint32_t cmd_word, bool verbose) {
+  static char buffer[512];  // Static buffer for return string
+  char temp[128];
+  uint8_t cmd_code = (cmd_word >> DAC_CMD_CMD_LSB) & 0x7;
+  uint8_t trig = (cmd_word >> DAC_CMD_TRIG_BIT) & 0x1;
+  uint8_t cont = (cmd_word >> DAC_CMD_CONT_BIT) & 0x1;
+  uint8_t ldac = (cmd_word >> DAC_CMD_LDAC_BIT) & 0x1;
+
+  buffer[0] = '\0';  // Initialize as empty string
+
+  if (verbose) {
+    snprintf(temp, sizeof(temp), "DAC Command word: 0x%08X\n", cmd_word);
+    strcat(buffer, temp);
+  }
+
+  switch (cmd_code) {
+    case DAC_CMD_NO_OP: {
+      snprintf(temp, sizeof(temp),
+               "NO_OP (trig=%u, cont=%u, ldac=%u, value=0x%07X / %u)",
+               trig, cont, ldac, (cmd_word & 0x1FFFFFF), (cmd_word & 0x1FFFFFF));
+      strcat(buffer, temp);
+      break;
+    }
+    case DAC_CMD_SET_CAL: {
+      uint8_t channel = (cmd_word >> 16) & 0x7;
+      int16_t cal_val = (int16_t)(cmd_word & 0xFFFF);
+      snprintf(temp, sizeof(temp),
+               "SET_CAL (channel=%u, cal=%d, bits=0x%04X)",
+               channel, cal_val, (uint16_t)(cmd_word & 0xFFFF));
+      strcat(buffer, temp);
+      break;
+    }
+    case DAC_CMD_DAC_WR: {
+      snprintf(temp, sizeof(temp),
+               "DAC_WR (trig=%u, cont=%u, ldac=%u, value=0x%07X / %u)",
+               trig, cont, ldac, (cmd_word & 0x1FFFFFF), (cmd_word & 0x1FFFFFF));
+      strcat(buffer, temp);
+      break;
+    }
+    case DAC_CMD_DAC_WR_CH: {
+      uint8_t channel = (cmd_word >> 16) & 0x7;
+      int16_t ch_val = (int16_t)(cmd_word & 0xFFFF);
+      snprintf(temp, sizeof(temp),
+               "DAC_WR_CH (channel=%u, value=%d, bits=0x%04X)",
+               channel, ch_val, (uint16_t)(cmd_word & 0xFFFF));
+      strcat(buffer, temp);
+      break;
+    }
+    case DAC_CMD_GET_CAL: {
+      uint8_t channel = (cmd_word >> 16) & 0x7;
+      snprintf(temp, sizeof(temp), "GET_CAL (channel=%u)", channel);
+      strcat(buffer, temp);
+      break;
+    }
+    case DAC_CMD_ZERO: {
+      strcat(buffer, "ZERO");
+      break;
+    }
+    case DAC_CMD_CANCEL: {
+      strcat(buffer, "CANCEL");
+      break;
+    }
+    default: {
+      snprintf(temp, sizeof(temp),
+               "Unknown Command: %u (trig=%u, cont=%u, ldac=%u, low25=0x%07X)",
+               cmd_code, trig, cont, ldac, (cmd_word & 0x1FFFFFF));
+      strcat(buffer, temp);
+      break;
+    }
+  }
+
+  return buffer;
+}
+
 // DAC command word functions
 void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, dac_wait_mode_t trig, dac_continue_mode_t cont, dac_ldac_mode_t ldac, uint32_t value, bool verbose) {
   if (board > 7) {

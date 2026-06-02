@@ -4,10 +4,11 @@ module spi_cfg_sync (
   input  wire        aclk,       // AXI domain clock
   input  wire        aresetn,    // Active low reset signal
   input  wire        spi_clk,    // SPI domain clock
-  input  wire        spi_resetn, // Active low reset signal for SPI domain
+  input  wire        sync_resetn, // Active low reset signal for SPI domain
 
   // Inputs from axi_sys_ctrl (AXI domain)
-  input  wire        spi_en,
+  input  wire        spi_resetn,
+  input  wire        spi_halt,
   input  wire        block_bufs,
   input  wire [14:0] thresh_val,
   input  wire [31:0] thresh_window,
@@ -22,7 +23,8 @@ module spi_cfg_sync (
   input  wire        do_dac_pre_delay,
 
   // Synchronized outputs to SPI domain
-  output wire        spi_en_sync,
+  output wire        spi_resetn_sync,
+  output wire        spi_halt_sync,
   output wire        block_bufs_sync,
   output wire [14:0] thresh_val_sync,
   output wire [31:0] thresh_window_sync,
@@ -50,15 +52,25 @@ module spi_cfg_sync (
   // Use sync_coherent for multi-bit data,
   //   sync_incoherent for data where individual bits are not coherent with each other
 
-  // SPI enable (incoherent)
+  // SPI resetn (incoherent)
   sync_incoherent #(
     .WIDTH(1),
     .DEPTH(4) // Use deeper synchronizer to give extra delay for this signal
-  ) sync_spi_en (
+  ) sync_spi_resetn (
     .clk(spi_clk),
-    .resetn(spi_resetn),
-    .din(spi_en),
-    .dout(spi_en_sync)
+    .resetn(sync_resetn),
+    .din(spi_resetn),
+    .dout(spi_resetn_sync)
+  );
+
+  // SPI halt (incoherent)
+  sync_incoherent #(
+    .WIDTH(1)
+  ) sync_spi_halt (
+    .clk(spi_clk),
+    .resetn(sync_resetn),
+    .din(spi_halt),
+    .dout(spi_halt_sync)
   );
 
   // Block buffers (incoherent)
@@ -66,7 +78,7 @@ module spi_cfg_sync (
     .WIDTH(1)
   ) sync_block_bufs (
     .clk(spi_clk),
-    .resetn(spi_resetn),
+    .resetn(sync_resetn),
     .din(block_bufs),
     .dout(block_bufs_sync)
   );
@@ -76,7 +88,7 @@ module spi_cfg_sync (
     .WIDTH(1)
   ) sync_thresh_en (
     .clk(spi_clk),
-    .resetn(spi_resetn),
+    .resetn(sync_resetn),
     .din(thresh_en),
     .dout(thresh_en_sync)
   );
@@ -88,7 +100,7 @@ module spi_cfg_sync (
     .in_clk(aclk),
     .in_resetn(aresetn),
     .out_clk(spi_clk),
-    .out_resetn(spi_resetn),
+    .out_resetn(sync_resetn),
     .din(thresh_val),
     .dout(thresh_val_sync),
     .dout_default(thresh_val_default)
@@ -101,7 +113,7 @@ module spi_cfg_sync (
     .in_clk(aclk),
     .in_resetn(aresetn),
     .out_clk(spi_clk),
-    .out_resetn(spi_resetn),
+    .out_resetn(sync_resetn),
     .din(thresh_window),
     .dout(thresh_window_sync),
     .dout_default(thresh_window_default)
@@ -114,7 +126,7 @@ module spi_cfg_sync (
     .in_clk(aclk),
     .in_resetn(aresetn),
     .out_clk(spi_clk),
-    .out_resetn(spi_resetn),
+    .out_resetn(sync_resetn),
     .din(dac_n_cs_high_time),
     .dout(dac_n_cs_high_time_sync),
     .dout_default(dac_n_cs_high_time_default)
@@ -127,7 +139,7 @@ module spi_cfg_sync (
     .in_clk(aclk),
     .in_resetn(aresetn),
     .out_clk(spi_clk),
-    .out_resetn(spi_resetn),
+    .out_resetn(sync_resetn),
     .din(dac_min_delay_time),
     .dout(dac_min_delay_time_sync),
     .dout_default(dac_min_delay_time_default)
@@ -140,7 +152,7 @@ module spi_cfg_sync (
     .in_clk(aclk),
     .in_resetn(aresetn),
     .out_clk(spi_clk),
-    .out_resetn(spi_resetn),
+    .out_resetn(sync_resetn),
     .din(adc_n_cs_high_time),
     .dout(adc_n_cs_high_time_sync),
     .dout_default(adc_n_cs_high_time_default)
@@ -153,7 +165,7 @@ module spi_cfg_sync (
     .in_clk(aclk),
     .in_resetn(aresetn),
     .out_clk(spi_clk),
-    .out_resetn(spi_resetn),
+    .out_resetn(sync_resetn),
     .din(adc_min_delay_time),
     .dout(adc_min_delay_time_sync),
     .dout_default(adc_min_delay_time_default)
@@ -164,7 +176,7 @@ module spi_cfg_sync (
     .WIDTH(16)
   ) sync_boot_test_skip (
     .clk(spi_clk),
-    .resetn(spi_resetn),
+    .resetn(sync_resetn),
     .din(boot_test_skip),
     .dout(boot_test_skip_sync)
   );
@@ -174,7 +186,7 @@ module spi_cfg_sync (
     .WIDTH(16)
   ) sync_debug (
     .clk(spi_clk),
-    .resetn(spi_resetn),
+    .resetn(sync_resetn),
     .din(debug),
     .dout(debug_sync)
   );
@@ -186,7 +198,7 @@ module spi_cfg_sync (
     .in_clk(aclk),
     .in_resetn(aresetn),
     .out_clk(spi_clk),
-    .out_resetn(spi_resetn),
+    .out_resetn(sync_resetn),
     .din(dac_cal_init),
     .dout(dac_cal_init_sync),
     .dout_default(dac_cal_init_default)
@@ -197,7 +209,7 @@ module spi_cfg_sync (
     .WIDTH(1)
   ) sync_do_dac_pre_delay (
     .clk(spi_clk),
-    .resetn(spi_resetn),
+    .resetn(sync_resetn),
     .din(do_dac_pre_delay),
     .dout(do_dac_pre_delay_sync)
   );

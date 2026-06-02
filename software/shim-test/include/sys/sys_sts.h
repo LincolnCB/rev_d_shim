@@ -8,7 +8,7 @@
 //////////////////// System Status Definitions ////////////////////
 // Status register
 #define SYS_STS           (uint32_t) 0x40100000
-#define SYS_STS_WORDCOUNT (uint32_t) 1 + (3 * 8) + 2 // Size in 32-bit words
+#define SYS_STS_WORDCOUNT (uint32_t) 73 // Size in 32-bit words
 // 32-bit offsets within the status register
 #define HW_STS_REG_OFFSET (uint32_t) 0 // Hardware status register
 // Command FIFO status offset for DAC board (in 32-bit words)
@@ -23,17 +23,25 @@
 #define TRIG_DATA_FIFO_STS_OFFSET   (uint32_t) 34 // Trigger data FIFO status
 // SPI clock frequency offset
 #define SPI_CLK_FREQ_OFFSET         (uint32_t) 35 // SPI clock frequency in Hz
+// SPI source clock frequency offset
+#define SOURCE_CLK_FREQ_OFFSET      (uint32_t) 36 // SPI source clock frequency in Hz
 // Trigger counter offset
-#define TRIG_COUNTER_OFFSET         (uint32_t) 36 // Trigger counter offset
+#define TRIG_COUNTER_OFFSET         (uint32_t) 37 // Trigger counter offset
 // Timing debug register
-#define DEBUG_REG_OFFSET            (uint32_t) 37 // Timing debug register offset
+#define DEBUG_REG_OFFSET            (uint32_t) 38 // Timing debug register offset
 #define DEBUG_SPI_CLK_LOCKED_BIT 0  // SPI clock locked status bit
 #define DEBUG_SPI_OFF_BIT        1  // SPI off status bit
 #define DEBUG_DAC_CS_HIGH_TIME(word) (((word) >> 2) & 0x1F) // DAC ~CS high time (5 bits)
 #define DEBUG_ADC_CS_HIGH_TIME(word) (((word) >> 7) & 0xFF) // ADC ~CS high time (8 bits)
 // Minimum delay times (in SPI clock cycles)
-#define DEBUG_DAC_MIN_DELAY_TIME_OFFSET (uint32_t) 38 // DAC minimum delay time offset
-#define DEBUG_ADC_MIN_DELAY_TIME_OFFSET (uint32_t) 39 // ADC minimum delay time offset
+#define DEBUG_DAC_MIN_DELAY_TIME_OFFSET (uint32_t) 39 // DAC minimum delay time offset
+#define DEBUG_ADC_MIN_DELAY_TIME_OFFSET (uint32_t) 40 // ADC minimum delay time offset
+// Last received command words (32-bit per board)
+#define DAC_LAST_RECEIVED_CMD_OFFSET(board)   (41 + (board))
+#define ADC_LAST_RECEIVED_CMD_OFFSET(board)   (49 + (board))
+// Command counters since reset (32-bit per board)
+#define DAC_CMDS_SINCE_RESET_OFFSET(board)    (57 + (board))
+#define ADC_CMDS_SINCE_RESET_OFFSET(board)    (65 + (board))
 
 // Macro for extracting the 4-bit state
 #define HW_STS_STATE(hw_status) ((hw_status) & 0xF)
@@ -133,10 +141,15 @@ struct sys_sts_t {
   volatile uint32_t *trig_cmd_fifo_sts;    // Trigger command FIFO status
   volatile uint32_t *trig_data_fifo_sts;   // Trigger data FIFO status
   volatile uint32_t *spi_clk_freq_hz;      // SPI clock frequency in Hz
+  volatile uint32_t *source_clk_freq_hz;   // SPI source clock frequency in Hz
   volatile uint32_t *trig_counter;         // Trigger counter
   volatile uint32_t *debug;                // Debug register
   volatile uint32_t *dac_min_delay_time;   // DAC minimum delay time in SPI clock cycles
   volatile uint32_t *adc_min_delay_time;   // ADC minimum delay time in SPI clock cycles
+  volatile uint32_t *last_received_dac_cmd[8]; // Last received DAC command for 8 boards
+  volatile uint32_t *last_received_adc_cmd[8]; // Last received ADC command for 8 boards
+  volatile uint32_t *dac_cmds_since_reset[8];  // DAC command count since reset for 8 boards
+  volatile uint32_t *adc_cmds_since_reset[8];  // ADC command count since reset for 8 boards
 };
 
 // Structure initialization function
@@ -146,6 +159,8 @@ struct sys_sts_t create_sys_sts(bool verbose);
 uint32_t sys_sts_get_hw_status(struct sys_sts_t *sys_sts, bool verbose);
 // Get SPI clock frequency in Hz
 uint32_t sys_sts_get_spi_clk_freq_hz(struct sys_sts_t *sys_sts, bool verbose);
+// Get SPI source clock frequency in Hz
+uint32_t sys_sts_get_source_clk_freq_hz(struct sys_sts_t *sys_sts, bool verbose);
 // Get FIFO status from a status pointer
 uint32_t get_fifo_status(volatile uint32_t *fifo_sts_ptr, const char *fifo_name, bool verbose);
 // Get DAC command FIFO status for a specific board
@@ -168,6 +183,14 @@ uint32_t sys_sts_get_debug(struct sys_sts_t *sys_sts, bool verbose);
 uint32_t sys_sts_get_dac_min_delay_time(struct sys_sts_t *sys_sts, bool verbose);
 // Get ADC "delay too short" time in SPI clock cycles
 uint32_t sys_sts_get_adc_min_delay_time(struct sys_sts_t *sys_sts, bool verbose);
+// Get last received DAC command for a specific board
+uint32_t sys_sts_get_last_received_dac_cmd(struct sys_sts_t *sys_sts, uint8_t board, bool verbose);
+// Get last received ADC command for a specific board
+uint32_t sys_sts_get_last_received_adc_cmd(struct sys_sts_t *sys_sts, uint8_t board, bool verbose);
+// Get DAC command count since reset for a specific board
+uint32_t sys_sts_get_dac_cmds_since_reset(struct sys_sts_t *sys_sts, uint8_t board, bool verbose);
+// Get ADC command count since reset for a specific board
+uint32_t sys_sts_get_adc_cmds_since_reset(struct sys_sts_t *sys_sts, uint8_t board, bool verbose);
 
 // Interpret and print hardware status
 void print_hw_status(uint32_t hw_status, bool verbose);

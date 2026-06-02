@@ -4,7 +4,7 @@ module spi_sts_sync (
   input  wire        aclk,       // AXI domain clock
   input  wire        aresetn,    // Active low reset signal
   input  wire        spi_clk,    // SPI domain clock
-  input  wire        spi_resetn, // Active low reset signal for SPI domain
+  input  wire        sync_resetn, // Active low reset signal for SPI domain
 
   //// Inputs from SPI domain
   // SPI system status
@@ -117,7 +117,7 @@ module spi_sts_sync (
     .in_clk(aclk),
     .in_resetn(aresetn),
     .out_clk(spi_clk),
-    .out_resetn(spi_resetn),
+    .out_resetn(sync_resetn),
     .din(trig_counter),
     .dout(trig_counter_sync),
     .dout_default(32'd0)
@@ -222,7 +222,7 @@ module spi_sts_sync (
         .in_clk(aclk),
         .in_resetn(aresetn),
         .out_clk(spi_clk),
-        .out_resetn(spi_resetn),
+        .out_resetn(sync_resetn),
         .din(last_received_dac_cmds_concat[(i+1)*32-1 -:32]),
         .dout(last_received_dac_cmds_concat_sync[(i+1)*32-1 -:32]),
         .dout_default(32'd0)
@@ -233,7 +233,7 @@ module spi_sts_sync (
         .in_clk(aclk),
         .in_resetn(aresetn),
         .out_clk(spi_clk),
-        .out_resetn(spi_resetn),
+        .out_resetn(sync_resetn),
         .din(dac_cmds_since_reset_concat[(i+1)*32-1 -:32]),
         .dout(dac_cmds_since_reset_concat_sync[(i+1)*32-1 -:32]),
         .dout_default(32'd0)
@@ -300,7 +300,7 @@ module spi_sts_sync (
         .in_clk(aclk),
         .in_resetn(aresetn),
         .out_clk(spi_clk),
-        .out_resetn(spi_resetn),
+        .out_resetn(sync_resetn),
         .din(last_received_adc_cmds_concat[(j+1)*32-1 -:32]),
         .dout(last_received_adc_cmds_concat_sync[(j+1)*32-1 -:32]),
         .dout_default(32'd0)
@@ -311,7 +311,7 @@ module spi_sts_sync (
         .in_clk(aclk),
         .in_resetn(aresetn),
         .out_clk(spi_clk),
-        .out_resetn(spi_resetn),
+        .out_resetn(sync_resetn),
         .din(adc_cmds_since_reset_concat[(j+1)*32-1 -:32]),
         .dout(adc_cmds_since_reset_concat_sync[(j+1)*32-1 -:32]),
         .dout_default(32'd0)

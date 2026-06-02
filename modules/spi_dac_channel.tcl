@@ -7,6 +7,7 @@ set threshold_core_level [module_get_upvar threshold_core_level]
 # System signals
 create_bd_pin -dir I -type clock spi_clk
 create_bd_pin -dir I -type reset resetn
+create_bd_pin -dir I halt
 
 # Config parameters
 create_bd_pin -dir I -from 31 -to 0 thresh_window
@@ -108,6 +109,7 @@ cell shim:user:ad5676_dac_ctrl dac_spi {
 } {
   clk spi_clk
   resetn resetn
+  halt halt
   boot_test_skip boot_test_skip
   debug debug
   do_pre_delay do_pre_delay

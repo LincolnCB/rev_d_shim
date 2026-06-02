@@ -4,6 +4,7 @@
 # System signals
 create_bd_pin -dir I -type clock spi_clk
 create_bd_pin -dir I -type reset resetn
+create_bd_pin -dir I halt
 
 # Config parameters
 create_bd_pin -dir I -from 7 -to 0 adc_n_cs_high_time
@@ -86,6 +87,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 miso_rst {} {
 cell shim:user:ads816x_adc_ctrl adc_spi {} {
   clk spi_clk
   resetn resetn
+  halt halt
   boot_test_skip boot_test_skip
   debug debug
   n_cs_high_time adc_n_cs_high_time

@@ -721,14 +721,14 @@ async def test_output_signals_at_s_running(dut):
 
     await tb.reach_s_running()
 
-    assert dut.n_shutdown_force.value == 1, "n_shutdown_force should be 1 in S_RUNNING"
-    assert dut.shutdown_rst.value == 0,     "shutdown_rst should be 0 in S_RUNNING"
+    assert dut.n_shutdown_force.value == 1,  "n_shutdown_force should be 1 in S_RUNNING"
+    assert dut.shutdown_rst.value == 0,      "shutdown_rst should be 0 in S_RUNNING"
     assert dut.shutdown_sense_en.value == 1, "shutdown_sense_en should be 1 in S_RUNNING"
-    assert dut.spi_en.value == 1,           "spi_en should be 1 in S_RUNNING"
-    assert dut.spi_clk_gate.value == 1,     "spi_clk_gate should be 1 in S_RUNNING"
-    assert dut.block_bufs.value == 0,       "block_bufs should be 0 in S_RUNNING"
-    assert dut.unlock_cfg.value == 0,       "unlock_cfg should be 0 in S_RUNNING"
-    assert dut.ps_interrupt.value == 1,     "ps_interrupt should be 1 on entry to S_RUNNING"
+    assert dut.spi_resetn.value == 1,        "spi_resetn should be 1 in S_RUNNING"
+    assert dut.spi_clk_gate.value == 1,      "spi_clk_gate should be 1 in S_RUNNING"
+    assert dut.block_bufs.value == 0,        "block_bufs should be 0 in S_RUNNING"
+    assert dut.unlock_cfg.value == 0,        "unlock_cfg should be 0 in S_RUNNING"
+    assert dut.ps_interrupt.value == 1,      "ps_interrupt should be 1 on entry to S_RUNNING"
 
     # Interrupt clears on the next cycle
     await RisingEdge(dut.clk)
@@ -747,7 +747,7 @@ async def test_output_signals_at_s_halted(dut):
     assert dut.n_shutdown_force.value == 0,  "n_shutdown_force should be 0 in S_HALTED"
     assert dut.shutdown_rst.value == 0,      "shutdown_rst should be 0 in S_HALTED"
     assert dut.shutdown_sense_en.value == 0, "shutdown_sense_en should be 0 in S_HALTED"
-    assert dut.spi_en.value == 0,            "spi_en should be 0 in S_HALTED"
+    assert dut.spi_resetn.value == 0,        "spi_resetn should be 0 in S_HALTED"
     assert dut.spi_clk_gate.value == 0,      "spi_clk_gate should be 0 in S_HALTED"
     assert dut.block_bufs.value == 1,        "block_bufs should be 1 in S_HALTED"
     assert dut.unlock_cfg.value == 1,        "unlock_cfg should be 1 in S_HALTED"
@@ -1220,7 +1220,7 @@ async def test_illegal_state_default_branch_recovery(dut):
     assert dut.shutdown_sense_en.value == 0, "shutdown_sense_en should be 0 in default halt path"
     assert dut.unlock_cfg.value == 1, "unlock_cfg should be 1 in default halt path"
     assert dut.spi_clk_gate.value == 0, "spi_clk_gate should be 0 in default halt path"
-    assert dut.spi_en.value == 0, "spi_en should be 0 in default halt path"
+    assert dut.spi_resetn.value == 0, "spi_resetn should be 0 in default halt path"
     assert dut.block_bufs.value == 1, "block_bufs should be 1 in default halt path"
     assert dut.ps_interrupt.value == 1, "ps_interrupt should assert in default halt path"
 

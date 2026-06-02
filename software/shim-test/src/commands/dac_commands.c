@@ -54,6 +54,31 @@ int cmd_dac_data_fifo_sts(const char** args, int arg_count, const command_flag_t
   return 0;
 }
 
+int cmd_dac_last_received_cmd(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  int board = validate_board_number(args[0]);
+  if (board < 0) {
+    fprintf(stderr, "Invalid board number for dac_last_received_cmd: '%s'. Must be 0-7.\n", args[0]);
+    return -1;
+  }
+
+  uint32_t cmd_word = sys_sts_get_last_received_dac_cmd(ctx->sys_sts, (uint8_t)board, *(ctx->verbose));
+  printf("Last received DAC command for board %d: 0x%08" PRIx32 "\n", board, cmd_word);
+  printf("%s\n", dac_format_command(cmd_word, *(ctx->verbose)));
+  return 0;
+}
+
+int cmd_dac_cmds_since_reset(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  int board = validate_board_number(args[0]);
+  if (board < 0) {
+    fprintf(stderr, "Invalid board number for dac_cmds_since_reset: '%s'. Must be 0-7.\n", args[0]);
+    return -1;
+  }
+
+  uint32_t count = sys_sts_get_dac_cmds_since_reset(ctx->sys_sts, (uint8_t)board, *(ctx->verbose));
+  printf("DAC commands since reset for board %d: %" PRIu32 "\n", board, count);
+  return 0;
+}
+
 int cmd_read_dac_data(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = parse_board_number(args[0]);
   if (board < 0) {

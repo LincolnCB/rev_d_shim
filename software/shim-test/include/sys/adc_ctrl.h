@@ -79,8 +79,8 @@ uint32_t adc_read_word(struct adc_ctrl_t *adc_ctrl, uint8_t board);
 char* adc_format_debug(uint32_t adc_value, bool verbose);
 // Interpret and format the ADC state
 char* adc_format_state(uint8_t state_code, bool verbose);
-// Interpret and format uint8_t command code as string
-char* adc_format_command(uint8_t cmd_code, bool verbose);
+// Interpret and format a full ADC command word by decoding command-specific fields
+char* adc_format_command(uint32_t cmd_word, bool verbose);
 // Convert and format a pair of ADC samples from a 32-bit word
 char* adc_format_pair(uint32_t data_word, bool verbose);
 // Convert and format a single ADC sample from a 32-bit word

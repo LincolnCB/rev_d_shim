@@ -252,7 +252,7 @@ module ads816x_adc_ctrl (
   // State transition
   always @(posedge clk) begin
     if (!resetn)                                                state <= S_RESET; // Reset to initial state
-    else if (error)                                             state <= S_ERROR; // Check for error states
+    else if (error || halt)                                     state <= S_ERROR; // Check for error states
     else if (state == S_RESET)                                  state <= S_INIT; // Begin initialization
     else if (state == S_INIT)                                   state <= S_SET_OTF; // Transition to TEST_WR first in initialization
     else if (state == S_SET_OTF && adc_spi_cmd_done)            state <= boot_test_skip ? S_IDLE : S_REQ_RD; // Transition to REQ_RD after writing test value
@@ -345,7 +345,7 @@ module ads816x_adc_ctrl (
   //// ---- Errors
   // Error flag
   assign error = (state == S_TEST_RD && !n_miso_data_ready_mosi_clk && ~boot_readback_match) // Readback mismatch (boot fail)
-                 || (state != S_TRIG_WAIT && trigger && trigger_counter <= 1) // Unexpected trigger
+                 || (state != S_TRIG_WAIT && state != S_IDLE && trigger && trigger_counter <= 1) // Unexpected trigger
                  || (state == S_ADC_RD && !adc_rd_done && !wait_for_trig && delay_wait_done) // Delay too short
                  || (do_next_cmd && next_cmd_state == S_ERROR) // Bad command
                  || (cmd_done && expect_next && !next_cmd_ready) // Command buffer underflow
@@ -360,7 +360,7 @@ module ads816x_adc_ctrl (
   // Unexpected trigger
   always @(posedge clk) begin
     if (!resetn) unexp_trig <= 1'b0;
-    else if (state != S_TRIG_WAIT && trigger && trigger_counter <= 1) unexp_trig <= 1'b1;
+    else if (state != S_TRIG_WAIT && state != S_IDLE && trigger && trigger_counter <= 1) unexp_trig <= 1'b1;
   end
   // Delay too short
   always @(posedge clk) begin

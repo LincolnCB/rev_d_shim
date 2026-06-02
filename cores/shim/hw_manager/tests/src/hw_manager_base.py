@@ -221,7 +221,7 @@ class hw_manager_base:
         self.dut._log.info(f"------------ OUTPUT SIGNALS AT TIME = {time}  ------------")
         self.dut._log.info(f"  unlock_cfg: {self.dut.unlock_cfg.value}")
         self.dut._log.info(f"  spi_clk_gate: {self.dut.spi_clk_gate.value}")
-        self.dut._log.info(f"  spi_en: {self.dut.spi_en.value}")
+        self.dut._log.info(f"  spi_resetn: {self.dut.spi_resetn.value}")
         self.dut._log.info(f"  shutdown_sense_en: {self.dut.shutdown_sense_en.value}")
         self.dut._log.info(f"  block_bufs: {self.dut.block_bufs.value}")
         self.dut._log.info(f"  n_shutdown_force: {self.dut.n_shutdown_force.value}")
@@ -456,8 +456,8 @@ class hw_manager_base:
         f"Expected unlock_cfg to be 1 in S_IDLE, got {self.dut.unlock_cfg.value.integer}"
         assert self.dut.spi_clk_gate.value.integer == 0, \
         f"Expected spi_clk_gate to be 0 in S_IDLE, got {self.dut.spi_clk_gate.value.integer}"
-        assert self.dut.spi_en.value.integer == 0, \
-        f"Expected spi_en to be 0 in S_IDLE, got {self.dut.spi_en.value.integer}"
+        assert self.dut.spi_resetn.value.integer == 0, \
+        f"Expected spi_resetn to be 0 in S_IDLE, got {self.dut.spi_resetn.value.integer}"
         assert self.dut.block_bufs.value.integer == 1, \
         f"Expected block_bufs to be 1 in S_IDLE, got {self.dut.block_bufs.value.integer}"
         assert self.dut.ps_interrupt.value.integer == 0, \
@@ -672,8 +672,8 @@ class hw_manager_base:
                 expected_timer = 0  # Timer should reset when transitioning to next state
                 assert self.dut.timer.value.integer == expected_timer, \
                 f"Expected timer to reset to 0 when transitioning to S_CONFIRM_SPI_START, got {self.dut.timer.value.integer}"
-                assert self.dut.spi_en.value.integer == 1, \
-                f"Expected spi_en to be 1 in S_CONFIRM_SPI_START, got {self.dut.spi_en.value.integer}"
+                assert self.dut.spi_resetn.value.integer == 1, \
+                f"Expected spi_resetn to be 1 in S_CONFIRM_SPI_START, got {self.dut.spi_resetn.value.integer}"
                 assert self.dut.spi_clk_gate.value.integer == 1, \
                 f"Expected spi_clk_gate to be 1 in S_CONFIRM_SPI_START, got {self.dut.spi_clk_gate.value.integer}"
                 break
@@ -692,9 +692,9 @@ class hw_manager_base:
         assert self.dut.timer.value.integer == expected_timer, \
         f"Expected timer to be 0 in S_CONFIRM_SPI_START, got {self.dut.timer.value.integer}"
 
-        # Initially spi_en should be 1.
-        assert self.dut.spi_en.value.integer == 1, \
-        f"Expected spi_en to be 1 in S_CONFIRM_SPI_START, got {self.dut.spi_en.value.integer}"
+        # Initially spi_resetn should be 1.
+        assert self.dut.spi_resetn.value.integer == 1, \
+        f"Expected spi_resetn to be 1 in S_CONFIRM_SPI_START, got {self.dut.spi_resetn.value.integer}"
 
         # Initially spi_clk_gate should be 1.
         assert self.dut.spi_clk_gate.value.integer == 1, \
@@ -1174,8 +1174,8 @@ class hw_manager_base:
         f"Expected unlock_cfg to be 1 in S_HALTED, got {self.dut.unlock_cfg.value.integer}"
         assert self.dut.spi_clk_gate.value.integer == 0, \
         f"Expected spi_clk_gate to be 0 in S_HALTED, got {self.dut.spi_clk_gate.value.integer}"
-        assert self.dut.spi_en.value.integer == 0, \
-        f"Expected spi_en to be 0 in S_HALTED, got {self.dut.spi_en.value.integer}"
+        assert self.dut.spi_resetn.value.integer == 0, \
+        f"Expected spi_resetn to be 0 in S_HALTED, got {self.dut.spi_resetn.value.integer}"
         assert self.dut.block_bufs.value.integer == 1, \
         f"Expected block_bufs to be 1 in S_HALTED, got {self.dut.block_bufs.value.integer}"
         assert self.dut.ps_interrupt.value.integer == 1, \
@@ -1197,8 +1197,8 @@ class hw_manager_base:
         f"Expected unlock_cfg to be 1 in S_HALTED, got {self.dut.unlock_cfg.value.integer}"
         assert self.dut.spi_clk_gate.value.integer == 0, \
         f"Expected spi_clk_gate to be 0 in S_HALTED, got {self.dut.spi_clk_gate.value.integer}"
-        assert self.dut.spi_en.value.integer == 0, \
-        f"Expected spi_en to be 0 in S_HALTED, got {self.dut.spi_en.value.integer}"
+        assert self.dut.spi_resetn.value.integer == 0, \
+        f"Expected spi_resetn to be 0 in S_HALTED, got {self.dut.spi_resetn.value.integer}"
         assert self.dut.block_bufs.value.integer == 1, \
         f"Expected block_bufs to be 1 in S_HALTED, got {self.dut.block_bufs.value.integer}"
         assert self.dut.ps_interrupt.value.integer == 1, \

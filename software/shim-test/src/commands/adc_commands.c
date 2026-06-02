@@ -54,6 +54,33 @@ int cmd_adc_data_fifo_sts(const char** args, int arg_count, const command_flag_t
   return 0;
 }
 
+int cmd_adc_last_received_cmd(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  int board = validate_board_number(args[0]);
+  if (board < 0) {
+    fprintf(stderr, "Invalid board number for adc_last_received_cmd: '%s'. Must be 0-7.\n", args[0]);
+    return -1;
+  }
+
+  uint32_t cmd_word = sys_sts_get_last_received_adc_cmd(ctx->sys_sts, (uint8_t)board, *(ctx->verbose));
+  uint8_t cmd_code = (uint8_t)((cmd_word >> ADC_CMD_CMD_LSB) & 0x7);
+
+  printf("Last received ADC command for board %d: 0x%08" PRIx32 "\n", board, cmd_word);
+  printf("Decoded command: %s\n", adc_format_command(cmd_code, *(ctx->verbose)));
+  return 0;
+}
+
+int cmd_adc_cmds_since_reset(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  int board = validate_board_number(args[0]);
+  if (board < 0) {
+    fprintf(stderr, "Invalid board number for adc_cmds_since_reset: '%s'. Must be 0-7.\n", args[0]);
+    return -1;
+  }
+
+  uint32_t count = sys_sts_get_adc_cmds_since_reset(ctx->sys_sts, (uint8_t)board, *(ctx->verbose));
+  printf("ADC commands since reset for board %d: %" PRIu32 "\n", board, count);
+  return 0;
+}
+
 // ADC data reading commands
 int cmd_read_adc_pair(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);

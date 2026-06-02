@@ -23,7 +23,8 @@ create_bd_pin -dir I -type reset aresetn
 create_bd_pin -dir I -type clock spi_clk
 
 # Configuration signals (need synchronization)
-create_bd_pin -dir I spi_en
+create_bd_pin -dir I spi_resetn
+create_bd_pin -dir I spi_halt
 create_bd_pin -dir I -from 14 -to 0 thresh_val
 create_bd_pin -dir I -from 31 -to 0 thresh_window
 create_bd_pin -dir I thresh_en
@@ -137,7 +138,7 @@ cell xilinx.com:ip:xlconstant:1.1 const_0_32bit {
 
 ## SPI clock domain crossing reset (synchronized aresetn to spi_clk)
 # Create proc_sys_reset for the synchronization reset
-cell xilinx.com:ip:proc_sys_reset:5.0 sync_reset {} {
+cell xilinx.com:ip:proc_sys_reset:5.0 sync_rst_core {} {
   ext_reset_in aresetn
   slowest_sync_clk spi_clk
 }
@@ -146,8 +147,9 @@ cell shim:user:spi_cfg_sync spi_cfg_sync {} {
   aclk aclk
   aresetn aresetn
   spi_clk spi_clk
-  spi_resetn sync_reset/peripheral_aresetn
-  spi_en spi_en
+  sync_resetn sync_rst_core/peripheral_aresetn
+  spi_resetn spi_resetn
+  spi_halt spi_halt
   block_bufs block_bufs
   thresh_val thresh_val
   thresh_window thresh_window
@@ -166,7 +168,7 @@ cell shim:user:spi_sts_sync spi_sts_sync {} {
   aclk aclk
   aresetn aresetn
   spi_clk spi_clk
-  spi_resetn sync_reset/peripheral_aresetn
+  sync_resetn sync_rst_core/peripheral_aresetn
   spi_off_sync spi_off
   over_thresh_sync over_thresh
   thresh_underflow_sync thresh_underflow
@@ -197,7 +199,7 @@ cell shim:user:spi_sts_sync spi_sts_sync {} {
 ## SPI system reset
 # Create proc_sys_reset for SPI-system-wide reset
 cell xilinx.com:ip:proc_sys_reset:5.0 spi_rst_core {} {
-  ext_reset_in spi_cfg_sync/spi_en_sync
+  ext_reset_in spi_cfg_sync/spi_resetn_sync
   slowest_sync_clk spi_clk
 }
 
@@ -249,6 +251,7 @@ for {set i 0} {$i < $board_count} {incr i} {
   module spi_dac_channel dac_ch$i {
     spi_clk spi_clk
     resetn spi_rst_core/peripheral_aresetn
+    halt spi_cfg_sync/spi_halt_sync
     thresh_window spi_cfg_sync/thresh_window_sync
     thresh_val spi_cfg_sync/thresh_val_sync
     thresh_en spi_cfg_sync/thresh_en_sync
@@ -269,6 +272,7 @@ for {set i 0} {$i < $board_count} {incr i} {
   module spi_adc_channel adc_ch$i {
     spi_clk spi_clk
     resetn spi_rst_core/peripheral_aresetn
+    halt spi_cfg_sync/spi_halt_sync
     adc_n_cs_high_time spi_cfg_sync/adc_n_cs_high_time_sync
     adc_min_delay_time spi_cfg_sync/adc_min_delay_time_sync
     adc_cmd adc_ch${i}_cmd

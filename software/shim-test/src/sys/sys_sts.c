@@ -36,6 +36,9 @@ struct sys_sts_t create_sys_sts(bool verbose) {
   // Initialize SPI clock frequency pointer
   sys_sts.spi_clk_freq_hz = sys_sts_ptr + SPI_CLK_FREQ_OFFSET;
 
+  // Initialize SPI source clock frequency pointer
+  sys_sts.source_clk_freq_hz = sys_sts_ptr + SOURCE_CLK_FREQ_OFFSET;
+
   // Initialize trigger counter pointer
   sys_sts.trig_counter = sys_sts_ptr + TRIG_COUNTER_OFFSET;
 
@@ -45,6 +48,14 @@ struct sys_sts_t create_sys_sts(bool verbose) {
   // Initialize DAC and ADC minimum delay time registers
   sys_sts.dac_min_delay_time = sys_sts_ptr + DEBUG_DAC_MIN_DELAY_TIME_OFFSET;
   sys_sts.adc_min_delay_time = sys_sts_ptr + DEBUG_ADC_MIN_DELAY_TIME_OFFSET;
+
+  // Initialize last command and command counter registers for each board
+  for (int i = 0; i < 8; i++) {
+    sys_sts.last_received_dac_cmd[i] = sys_sts_ptr + DAC_LAST_RECEIVED_CMD_OFFSET(i);
+    sys_sts.last_received_adc_cmd[i] = sys_sts_ptr + ADC_LAST_RECEIVED_CMD_OFFSET(i);
+    sys_sts.dac_cmds_since_reset[i] = sys_sts_ptr + DAC_CMDS_SINCE_RESET_OFFSET(i);
+    sys_sts.adc_cmds_since_reset[i] = sys_sts_ptr + ADC_CMDS_SINCE_RESET_OFFSET(i);
+  }
 
   return sys_sts;
 }
@@ -65,6 +76,15 @@ uint32_t sys_sts_get_spi_clk_freq_hz(struct sys_sts_t *sys_sts, bool verbose) {
     printf("SPI clock frequency raw: 0x%" PRIx32 "\n", *(sys_sts->spi_clk_freq_hz));
   }
   return *(sys_sts->spi_clk_freq_hz);
+}
+
+// Get SPI source clock frequency in Hz
+uint32_t sys_sts_get_source_clk_freq_hz(struct sys_sts_t *sys_sts, bool verbose) {
+  if (verbose) {
+    printf("Reading SPI source clock frequency register...\n");
+    printf("SPI source clock frequency raw: 0x%" PRIx32 "\n", *(sys_sts->source_clk_freq_hz));
+  }
+  return *(sys_sts->source_clk_freq_hz);
 }
 
 // Get FIFO status from a status pointer
@@ -403,6 +423,66 @@ uint32_t sys_sts_get_adc_min_delay_time(struct sys_sts_t *sys_sts, bool verbose)
     printf("ADC 'delay too short' time raw: 0x%" PRIx32 "\n", *(sys_sts->adc_min_delay_time));
   }
   return *(sys_sts->adc_min_delay_time);
+}
+
+// Get last received DAC command for a specific board
+uint32_t sys_sts_get_last_received_dac_cmd(struct sys_sts_t *sys_sts, uint8_t board, bool verbose) {
+  if (board >= 8) {
+    fprintf(stderr, "Invalid board number %u for last received DAC command. Must be 0-7.\n", board);
+    exit(EXIT_FAILURE);
+  }
+
+  uint32_t value = *(sys_sts->last_received_dac_cmd[board]);
+  if (verbose) {
+    printf("Reading last received DAC command for board %u...\n", board);
+    printf("Last received DAC command raw: 0x%08" PRIx32 "\n", value);
+  }
+  return value;
+}
+
+// Get last received ADC command for a specific board
+uint32_t sys_sts_get_last_received_adc_cmd(struct sys_sts_t *sys_sts, uint8_t board, bool verbose) {
+  if (board >= 8) {
+    fprintf(stderr, "Invalid board number %u for last received ADC command. Must be 0-7.\n", board);
+    exit(EXIT_FAILURE);
+  }
+
+  uint32_t value = *(sys_sts->last_received_adc_cmd[board]);
+  if (verbose) {
+    printf("Reading last received ADC command for board %u...\n", board);
+    printf("Last received ADC command raw: 0x%08" PRIx32 "\n", value);
+  }
+  return value;
+}
+
+// Get DAC command count since reset for a specific board
+uint32_t sys_sts_get_dac_cmds_since_reset(struct sys_sts_t *sys_sts, uint8_t board, bool verbose) {
+  if (board >= 8) {
+    fprintf(stderr, "Invalid board number %u for DAC command count since reset. Must be 0-7.\n", board);
+    exit(EXIT_FAILURE);
+  }
+
+  uint32_t value = *(sys_sts->dac_cmds_since_reset[board]);
+  if (verbose) {
+    printf("Reading DAC command count since reset for board %u...\n", board);
+    printf("DAC command count since reset: %" PRIu32 " (0x%08" PRIx32 ")\n", value, value);
+  }
+  return value;
+}
+
+// Get ADC command count since reset for a specific board
+uint32_t sys_sts_get_adc_cmds_since_reset(struct sys_sts_t *sys_sts, uint8_t board, bool verbose) {
+  if (board >= 8) {
+    fprintf(stderr, "Invalid board number %u for ADC command count since reset. Must be 0-7.\n", board);
+    exit(EXIT_FAILURE);
+  }
+
+  uint32_t value = *(sys_sts->adc_cmds_since_reset[board]);
+  if (verbose) {
+    printf("Reading ADC command count since reset for board %u...\n", board);
+    printf("ADC command count since reset: %" PRIu32 " (0x%08" PRIx32 ")\n", value, value);
+  }
+  return value;
 }
 
 

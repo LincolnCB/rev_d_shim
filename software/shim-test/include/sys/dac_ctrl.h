@@ -98,6 +98,8 @@ uint32_t dac_read_data(struct dac_ctrl_t *dac_ctrl, uint8_t board);
 char* dac_format_data(uint32_t dac_value, bool verbose);
 // Interpret and format the DAC state
 char* dac_format_state(uint8_t state_code, bool verbose);
+// Interpret and format a DAC command word by decoding command-specific fields
+char* dac_format_command(uint32_t cmd_word, bool verbose);
 
 // DAC command word functions
 void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, dac_wait_mode_t trig, dac_continue_mode_t cont, dac_ldac_mode_t ldac, uint32_t value, bool verbose);

@@ -41,6 +41,8 @@ typedef struct {
 // DAC FIFO status commands
 int cmd_dac_cmd_fifo_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_dac_data_fifo_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+int cmd_dac_last_received_cmd(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+int cmd_dac_cmds_since_reset(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
 // DAC data reading commands
 int cmd_read_dac_data(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
