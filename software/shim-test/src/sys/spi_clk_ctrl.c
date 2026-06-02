@@ -23,9 +23,32 @@
 #define SPI_CLK_PHASE_MAX        (360000)
 #define SPI_CLK_DUTY_MAX         ((uint32_t)100000)
 
-static uint32_t encode_whole_frac_8_10(double value, const char *name) {
+int spi_clk_ctrl_validate_whole_frac_8_10_value(double value, const char *name) {
   if (value < 0.0) {
     fprintf(stderr, "Invalid %s: %.6f. Must be non-negative.\n", name, value);
+    return -1;
+  }
+
+  uint32_t whole = (uint32_t)value;
+  double frac_float = (value - (double)whole) * 1000.0;
+  uint32_t frac = (uint32_t)(frac_float + 0.5);
+
+  // Fractional field is constrained to 1/8 increments => 125 milli-units.
+  frac = ((frac + 62) / 125) * 125;
+  if (frac >= 1000) {
+    whole += 1;
+  }
+
+  if (whole > 0xFF) {
+    fprintf(stderr, "Invalid %s: %.6f. Whole part exceeds 8 bits after quantization.\n", name, value);
+    return -1;
+  }
+
+  return 0;
+}
+
+static uint32_t encode_whole_frac_8_10(double value, const char *name) {
+  if (spi_clk_ctrl_validate_whole_frac_8_10_value(value, name) != 0) {
     exit(EXIT_FAILURE);
   }
 
@@ -39,11 +62,6 @@ static uint32_t encode_whole_frac_8_10(double value, const char *name) {
   if (frac >= 1000) {
     whole += 1;
     frac = 0;
-  }
-
-  if (whole > 0xFF) {
-    fprintf(stderr, "Invalid %s: %.6f. Whole part exceeds 8 bits.\n", name, value);
-    exit(EXIT_FAILURE);
   }
 
   return ((whole & 0xFF) << 10) | (frac & 0x3FF);

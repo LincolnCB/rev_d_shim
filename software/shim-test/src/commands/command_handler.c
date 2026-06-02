@@ -65,6 +65,13 @@ static command_entry_t command_table[] = {
   {"set_thresh_average", cmd_set_thresh_average, {1, 1, {-1}, "Set threshold average register to a 32-bit value"}},
   {"set_thresh_en", cmd_set_thresh_en, {1, 1, {-1}, "Set threshold enable register to a 32-bit value"}},
   {"spi_clk_freq", cmd_spi_clk_freq, {0, 0, {-1}, "Show SPI clock frequency in MHz (and Hz if verbose)"}},
+  {"source_clk_freq", cmd_source_clk_freq, {0, 0, {-1}, "Show source clock frequency in MHz (and Hz if verbose)"}},
+  {"get_clk_fb_mult", cmd_get_clk_fb_mult, {0, 0, {-1}, "Get SPI clock feedback multiplier"}},
+  {"set_clk_fb_mult", cmd_set_clk_fb_mult, {1, 1, {-1}, "Set SPI clock feedback multiplier"}},
+  {"get_clk_div", cmd_get_clk_div, {0, 0, {-1}, "Get SPI clock divider"}},
+  {"set_clk_div", cmd_set_clk_div, {1, 1, {-1}, "Set SPI clock divider"}},
+  {"spi_clk_load_default", cmd_spi_clk_load_default, {0, 0, {-1}, "Load default SPI clock parameters"}},
+  {"spi_clk_load_user", cmd_spi_clk_load_user, {0, 0, {-1}, "Load user SPI clock parameters"}},
   {"get_min_delay_times", cmd_get_min_delay_times, {0, 0, {-1}, "Show minimum delay times for DAC and ADC in SPI clock cycles"}},
 
   // ===== DAC COMMANDS (from dac_commands.h) =====

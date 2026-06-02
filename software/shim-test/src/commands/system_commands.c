@@ -238,6 +238,74 @@ int cmd_spi_clk_freq(const char** args, int arg_count, const command_flag_t* fla
   return 0;
 }
 
+int cmd_source_clk_freq(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  uint32_t freq_hz = sys_sts_get_source_clk_freq_hz(ctx->sys_sts, *(ctx->verbose));
+  if (*(ctx->verbose)) {
+    printf("Source clock frequency: %" PRIu32 " Hz (%.3f MHz)\n", freq_hz, freq_hz / 1000000.0);
+  } else {
+    printf("Source Clock: %.3f MHz\n", freq_hz / 1000000.0);
+  }
+  return 0;
+}
+
+int cmd_get_clk_fb_mult(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  double value = spi_clk_ctrl_get_clk_fb_mult(ctx->spi_clk_ctrl, *(ctx->verbose));
+  printf("clk_fb_mult: %.3f\n", value);
+  return 0;
+}
+
+int cmd_set_clk_fb_mult(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  char *endptr;
+  double value = strtod(args[0], &endptr);
+  if (*endptr != '\0') {
+    fprintf(stderr, "Invalid value for set_clk_fb_mult: '%s'. Must be a number.\n", args[0]);
+    return -1;
+  }
+
+  if (spi_clk_ctrl_validate_whole_frac_8_10_value(value, "clk_fb_mult") != 0) {
+    return -1;
+  }
+
+  spi_clk_ctrl_set_clk_fb_mult(ctx->spi_clk_ctrl, value, *(ctx->verbose));
+  printf("clk_fb_mult set to %.3f\n", value);
+  return 0;
+}
+
+int cmd_get_clk_div(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  double value = spi_clk_ctrl_get_clk_div(ctx->spi_clk_ctrl, *(ctx->verbose));
+  printf("clk_div: %.3f\n", value);
+  return 0;
+}
+
+int cmd_set_clk_div(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  char *endptr;
+  double value = strtod(args[0], &endptr);
+  if (*endptr != '\0') {
+    fprintf(stderr, "Invalid value for set_clk_div: '%s'. Must be a number.\n", args[0]);
+    return -1;
+  }
+
+  if (spi_clk_ctrl_validate_whole_frac_8_10_value(value, "clk_div") != 0) {
+    return -1;
+  }
+
+  spi_clk_ctrl_set_clk_div(ctx->spi_clk_ctrl, value, *(ctx->verbose));
+  printf("clk_div set to %.3f\n", value);
+  return 0;
+}
+
+int cmd_spi_clk_load_default(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  spi_clk_ctrl_load_default(ctx->spi_clk_ctrl, *(ctx->verbose));
+  printf("SPI clock load_default triggered.\n");
+  return 0;
+}
+
+int cmd_spi_clk_load_user(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  spi_clk_ctrl_load_user(ctx->spi_clk_ctrl, *(ctx->verbose));
+  printf("SPI clock load_user triggered.\n");
+  return 0;
+}
+
 // Get minimum delay times in SPI clock cycles
 int cmd_get_min_delay_times(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   uint32_t min_dac_delay_cycles = sys_sts_get_dac_min_delay_time(ctx->sys_sts, *(ctx->verbose));

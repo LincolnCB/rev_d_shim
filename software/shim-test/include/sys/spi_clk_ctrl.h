@@ -93,4 +93,8 @@ void spi_clk_ctrl_set_clk_duty(struct spi_clk_ctrl_t *spi_clk_ctrl, uint32_t clk
 void spi_clk_ctrl_load_default(struct spi_clk_ctrl_t *spi_clk_ctrl, bool verbose);
 void spi_clk_ctrl_load_user(struct spi_clk_ctrl_t *spi_clk_ctrl, bool verbose);
 
+// Validate values represented as 8-bit whole + 10-bit fractional(milli-units, quantized to 1/8)
+// Returns 0 when valid, -1 when invalid.
+int spi_clk_ctrl_validate_whole_frac_8_10_value(double value, const char *name);
+
 #endif // SPI_CLK_CTRL_H
