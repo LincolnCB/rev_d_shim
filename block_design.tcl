@@ -5,7 +5,7 @@
 ###############################################################################
 
 ## Variably define the channel count (MUST BE 1 TO 8 INCLUSIVE)
-set board_count 1
+set board_count 4
 
 
 ## Variably choose complexity of threshold module
@@ -18,16 +18,17 @@ set threshold_core_level 1
 
 
 ## Variably choose whether to use an external clock
-set use_ext_clk 0
+set use_ext_clk 1
 
-
-## Variably define the default SPI clock frequency (MHz)
-set spi_clk_freq_mhz 20.000
 
 ## Variably define the FIFO address widths (10 to 17 inclusive)
 # This sets the depth of the FIFOs as 2^ADDR_WIDTH
-# Larger FIFOs use more FPGA resources, but allow for longer bursts and more buffering.
+# Larger FIFOs use more FPGA resources, but allow for longer bursts / buffering.
 # This can hit the cap fast!
+# ----------------------------!!!!!!!!!!!!!!!!!!-------------------------------
+# If you change these, MAKE SURE to also change the corresponding parameters in
+#   the adc/dac/tri_ctrl .h files in software to prevent unclear AXI crashes
+# ----------------------------!!!!!!!!!!!!!!!!!!-------------------------------
 set dac_cmd_fifo_addr_width 13
 set dac_data_fifo_addr_width 12
 set adc_cmd_fifo_addr_width 10
@@ -54,11 +55,6 @@ if {$use_ext_clk != 0 && $use_ext_clk != 1} {
   exit 1
 }
 
-# If the default SPI clock frequency is not between 1 and 50 MHz, then error out
-if {$spi_clk_freq_mhz < 1.0 || $spi_clk_freq_mhz > 50.0} {
-  puts "Error: spi_clk_freq_mhz must be between 1.0 and 50.0."
-  exit 1
-}
 
 ###############################################################################
 #
@@ -293,6 +289,19 @@ cell shim:user:shutdown_sense shutdown_sense {} {
 ###############################################################################
 
 ### SPI clock control
+## Variably define the default SPI clock frequency (MHz)
+# ----------------------------!!!!!!!!!!!!!!!!!!-------------------------------
+# If you change this, MAKE SURE to also change the default parameters
+#   of the spi_clk_snoop core below to match the clock wizard configuration.
+# You can find these by looking in Vivado at the block diagram and double 
+#   clicking on the spi_clk_gen core, then going to "MMCM Settings" tab.
+set spi_clk_freq_mhz 30.000
+# If the default SPI clock frequency is not between 1 and 50 MHz, then error out
+if {$spi_clk_freq_mhz < 1.0 || $spi_clk_freq_mhz > 50.0} {
+  puts "Error: spi_clk_freq_mhz must be between 1.0 and 50.0."
+  exit 1
+}
+# ----------------------------!!!!!!!!!!!!!!!!!!-------------------------------
 if {$use_ext_clk} {
   # MMCM (handles down to 10 MHz input)
   # Includes power down and dynamic reconfiguration
@@ -317,10 +326,10 @@ if {$use_ext_clk} {
   cell shim:user:axi_clock_timing_snoop spi_clk_snoop {
     SOURCE_CLK_FREQ_HZ 30000000
     DIVCLK_DIVIDE_DEFAULT 1
-    CLKFBOUT_MULT_DEFAULT 33
-    CLKFBOUT_FRAC_MULT_DEFAULT 250
-    CLKOUT0_DIVIDE_DEFAULT 49
-    CLKOUT0_FRAC_DIVIDE_DEFAULT 875
+    CLKFBOUT_MULT_DEFAULT 32
+    CLKFBOUT_FRAC_MULT_DEFAULT 500
+    CLKOUT0_DIVIDE_DEFAULT 32
+    CLKOUT0_FRAC_DIVIDE_DEFAULT 500
     MAX_SPI_CLK_FREQ_HZ 100000000
   } {
     aclk ps/FCLK_CLK0
@@ -353,11 +362,11 @@ if {$use_ext_clk} {
   #    Check the block diagram in Vivado to verify if needed
   cell shim:user:axi_clock_timing_snoop spi_clk_snoop {
     SOURCE_CLK_FREQ_HZ 99999893
-    DIVCLK_DIVIDE_DEFAULT 1
-    CLKFBOUT_MULT_DEFAULT 8
-    CLKFBOUT_FRAC_MULT_DEFAULT 500
-    CLKOUT0_DIVIDE_DEFAULT 42
-    CLKOUT0_FRAC_DIVIDE_DEFAULT 500
+    DIVCLK_DIVIDE_DEFAULT 5
+    CLKFBOUT_MULT_DEFAULT 49
+    CLKFBOUT_FRAC_MULT_DEFAULT 875
+    CLKOUT0_DIVIDE_DEFAULT 33
+    CLKOUT0_FRAC_DIVIDE_DEFAULT 250
     MAX_SPI_CLK_FREQ_HZ 100000000
   } {
     aclk ps/FCLK_CLK0

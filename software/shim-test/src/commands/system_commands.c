@@ -262,12 +262,98 @@ int cmd_set_clk_fb_mult(const char** args, int arg_count, const command_flag_t* 
     return -1;
   }
 
-  if (spi_clk_ctrl_validate_whole_frac_8_10_value(value, "clk_fb_mult") != 0) {
+  if (value > 255.875 || value < 0.0) {
+    fprintf(stderr, "Invalid clk_fb_mult: %.3f. Multiplier must be between 0 and 255.875.\n", value);
     return -1;
   }
 
-  spi_clk_ctrl_set_clk_fb_mult(ctx->spi_clk_ctrl, value, *(ctx->verbose));
+  if (spi_clk_ctrl_set_clk_fb_mult(ctx->spi_clk_ctrl, ctx->sys_sts, value, *(ctx->verbose)) != 0) {
+    uint8_t clk_fb_div = spi_clk_ctrl_get_clk_fb_div(ctx->spi_clk_ctrl, false);
+    uint32_t source_clk_freq_hz = sys_sts_get_source_clk_freq_hz(ctx->sys_sts, false);
+    double quantized_fb_freq = (source_clk_freq_hz * value) / (double)clk_fb_div;
+    fprintf(stderr, "Invalid feedback clock configuration\n");
+    fprintf(stderr, "Internal feedback clock frequency would be approximately %.3f MHz, which is outside the valid range of 600 to 1200 MHz.\n", 
+      quantized_fb_freq / 1e6);
+    fprintf(stderr, "Adjust clk_fb_mult to achieve a feedback clock frequency within the valid range. Current clk_fb_div is %u, source clock frequency is %.3f MHz.\n",
+      clk_fb_div, source_clk_freq_hz / 1e6);
+    fprintf(stderr, "If you need to change both feedback terms together, use 'set_clk_fb <clk_fb_mult> <clk_fb_div>'.\n");
+    return -1;
+  }
+
   printf("clk_fb_mult set to %.3f\n", value);
+  return 0;
+}
+
+int cmd_set_clk_fb(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  char *mult_endptr;
+  double clk_fb_mult = strtod(args[0], &mult_endptr);
+  if (*mult_endptr != '\0') {
+    fprintf(stderr, "Invalid value for set_clk_fb: '%s'. First argument must be a number.\n", args[0]);
+    return -1;
+  }
+
+  char *div_endptr;
+  uint32_t clk_fb_div = parse_value(args[1], &div_endptr);
+  if (*div_endptr != '\0') {
+    fprintf(stderr, "Invalid value for set_clk_fb: '%s'. Second argument must be an integer.\n", args[1]);
+    return -1;
+  }
+
+  if (clk_fb_div == 0 || clk_fb_div > 0xFF) {
+    fprintf(stderr, "Invalid clk_fb_div: %u. Divider must be between 1 and 255.\n", clk_fb_div);
+    return -1;
+  }
+
+  if (clk_fb_mult > 255.875 || clk_fb_mult < 0.0) {
+    fprintf(stderr, "Invalid clk_fb_mult: %.3f. Multiplier must be between 0 and 255.875.\n", clk_fb_mult);
+    return -1;
+  }
+
+  if (spi_clk_ctrl_set_clk_fb(ctx->spi_clk_ctrl, ctx->sys_sts, clk_fb_mult, (uint8_t)clk_fb_div, *(ctx->verbose)) != 0) {
+    uint32_t source_clk_freq_hz = sys_sts_get_source_clk_freq_hz(ctx->sys_sts, false);
+    double quantized_fb_freq = (source_clk_freq_hz * clk_fb_mult) / (double)clk_fb_div;
+    fprintf(stderr, "Invalid feedback clock configuration\n");
+    fprintf(stderr, "Internal feedback clock frequency would be approximately %.3f MHz, which is outside the valid range of 600 to 1200 MHz.\n", quantized_fb_freq / 1e6);
+    fprintf(stderr, "Adjust clk_fb_mult and/or clk_fb_div to achieve a feedback clock frequency within the valid range. Current source clock frequency is %.3f MHz.\n",
+      source_clk_freq_hz / 1e6);
+    return -1;
+  }
+
+  printf("clk_fb set to mult %.3f, div %u\n", clk_fb_mult, (uint8_t)clk_fb_div);
+  return 0;
+}
+
+int cmd_get_clk_fb_div(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  uint8_t value = spi_clk_ctrl_get_clk_fb_div(ctx->spi_clk_ctrl, *(ctx->verbose));
+  printf("clk_fb_div: %u\n", value);
+  return 0;
+}
+
+int cmd_set_clk_fb_div(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  char *endptr;
+  uint32_t value = parse_value(args[0], &endptr);
+  if (*endptr != '\0') {
+    fprintf(stderr, "Invalid value for set_clk_fb_div: '%s'. Must be an integer.\n", args[0]);
+    return -1;
+  }
+
+  if (value == 0 || value > 0xFF) {
+    fprintf(stderr, "Invalid clk_fb_div: %u. Divider must be between 1 and 255.\n", value);
+    return -1;
+  }
+
+  if (spi_clk_ctrl_set_clk_fb_div(ctx->spi_clk_ctrl, ctx->sys_sts, (uint8_t)value, *(ctx->verbose)) != 0) {
+    double clk_fb_mult = spi_clk_ctrl_get_clk_fb_mult(ctx->spi_clk_ctrl, false);
+    uint32_t source_clk_freq_hz = sys_sts_get_source_clk_freq_hz(ctx->sys_sts, false);
+    double quantized_fb_freq = (source_clk_freq_hz * clk_fb_mult) / (double)value;
+    fprintf(stderr, "Invalid feedback clock configuration\n");
+    fprintf(stderr, "Internal feedback clock frequency would be approximately %.3f MHz, which is outside the valid range of 600 to 1200 MHz.\n", quantized_fb_freq / 1e6);
+    fprintf(stderr, "Adjust clk_fb_mult and/or clk_fb_div to achieve a feedback clock frequency within the valid range. Current clk_fb_mult is %.3f, source clock frequency is %.3f MHz.\n",
+      clk_fb_mult, source_clk_freq_hz / 1e6);
+    return -1;
+  }
+
+  printf("clk_fb_div set to %u\n", value);
   return 0;
 }
 
@@ -285,7 +371,8 @@ int cmd_set_clk_div(const char** args, int arg_count, const command_flag_t* flag
     return -1;
   }
 
-  if (spi_clk_ctrl_validate_whole_frac_8_10_value(value, "clk_div") != 0) {
+  if (value > 255.875 || value < 0.0) {
+    fprintf(stderr, "Invalid clk_div: %.3f. Divider must be between 0 and 255.875.\n", value);
     return -1;
   }
 

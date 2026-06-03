@@ -64,7 +64,9 @@ module shift_sub_div #(
           end
         end
       end else if (busy) begin
-        if ((dividend_shift > 0) && (iter_count < DIVIDEND_WIDTH)) begin
+        // Run a full DIVIDEND_WIDTH iterations; exiting early on dividend_shift==0
+        // drops LSB quotient bits when the dividend has trailing zeros.
+        if (iter_count < DIVIDEND_WIDTH) begin
           if ({remainder_work[DIVISOR_WIDTH-1:0], dividend_shift[DIVIDEND_WIDTH-1]} >= {1'b0, divisor_latched}) begin
             remainder_work <= {remainder_work[DIVISOR_WIDTH-1:0], dividend_shift[DIVIDEND_WIDTH-1]} - {1'b0, divisor_latched};
             quotient_work <= (quotient_work << 1) | {{(DIVIDEND_WIDTH-1){1'b0}}, 1'b1};

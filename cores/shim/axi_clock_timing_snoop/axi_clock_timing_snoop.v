@@ -209,6 +209,7 @@ reg  [49:0] div_dividend;
 reg  [25:0] div_divisor;
 wire [49:0] div_quotient;
 wire [25:0] div_remainder;
+wire        div_by_zero_calc;
 wire        div_done;
 
 shift_add_mult #(
@@ -233,9 +234,9 @@ shift_sub_div #(
   .start(div_start),
   .dividend(div_dividend),
   .divisor(div_divisor),
-  .quotient(div_quotient_wire),
-  .remainder(div_remainder_wire),
-  .div_by_zero(div_by_zero_wire),
+  .quotient(div_quotient),
+  .remainder(div_remainder),
+  .div_by_zero(div_by_zero_calc),
   .done(div_done)
 );
 
@@ -269,6 +270,8 @@ always @(posedge aclk) begin
     clkout0_divide_latched <= CLKOUT0_DIVIDE_DEFAULT_W;
     clkout0_frac_divide_latched <= CLKOUT0_FRAC_DIVIDE_DEFAULT_W;
     clk_div <= 26'd0;
+    mult_start <= 1'b0;
+    div_start <= 1'b0;
     div_by_zero <= 1'b0;
     freq_too_high <= 1'b0;
   end else begin
@@ -296,7 +299,7 @@ always @(posedge aclk) begin
           reconf_in_prog <= 1'b1;
           div_by_zero <= 1'b0;
           freq_too_high <= 1'b0;
-          reconfig_state <= S_GET_FULL_MULT;
+          reconfig_state <= S_STARTING;
         end
       end
 
@@ -353,7 +356,8 @@ always @(posedge aclk) begin
 
       S_CALC_DIV: begin
         if (div_done) begin
-          if (!div_by_zero) begin
+          div_by_zero <= div_by_zero_calc;
+          if (!div_by_zero_calc) begin
             if (div_quotient > MAX_SPI_CLK_FREQ_HZ) begin
               freq_too_high <= 1'b1;
               spi_clk_freq_hz <= MAX_SPI_CLK_FREQ_HZ;
@@ -362,7 +366,6 @@ always @(posedge aclk) begin
             end
           end else begin
             spi_clk_freq_hz <= SPI_CLK_FREQ_HZ_DEFAULT_W;
-            div_by_zero <= 1'b1;
           end
           reconf_in_prog <= 1'b0;
           reconfig_state <= S_IDLE;

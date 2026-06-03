@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// Forward declaration
+struct sys_sts_t;
+
 //////////////////// SPI Clock Control Definitions ////////////////////
 //// SPI clock control
 #define SPI_CLK_BASE            (uint32_t) 0x40200000
@@ -69,9 +72,10 @@ bool spi_clk_ctrl_locked(struct spi_clk_ctrl_t *spi_clk_ctrl, bool verbose);
 
 // Feedback clock configuration
 uint8_t spi_clk_ctrl_get_clk_fb_div(struct spi_clk_ctrl_t *spi_clk_ctrl, bool verbose);
-void spi_clk_ctrl_set_clk_fb_div(struct spi_clk_ctrl_t *spi_clk_ctrl, uint8_t clk_fb_div, bool verbose);
+int spi_clk_ctrl_set_clk_fb_div(struct spi_clk_ctrl_t *spi_clk_ctrl, struct sys_sts_t *sys_sts, uint8_t clk_fb_div, bool verbose);
 double spi_clk_ctrl_get_clk_fb_mult(struct spi_clk_ctrl_t *spi_clk_ctrl, bool verbose);
-void spi_clk_ctrl_set_clk_fb_mult(struct spi_clk_ctrl_t *spi_clk_ctrl, double clk_fb_mult, bool verbose);
+int spi_clk_ctrl_set_clk_fb_mult(struct spi_clk_ctrl_t *spi_clk_ctrl, struct sys_sts_t *sys_sts, double clk_fb_mult, bool verbose);
+int spi_clk_ctrl_set_clk_fb(struct spi_clk_ctrl_t *spi_clk_ctrl, struct sys_sts_t *sys_sts, double clk_fb_mult, uint8_t clk_fb_div, bool verbose);
 
 // Feedback clock phase
 int32_t spi_clk_ctrl_get_clk_fb_phase(struct spi_clk_ctrl_t *spi_clk_ctrl, bool verbose);
@@ -92,9 +96,5 @@ void spi_clk_ctrl_set_clk_duty(struct spi_clk_ctrl_t *spi_clk_ctrl, uint32_t clk
 // Load values
 void spi_clk_ctrl_load_default(struct spi_clk_ctrl_t *spi_clk_ctrl, bool verbose);
 void spi_clk_ctrl_load_user(struct spi_clk_ctrl_t *spi_clk_ctrl, bool verbose);
-
-// Validate values represented as 8-bit whole + 10-bit fractional(milli-units, quantized to 1/8)
-// Returns 0 when valid, -1 when invalid.
-int spi_clk_ctrl_validate_whole_frac_8_10_value(double value, const char *name);
 
 #endif // SPI_CLK_CTRL_H
