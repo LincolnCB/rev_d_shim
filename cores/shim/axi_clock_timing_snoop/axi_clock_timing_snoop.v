@@ -7,14 +7,14 @@ module axi_clock_timing_snoop # (
   parameter integer CLKFBOUT_FRAC_MULT_DEFAULT = 250,
   parameter integer CLKOUT0_DIVIDE_DEFAULT = 49,
   parameter integer CLKOUT0_FRAC_DIVIDE_DEFAULT = 875,
-  parameter integer MAX_SPI_CLK_FREQ_HZ = 100_000_000
+  parameter integer MAX_CLK_OUT_FREQ_HZ = 100_000_000
 )
 (
   input  wire        aclk,
   input  wire        aresetn,
 
   output wire [31:0] source_clk_freq_hz, // Source clock frequency in Hz (for reference)
-  output reg  [31:0] spi_clk_freq_hz,    // Calculated SPI clock frequency in Hz
+  output reg  [31:0] clk_out_freq_hz,    // Calculated clock out frequency in Hz
   output reg  [ 3:0] reconfig_state,
   output reg         reconf_in_prog,     // Reconfiguration in progress
   output reg         div_by_zero,        // Indicates if a divide-by-zero error occurred during calculations
@@ -110,13 +110,13 @@ wire clk_cfg_use_default = clk_cfg_load && !s_axi_wdata[1];
 
 // Max fractional value for multiplier/divider (represents 0.875)
 localparam [ 9:0] FRAC_MAX = 10'd875;
-localparam [63:0] SPI_CLK_NUM =
+localparam [63:0] CLK_NUM =
   (64'd1 * SOURCE_CLK_FREQ_HZ) *
   ((64'd1 * CLKFBOUT_MULT_DEFAULT) * 64'd1000 + (64'd1 * CLKFBOUT_FRAC_MULT_DEFAULT));
-localparam [63:0] SPI_CLK_DENOM =
+localparam [63:0] CLK_DENOM =
   (64'd1 * DIVCLK_DIVIDE_DEFAULT) *
   ((64'd1 * CLKOUT0_DIVIDE_DEFAULT) * 64'd1000 + (64'd1 * CLKOUT0_FRAC_DIVIDE_DEFAULT));
-localparam [31:0] SPI_CLK_FREQ_HZ_DEFAULT = SPI_CLK_NUM / SPI_CLK_DENOM;
+localparam [31:0] CLK_FREQ_HZ_DEFAULT = CLK_NUM / CLK_DENOM;
 // Make sure the defaults are valid values
 initial begin
   // First check basic validity
@@ -157,14 +157,14 @@ initial begin
   if (CLKOUT0_FRAC_DIVIDE_DEFAULT >= (1 << 10)) begin
     $error("CLKOUT0_FRAC_DIVIDE_DEFAULT must fit within 10 bits");
   end
-  if (MAX_SPI_CLK_FREQ_HZ >= (32'hFFFFFFFF)) begin
-    $error("MAX_SPI_CLK_FREQ_HZ must be less than %d to fit within 31 bits for calculations", (1 << 31));
+  if (MAX_CLK_OUT_FREQ_HZ >= (32'hFFFFFFFF)) begin
+    $error("MAX_CLK_OUT_FREQ_HZ must be less than %d to fit within 31 bits for calculations", (1 << 31));
   end
-  if (SPI_CLK_FREQ_HZ_DEFAULT >= MAX_SPI_CLK_FREQ_HZ) begin
-    $error("Default calculated SPI clock frequency (%d) must be less than MAX_SPI_CLK_FREQ_HZ (%d Hz)", SPI_CLK_FREQ_HZ_DEFAULT, MAX_SPI_CLK_FREQ_HZ);
+  if (CLK_FREQ_HZ_DEFAULT >= MAX_CLK_OUT_FREQ_HZ) begin
+    $error("Default calculated SPI clock frequency (%d) must be less than MAX_CLK_OUT_FREQ_HZ (%d Hz)", CLK_FREQ_HZ_DEFAULT, MAX_CLK_OUT_FREQ_HZ);
   end
-  if (SPI_CLK_FREQ_HZ_DEFAULT <= 1_000_000) begin
-    $error("Default calculated SPI clock frequency (%d) should be greater than 1 MHz", SPI_CLK_FREQ_HZ_DEFAULT);
+  if (CLK_FREQ_HZ_DEFAULT <= 1_000_000) begin
+    $error("Default calculated SPI clock frequency (%d) should be greater than 1 MHz", CLK_FREQ_HZ_DEFAULT);
   end
 end
 
@@ -175,7 +175,7 @@ localparam [ 7:0] CLKFBOUT_MULT_DEFAULT_W = CLKFBOUT_MULT_DEFAULT[7:0];
 localparam [ 9:0] CLKFBOUT_FRAC_MULT_DEFAULT_W = CLKFBOUT_FRAC_MULT_DEFAULT[9:0];
 localparam [ 7:0] CLKOUT0_DIVIDE_DEFAULT_W = CLKOUT0_DIVIDE_DEFAULT[7:0];
 localparam [ 9:0] CLKOUT0_FRAC_DIVIDE_DEFAULT_W = CLKOUT0_FRAC_DIVIDE_DEFAULT[9:0];
-localparam [31:0] SPI_CLK_FREQ_HZ_DEFAULT_W = SPI_CLK_FREQ_HZ_DEFAULT;
+localparam [31:0] CLK_FREQ_HZ_DEFAULT_W = CLK_FREQ_HZ_DEFAULT;
 
 // Output the source clock frequency as a reference
 assign source_clk_freq_hz = SOURCE_CLK_FREQ_HZ_W;
@@ -263,7 +263,7 @@ always @(posedge aclk) begin
   if (!resetn) begin
     reconf_in_prog <= 1'b0;
     reconfig_state <= S_IDLE;
-    spi_clk_freq_hz <= SPI_CLK_FREQ_HZ_DEFAULT_W;
+    clk_out_freq_hz <= CLK_FREQ_HZ_DEFAULT_W;
     divclk_divide_latched <= DIVCLK_DIVIDE_DEFAULT_W;
     clkfbout_mult_latched <= CLKFBOUT_MULT_DEFAULT_W;
     clkfbout_frac_mult_latched <= CLKFBOUT_FRAC_MULT_DEFAULT_W;
@@ -358,14 +358,14 @@ always @(posedge aclk) begin
         if (div_done) begin
           div_by_zero <= div_by_zero_calc;
           if (!div_by_zero_calc) begin
-            if (div_quotient > MAX_SPI_CLK_FREQ_HZ) begin
+            if (div_quotient > MAX_CLK_OUT_FREQ_HZ) begin
               freq_too_high <= 1'b1;
-              spi_clk_freq_hz <= MAX_SPI_CLK_FREQ_HZ;
+              clk_out_freq_hz <= MAX_CLK_OUT_FREQ_HZ;
             end else begin
-              spi_clk_freq_hz <= div_quotient[31:0];
+              clk_out_freq_hz <= div_quotient[31:0];
             end
           end else begin
-            spi_clk_freq_hz <= SPI_CLK_FREQ_HZ_DEFAULT_W;
+            clk_out_freq_hz <= CLK_FREQ_HZ_DEFAULT_W;
           end
           reconf_in_prog <= 1'b0;
           reconfig_state <= S_IDLE;
@@ -375,7 +375,7 @@ always @(posedge aclk) begin
       default: begin
         reconf_in_prog <= 1'b0;
         reconfig_state <= S_IDLE;
-        spi_clk_freq_hz <= SPI_CLK_FREQ_HZ_DEFAULT_W;
+        clk_out_freq_hz <= CLK_FREQ_HZ_DEFAULT_W;
         divclk_divide_latched <= DIVCLK_DIVIDE_DEFAULT_W;
         clkfbout_mult_latched <= CLKFBOUT_MULT_DEFAULT_W;
         clkfbout_frac_mult_latched <= CLKFBOUT_FRAC_MULT_DEFAULT_W;

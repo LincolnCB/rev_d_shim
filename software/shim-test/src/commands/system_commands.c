@@ -14,7 +14,7 @@
 #include "experiment_commands.h"
 #include "sys_sts.h"
 #include "sys_ctrl.h"
-#include "spi_clk_ctrl.h"
+#include "clk_ctrl.h"
 
 // Basic system commands
 int cmd_verbose(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
@@ -232,9 +232,9 @@ int cmd_set_data_buf_reset(const char** args, int arg_count, const command_flag_
 }
 
 // SPI clock frequency commands
-int cmd_spi_clk_freq(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  uint32_t freq_hz = sys_sts_get_spi_clk_freq_hz(ctx->sys_sts, *(ctx->verbose));
-  print_spi_clk_freq(freq_hz, *(ctx->verbose));
+int cmd_clk_freq(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  uint32_t freq_hz = sys_sts_get_clk_freq_hz(ctx->sys_sts, *(ctx->verbose));
+  print_clk_freq(freq_hz, *(ctx->verbose));
   return 0;
 }
 
@@ -249,7 +249,7 @@ int cmd_source_clk_freq(const char** args, int arg_count, const command_flag_t* 
 }
 
 int cmd_get_clk_fb_mult(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  double value = spi_clk_ctrl_get_clk_fb_mult(ctx->spi_clk_ctrl, *(ctx->verbose));
+  double value = clk_ctrl_get_clk_fb_mult(ctx->clk_ctrl, *(ctx->verbose));
   printf("clk_fb_mult: %.3f\n", value);
   return 0;
 }
@@ -267,8 +267,8 @@ int cmd_set_clk_fb_mult(const char** args, int arg_count, const command_flag_t* 
     return -1;
   }
 
-  if (spi_clk_ctrl_set_clk_fb_mult(ctx->spi_clk_ctrl, ctx->sys_sts, value, *(ctx->verbose)) != 0) {
-    uint8_t clk_fb_div = spi_clk_ctrl_get_clk_fb_div(ctx->spi_clk_ctrl, false);
+  if (clk_ctrl_set_clk_fb_mult(ctx->clk_ctrl, ctx->sys_sts, value, *(ctx->verbose)) != 0) {
+    uint8_t clk_fb_div = clk_ctrl_get_clk_fb_div(ctx->clk_ctrl, false);
     uint32_t source_clk_freq_hz = sys_sts_get_source_clk_freq_hz(ctx->sys_sts, false);
     double quantized_fb_freq = (source_clk_freq_hz * value) / (double)clk_fb_div;
     fprintf(stderr, "Invalid feedback clock configuration\n");
@@ -309,7 +309,7 @@ int cmd_set_clk_fb(const char** args, int arg_count, const command_flag_t* flags
     return -1;
   }
 
-  if (spi_clk_ctrl_set_clk_fb(ctx->spi_clk_ctrl, ctx->sys_sts, clk_fb_mult, (uint8_t)clk_fb_div, *(ctx->verbose)) != 0) {
+  if (clk_ctrl_set_clk_fb(ctx->clk_ctrl, ctx->sys_sts, clk_fb_mult, (uint8_t)clk_fb_div, *(ctx->verbose)) != 0) {
     uint32_t source_clk_freq_hz = sys_sts_get_source_clk_freq_hz(ctx->sys_sts, false);
     double quantized_fb_freq = (source_clk_freq_hz * clk_fb_mult) / (double)clk_fb_div;
     fprintf(stderr, "Invalid feedback clock configuration\n");
@@ -324,7 +324,7 @@ int cmd_set_clk_fb(const char** args, int arg_count, const command_flag_t* flags
 }
 
 int cmd_get_clk_fb_div(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  uint8_t value = spi_clk_ctrl_get_clk_fb_div(ctx->spi_clk_ctrl, *(ctx->verbose));
+  uint8_t value = clk_ctrl_get_clk_fb_div(ctx->clk_ctrl, *(ctx->verbose));
   printf("clk_fb_div: %u\n", value);
   return 0;
 }
@@ -342,8 +342,8 @@ int cmd_set_clk_fb_div(const char** args, int arg_count, const command_flag_t* f
     return -1;
   }
 
-  if (spi_clk_ctrl_set_clk_fb_div(ctx->spi_clk_ctrl, ctx->sys_sts, (uint8_t)value, *(ctx->verbose)) != 0) {
-    double clk_fb_mult = spi_clk_ctrl_get_clk_fb_mult(ctx->spi_clk_ctrl, false);
+  if (clk_ctrl_set_clk_fb_div(ctx->clk_ctrl, ctx->sys_sts, (uint8_t)value, *(ctx->verbose)) != 0) {
+    double clk_fb_mult = clk_ctrl_get_clk_fb_mult(ctx->clk_ctrl, false);
     uint32_t source_clk_freq_hz = sys_sts_get_source_clk_freq_hz(ctx->sys_sts, false);
     double quantized_fb_freq = (source_clk_freq_hz * clk_fb_mult) / (double)value;
     fprintf(stderr, "Invalid feedback clock configuration\n");
@@ -358,7 +358,7 @@ int cmd_set_clk_fb_div(const char** args, int arg_count, const command_flag_t* f
 }
 
 int cmd_get_clk_div(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  double value = spi_clk_ctrl_get_clk_div(ctx->spi_clk_ctrl, *(ctx->verbose));
+  double value = clk_ctrl_get_clk_div(ctx->clk_ctrl, *(ctx->verbose));
   printf("clk_div: %.3f\n", value);
   return 0;
 }
@@ -376,33 +376,49 @@ int cmd_set_clk_div(const char** args, int arg_count, const command_flag_t* flag
     return -1;
   }
 
-  spi_clk_ctrl_set_clk_div(ctx->spi_clk_ctrl, value, *(ctx->verbose));
+  clk_ctrl_set_clk_div(ctx->clk_ctrl, value, *(ctx->verbose));
   printf("clk_div set to %.3f\n", value);
   return 0;
 }
 
-int cmd_spi_clk_load_default(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  spi_clk_ctrl_load_default(ctx->spi_clk_ctrl, *(ctx->verbose));
+int cmd_clk_load_default(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  clk_ctrl_load_default(ctx->clk_ctrl, *(ctx->verbose));
   printf("SPI clock load_default triggered.\n");
   return 0;
 }
 
-int cmd_spi_clk_load_user(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  spi_clk_ctrl_load_user(ctx->spi_clk_ctrl, *(ctx->verbose));
+int cmd_clk_load_user(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  clk_ctrl_load_user(ctx->clk_ctrl, *(ctx->verbose));
   printf("SPI clock load_user triggered.\n");
   return 0;
 }
+
+int cmd_clk_set(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  char *endptr;
+  double target_freq_mhz = strtod(args[0], &endptr);
+  if (*endptr != '\0') {
+    fprintf(stderr, "Invalid value for clk_set: '%s'. Must be a number.\n", args[0]);
+    return -1;
+  }
+  if (clk_ctrl_set_target_freq(ctx->clk_ctrl, ctx->sys_sts, target_freq_mhz * 1e6, *(ctx->verbose))) {
+    fprintf(stderr, "Failed to set SPI clock to %.3f MHz.\n", target_freq_mhz);
+    return -1;
+  }
+  printf("SPI clock set to target frequency %.3f MHz\n", target_freq_mhz);
+  return 0;
+}
+  
 
 // Get minimum delay times in SPI clock cycles
 int cmd_get_min_delay_times(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   uint32_t min_dac_delay_cycles = sys_sts_get_dac_min_delay_time(ctx->sys_sts, *(ctx->verbose));
   uint32_t min_adc_delay_cycles = sys_sts_get_adc_min_delay_time(ctx->sys_sts, *(ctx->verbose));
-  double spi_clk_freq_mhz = ((double) sys_sts_get_spi_clk_freq_hz(ctx->sys_sts, false)) / 1e6;
-  double max_dac_sample_rate_khz = spi_clk_freq_mhz / min_dac_delay_cycles * 1e3;
-  double max_adc_sample_rate_khz = spi_clk_freq_mhz / min_adc_delay_cycles * 1e3;
-  double min_dac_delay_us = ((double) min_dac_delay_cycles) / spi_clk_freq_mhz;
-  double min_adc_delay_us = ((double) min_adc_delay_cycles) / spi_clk_freq_mhz;
-  printf("Minimum delay times (in SPI clock cycles at %.2f MHz):\n", spi_clk_freq_mhz);
+  double clk_freq_mhz = ((double) sys_sts_get_clk_freq_hz(ctx->sys_sts, false)) / 1e6;
+  double max_dac_sample_rate_khz = clk_freq_mhz / min_dac_delay_cycles * 1e3;
+  double max_adc_sample_rate_khz = clk_freq_mhz / min_adc_delay_cycles * 1e3;
+  double min_dac_delay_us = ((double) min_dac_delay_cycles) / clk_freq_mhz;
+  double min_adc_delay_us = ((double) min_adc_delay_cycles) / clk_freq_mhz;
+  printf("Minimum delay times (in SPI clock cycles at %.2f MHz):\n", clk_freq_mhz);
   printf("  DAC minimum delay: %u cycles (~%.2f us, max sample rate: ~%.2f kHz)\n", min_dac_delay_cycles, min_dac_delay_us, max_dac_sample_rate_khz);
   printf("  ADC minimum delay: %u cycles (~%.2f us, max sample rate: ~%.2f kHz)\n", min_adc_delay_cycles, min_adc_delay_us, max_adc_sample_rate_khz);
   printf(" WARNING: Clock cycles are exact, but corresponding times and sample rates could have rounding errors.\n");

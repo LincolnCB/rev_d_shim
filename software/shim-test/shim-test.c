@@ -13,7 +13,7 @@
 #include "sys_ctrl.h"
 #include "adc_ctrl.h"
 #include "dac_ctrl.h"
-#include "spi_clk_ctrl.h"
+#include "clk_ctrl.h"
 #include "sys_sts.h"
 #include "trigger_ctrl.h"
 #include "command_handler.h"
@@ -27,7 +27,7 @@ int main(int argc, char *argv[])
 
   //// Hardware control structures
   struct sys_ctrl_t sys_ctrl;         // System control and configuration
-  struct spi_clk_ctrl_t spi_clk_ctrl; // SPI clock control interface
+  struct clk_ctrl_t clk_ctrl;         // Clock control interface
   struct sys_sts_t sys_sts;           // System status
   struct dac_ctrl_t dac_ctrl;         // DAC command FIFOs (all boards)
   struct adc_ctrl_t adc_ctrl;         // ADC command and data FIFOs (all boards)
@@ -46,7 +46,7 @@ int main(int argc, char *argv[])
   sys_ctrl = create_sys_ctrl(verbose);
   printf("System control module initialized\n");
 
-  spi_clk_ctrl = create_spi_clk_ctrl(verbose);
+  clk_ctrl = create_clk_ctrl(verbose);
   printf("SPI clock control module initialized\n");
 
   sys_sts = create_sys_sts(verbose);
@@ -74,7 +74,7 @@ int main(int argc, char *argv[])
   bool should_exit = false;
   command_context_t cmd_ctx = {
     .sys_ctrl = &sys_ctrl,
-    .spi_clk_ctrl = &spi_clk_ctrl,
+    .clk_ctrl = &clk_ctrl,
     .sys_sts = &sys_sts,
     .dac_ctrl = &dac_ctrl,
     .adc_ctrl = &adc_ctrl,
@@ -92,11 +92,11 @@ int main(int argc, char *argv[])
     .trig_data_stream_stop = false,     // Initialize trigger data stream stop flag as false
     .fieldmap_running = false,          // Initialize fieldmap as not running
     .fieldmap_stop = false,             // Initialize fieldmap stop flag as false
-    .log_file = NULL,              // Initialize log file as NULL
-    .logging_enabled = false,      // Initialize logging as disabled
-    .adc_bias = {0.0},             // Initialize all ADC bias values to 0.0
-    .adc_bias_valid = {false},     // Initialize all ADC bias validity flags to false
-    .adc_bias_previous = {0.0},    // Initialize all previous ADC bias values to 0.0
+    .log_file = NULL,                   // Initialize log file as NULL
+    .logging_enabled = false,           // Initialize logging as disabled
+    .adc_bias = {0.0},                  // Initialize all ADC bias values to 0.0
+    .adc_bias_valid = {false},          // Initialize all ADC bias validity flags to false
+    .adc_bias_previous = {0.0},         // Initialize all previous ADC bias values to 0.0
     .adc_bias_previous_valid = {false}  // Initialize all previous ADC bias validity flags to false
   };
 

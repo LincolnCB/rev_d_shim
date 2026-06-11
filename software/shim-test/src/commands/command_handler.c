@@ -64,7 +64,7 @@ static command_entry_t command_table[] = {
   {"set_thresh_window", cmd_set_thresh_window, {1, 1, {-1}, "Set threshold window register to a 32-bit value"}},
   {"set_thresh_average", cmd_set_thresh_average, {1, 1, {-1}, "Set threshold average register to a 32-bit value"}},
   {"set_thresh_en", cmd_set_thresh_en, {1, 1, {-1}, "Set threshold enable register to a 32-bit value"}},
-  {"spi_clk_freq", cmd_spi_clk_freq, {0, 0, {-1}, "Show SPI clock frequency in MHz (and Hz if verbose)"}},
+  {"clk_freq", cmd_clk_freq, {0, 0, {-1}, "Show SPI clock frequency in MHz (and Hz if verbose)"}},
   {"source_clk_freq", cmd_source_clk_freq, {0, 0, {-1}, "Show source clock frequency in MHz (and Hz if verbose)"}},
   {"get_clk_fb_mult", cmd_get_clk_fb_mult, {0, 0, {-1}, "Get SPI clock feedback multiplier"}},
   {"set_clk_fb_mult", cmd_set_clk_fb_mult, {1, 1, {-1}, "Set SPI clock feedback multiplier"}},
@@ -73,8 +73,9 @@ static command_entry_t command_table[] = {
   {"set_clk_fb_div", cmd_set_clk_fb_div, {1, 1, {-1}, "Set SPI clock feedback divider"}},
   {"get_clk_div", cmd_get_clk_div, {0, 0, {-1}, "Get SPI clock divider"}},
   {"set_clk_div", cmd_set_clk_div, {1, 1, {-1}, "Set SPI clock divider"}},
-  {"spi_clk_load_default", cmd_spi_clk_load_default, {0, 0, {-1}, "Load default SPI clock parameters"}},
-  {"spi_clk_load_user", cmd_spi_clk_load_user, {0, 0, {-1}, "Load user SPI clock parameters"}},
+  {"clk_load_default", cmd_clk_load_default, {0, 0, {-1}, "Load default SPI clock parameters"}},
+  {"clk_load_user", cmd_clk_load_user, {0, 0, {-1}, "Load user SPI clock parameters"}},
+  {"clk_set", cmd_clk_set, {1, 1, {-1}, "Set SPI clock frequency to a target value in MHz (e.g. clk_set 25.5)"}},
   {"get_min_delay_times", cmd_get_min_delay_times, {0, 0, {-1}, "Show minimum delay times for DAC and ADC in SPI clock cycles"}},
 
   // ===== DAC COMMANDS (from dac_commands.h) =====
@@ -413,6 +414,16 @@ void print_help(void) {
   printf("\nConfiguration Commands:\n");
   for (int i = 0; i < total_commands; i++) {
     if (strstr(command_table[i].name, "set_") || strstr(command_table[i].name, "invert_")) {
+      char prefix[32];
+      snprintf(prefix, sizeof(prefix), "  %-20s ", command_table[i].name);
+      print_wrapped_line(prefix, command_table[i].info.description, "                         ");
+      printed[i] = true;
+    }
+  }
+
+  printf("\nClock Commands:\n");
+  for (int i = 0; i < total_commands; i++) {
+    if (strstr(command_table[i].name, "clk")) {
       char prefix[32];
       snprintf(prefix, sizeof(prefix), "  %-20s ", command_table[i].name);
       print_wrapped_line(prefix, command_table[i].info.description, "                         ");

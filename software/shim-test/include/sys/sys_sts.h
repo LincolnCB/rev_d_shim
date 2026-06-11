@@ -22,14 +22,14 @@
 #define TRIG_CMD_FIFO_STS_OFFSET    (uint32_t) 17 // Trigger command FIFO status
 #define TRIG_DATA_FIFO_STS_OFFSET   (uint32_t) 34 // Trigger data FIFO status
 // SPI clock frequency offset
-#define SPI_CLK_FREQ_OFFSET         (uint32_t) 35 // SPI clock frequency in Hz
+#define CLK_FREQ_OFFSET         (uint32_t) 35 // SPI clock frequency in Hz
 // SPI source clock frequency offset
 #define SOURCE_CLK_FREQ_OFFSET      (uint32_t) 36 // SPI source clock frequency in Hz
 // Trigger counter offset
 #define TRIG_COUNTER_OFFSET         (uint32_t) 37 // Trigger counter offset
 // Timing debug register
 #define DEBUG_REG_OFFSET            (uint32_t) 38 // Timing debug register offset
-#define DEBUG_SPI_CLK_LOCKED_BIT 0  // SPI clock locked status bit
+#define DEBUG_CLK_LOCKED_BIT     0  // SPI clock locked status bit
 #define DEBUG_SPI_OFF_BIT        1  // SPI off status bit
 #define DEBUG_DAC_CS_HIGH_TIME(word) (((word) >> 2) & 0x1F) // DAC ~CS high time (5 bits)
 #define DEBUG_ADC_CS_HIGH_TIME(word) (((word) >> 7) & 0xFF) // ADC ~CS high time (8 bits)
@@ -92,10 +92,10 @@
 #define STS_BOOT_TEST_SKIP_OOB       (uint32_t) 0x0208 // Boot test skip out of bounds.
 #define STS_DEBUG_OOB                (uint32_t) 0x0209 // Debug out of bounds.
 #define STS_DAC_CAL_INIT_OOB         (uint32_t) 0x020A // DAC calibration initial value out of bounds.
-#define STS_SPI_CLK_LOCKED_FAIL      (uint32_t) 0x020B // SPI clock manager PLL not locked.
-#define STS_SPI_CLK_RECONF_IN_PROG   (uint32_t) 0x020C // SPI clock reconfiguration in progress.
-#define STS_SPI_CLK_DIV_0            (uint32_t) 0x020D // SPI clock divided by zero.
-#define STS_SPI_CLK_OOB              (uint32_t) 0x020E // SPI clock frequency out of bounds.
+#define STS_CLK_LOCKED_FAIL          (uint32_t) 0x020B // SPI clock manager PLL not locked.
+#define STS_CLK_RECONF_IN_PROG       (uint32_t) 0x020C // SPI clock reconfiguration in progress.
+#define STS_CLK_DIV_0                (uint32_t) 0x020D // SPI clock divided by zero.
+#define STS_CLK_OOB                  (uint32_t) 0x020E // SPI clock frequency out of bounds.
 // Shutdown sense
 #define STS_SHUTDOWN_SENSE           (uint32_t) 0x0300 // Shutdown sense detected.
 #define STS_EXT_SHUTDOWN             (uint32_t) 0x0301 // External shutdown triggered.
@@ -150,7 +150,7 @@ struct sys_sts_t {
   volatile uint32_t *adc_data_fifo_sts[8]; // ADC data FIFO status for 8 boards
   volatile uint32_t *trig_cmd_fifo_sts;    // Trigger command FIFO status
   volatile uint32_t *trig_data_fifo_sts;   // Trigger data FIFO status
-  volatile uint32_t *spi_clk_freq_hz;      // SPI clock frequency in Hz
+  volatile uint32_t *clk_freq_hz;      // SPI clock frequency in Hz
   volatile uint32_t *source_clk_freq_hz;   // SPI source clock frequency in Hz
   volatile uint32_t *trig_counter;         // Trigger counter
   volatile uint32_t *debug;                // Debug register
@@ -168,7 +168,7 @@ struct sys_sts_t create_sys_sts(bool verbose);
 // Get hardware status register value
 uint32_t sys_sts_get_hw_status(struct sys_sts_t *sys_sts, bool verbose);
 // Get SPI clock frequency in Hz
-uint32_t sys_sts_get_spi_clk_freq_hz(struct sys_sts_t *sys_sts, bool verbose);
+uint32_t sys_sts_get_clk_freq_hz(struct sys_sts_t *sys_sts, bool verbose);
 // Get SPI source clock frequency in Hz
 uint32_t sys_sts_get_source_clk_freq_hz(struct sys_sts_t *sys_sts, bool verbose);
 // Get FIFO status from a status pointer
@@ -205,7 +205,7 @@ uint32_t sys_sts_get_adc_cmds_since_reset(struct sys_sts_t *sys_sts, uint8_t boa
 // Interpret and print hardware status
 void print_hw_status(uint32_t hw_status, bool verbose);
 // Print SPI clock frequency in Hz and MHz
-void print_spi_clk_freq(uint32_t freq_hz, bool verbose);
+void print_clk_freq(uint32_t freq_hz, bool verbose);
 // Print debug register
 void print_debug_register(struct sys_sts_t *sys_sts);
 // Print FIFO status details

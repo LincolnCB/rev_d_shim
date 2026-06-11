@@ -612,7 +612,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
 
   // Prompt for SPI frequency
   double spi_freq_mhz;
-  spi_freq_mhz = ((double) sys_sts_get_spi_clk_freq_hz(ctx->sys_sts, *(ctx->verbose))) / 1e6;
+  spi_freq_mhz = ((double) sys_sts_get_clk_freq_hz(ctx->sys_sts, *(ctx->verbose))) / 1e6;
   printf("Detected SPI clock frequency: %.3f MHz\n", spi_freq_mhz);
   // printf("Enter SPI clock frequency in MHz: ");
   // fflush(stdout);

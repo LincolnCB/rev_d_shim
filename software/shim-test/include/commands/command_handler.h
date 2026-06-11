@@ -10,7 +10,7 @@
 #include "adc_ctrl.h"
 #include "dac_ctrl.h"
 #include "trigger_ctrl.h"
-#include "spi_clk_ctrl.h"
+#include "clk_ctrl.h"
 
 // Include command module headers in logical order
 #include "command_helper.h"     // Shared utilities used by all modules

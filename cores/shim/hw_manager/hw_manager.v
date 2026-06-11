@@ -326,7 +326,6 @@ module hw_manager #(
           end else if (!spi_off) begin
             state <= S_WAIT_FOR_POW_EN;
             timer <= 0;
-            shutdown_rst <= 1;
           end else if (|dac_boot_fail || |adc_boot_fail || timer >= SPI_START_WAIT) begin
             // If the SPI subsystem is still off after the wait, or a channel failed to boot, halt the system
             state <= S_HALTING;
@@ -356,6 +355,7 @@ module hw_manager #(
             status_code <= STS_PS_SHUTDOWN;
           end else if (pow_en) begin
             state <= S_POWER_ON_AMP_BRD;
+            shutdown_rst <= 1;
             timer <= 0;
           end // if (pow_en)
         end // S_WAIT_FOR_POW_EN

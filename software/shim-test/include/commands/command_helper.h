@@ -11,7 +11,7 @@
 #include "adc_ctrl.h"
 #include "dac_ctrl.h"
 #include "trigger_ctrl.h"
-#include "spi_clk_ctrl.h"
+#include "clk_ctrl.h"
 
 #define MAX_ARGS 16     // Maximum command arguments (including command name)
 #define MAX_FLAGS 5     // Maximum command flags
@@ -31,7 +31,7 @@ typedef enum {
 typedef struct command_context {
   // Hardware control interfaces
   struct sys_ctrl_t* sys_ctrl;
-  struct spi_clk_ctrl_t* spi_clk_ctrl;
+  struct clk_ctrl_t* clk_ctrl;
   struct sys_sts_t* sys_sts;
   struct dac_ctrl_t* dac_ctrl;
   struct adc_ctrl_t* adc_ctrl;

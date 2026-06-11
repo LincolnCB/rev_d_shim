@@ -104,7 +104,7 @@ module trigger_core #(
   // Command done logic
   assign cmd_done = (state == S_IDLE && !cmd_buf_empty)
                   || (state == S_SYNC_CH && all_waiting)
-                  || (state == S_EXPECT_TRIG && ext_trig_counter == 0)
+                  || (state == S_EXPECT_TRIG && ext_trig_counter == 1 && lockout_counter == 0 && ext_trig_sync[1])
                   || (state == S_DELAY && delay_counter == 0)
                   || (state != S_ERROR && cancel); // Allow cancel at any time
   assign do_next_cmd = cmd_done && !cmd_buf_empty;
@@ -131,11 +131,11 @@ module trigger_core #(
     if (!resetn) trig_lockout <= TRIGGER_LOCKOUT_DEFAULT;
     else if (do_next_cmd && cmd_type == CMD_SET_LOCKOUT && cmd_val >= TRIGGER_LOCKOUT_MIN) trig_lockout <= cmd_val;
   end
-  // Expected trigger count
+  // Expected trigger count (note that 0 will be treated as "infinite")
   always @(posedge clk) begin
     if (!resetn || cancel || state == S_ERROR) ext_trig_counter <= 0;
     else if (do_next_cmd && cmd_type == CMD_EXPECT_EXT_TRIG) ext_trig_counter <= cmd_val;
-    else if (state == S_EXPECT_TRIG && do_trig) ext_trig_counter <= ext_trig_counter - 1;
+    else if (state == S_EXPECT_TRIG && do_trig) ext_trig_counter <= (ext_trig_counter == 0) ? 0 : ext_trig_counter - 1; // Decrement counter on trigger, but don't go below 0
   end
   // Delay counter, used in delay state
   always @(posedge clk) begin
@@ -153,7 +153,7 @@ module trigger_core #(
   assign do_trig = (do_next_cmd && cmd_type == CMD_FORCE_TRIG) // Force trigger
                     || (do_next_cmd && cmd_type == CMD_SYNC_CH && all_waiting) // Sync channels edge case where all channels are already waiting
                     || (state == S_SYNC_CH && all_waiting) // Sync channels when all are waiting
-                    || (state == S_EXPECT_TRIG && ext_trig_counter > 0 && lockout_counter == 0 && ext_trig_sync[1]); // External trigger when expected and lockout is done
+                    || (state == S_EXPECT_TRIG && lockout_counter == 0 && ext_trig_sync[1]); // External trigger when expected and lockout is done
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) trig_out <= 0;
     else trig_out <= do_trig; // Trigger pulse
@@ -166,7 +166,7 @@ module trigger_core #(
   assign do_log = (do_next_cmd && cmd_type == CMD_FORCE_TRIG && cmd_log_trig) // Force trigger with logging
                   || (do_next_cmd && cmd_type == CMD_SYNC_CH && all_waiting && cmd_log_trig) // Sync channels edge case with logging
                   || (state == S_SYNC_CH && all_waiting && log_trig) // Sync channels with logging
-                  || (state == S_EXPECT_TRIG && ext_trig_counter > 0 && lockout_counter == 0 && ext_trig_sync[1] && log_trig); // External trigger with logging
+                  || (state == S_EXPECT_TRIG && lockout_counter == 0 && ext_trig_sync[1] && log_trig); // External trigger with logging
 
   //// Error handling
   // Bad command

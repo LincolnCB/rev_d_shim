@@ -330,7 +330,7 @@ if {$use_ext_clk} {
     CLKFBOUT_FRAC_MULT_DEFAULT 500
     CLKOUT0_DIVIDE_DEFAULT 32
     CLKOUT0_FRAC_DIVIDE_DEFAULT 500
-    MAX_SPI_CLK_FREQ_HZ 100000000
+    MAX_CLK_FREQ_HZ 100000000
   } {
     aclk ps/FCLK_CLK0
     aresetn ps_rst/peripheral_aresetn
@@ -367,7 +367,7 @@ if {$use_ext_clk} {
     CLKFBOUT_FRAC_MULT_DEFAULT 875
     CLKOUT0_DIVIDE_DEFAULT 33
     CLKOUT0_FRAC_DIVIDE_DEFAULT 250
-    MAX_SPI_CLK_FREQ_HZ 100000000
+    MAX_CLK_FREQ_HZ 100000000
   } {
     aclk ps/FCLK_CLK0
     aresetn ps_rst/peripheral_aresetn
@@ -402,7 +402,7 @@ cell xilinx.com:ip:util_vector_logic n_unlock_cfg {
 cell shim:user:ad5676_dac_timing_calc dac_timing_calc {} {
   clk ps/FCLK_CLK0
   resetn ps_rst/peripheral_aresetn
-  spi_clk_freq_hz spi_clk_snoop/spi_clk_freq_hz
+  spi_clk_freq_hz spi_clk_snoop/clk_out_freq_hz
   calc n_unlock_cfg/Res
 }
 cell shim:user:ads816x_adc_timing_calc adc_timing_calc {
@@ -410,7 +410,7 @@ cell shim:user:ads816x_adc_timing_calc adc_timing_calc {
 } {
   clk ps/FCLK_CLK0
   resetn ps_rst/peripheral_aresetn
-  spi_clk_freq_hz spi_clk_snoop/spi_clk_freq_hz
+  spi_clk_freq_hz spi_clk_snoop/clk_out_freq_hz
   calc n_unlock_cfg/Res
 }
 ## OR the done signals together
@@ -608,7 +608,7 @@ cell xilinx.com:ip:xlconcat:2.1 sts_concat {
   In0 hw_manager/status_word
   In1 axi_spi_interface/cmd_fifo_sts
   In2 axi_spi_interface/data_fifo_sts
-  In3 spi_clk_snoop/spi_clk_freq_hz
+  In3 spi_clk_snoop/clk_out_freq_hz
   In4 spi_clk_snoop/source_clk_freq_hz
   In5 spi_clk_domain/trig_counter
   In6 debug_1/dout

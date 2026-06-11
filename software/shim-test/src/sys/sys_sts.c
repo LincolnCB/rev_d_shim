@@ -34,7 +34,7 @@ struct sys_sts_t create_sys_sts(bool verbose) {
   sys_sts.trig_data_fifo_sts = sys_sts_ptr + TRIG_DATA_FIFO_STS_OFFSET;
 
   // Initialize SPI clock frequency pointer
-  sys_sts.spi_clk_freq_hz = sys_sts_ptr + SPI_CLK_FREQ_OFFSET;
+  sys_sts.clk_freq_hz = sys_sts_ptr + CLK_FREQ_OFFSET;
 
   // Initialize SPI source clock frequency pointer
   sys_sts.source_clk_freq_hz = sys_sts_ptr + SOURCE_CLK_FREQ_OFFSET;
@@ -70,19 +70,19 @@ uint32_t sys_sts_get_hw_status(struct sys_sts_t *sys_sts, bool verbose) {
 }
 
 // Get SPI clock frequency in Hz
-uint32_t sys_sts_get_spi_clk_freq_hz(struct sys_sts_t *sys_sts, bool verbose) {
+uint32_t sys_sts_get_clk_freq_hz(struct sys_sts_t *sys_sts, bool verbose) {
   if (verbose) {
     printf("Reading SPI clock frequency register...\n");
-    printf("SPI clock frequency raw: 0x%" PRIx32 "\n", *(sys_sts->spi_clk_freq_hz));
+    printf("SPI clock frequency raw: 0x%"PRIx32 " (%" PRIu32 ")\n", *(sys_sts->clk_freq_hz), *(sys_sts->clk_freq_hz));
   }
-  return *(sys_sts->spi_clk_freq_hz);
+  return *(sys_sts->clk_freq_hz);
 }
 
 // Get SPI source clock frequency in Hz
 uint32_t sys_sts_get_source_clk_freq_hz(struct sys_sts_t *sys_sts, bool verbose) {
   if (verbose) {
     printf("Reading SPI source clock frequency register...\n");
-    printf("SPI source clock frequency raw: 0x%" PRIx32 "\n", *(sys_sts->source_clk_freq_hz));
+    printf("SPI source clock frequency raw: 0x%" PRIx32 " (%" PRIu32 ")\n", *(sys_sts->source_clk_freq_hz), *(sys_sts->source_clk_freq_hz));
   }
   return *(sys_sts->source_clk_freq_hz);
 }
@@ -189,16 +189,16 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
       case STS_DAC_CAL_INIT_OOB:
         printf("Status: DAC calibration initial value out of bounds\n");
         break;
-      case STS_SPI_CLK_LOCKED_FAIL:
+      case STS_CLK_LOCKED_FAIL:
         printf("Status: SPI clock manager PLL not locked\n");
         break;
-      case STS_SPI_CLK_RECONF_IN_PROG:
+      case STS_CLK_RECONF_IN_PROG:
         printf("Status: SPI clock reconfiguration in progress\n");
         break;
-      case STS_SPI_CLK_DIV_0:
+      case STS_CLK_DIV_0:
         printf("Status: SPI clock divided by zero\n");
         break;
-      case STS_SPI_CLK_OOB:
+      case STS_CLK_OOB:
         printf("Status: SPI clock frequency out of bounds\n");
         break;
       case STS_SHUTDOWN_SENSE:
@@ -319,7 +319,7 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
 }
 
 // Print SPI clock frequency in Hz and MHz
-void print_spi_clk_freq(uint32_t freq_hz, bool verbose) {
+void print_clk_freq(uint32_t freq_hz, bool verbose) {
   if (verbose) {
     printf("SPI clock frequency: %" PRIu32 " Hz (%.3f MHz)\n", freq_hz, freq_hz / 1000000.0);
   } else {
@@ -337,7 +337,7 @@ void print_debug_register(struct sys_sts_t *sys_sts) {
   printf(")\n");
 
   // Print specific bit interpretations
-  printf("  SPI Clock Locked: %s\n", (value & (1 << DEBUG_SPI_CLK_LOCKED_BIT)) ? "Yes" : "No");
+  printf("  SPI Clock Locked: %s\n", (value & (1 << DEBUG_CLK_LOCKED_BIT)) ? "Yes" : "No");
   printf("  SPI Off: %s\n", (value & (1 << DEBUG_SPI_OFF_BIT)) ? "Yes" : "No");
   printf("  DAC ~CS High Time: %u cycles\n", DEBUG_DAC_CS_HIGH_TIME(value));
   printf("  ADC ~CS High Time: %u cycles\n", DEBUG_ADC_CS_HIGH_TIME(value));

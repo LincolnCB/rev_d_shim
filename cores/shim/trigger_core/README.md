@@ -1,4 +1,4 @@
-**Updated 2026-05-29**
+**Updated 2026-06-08**
 # Trigger Core (`trigger_core`)
 
 The `trigger_core` module provides command-driven trigger orchestration for the Rev D shim firmware. It can synchronize ADC/DAC trigger consumers, gate external triggers with a programmable lockout, generate forced triggers, and optionally log trigger timestamps.
@@ -52,13 +52,13 @@ The `trigger_core` module provides command-driven trigger orchestration for the 
 
 - `EXPECT_EXT_TRIG (3'd3)`
   - Arms external-trigger counting for `[27:0]` events.
-  - A value of 0 completes immediately.
+  - 0 is special: it does not arm counting and is treated as "infinite" (will not complete based on count exhaustion, only by `CANCEL`).
   - Each accepted external trigger decrements the internal counter and emits `trig_out`.
   - If log-enable is set, each accepted trigger is logged.
 
 - `DELAY (3'd4)`
   - Waits `[27:0]` clock cycles.
-  - A value of 0 completes immediately.
+  - A value of 0 completes immediately (next cycle will be the next command).
 
 - `FORCE_TRIG (3'd5)`
   - Emits an immediate trigger pulse.
