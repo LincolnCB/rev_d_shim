@@ -225,7 +225,7 @@ module ads816x_adc_ctrl (
 
 
   //// ---- State machine transitions
-  // Allow a cancel command to cancel a delay or trigger wait
+  // Allow a cancel command to cancel commands
   assign cancel_wait = (state == S_DELAY || state == S_TRIG_WAIT || (state == S_ADC_RD && adc_rd_done))
                         && next_cmd_ready
                         && command == CMD_CANCEL;

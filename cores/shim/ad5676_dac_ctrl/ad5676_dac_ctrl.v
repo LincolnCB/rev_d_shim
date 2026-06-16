@@ -139,7 +139,7 @@ module ad5676_dac_ctrl #(
   wire        cmd_done;
   wire        do_next_cmd;
   wire [ 3:0] next_cmd_state;
-  wire        cancel_wait;
+  wire        cancel;
   wire        error;
   // Command word toggled bits
   reg         do_ldac;
@@ -222,10 +222,10 @@ module ad5676_dac_ctrl #(
   assign command = cmd_word[31:29];
   assign next_cmd_ready = !cmd_buf_empty;
   // Command word read enable
-  assign cmd_buf_rd_en = (state != S_ERROR) && next_cmd_ready && (read_next_dac_val_pair || cmd_done || cancel_wait);
+  assign cmd_buf_rd_en = (state != S_ERROR) && next_cmd_ready && (read_next_dac_val_pair || cmd_done || cancel);
   // Command bits processing
   always @(posedge clk) begin
-    if (!resetn || state == S_ERROR || cancel_wait) begin
+    if (!resetn || state == S_ERROR) begin
       do_ldac <= 1'b0;
       wait_for_trig <= 1'b0;
       expect_next <= 1'b0;
@@ -246,16 +246,21 @@ module ad5676_dac_ctrl #(
         wait_for_trig <= 1'b0;
         expect_next <= 1'b0;
       end
+    end else if (cancel) begin
+      do_ldac <= 1'b0;
+      expect_next <= 1'b0;
     end
   end
 
 
   //// ---- State machine transitions
-  // Allow a cancel command to cancel a delay or trigger wait:
-  //   Skips the trigger counter or delay timer to 0 next cycle, ending the wait immediately
-  assign cancel_wait =  (state == S_DELAY || state == S_TRIG_WAIT)
-                        && next_cmd_ready
-                        && command == CMD_CANCEL;
+  // Allow a cancel command to cancel command execution while in the DELAY or TRIG_WAIT states
+  //   Won't skip forward with PRE_DELAY because DAC data words are in the buffer, which can't be parsed as commands
+  //   However, a cancel command following a PRE_DELAY DAC command will still turn off the do_ldac and expect_next bits
+  //   This is done once the DAC_WR command has already loaded the DAC words from the buffer
+  assign cancel = (state == S_DELAY || state == S_TRIG_WAIT || (state == S_DAC_WR && last_dac_channel))
+                  && next_cmd_ready
+                  && command == CMD_CANCEL;
   // Current command is finished
   assign cmd_done = (state == S_IDLE && next_cmd_ready) // IDLE and next command is ready
                     // Waiting and wait is fully done
@@ -339,8 +344,8 @@ module ad5676_dac_ctrl #(
   end
   // CANCEL command can skip to the end of the wait
   always @(posedge clk) begin
-    // Reset delay timer on reset, error, or canceling a wait
-    if (!resetn || state == S_ERROR || cancel_wait) delay_timer <= 25'd0;
+    // Reset delay timer on reset, error, or canceling a delay wait
+    if (!resetn || state == S_ERROR || (cancel && state == S_DELAY)) delay_timer <= 25'd0;
     // If the next command is a DAC write or no-op with a delay wait, load the delay timer from command word
     else if (do_next_cmd
              && ((command == CMD_DAC_WR) || (command == CMD_NO_OP))
@@ -358,9 +363,9 @@ module ad5676_dac_ctrl #(
   //// ---- Trigger counter
   // Trigger wait is done when trigger counter occurs at 1, or finish immediately if trigger counter was 0
   assign trig_wait_done = (trigger && trigger_counter == 1) || trigger_counter == 0;
-  // CANCEL command can skip to the end of the wait
+  // CANCEL command can skip to the end of the wait 
   always @(posedge clk) begin
-    if (!resetn || state == S_ERROR || cancel_wait) trigger_counter <= 25'd0;
+    if (!resetn || state == S_ERROR || (cancel && state == S_TRIG_WAIT)) trigger_counter <= 25'd0;
     // If the next command is a DAC write or no-op with a trigger wait, load the trigger counter from command word
     else if (do_next_cmd
              && ((command == CMD_DAC_WR) || (command == CMD_NO_OP))
