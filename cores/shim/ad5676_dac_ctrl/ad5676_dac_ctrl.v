@@ -246,8 +246,11 @@ module ad5676_dac_ctrl #(
         wait_for_trig <= 1'b0;
         expect_next <= 1'b0;
       end
+    // If cancelling, un-set the ldac and expect_next flags, but set for trigger wait to properly handle
+    //   cancelling when in the middle of a DAC_WR command.
     end else if (cancel) begin
       do_ldac <= 1'b0;
+      wait_for_trig <= 1'b1;
       expect_next <= 1'b0;
     end
   end
@@ -363,9 +366,10 @@ module ad5676_dac_ctrl #(
   //// ---- Trigger counter
   // Trigger wait is done when trigger counter occurs at 1, or finish immediately if trigger counter was 0
   assign trig_wait_done = (trigger && trigger_counter == 1) || trigger_counter == 0;
-  // CANCEL command can skip to the end of the wait 
+  // CANCEL command can skip to the end of the wait
   always @(posedge clk) begin
-    if (!resetn || state == S_ERROR || (cancel && state == S_TRIG_WAIT)) trigger_counter <= 25'd0;
+    // Cancelling during the DAC_WR state will set the trigger counter to 0 to immediately end once the write is done
+    if (!resetn || state == S_ERROR || cancel) trigger_counter <= 25'd0;
     // If the next command is a DAC write or no-op with a trigger wait, load the trigger counter from command word
     else if (do_next_cmd
              && ((command == CMD_DAC_WR) || (command == CMD_NO_OP))
