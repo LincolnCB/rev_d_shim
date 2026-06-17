@@ -417,7 +417,7 @@ uint32_t sys_sts_get_trig_data_fifo_status(struct sys_sts_t *sys_sts, bool verbo
 }
 
 // Get trigger counter value
-uint32_t sys_sts_get_trig_counter(struct sys_sts_t *sys_sts, bool verbose) {
+uint32_t sys_sts_get_trig_count(struct sys_sts_t *sys_sts, bool verbose) {
   if (verbose) {
     printf("Reading trigger counter register...\n");
     printf("Trigger counter raw: 0x%" PRIx32 "\n", *(sys_sts->trig_counter));

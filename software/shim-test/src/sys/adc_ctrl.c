@@ -429,8 +429,10 @@ char* adc_format_pair(uint32_t data_word, bool verbose) {
     strcat(buffer, temp_buffer);
   }
 
-  int16_t first_value = (int16_t)(data_word & 0xFFFF);
-  int16_t second_value = (int16_t)((data_word >> 16) & 0xFFFF);
+  uint16_t first_value_raw = (uint16_t)(data_word & 0xFFFF);
+  int16_t first_value = (first_value_raw <= 32767) ? (int16_t)first_value_raw : (int16_t)(first_value_raw - 65536);
+  uint16_t second_value_raw = (uint16_t)((data_word >> 16) & 0xFFFF);
+  int16_t second_value = (second_value_raw <= 32767) ? (int16_t)second_value_raw : (int16_t)(second_value_raw - 65536);
 
   snprintf(temp_buffer, sizeof(temp_buffer), "%d, %d", first_value, second_value);
   strcat(buffer, temp_buffer);

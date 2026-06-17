@@ -64,8 +64,14 @@ void trigger_cmd_expect_ext(struct trigger_ctrl_t *trigger_ctrl, uint32_t count,
                       (count & TRIG_CMD_VALUE_MASK);
 
   if (verbose) {
-    printf("  Writing trigger expect_ext command: 0x%08X (cmd=0x%X, log=%d, count=%u)\n",
-           cmd_word, TRIG_CMD_EXPECT_EXT, log ? 1 : 0, count);
+    printf("  Writing trigger expect_ext command: 0x%08X (cmd=0x%X, log=%d, count=",
+           cmd_word, TRIG_CMD_EXPECT_EXT, log ? 1 : 0);
+    if (count == 0) {
+      printf("infinite");
+    } else {
+      printf("%u", count);
+    }
+    printf(")\n");
   }
 
   *(trigger_ctrl->buffer) = cmd_word;
