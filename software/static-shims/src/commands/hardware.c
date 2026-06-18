@@ -208,7 +208,7 @@ int hw_clear_adc_buffers(hw_t *hw) {
   }
   uint32_t adc_buf_reset_mask = 0;
   for (uint32_t i = 0; i < ((hw->channel_count - 1) / 8 + 1); i++) {
-    adc_buf_reset_mask |= (0x10 << 2 * i); // adc buffer reset bit for board i
+    adc_buf_reset_mask |= (0x2 << 2 * i); // adc buffer reset bit for board i
   }
   sys_ctrl_set_cmd_buf_reset(&hw->sys_ctrl, adc_buf_reset_mask, hw->verbose);
   sys_ctrl_set_data_buf_reset(&hw->sys_ctrl, adc_buf_reset_mask, hw->verbose);
@@ -245,8 +245,8 @@ int hw_clear_trigger_buffers(hw_t *hw) {
   if (hw == NULL) {
     return -1;
   }
-  sys_ctrl_set_cmd_buf_reset(&hw->sys_ctrl, 0x100000, hw->verbose);
-  sys_ctrl_set_data_buf_reset(&hw->sys_ctrl, 0x100000, hw->verbose);
+  sys_ctrl_set_cmd_buf_reset(&hw->sys_ctrl, 0x10000, hw->verbose);
+  sys_ctrl_set_data_buf_reset(&hw->sys_ctrl, 0x10000, hw->verbose);
   HW_SLEEP; // Sleep to allow hardware to process buffer resets
   sys_ctrl_set_cmd_buf_reset(&hw->sys_ctrl, 0, hw->verbose);
   sys_ctrl_set_data_buf_reset(&hw->sys_ctrl, 0, hw->verbose);
