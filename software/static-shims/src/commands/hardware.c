@@ -57,6 +57,29 @@ hw_t hw_init(uint32_t channel_count, bool verbose) {
   return hw;
 }
 
+// Print full hardware status to stdout
+void hw_status_summary(hw_t *hw) {
+  if (hw == NULL) {
+    fprintf(stderr, "Error: hw pointer is NULL in hw_status_summary.\n");
+    return;
+  }
+  // Print state
+  printf("  Hardware status        : ");
+  print_hw_status(sys_sts_get_hw_status(&hw->sys_sts, hw->verbose), hw->verbose);
+  // Print FIFO buffer count for each board
+  for (uint32_t i = 0; i < ((hw->channel_count - 1) / 8 + 1); i++) {
+    printf("  DAC %u cmd FIFO count   : %u\n", i, FIFO_STS_WORD_COUNT(sys_sts_get_dac_cmd_fifo_status(&hw->sys_sts, i, hw->verbose)));
+    printf("  DAC %u data FIFO count  : %u\n", i, FIFO_STS_WORD_COUNT(sys_sts_get_dac_data_fifo_status(&hw->sys_sts, i, hw->verbose)));
+  }
+  for (uint32_t i = 0; i < ((hw->channel_count - 1) / 8 + 1); i++) {
+    printf("  ADC %u cmd FIFO count   : %u\n", i, FIFO_STS_WORD_COUNT(sys_sts_get_adc_cmd_fifo_status(&hw->sys_sts, i, hw->verbose)));
+    printf("  ADC %u data FIFO count  : %u\n", i, FIFO_STS_WORD_COUNT(sys_sts_get_adc_data_fifo_status(&hw->sys_sts, i, hw->verbose)));
+  }
+  printf("  Trigger cmd FIFO count : %u\n", FIFO_STS_WORD_COUNT(sys_sts_get_trig_cmd_fifo_status(&hw->sys_sts, hw->verbose)));
+  printf("  Trigger data FIFO count: %u\n", FIFO_STS_WORD_COUNT(sys_sts_get_trig_data_fifo_status(&hw->sys_sts, hw->verbose)));
+  return;
+}
+
 // Configure clock to 10 MHz. Returns 0 on success, non-zero on failure
 // Returns 0 on success, non-zero on failure
 int hw_set_clk(hw_t *hw) {
@@ -70,6 +93,8 @@ int hw_set_clk(hw_t *hw) {
     fprintf(stderr, "Error: failed to set SPI clock frequency.\n");
     return -1;
   }
+  // Sleep to allow hardware to stabilize after clock change
+  HW_SLEEP;
   // Verify that clock frequency is within 100 kHz of target
   uint32_t clk_freq = sys_sts_get_clk_freq_hz(&hw->sys_sts, hw->verbose);
   if (hw->verbose) {
@@ -95,6 +120,8 @@ int hw_power_on(hw_t *hw) {
     printf("Turning control board on...\n");
   }
   sys_ctrl_turn_ctrl_on(&hw->sys_ctrl, hw->verbose);
+  // Wait 200ms for necessary power-on pulse durations
+  usleep(200000);
   uint32_t hw_status = sys_sts_get_hw_status(&hw->sys_sts, hw->verbose);
   if (HW_STS_STATE(hw_status) == S_HALTED) {
     fprintf(stderr, "Error: hardware is in HALTED state after power on. Status: 0x%08X\n", hw_status);
@@ -109,6 +136,8 @@ int hw_power_on(hw_t *hw) {
     printf("Turning power amp on...\n");
   }
   sys_ctrl_turn_pow_on(&hw->sys_ctrl, hw->verbose);
+  // Wait 200ms for necessary power-on pulse durations
+  usleep(200000);
   hw_status = sys_sts_get_hw_status(&hw->sys_sts, hw->verbose);
   if (HW_STS_STATE(hw_status) != S_RUNNING) {
     fprintf(stderr, "Error: hardware failed to enter RUNNING state after power on. Status: 0x%08X\n", hw_status);
@@ -180,6 +209,14 @@ int hw_clear_dac_buffers(hw_t *hw) {
   
   // If powered on, send cancel commands to all DAC boards to clear any running commands
   if (hw_running(hw)) {
+    if (hw_halted(hw)) {
+      fprintf(stderr, "Error: hardware is halted while trying to clear DAC buffers.\n");
+      if (!(hw->verbose)) {
+        uint32_t hw_status = sys_sts_get_hw_status(&hw->sys_sts, hw->verbose);
+        print_hw_status(hw_status, hw->verbose);
+      }
+      return -1;
+    }
     for (uint32_t i = 0; i < ((hw->channel_count - 1) / 8 + 1); i++) {
       dac_cmd_cancel(&hw->dac_ctrl, i, hw->verbose);
     }
@@ -835,6 +872,9 @@ int hw_set_dac_channel(hw_t *hw, uint32_t channel, double value_amps) {
   }
 
   // Clear DAC buffers
+  if (hw->verbose) {
+    printf(" -- Clearing DAC buffers before setting channel %u to %.3f amps\n", channel, value_amps);
+  }
   hw_clear_dac_buffers(hw);
 
   uint8_t board = channel / 8;
@@ -863,7 +903,7 @@ int hw_set_dac_channel(hw_t *hw, uint32_t channel, double value_amps) {
 
 // Send DAC set all channels command with values in amps 
 // (buffer is HW_MAX_CHANNELS in length and indexed by channel number)
-int hw_set_dacs(hw_t *hw, double *amps) {
+int hw_set_dacs(hw_t *hw, const double *amps) {
   if (hw == NULL || amps == NULL) {
     return -1;
   }

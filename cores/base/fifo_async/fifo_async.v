@@ -64,6 +64,7 @@ module fifo_async #(
   reg [ADDR_WIDTH:0] wr_ptr_bin;
   reg [ADDR_WIDTH:0] wr_ptr_gray; // the gray code version of the pointer is used for synchronization
   wire [ADDR_WIDTH:0] wr_ptr_bin_rd_clk;
+  wire wr_rst_n_rd_clk;
 
   reg  [ADDR_WIDTH:0] rd_ptr_bin;
   wire [ADDR_WIDTH:0] rd_ptr_bin_next;
@@ -136,11 +137,24 @@ module fifo_async #(
   end
   assign rd_ptr_bin_wr_clk = gray_to_binary(rd_ptr_gray_wr_clk_sync2);
 
+  // Use double-flop synchronizers for for wr_rst_n to read clock domain for empty flag
+  (* ASYNC_REG = "TRUE" *) reg wr_rst_n_rd_clk_sync1, wr_rst_n_rd_clk_sync2;
+  always @(posedge rd_clk or negedge rd_rst_n) begin
+    if (!rd_rst_n) begin
+      wr_rst_n_rd_clk_sync1 <= 0;
+      wr_rst_n_rd_clk_sync2 <= 0;
+    end else begin
+      wr_rst_n_rd_clk_sync1 <= wr_rst_n;
+      wr_rst_n_rd_clk_sync2 <= wr_rst_n_rd_clk_sync1;
+    end
+  end
+  assign wr_rst_n_rd_clk = wr_rst_n_rd_clk_sync2;
+
   // Generate full and empty flags
   assign full = ( (wr_ptr_bin[ADDR_WIDTH] != rd_ptr_bin_wr_clk[ADDR_WIDTH]) &&
           (wr_ptr_bin[ADDR_WIDTH-1:0] == rd_ptr_bin_wr_clk[ADDR_WIDTH-1:0]) );
 
-  assign empty = (rd_ptr_bin == wr_ptr_bin_rd_clk);
+  assign empty = (rd_ptr_bin == wr_ptr_bin_rd_clk) || !rd_rst_n || !wr_rst_n_rd_clk;
 
   // ALMOST FULL calculation is done in write clock domain
   assign fifo_count_wr_clk = wr_ptr_bin - rd_ptr_bin_wr_clk;

@@ -30,6 +30,9 @@ typedef struct {
 // Returns a populated hw_t
 hw_t hw_init(uint32_t channel_count, bool verbose);
 
+// Print full hardware status to stdout
+void hw_status_summary(hw_t *hw);
+
 // Configure clock. Returns 0 on success, non-zero on failure
 int hw_set_clk(hw_t *hw);
 
@@ -87,6 +90,6 @@ int hw_set_dac_channel(hw_t *hw, uint32_t channel, double amps);
 
 // Send DAC set all channels command with values in amps 
 // (buffer is HW_MAX_CHANNELS in length and indexed by channel number)
-int hw_set_dacs(hw_t *hw, double *amps);
+int hw_set_dacs(hw_t *hw, const double *amps);
 
 #endif // BOOT_H

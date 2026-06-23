@@ -20,7 +20,7 @@ void commands_cleanup_state(shim_runtime_state_t *state) {
   if (state == NULL) {
     return;
   }
-  if (file_loader_get_status(&state->loader) == FILE_LOADER_RUNNING) {
+  if (file_loader_get_status(&state->loader) == FILE_LOADER_LOADED) {
     file_loader_request_stop(&state->loader);
     file_loader_join(&state->loader, NULL);
   }
@@ -59,27 +59,21 @@ void commands_print_status(shim_runtime_state_t *state) {
   }
   
   printf("Status:\n");
-  printf("  Channel count   : %u\n", state->hw->channel_count);
+  printf("  Channel count          : %u\n", state->hw->channel_count);
   // File status
   file_loader_status_t loader_status = file_loader_get_status(&state->loader);
-  if (loader_status == FILE_LOADER_IDLE) {
+  if (loader_status == FILE_LOADER_EMPTY) {
     printf("  No file currently loaded.\n");
-  } else if (loader_status == FILE_LOADER_RUNNING) {
-    printf("  Loaded file     : %s\n", state->loader.path);
-    printf("  Trigger count   : %u\n", hw_get_trigger_count(state->hw));
-  } else if (loader_status == FILE_LOADER_DONE) {
-    printf("  File done       : %s\n", state->loader.path);
-  } else if (loader_status == FILE_LOADER_STOPPED) {
-    printf("  File stopped    : %s\n", state->loader.path);
+  } else if (loader_status == FILE_LOADER_LOADED) {
+    printf("  Loaded file            : %s\n", state->loader.path);
+    printf("  Trigger count          : %u\n", hw_get_trigger_count(state->hw));
   } else if (loader_status == FILE_LOADER_ERROR) {
-    printf("  ERROR File error %s\n", state->loader.path);
-  } else {
-    printf("  ERROR File loader in unknown state for file %s\n", state->loader.path);
+    printf("  ERROR File error       : %s\n", state->loader.path);
   }
-  printf("  Last file       : %s\n", state->last_file[0] != '\0' ? state->last_file : "(none)");
-  printf("  Trigger lockout : %.4f ms\n", state->trigger_lockout_ms);
-  printf("  Hardware state  :");
-  print_hw_status(sys_sts_get_hw_status(&state->hw->sys_sts, state->verbose), state->verbose);
+  printf("  Last file              : %s\n", state->last_file[0] != '\0' ? state->last_file : "(none)");
+  printf("  Trigger lockout        : %.4f ms\n", state->trigger_lockout_ms);
+  // Hardware status
+  hw_status_summary(state->hw);
 }
 
 // Enable amplifier system power
@@ -105,7 +99,7 @@ static bool run_power_on(shim_runtime_state_t *state) {
     return false;
   }
   // If a file is loaded, set trigger lockout and start triggers to begin playback
-  if (file_loader_get_status(&state->loader) == FILE_LOADER_RUNNING) {
+  if (file_loader_get_status(&state->loader) == FILE_LOADER_LOADED) {
     printf("File is loaded, starting triggers with lockout %.4f ms.\n", state->trigger_lockout_ms);
     if (hw_set_trigger_lockout(state->hw, state->trigger_lockout_ms) != 0) {
       fprintf(stderr, "P: failed to set trigger lockout.\n");
@@ -126,7 +120,7 @@ static bool run_hard_reset(shim_runtime_state_t *state) {
   }
   printf("Performing hard reset: power off and unload file.\n");
   // Stop any in-flight file load before resetting hardware state
-  if (file_loader_get_status(&state->loader) == FILE_LOADER_RUNNING) {
+  if (file_loader_get_status(&state->loader) == FILE_LOADER_LOADED) {
     file_loader_request_stop(&state->loader);
     file_loader_join(&state->loader, NULL);
   }
@@ -145,7 +139,7 @@ static bool run_zero(shim_runtime_state_t *state) {
   if (state == NULL) {
     return false;
   }
-  if (file_loader_get_status(&state->loader) == FILE_LOADER_RUNNING) {
+  if (file_loader_get_status(&state->loader) == FILE_LOADER_LOADED) {
     printf("Exiting loaded file.\n");
     file_loader_request_stop(&state->loader);
     file_loader_join(&state->loader, NULL);
@@ -184,7 +178,7 @@ static bool run_read(const parsed_command_t *cmd, shim_runtime_state_t *state) {
     printf("ADC current values:\n");
   }
   for (uint32_t ch = 0; ch < state->hw->channel_count; ch++) {
-    printf("  Channel %2u: %.6f A\n", ch, adc_values_amps[ch]);
+    printf("  Channel %2u: %+.6f A\n", ch, adc_values_amps[ch]);
   }
   return true;
 }
@@ -205,7 +199,7 @@ static bool run_set_channel(const parsed_command_t *cmd, shim_runtime_state_t *s
     fprintf(stderr, "Cannot set channel because hardware is not powered on.\n");
     return false;
   }
-  if (file_loader_get_status(&state->loader) == FILE_LOADER_RUNNING) {
+  if (file_loader_get_status(&state->loader) == FILE_LOADER_LOADED) {
     printf("Cancelling in-progress file to apply manual channel update (you can use 'L' to reload it from the beginning).\n");
     file_loader_request_stop(&state->loader);
     file_loader_join(&state->loader, NULL);
@@ -240,7 +234,7 @@ static bool run_update(const parsed_command_t *cmd, shim_runtime_state_t *state)
     fprintf(stderr, "Cannot update channels because hardware is not powered on.\n");
     return false;
   }
-  if (file_loader_get_status(&state->loader) == FILE_LOADER_RUNNING) {
+  if (file_loader_get_status(&state->loader) == FILE_LOADER_LOADED) {
     printf("Cancelling in-progress file to apply manual update to all channels (you can use 'L' to reload from the beginning).\n");
     file_loader_request_stop(&state->loader);
     file_loader_join(&state->loader, NULL);
@@ -268,8 +262,8 @@ static bool run_update(const parsed_command_t *cmd, shim_runtime_state_t *state)
 }
 
 // Run calibration when no file is loaded and hardware is powered on
-static bool run_calibrate(const shim_runtime_state_t *state) {
-  if (file_loader_get_status(&state->loader) == FILE_LOADER_RUNNING) {
+static bool run_calibrate(shim_runtime_state_t *state) {
+  if (file_loader_get_status(&state->loader) == FILE_LOADER_LOADED) {
     printf("Cannot run calibration while a file is loaded. Please exit the file first using the 'E' command.\n");
     return false;
   }
@@ -291,7 +285,7 @@ static bool run_set_trigger_lockout(const parsed_command_t *cmd, shim_runtime_st
   if (cmd == NULL) {
     return false;
   }
-   if (file_loader_get_status(&state->loader) == FILE_LOADER_RUNNING) {
+   if (file_loader_get_status(&state->loader) == FILE_LOADER_LOADED) {
     printf("Cannot set trigger lockout while a file is loaded. Please exit the file first using the 'E' command.\n");
     return false;
   }
@@ -327,7 +321,7 @@ static bool run_load(const parsed_command_t *cmd, shim_runtime_state_t *state) {
   // If a previous load is still in flight, stop it and wait for it to exit
   // before touching the hardware buffers
   file_loader_status_t prev_status = file_loader_get_status(&state->loader);
-  if (prev_status == FILE_LOADER_RUNNING) {
+  if (prev_status == FILE_LOADER_LOADED) {
     printf("Cancelling in-progress file load...\n");
     file_loader_request_stop(&state->loader);
     file_loader_join(&state->loader, NULL);
@@ -384,14 +378,14 @@ static bool run_exit_file(shim_runtime_state_t *state) {
   if (state == NULL) {
     return false;
   }
-  if (file_loader_get_status(&state->loader) != FILE_LOADER_RUNNING) {
+  if (file_loader_get_status(&state->loader) != FILE_LOADER_LOADED) {
     printf("No file is currently loaded.\n");
     return true;
   }
 
   // Stop any in-flight file load before exiting file mode
   printf("Exiting loaded file and resetting trigger counter.\n");
-  if (file_loader_get_status(&state->loader) == FILE_LOADER_RUNNING) {
+  if (file_loader_get_status(&state->loader) == FILE_LOADER_LOADED) {
     file_loader_request_stop(&state->loader);
     file_loader_join(&state->loader, NULL);
   }
@@ -426,7 +420,7 @@ static bool run_reset(shim_runtime_state_t *state) {
   if (state == NULL) {
     return false;
   }
-  if (file_loader_get_status(&state->loader) != FILE_LOADER_RUNNING) {
+  if (file_loader_get_status(&state->loader) != FILE_LOADER_LOADED) {
     printf("No file is currently loaded.\n");
     return true;
   }
@@ -477,7 +471,7 @@ static bool run_trigger(const parsed_command_t *cmd, shim_runtime_state_t *state
     printf("Cannot issue triggers because hardware is not powered on. Please power on the hardware first using the 'P' command.\n");
     return false;
   }
-  if (file_loader_get_status(&state->loader) != FILE_LOADER_RUNNING) {
+  if (file_loader_get_status(&state->loader) != FILE_LOADER_LOADED) {
     printf("Cannot issue triggers because no file is loaded. Please load a file first using the 'L' command.\n");
     return false;
   }

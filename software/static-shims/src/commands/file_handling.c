@@ -31,38 +31,31 @@ static void loader_set_status(file_loader_t *loader, file_loader_status_t status
 static void *loader_thread_fn(void *arg) {
   file_loader_t *loader = (file_loader_t *)arg;
 
-  loader_set_status(loader, FILE_LOADER_RUNNING);
+  loader_set_status(loader, FILE_LOADER_LOADED);
 
   if (loader->verbose) {
-    printf("File loader: starting parse of '%s'\n", loader->path);
+    printf("File loader: starting '%s'\n", loader->path);
   }
 
-  // TODO: open and parse the shim block file at loader->path.
+  // TODO: open the shim block file at loader->path and loop continuously,
+  // writing converted DAC data to hw on each trigger.
   // The general structure should be:
   //
-  //   for each chunk of work:
-  //       if (loader_should_stop(loader)) {
-  //           loader_set_status(loader, FILE_LOADER_STOPPED);
-  //           return NULL;
-  //       }
-  //       // ... process chunk, write converted DAC data to hw ...
+  //   open file or set FILE_LOADER_ERROR and return NULL on failure
+  //   while (!loader_should_stop(loader)) {
+  //       // ... read next row, write DAC data to hw ...
+  //       // loop back to start of file when end is reached
+  //   }
+  //   close file
   //
   // Call loader_should_stop() at every natural checkpoint so that
   // file_loader_request_stop() takes effect promptly.
 
-  if (loader_should_stop(loader)) {
-    if (loader->verbose) {
-      printf("File loader: stop requested before completion, aborting.\n");
-    }
-    loader_set_status(loader, FILE_LOADER_STOPPED);
-    return NULL;
-  }
-
   if (loader->verbose) {
-    printf("File loader: finished parsing '%s'\n", loader->path);
+    printf("File loader: exiting '%s'\n", loader->path);
   }
 
-  loader_set_status(loader, FILE_LOADER_DONE);
+  loader_set_status(loader, FILE_LOADER_EMPTY);
   return NULL;
 }
 
@@ -84,7 +77,7 @@ file_loader_t file_loader_init(hw_t *hw, bool verbose) {
     exit(1);
   }
   loader.stop_requested = false;
-  loader.status         = FILE_LOADER_IDLE;
+  loader.status         = FILE_LOADER_EMPTY;
   loader.started        = false;
 
   return loader;
@@ -117,7 +110,7 @@ int file_loader_start(file_loader_t *loader) {
   }
   // Reset flags so this struct can be reused for a fresh load.
   loader->stop_requested = false;
-  loader->status         = FILE_LOADER_IDLE;
+  loader->status         = FILE_LOADER_EMPTY;
   pthread_mutex_unlock(&loader->mutex);
 
   if (pthread_create(&loader->thread, NULL, loader_thread_fn, loader) != 0) {

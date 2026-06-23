@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <inttypes.h> // For PRIx32 format specifier
 #include "dac_ctrl.h"
 #include "map_memory.h"
 
@@ -101,7 +102,7 @@ char* dac_format_data(uint32_t dac_value, bool verbose) {
       break;
     }
     default: {
-      snprintf(temp_buffer, sizeof(temp_buffer), "Data: Unknown code %d with value 0x%X", data_code, dac_value);
+      snprintf(temp_buffer, sizeof(temp_buffer), "Data: Unknown code %d with value 0x%08" PRIx32 "", data_code, dac_value);
       strcat(buffer, temp_buffer);
       break;
     }

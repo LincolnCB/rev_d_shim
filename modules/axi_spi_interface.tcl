@@ -171,8 +171,9 @@ for {set i 0} {$i < $board_count} {incr i} {
     ext_reset_in n_dac_cmd_fifo_${i}_rst/Res
     slowest_sync_clk spi_clk
   }
+  # For command buffers, loop the rd reset back so the rd reset always triggers first
   cell xilinx.com:ip:proc_sys_reset:5.0 dac_cmd_fifo_${i}_aclk_rst {} {
-    ext_reset_in n_dac_cmd_fifo_${i}_rst/Res
+    ext_reset_in dac_cmd_fifo_${i}_spi_clk_rst/peripheral_reset
     slowest_sync_clk aclk
   }
   # DAC command FIFO
@@ -288,8 +289,9 @@ for {set i 0} {$i < $board_count} {incr i} {
     ext_reset_in n_adc_cmd_fifo_${i}_rst/Res
     slowest_sync_clk spi_clk
   }
+  # For command buffers, loop the rd reset back so the rd reset always triggers first
   cell xilinx.com:ip:proc_sys_reset:5.0 adc_cmd_fifo_${i}_aclk_rst {} {
-    ext_reset_in n_adc_cmd_fifo_${i}_rst/Res
+    ext_reset_in adc_cmd_fifo_${i}_spi_clk_rst/peripheral_reset
     slowest_sync_clk aclk
   }
   # ADC command FIFO
@@ -454,8 +456,9 @@ cell xilinx.com:ip:proc_sys_reset:5.0 trig_data_fifo_spi_clk_rst {} {
   ext_reset_in n_trig_data_fifo_rst/Res
   slowest_sync_clk spi_clk
 }
+# For data buffers, loop the rd reset back so the rd reset always triggers first
 cell xilinx.com:ip:proc_sys_reset:5.0 trig_data_fifo_aclk_rst {} {
-  ext_reset_in n_trig_data_fifo_rst/Res
+  ext_reset_in trig_data_fifo_spi_clk_rst/peripheral_reset
   slowest_sync_clk aclk
 }
 # Trigger data FIFO

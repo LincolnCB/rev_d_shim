@@ -11,10 +11,8 @@
 
 // Status of the file loader, readable from outside the thread.
 typedef enum {
-  FILE_LOADER_IDLE,       // No load has been started
-  FILE_LOADER_RUNNING,    // Thread is active and processing
-  FILE_LOADER_DONE,       // Thread completed successfully
-  FILE_LOADER_STOPPED,    // Thread was stopped early via file_loader_request_stop()
+  FILE_LOADER_EMPTY,      // No file is currently loaded
+  FILE_LOADER_LOADED,     // Thread is active and looping through the file
   FILE_LOADER_ERROR,      // Thread encountered a fatal error
 } file_loader_status_t;
 

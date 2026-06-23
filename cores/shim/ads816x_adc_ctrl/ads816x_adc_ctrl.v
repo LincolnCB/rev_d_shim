@@ -318,7 +318,10 @@ module ads816x_adc_ctrl (
     else if (do_next_cmd
              && ((command == CMD_ADC_RD) || (command == CMD_NO_OP))
              && !cmd_word[TRIG_BIT]) begin
-      if (cmd_word[24:0] < min_delay_latched) begin
+      if (command == CMD_NO_OP) begin // NO_OP can take any delay
+        // For NO_OP, a delay down to 0 is allowed. A delay of 0 will act like a delay of 1 (next command runs next clock cycle)
+        delay_timer <= (cmd_word[24:0] == 25'd0) ? 25'd0 : (cmd_word[24:0] - 1);
+      end else if (cmd_word[24:0] < min_delay_latched) begin
         delay_timer <= 25'h1FFFFFF; // Error will be flagged. Max the delay in the meantime.
       end else begin
         delay_timer <= cmd_word[24:0] - 1; // Load the delay time from the command word (minus 1 since we check for zero in the wait condition)

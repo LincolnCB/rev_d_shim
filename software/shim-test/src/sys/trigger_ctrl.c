@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h> // For PRIx32 format specifier
 #include "trigger_ctrl.h"
 #include "map_memory.h"
 
@@ -30,8 +31,8 @@ void trigger_cmd_sync_ch(struct trigger_ctrl_t *trigger_ctrl, bool log, bool ver
                       ((log ? 1 : 0) << TRIG_CMD_LOG_BIT);
 
   if (verbose) {
-    printf("  Writing trigger sync_ch command: 0x%08X (cmd=0x%X, log=%d)\n",
-           cmd_word, TRIG_CMD_SYNC_CH, log ? 1 : 0);
+    printf("  Writing trigger sync_ch command: 0x%08" PRIX32 " (cmd=0x%01" PRIX32 ", log=%d)\n",
+           cmd_word, (uint32_t)TRIG_CMD_SYNC_CH, log ? 1 : 0);
   }
 
   *(trigger_ctrl->buffer) = cmd_word;
@@ -46,8 +47,8 @@ void trigger_cmd_set_lockout(struct trigger_ctrl_t *trigger_ctrl, uint32_t cycle
   uint32_t cmd_word = (TRIG_CMD_SET_LOCKOUT << TRIG_CMD_CODE_SHIFT) | (cycles & TRIG_CMD_VALUE_MASK);
 
   if (verbose) {
-    printf("  Writing trigger set_lockout command: 0x%08X (cmd=0x%X, cycles=%u)\n",
-           cmd_word, TRIG_CMD_SET_LOCKOUT, cycles);
+    printf("  Writing trigger set_lockout command: 0x%08" PRIX32 " (cmd=0x%01" PRIX32 ", cycles=%u)\n",
+           (uint32_t)cmd_word, (uint32_t)TRIG_CMD_SET_LOCKOUT, cycles);
   }
 
   *(trigger_ctrl->buffer) = cmd_word;
@@ -64,8 +65,8 @@ void trigger_cmd_expect_ext(struct trigger_ctrl_t *trigger_ctrl, uint32_t count,
                       (count & TRIG_CMD_VALUE_MASK);
 
   if (verbose) {
-    printf("  Writing trigger expect_ext command: 0x%08X (cmd=0x%X, log=%d, count=",
-           cmd_word, TRIG_CMD_EXPECT_EXT, log ? 1 : 0);
+    printf("  Writing trigger expect_ext command: 0x%08" PRIX32 " (cmd=0x%01" PRIX32 ", log=%d, count=",
+           (uint32_t)cmd_word, (uint32_t)TRIG_CMD_EXPECT_EXT, log ? 1 : 0);
     if (count == 0) {
       printf("infinite");
     } else {
@@ -86,8 +87,8 @@ void trigger_cmd_delay(struct trigger_ctrl_t *trigger_ctrl, uint32_t cycles, boo
   uint32_t cmd_word = (TRIG_CMD_DELAY << TRIG_CMD_CODE_SHIFT) | (cycles & TRIG_CMD_VALUE_MASK);
 
   if (verbose) {
-    printf("  Writing trigger delay command: 0x%08X (cmd=0x%X, cycles=%u)\n",
-           cmd_word, TRIG_CMD_DELAY, cycles);
+    printf("  Writing trigger delay command: 0x%08" PRIX32 " (cmd=0x%01" PRIX32 ", cycles=%u)\n",
+           (uint32_t)cmd_word, (uint32_t)TRIG_CMD_DELAY, cycles);
   }
 
   *(trigger_ctrl->buffer) = cmd_word;
@@ -98,8 +99,8 @@ void trigger_cmd_force_trig(struct trigger_ctrl_t *trigger_ctrl, bool log, bool 
                       ((log ? 1 : 0) << TRIG_CMD_LOG_BIT);
 
   if (verbose) {
-    printf("  Writing trigger force_trig command: 0x%08X (cmd=0x%X, log=%d)\n",
-           cmd_word, TRIG_CMD_FORCE_TRIG, log ? 1 : 0);
+    printf("  Writing trigger force_trig command: 0x%08" PRIX32 " (cmd=0x%01" PRIX32 ", log=%d)\n",
+           (uint32_t)cmd_word, (uint32_t)TRIG_CMD_FORCE_TRIG, log ? 1 : 0);
   }
 
   *(trigger_ctrl->buffer) = cmd_word;
@@ -109,8 +110,8 @@ void trigger_cmd_cancel(struct trigger_ctrl_t *trigger_ctrl, bool verbose) {
   uint32_t cmd_word = (TRIG_CMD_CANCEL << TRIG_CMD_CODE_SHIFT);
 
   if (verbose) {
-    printf("  Writing trigger cancel command: 0x%08X (cmd=0x%X)\n",
-           cmd_word, TRIG_CMD_CANCEL);
+    printf("  Writing trigger cancel command: 0x%08" PRIX32 " (cmd=0x%01" PRIX32 ")\n",
+           (uint32_t)cmd_word, (uint32_t)TRIG_CMD_CANCEL);
   }
 
   *(trigger_ctrl->buffer) = cmd_word;
@@ -120,8 +121,8 @@ void trigger_cmd_reset_count(struct trigger_ctrl_t *trigger_ctrl, bool verbose) 
   uint32_t cmd_word = (TRIG_CMD_RESET_COUNT << TRIG_CMD_CODE_SHIFT);
 
   if (verbose) {
-    printf("  Writing trigger reset_count command: 0x%08X (cmd=0x%X)\n",
-           cmd_word, TRIG_CMD_RESET_COUNT);
+    printf("  Writing trigger reset_count command: 0x%08" PRIX32 " (cmd=0x%01" PRIX32 ")\n",
+           (uint32_t)cmd_word, (uint32_t)TRIG_CMD_RESET_COUNT);
   }
 
   *(trigger_ctrl->buffer) = cmd_word;
