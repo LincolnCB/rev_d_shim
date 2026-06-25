@@ -8,6 +8,8 @@
 #include "hardware.h"
 
 #define FILE_HANDLING_PATH_MAX 256
+#define FILE_LOOP_MAX_LEVEL 10  // maximum supported delimiter nesting depth
+
 
 // Status of the file loader, readable from outside the thread.
 typedef enum {
@@ -24,6 +26,7 @@ typedef struct {
   // Public, set before calling file_loader_start(); do not modify while running.
   char        path[FILE_HANDLING_PATH_MAX];
   hw_t       *hw;
+  double      trigger_lockout_ms;
   bool        verbose;
 
   // Private -- access only through the file_loader_* functions below.
@@ -36,6 +39,9 @@ typedef struct {
 
 // Initialize the loader struct and its mutex.
 file_loader_t file_loader_init(hw_t *hw, bool verbose);
+
+// Set the loader's trigger_lockout_ms value. Must be called before file_loader_start() and not while the loader is running.
+int file_loader_set_trigger_lockout(file_loader_t *loader, double trigger_lockout_ms);
 
 // Destroy the loader's mutex. Call after the thread has been joined and the
 // loader is no longer needed.

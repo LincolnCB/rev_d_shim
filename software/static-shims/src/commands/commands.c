@@ -11,7 +11,7 @@ shim_runtime_state_t commands_init_state(hw_t *hw, bool verbose) {
   state.running = true;
   state.last_file[0] = '\0';
   state.trigger_lockout_ms = 10.0;
-  state.loader = file_loader_init(hw, verbose);
+  state.loader = file_loader_init(hw, 10.0, verbose);
   return state;
 }
 
@@ -298,6 +298,7 @@ static bool run_set_trigger_lockout(const parsed_command_t *cmd, shim_runtime_st
     fprintf(stderr, "Failed to set trigger lockout to %.4f ms.\n", cmd->trigger_lockout_ms);
     return false;
   }
+  file_loader_set_trigger_lockout(&state->loader, cmd->trigger_lockout_ms);
   state->trigger_lockout_ms = cmd->trigger_lockout_ms;
   return true;
 }
