@@ -46,6 +46,7 @@ typedef struct {
   hw_t *hw;
   bool verbose;
   bool running;
+  bool buffered;
   char last_file[COMMAND_FILE_PATH_MAX];
   double trigger_lockout_ms;
   file_loader_t loader;

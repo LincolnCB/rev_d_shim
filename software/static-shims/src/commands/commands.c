@@ -3,6 +3,7 @@
 #include <glob.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 // Build a default runtime state for a fixed channel count
 shim_runtime_state_t commands_init_state(hw_t *hw, bool verbose) {
@@ -10,6 +11,7 @@ shim_runtime_state_t commands_init_state(hw_t *hw, bool verbose) {
   state.hw = hw;
   state.verbose = verbose;
   state.running = true;
+  state.buffered = true;
   state.last_file[0] = '\0';
   state.trigger_lockout_ms = 10.0;
   state.loader = file_loader_init(hw, 10.0, verbose);
@@ -30,28 +32,65 @@ void commands_cleanup_state(shim_runtime_state_t *state) {
 
 //// -- General commands --
 
+// Check if a command is buffered
+static bool is_buffered(shim_runtime_state_t *state) {
+  if (state == NULL || state->hw == NULL) {
+    return false;
+  }
+  if (!(state->buffered)) {
+    return false;
+  }
+  if (!hw_running(state->hw)) {
+    state->buffered = false;
+    return false;
+  }
+  if (file_loader_get_status(&state->loader) == FILE_LOADER_LOADED) {
+    state->buffered = false;
+    return false;
+  }
+  if (hw_get_trigger_count(state->hw) == 0) {
+    return true;
+  } else {
+    state->buffered = false;
+    if (hw_reset_triggers(state->hw) != 0) {
+      fprintf(stderr, "Error resetting triggers after buffered command completed.\n");
+    }
+    return false;
+  }
+}
+
 // Print all supported interactive commands
 void commands_print_help(void) {
-  printf("Commands:\n");
-  printf("  -- General commands --\n");
+  printf("-------------------------\n");
+  printf("-----  Help/Commands  ---\n");
+  printf("-------------------------\n");
+  printf("\n");
+  printf("Notation of below commands descriptions:\n");
+  printf("Upper-case characters are the command character (case insensitive when entered).\n");
+  printf("Lower-case characters are arguments, to be replaced with some number or path.\n");
+  printf("\n");
+  printf(" --- General commands ---\n");
   printf("  H or ?     : Show this help text.\n");
   printf("  Q          : Quit program.\n");
   printf("  S          : Print status.\n");
   printf("  P          : Power amplifier system on.\n");
-  printf("  X          : Hard reset, power off, unload file.\n");
-  printf("  Z          : Zero all shim currents, reset file.\n");
+  printf("  X          : Hard reset, power off, unload file / clear buffers.\n");
+  printf("  Z          : Zero all shim currents, unload file / clear buffers.\n");
   printf("  I [file]   : Read currents from ADC (optionally dump to file).\n");
-  printf(" -- Manual mode (no loaded file) --\n");
-  printf("  n x        : Set channel n to x amperes.\n");
-  printf("  U x1 x2... : Update all channels to given amp values.\n");
-  printf("  B x1 x2... : Buffer all channels to given amp values (wait for trigger).\n");
-  printf("  C          : Run calibration (only when no file is loaded).\n");
-  printf("  D t        : Set trigger lockout time in ms (default 10.0).\n");
-  printf(" -- Loaded file mode (after L command) --\n");
+  printf("\n");
+  printf(" --- Manual commands ----\n");
+  printf("  n x        : Set channel n to x amperes (clears buffer).\n");
+  printf("  U x1 x2... : Update all channels to given amp values (clears buffer).\n");
+  printf("  B x1 x2... : Buffer all channels to given amp values (one max, wait for trigger).\n");
+  printf("  C          : Run calibration (run before file, clears buffer).\n");
+  printf("  D t        : Set trigger lockout time in ms (default 10.0, pauses external triggers).\n");
+  printf("  T [n]      : Trigger next shim row n times (default n=1, pauses extternal triggers).\n");
+  printf("\n");
+  printf(" --- File commands ------\n");
   printf("  L [file]   : Load shim block file (or previous file if omitted).\n");
   printf("  E          : Exit loaded file and reset trigger counter.\n");
-  printf("  R          : Reset trigger counter to start of block.\n");
-  printf("  T [n]      : Trigger next shim row n times (default n=1).\n");
+  printf("  R          : Reset buffers and restart file if loaded.\n");
+  printf("\n");
 }
 
 // Print current runtime state for quick diagnostics
@@ -66,6 +105,9 @@ void commands_print_status(shim_runtime_state_t *state) {
   file_loader_status_t loader_status = file_loader_get_status(&state->loader);
   if (loader_status == FILE_LOADER_EMPTY) {
     printf("  No file currently loaded.\n");
+    if (is_buffered(state)) {
+      printf("  Update buffered, waiting for trigger.\n");
+    }
   } else if (loader_status == FILE_LOADER_LOADED) {
     printf("  Loaded file            : %s\n", state->loader.path);
     printf("  Trigger count          : %u\n", hw_get_trigger_count(state->hw));
@@ -120,7 +162,7 @@ static bool run_hard_reset(shim_runtime_state_t *state) {
   if (state == NULL || state->hw == NULL) {
     return false;
   }
-  printf("Performing hard reset: power off and unload file.\n");
+  printf("Performing hard reset: power off and clear file / buffers.\n");
   // Stop any in-flight file load before resetting hardware state
   if (file_loader_get_status(&state->loader) == FILE_LOADER_LOADED) {
     file_loader_request_stop(&state->loader);
@@ -145,6 +187,9 @@ static bool run_zero(shim_runtime_state_t *state) {
     printf("Exiting loaded file.\n");
     file_loader_request_stop(&state->loader);
     file_loader_join(&state->loader, NULL);
+  }
+  if (is_buffered(state)) {
+    printf("Clearing buffered command.\n");
   }
   printf("Zeroing all shim currents.\n");
   if (hw_zero_dacs(state->hw) != 0) {
@@ -180,7 +225,7 @@ static bool run_read(const parsed_command_t *cmd, shim_runtime_state_t *state) {
     printf("ADC current values:\n");
   }
   for (uint32_t ch = 0; ch < state->hw->channel_count; ch++) {
-    printf("  Channel %2u: %+.6f A\n", ch, adc_values_amps[ch]);
+    printf("  Channel %2u: %+.4f A\n", ch, adc_values_amps[ch]);
   }
   return true;
 }
@@ -206,11 +251,14 @@ static bool run_set_channel(const parsed_command_t *cmd, shim_runtime_state_t *s
     file_loader_request_stop(&state->loader);
     file_loader_join(&state->loader, NULL);
   }
+  if (is_buffered(state)) {
+    printf("Clearing buffered command.\n");
+  }
 
   // Set the channel to the new value in amps
-  printf("Setting channel %d to %.6f A.\n", cmd->channel, cmd->amps);
+  printf("Setting channel %d to %.4f A.\n", cmd->channel, cmd->amps);
   if (hw_set_dac_channel(state->hw, cmd->channel, cmd->amps) != 0) {
-    fprintf(stderr, "Failed to set channel %d to %.6f A.\n", cmd->channel, cmd->amps);
+    fprintf(stderr, "Failed to set channel %d to %.4f A.\n", cmd->channel, cmd->amps);
     return false;
   }
 
@@ -220,7 +268,7 @@ static bool run_set_channel(const parsed_command_t *cmd, shim_runtime_state_t *s
     fprintf(stderr, "Failed to read back channel %d after setting it.\n", cmd->channel);
     return false;
   }
-  printf("  Channel %2u: %.6f A\n", cmd->channel, readback_amps);
+  printf("  Channel %2u: %.4f A\n", cmd->channel, readback_amps);
 
   return true;
 }
@@ -241,6 +289,9 @@ static bool run_update(const parsed_command_t *cmd, shim_runtime_state_t *state)
     file_loader_request_stop(&state->loader);
     file_loader_join(&state->loader, NULL);
   }
+  if (is_buffered(state)) {
+    printf("Clearing buffered command.\n");
+  }
 
   // Set each channel to the new value in amps
   printf("Updating all active channels with new values.\n");
@@ -257,22 +308,51 @@ static bool run_update(const parsed_command_t *cmd, shim_runtime_state_t *state)
   }
   printf("ADC current values after update:\n");
   for (uint32_t ch = 0; ch < state->hw->channel_count; ch++) {
-    printf("  Channel %2u: %.6f A\n", ch, adc_values_amps[ch]);
+    printf("  Channel %2u: %.4f A\n", ch, adc_values_amps[ch]);
   }
     
   return true;
 }
 
-// Run buffered DAC command to all channels with a list of new values in amps
+// Buffer a single DAC command to all channels with a list of new values in amps
 // Command format: B v1 v2 v3 ... vn (up to channel count)
-// Requires no file loaded and hardware powered on
+// Will exit file if loaded, and clear existing buffer
 static bool run_buffer(const parsed_command_t *cmd, shim_runtime_state_t *state) {
   if (cmd == NULL) {
     return false;
   }
-  printf("Unfinished, sorry\n");
+  if (!hw_running(state->hw)) {
+    fprintf(stderr, "Cannot buffer update because hardware is not powered on.\n");
+    return false;
+  }
+  if (file_loader_get_status(&state->loader) == FILE_LOADER_LOADED) {
+    printf("Cancelling in-progress file to apply manual update to all channels (you can use 'L' to reload from the beginning).\n");
+    file_loader_request_stop(&state->loader);
+    file_loader_join(&state->loader, NULL);
+  }
 
-  return false;
+  // Clear DAC buffers
+  printf("Buffering update values (clearing any previous buffer).\n");
+  hw_clear_dac_buffers(state->hw);
+  // Reset triggers
+  hw_reset_triggers(state->hw);
+
+  // Buffer the currents
+  if (hw_buffer_dacs(state->hw, cmd->update_amps) != 0) {
+    fprintf(stderr, "Failed to buffer update values.\n");
+    return false;
+  }
+  HW_SLEEP;
+
+  // Expect a single trigger
+  if (hw_expect_one_trigger(state->hw) != 0) {
+    fprintf(stderr, "B: failed to set up wait for one external trigger.\n");
+    return false;
+  }
+
+  state->buffered = true;
+  printf("Ready for one trigger.\n");
+  return true;
 }
 
 // Run calibration when no file is loaded and hardware is powered on
@@ -284,6 +364,9 @@ static bool run_calibrate(shim_runtime_state_t *state) {
   if (!hw_running(state->hw)) {
     printf("Cannot run calibration because hardware is not powered on. Please power on the hardware first using the 'P' command.\n");
     return false;
+  }
+  if (is_buffered(state)) {
+    printf("Clearing buffered command.\n");
   }
   printf("Running shim channel calibration...\n");
   if (hw_calibrate(state->hw) != 0) {
@@ -299,7 +382,7 @@ static bool run_set_trigger_lockout(const parsed_command_t *cmd, shim_runtime_st
   if (cmd == NULL) {
     return false;
   }
-   if (file_loader_get_status(&state->loader) == FILE_LOADER_LOADED) {
+  if (file_loader_get_status(&state->loader) == FILE_LOADER_LOADED) {
     printf("Cannot set trigger lockout while a file is loaded. Please exit the file first using the 'E' command.\n");
     return false;
   }
@@ -307,13 +390,74 @@ static bool run_set_trigger_lockout(const parsed_command_t *cmd, shim_runtime_st
     fprintf(stderr, "Trigger lockout time must be non-negative.\n");
     return false;
   }
-  printf("Setting trigger lockout to %.4f ms.\n", cmd->trigger_lockout_ms);
-  if (hw_set_trigger_lockout(state->hw, cmd->trigger_lockout_ms) != 0) {
-    fprintf(stderr, "Failed to set trigger lockout to %.4f ms.\n", cmd->trigger_lockout_ms);
-    return false;
-  }
+  
+  // Store it, but it's actually set when 'L' or 'P' runs
   file_loader_set_trigger_lockout(&state->loader, cmd->trigger_lockout_ms);
   state->trigger_lockout_ms = cmd->trigger_lockout_ms;
+  return true;
+}
+
+// Advance through loaded shim rows by issuing trigger events
+static bool run_trigger(const parsed_command_t *cmd, shim_runtime_state_t *state) {
+  // Check that the hardware is powered on and a file is loaded before allowing triggers
+  if (!hw_running(state->hw)) {
+    printf("Cannot issue triggers because hardware is not powered on. Please power on the hardware first using the 'P' command.\n");
+    return false;
+  }
+  bool loaded = true;
+  if (file_loader_get_status(&state->loader) != FILE_LOADER_LOADED) {
+    if (!is_buffered(state)) {
+      printf("Cannot issue triggers with nothing in the buffer (loaded file or single buffered command).\n");
+      printf("'T' should only be run after 'L' or 'B'.\n");
+      return false;
+    } else {
+      if (cmd->trigger_count > 1) {
+        printf("Cannot issue more than one trigger when a single command is buffered (from 'B').\n");
+        printf("Issue a single trigger or run 'L' first.\n");
+        return false;
+      }
+      loaded = false;
+    }
+  }
+
+  // Clear trigger buffer to stop trigger checking
+  if (hw_clear_trigger_buffers(state->hw) != 0) {
+    fprintf(stderr, "T: failed to clear trigger hardware buffers.\n");
+    return false;
+  }
+
+  // Send the requested number of triggers to hardware
+  printf("Issuing %u trigger(s).\n", cmd->trigger_count);
+  if (hw_force_trigger(state->hw, cmd->trigger_count) != 0) {
+    fprintf(stderr, "T: failed to issue triggers to hardware.\n");
+    return false;
+  }
+
+  // If file loaded, restart triggers
+  if (loaded) {
+    if (hw_start_triggers(state->hw) != 0) {
+      fprintf(stderr, "T: failed to restart external triggers after issuing manual triggers.\n");
+      return false;
+    }
+  // Otherwise, reset the triggers and buffered status
+  } else {
+    if (hw_reset_triggers(state->hw) != 0) {
+      fprintf(stderr, "T: failed to reset triggers after manually triggering buffer command.\n");
+      return false;
+    }
+    state->buffered = false;
+  }
+
+  // Check the current after triggering
+  double adc_values_amps[HW_MAX_CHANNELS] = {0.0};
+  if (hw_read_adcs(state->hw, adc_values_amps) != 0) {
+    fprintf(stderr, "T: failed to read ADC values from hardware.\n");
+    return false;
+  }
+  for (uint32_t ch = 0; ch < state->hw->channel_count; ch++) {
+    printf("  Channel %2u: %+.4f A\n", ch, adc_values_amps[ch]);
+  }
+
   return true;
 }
 
@@ -398,6 +542,9 @@ static bool run_load(const parsed_command_t *cmd, shim_runtime_state_t *state) {
     file_loader_request_stop(&state->loader);
     file_loader_join(&state->loader, NULL);
   }
+  if (is_buffered(state)) {
+    printf("Clearing buffered command.\n");
+  }
 
   // Clear hardware buffers now that no loader thread is active
   if (hw_clear_dac_buffers(state->hw) != 0) {
@@ -408,8 +555,8 @@ static bool run_load(const parsed_command_t *cmd, shim_runtime_state_t *state) {
     fprintf(stderr, "L: failed to clear ADC hardware buffers.\n");
     return false;
   }
-  if (hw_clear_trigger_buffers(state->hw) != 0) {
-    fprintf(stderr, "L: failed to clear trigger hardware buffers.\n");
+  if (hw_reset_triggers(state->hw) != 0) {
+    fprintf(stderr, "L: failed to reset triggers.\n");
     return false;
   }
 
@@ -487,78 +634,54 @@ static bool run_exit_file(shim_runtime_state_t *state) {
   return true;
 }
 
-// Reset the trigger counter back to the block start
+// Reset buffers and restart file if loaded
 static bool run_reset(shim_runtime_state_t *state) {
   if (state == NULL) {
     return false;
-  }
-  if (file_loader_get_status(&state->loader) != FILE_LOADER_LOADED) {
-    printf("No file is currently loaded.\n");
-    return true;
   }
   if(!hw_running(state->hw)) {
     printf("Hardware isn't running, reset is unnecessary.\n");
     return true;
   }
+  bool loaded = (file_loader_get_status(&state->loader) == FILE_LOADER_LOADED);
 
-  // Unload the file and reset the buffers and trigger counter
-  printf("Resetting trigger counter and buffers to start of file.\n");
-  // Unload the file
-  file_loader_request_stop(&state->loader);
-  file_loader_join(&state->loader, NULL);
-  // Clear out buffers and reset trigger counter
-  if (hw_reset_triggers(state->hw) != 0) {
-    fprintf(stderr, "R: failed to reset triggers after resetting file.\n");
-    return false;
+  if (loaded) {
+    // Unload the file
+    printf("Resetting trigger counter and buffers.\n");
+    // Unload the file
+    file_loader_request_stop(&state->loader);
+    file_loader_join(&state->loader, NULL);
+  } else if (is_buffered(state)) {
+    printf("Clearing buffered command.\n");
   }
+
+  // Clear out buffers and reset triggers
   if (hw_clear_dac_buffers(state->hw) != 0) {
-    fprintf(stderr, "R: failed to clear DAC hardware buffers after resetting file.\n");
+    fprintf(stderr, "R: failed to clear DAC hardware buffers.\n");
     return false;
   }
   if (hw_clear_adc_buffers(state->hw) != 0) {
-    fprintf(stderr, "R: failed to clear ADC hardware buffers after resetting file.\n");
+    fprintf(stderr, "R: failed to clear ADC hardware buffers.\n");
+    return false;
+  }
+  if (hw_reset_triggers(state->hw) != 0) {
+    fprintf(stderr, "R: failed to reset triggers.\n");
     return false;
   }
 
-  // Reload the file
-  (void)snprintf(state->loader.path, sizeof(state->loader.path), "%s", state->last_file);
-  if (file_loader_start(&state->loader) != 0) {
-    fprintf(stderr, "R: failed to start file loader thread after resetting file.\n");
-    return false;
-  }
-  // Restart trigger tracking
-  if (hw_start_triggers(state->hw) != 0) {
-    fprintf(stderr, "R: failed to start triggers after resetting file.\n");
-    return false;
-  }
-  printf("File reset successful, triggers restarted.\n");
-
-  return true;
-}
-
-// Advance through loaded shim rows by issuing trigger events
-static bool run_trigger(const parsed_command_t *cmd, shim_runtime_state_t *state) {
-  // Check that the hardware is powered on and a file is loaded before allowing triggers
-  if (!hw_running(state->hw)) {
-    printf("Cannot issue triggers because hardware is not powered on. Please power on the hardware first using the 'P' command.\n");
-    return false;
-  }
-  if (file_loader_get_status(&state->loader) != FILE_LOADER_LOADED) {
-    printf("Cannot issue triggers because no file is loaded. Please load a file first using the 'L' command.\n");
-    return false;
-  }
-
-  // Clear trigger buffer to stop trigger checking
-  if (hw_clear_trigger_buffers(state->hw) != 0) {
-    fprintf(stderr, "T: failed to clear trigger hardware buffers.\n");
-    return false;
-  }
-
-  // Send the requested number of triggers to hardware
-  printf("Issuing %u trigger(s).\n", cmd->trigger_count);
-  if (hw_force_trigger(state->hw, cmd->trigger_count) != 0) {
-    fprintf(stderr, "T: failed to issue triggers to hardware.\n");
-    return false;
+  // Reload the file if loaded
+  if (loaded){
+    (void)snprintf(state->loader.path, sizeof(state->loader.path), "%s", state->last_file);
+    if (file_loader_start(&state->loader) != 0) {
+      fprintf(stderr, "R: failed to start file loader thread after resetting file.\n");
+      return false;
+    }
+    // Restart trigger tracking
+    if (hw_start_triggers(state->hw) != 0) {
+      fprintf(stderr, "R: failed to start triggers after resetting file.\n");
+      return false;
+    }
+    printf("File reset successful, triggers restarted.\n");
   }
 
   return true;
@@ -600,17 +723,19 @@ bool commands_execute(const parsed_command_t *cmd, shim_runtime_state_t *state) 
       return run_calibrate(state);
     case CMD_LOCKOUT:
       return run_set_trigger_lockout(cmd, state);
+    case CMD_TRIGGER:
+      return run_trigger(cmd, state);
     case CMD_LOAD:
       return run_load(cmd, state);
     case CMD_EXIT_FILE:
       return run_exit_file(state);
     case CMD_RESET:
       return run_reset(state);
-    case CMD_TRIGGER:
-      return run_trigger(cmd, state);
     case CMD_INVALID:
-    default:
       fprintf(stderr, "Invalid command.\n");
+      return false;
+    default:
+      fprintf(stderr, "Parsing failure.\n");
       return false;
   }
 }

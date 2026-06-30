@@ -61,6 +61,9 @@ int hw_clear_trigger_buffers(hw_t *hw);
 // Start external triggers
 int hw_start_triggers(hw_t *hw);
 
+// Expect one external trigger
+int hw_expect_one_trigger(hw_t *hw);
+
 // Force n triggers
 int hw_force_trigger(hw_t *hw, uint32_t n);
 
@@ -96,7 +99,10 @@ int hw_set_dacs(hw_t *hw, const double *amps);
 // Check if DAC command FIFOs have room for a new command
 bool hw_dac_fifo_has_room(hw_t *hw);
 
-// Buffer trigger-wait DAC command to all channels from values in amps
+// Count buffered DAC commands in the DAC command FIFOs
+uint32_t hw_buff_count(hw_t *hw);
+
+// Buffer trigger-wait DAC command to all channels from values in amps (triggering done separately)
 int hw_buffer_dacs(hw_t *hw, const double *amps);
 
 #endif // BOOT_H

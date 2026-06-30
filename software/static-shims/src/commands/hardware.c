@@ -310,7 +310,7 @@ int hw_clear_trigger_buffers(hw_t *hw) {
   return 0;
 }
 
-// Start external triggers
+// Start external triggers (keeping trigger count)
 int hw_start_triggers(hw_t *hw) {
   if (hw == NULL) {
     return -1;
@@ -319,7 +319,9 @@ int hw_start_triggers(hw_t *hw) {
     fprintf(stderr, "Error: cannot start triggers because hardware is not running.\n");
     return -1;
   }
+  // Clear, not reset, to keep trigger count
   hw_clear_trigger_buffers(hw);
+  // Expect "0" triggers (treated as infinite)
   trigger_cmd_expect_ext(&hw->trigger_ctrl, 0, false, hw->verbose);
   HW_SLEEP; // Sleep to allow hardware to process command
   // Check that the trigger buffer is empty
@@ -331,7 +333,29 @@ int hw_start_triggers(hw_t *hw) {
   return 0;
 }
 
-// Force n triggers
+// Expect one external trigger (keeping trigger count)
+int hw_expect_one_trigger(hw_t *hw) {
+  if (hw == NULL) {
+    return -1;
+  }
+  if (!hw_running(hw)) {
+    fprintf(stderr, "Error: cannot start triggers because hardware is not running.\n");
+    return -1;
+  }
+  hw_clear_trigger_buffers(hw);
+  // Expect one trigger
+  trigger_cmd_expect_ext(&hw->trigger_ctrl, 1, false, hw->verbose);
+  HW_SLEEP; // Sleep to allow hardware to process command
+  // Check that the trigger buffer is empty
+  uint32_t trig_cmd_fifo_sts = sys_sts_get_trig_cmd_fifo_status(&hw->sys_sts, hw->verbose);
+  if (!FIFO_STS_EMPTY(trig_cmd_fifo_sts)) {
+    fprintf(stderr, "Error: trigger command FIFO is not empty after starting triggers. Status: 0x%08X\n", trig_cmd_fifo_sts);
+    return -1;
+  }
+  return 0;
+}
+
+// Force n triggers (incrementing trigger count)
 int hw_force_trigger(hw_t *hw, uint32_t n) {
   if (hw == NULL) {
     return -1;
@@ -341,7 +365,7 @@ int hw_force_trigger(hw_t *hw, uint32_t n) {
     return -1;
   }
 
-  // Clear trigger buffer
+  // Clear trigger buffer (keep trigger count)
   hw_clear_trigger_buffers(hw);
 
   // Check current trigger count before forcing triggers
@@ -412,7 +436,7 @@ int hw_set_trigger_lockout(hw_t *hw, double trigger_lockout_ms) {
     fprintf(stderr, "Error: cannot set trigger lockout because hardware is not running.\n");
     return -1;
   }
-  hw_clear_trigger_buffers(hw);
+  hw_reset_triggers(hw);
   uint32_t spi_clk_freq_hz = sys_sts_get_clk_freq_hz(&hw->sys_sts, hw->verbose);
   // Convert lockout time from ms to number of SPI clock cycles
   double lockout_cycles_double = (trigger_lockout_ms / 1000.0) * (double)spi_clk_freq_hz;
@@ -445,7 +469,6 @@ int hw_calibrate(hw_t *hw) {
   }
   hw_clear_dac_buffers(hw);
   hw_clear_adc_buffers(hw);
-  hw_clear_trigger_buffers(hw);
   hw_reset_triggers(hw);
 
   // Calibration constants
@@ -883,6 +906,11 @@ int hw_set_dac_channel(hw_t *hw, uint32_t channel, double value_amps) {
     printf(" -- Clearing DAC buffers before setting channel %u to %.3f amps\n", channel, value_amps);
   }
   hw_clear_dac_buffers(hw);
+  // Clear trigger buffers
+  if (hw->verbose) {
+    printf(" -- Resetting triggers before setting channel %u to %.3f amps\n", channel, value_amps);
+  }
+  hw_reset_triggers(hw);
 
   uint8_t board = channel / 8;
   uint8_t ch_in_board = channel % 8;
@@ -921,6 +949,8 @@ int hw_set_dacs(hw_t *hw, const double *amps) {
 
   // Clear DAC buffers
   hw_clear_dac_buffers(hw);
+  // Reset triggers
+  hw_reset_triggers(hw);
 
   // Send DAC set all channels commands board by board
   uint32_t board_count = (hw->channel_count - 1) / 8 + 1;
@@ -971,7 +1001,7 @@ bool hw_dac_fifo_has_room(hw_t *hw) {
   return true; // All DAC command FIFOs have room
 }
 
-// Buffer trigger-wait DAC command to all channels from values in amps
+// Buffer trigger-wait DAC command to all channels from values in amps (triggering done separately)
 int hw_buffer_dacs(hw_t *hw, const double *amps) {
   if (hw == NULL || amps == NULL) {
     return -1;

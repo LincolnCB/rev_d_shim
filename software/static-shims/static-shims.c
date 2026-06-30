@@ -74,7 +74,6 @@ int main(int argc, char **argv) {
   shim_runtime_state_t state = commands_init_state(&hw, verbose);
 
   printf("Static shims command interface\n");
-  printf("NOTE: THIS IS NOT ACTUALLY WORKING YET, DO NOT USE THIS FOR ANYTHING OTHER THAN DEVELOPMENT TESTING.\n");
   printf("Configured channels: %u\n", parsed_count);
   printf("Type H for help. Type Q to quit.\n\n");
 
