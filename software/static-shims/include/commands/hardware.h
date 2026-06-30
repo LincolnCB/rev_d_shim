@@ -13,6 +13,7 @@
 
 #define HW_SLEEP usleep(1000) // 1 ms sleep for hardware timing
 #define HW_MAX_CHANNELS 64 // Maximum number of channels supported by hardware
+#define HW_MAX_ABS_AMPS 5.0 // Maximum absolute current in amps for DAC channels
 
 // Aggregates all hardware control structures needed for boot and operation
 typedef struct {
@@ -91,5 +92,11 @@ int hw_set_dac_channel(hw_t *hw, uint32_t channel, double amps);
 // Send DAC set all channels command with values in amps 
 // (buffer is HW_MAX_CHANNELS in length and indexed by channel number)
 int hw_set_dacs(hw_t *hw, const double *amps);
+
+// Check if DAC command FIFOs have room for a new command
+bool hw_dac_fifo_has_room(hw_t *hw);
+
+// Buffer trigger-wait DAC command to all channels from values in amps
+int hw_buffer_dacs(hw_t *hw, const double *amps);
 
 #endif // BOOT_H

@@ -140,7 +140,16 @@ module ad5676_dac_ctrl #(
   wire        do_next_cmd;
   wire [ 3:0] next_cmd_state;
   wire        cancel;
+  // Error flags
   wire        error;
+  wire        err_boot_fail_w;
+  wire        err_unexp_trig_w;
+  wire        err_delay_too_short_w;
+  wire        err_pre_delay_too_long_w;
+  wire        err_ldac_misalign_w;
+  wire        err_bad_cmd_w;
+  wire        err_cmd_buf_underflow_w;
+  wire        err_data_buf_overflow_w;
   // Command word toggled bits
   reg         do_ldac;
   reg         ldac_unsafe;
@@ -387,63 +396,68 @@ module ad5676_dac_ctrl #(
 
 
   //// ---- Errors
-  // Error flag
-  assign error = (state == S_TEST_RD && ~n_miso_data_ready_mosi_clk && ~boot_readback_match) // Readback mismatch (boot fail)
-                  || (state != S_TRIG_WAIT && trigger && trigger_counter <= 1) // Unexpected final trigger
-                  || (state == S_DAC_WR && !dac_wr_done && !wait_for_trig && delay_wait_done) // Delay too short
-                  || (do_next_cmd
-                      && ((command == CMD_DAC_WR) || (command == CMD_NO_OP))
-                      && !cmd_word[TRIG_BIT]
-                      && (cmd_word[24:0] < min_delay_latched)) // Delay in command too short
-                  || (state == S_PRE_DELAY && delay_timer < min_delay_latched) // Something went wrong and the PRE_DELAY didn't end when it should
-                  || (ldac_unsafe && ldac_shared) // LDAC misalignment
-                  || (do_next_cmd && next_cmd_state == S_ERROR) // Bad command
-                  || (cmd_done && expect_next && !next_cmd_ready) // Command buffer underflow
-                  || (try_data_write && data_buf_full) // Data buffer overflow
+  // Error flags
+  // Boot test readback fail if the readback value does not match the test value when expected
+  assign err_boot_fail_w          = (state == S_TEST_RD && ~n_miso_data_ready_mosi_clk && ~boot_readback_match);
+  // Unexpected trigger if triggered while not waiting for the last one. IDLE state allows skipped triggers
+  assign err_unexp_trig_w         = (state != S_TRIG_WAIT && state != S_IDLE && trigger && trigger_counter <= 1);
+  // Delay too short if delay timer is zero before DAC write is done, or if loading delay timer with a value below the minimum
+  assign err_delay_too_short_w    = (state == S_DAC_WR && !dac_wr_done && !wait_for_trig && delay_wait_done)
+                                     || (do_next_cmd
+                                         && ((command == CMD_DAC_WR) || (command == CMD_NO_OP))
+                                         && !cmd_word[TRIG_BIT]
+                                         && (cmd_word[24:0] < min_delay_latched));
+  // Pre-delay too long if minimum delay passes while still in the PRE_DELAY state (should have transitioned to DAC_WR)
+  assign err_pre_delay_too_long_w = (state == S_PRE_DELAY && delay_timer < min_delay_latched);
+  // LDAC misalignment if another board controller fires LDAC while this board controller is writing to DAC
+  assign err_ldac_misalign_w      = (ldac_unsafe && ldac_shared);
+  // Bad command if next command is parsed as ERROR
+  assign err_bad_cmd_w            = (do_next_cmd && next_cmd_state == S_ERROR);
+  // Command buffer underflow if expecting buffer item but buffer is empty
+  assign err_cmd_buf_underflow_w  = (cmd_done && expect_next && !next_cmd_ready);
+  // Data buffer overflow if trying to write to data buffer while it is full
+  assign err_data_buf_overflow_w  = (try_data_write && data_buf_full);
+  // Combine all error flags into a single error output
+  assign error =  err_boot_fail_w
+                  || err_unexp_trig_w
+                  || err_delay_too_short_w
+                  || err_pre_delay_too_long_w
+                  || err_ldac_misalign_w
+                  || err_bad_cmd_w
+                  || err_cmd_buf_underflow_w
+                  || err_data_buf_overflow_w
                   || cal_oob // Calibration value out of bounds
                   || dac_val_oob; // DAC value out of bounds
-  // Boot check fail
-  assign boot_readback_match = (miso_data_mosi_clk == DAC_TEST_VAL); // Readback matches the test value
   always @(posedge clk) begin
-    if (!resetn) boot_fail <= 1'b0; // Reset boot fail on reset
-    if (state == S_TEST_RD && ~n_miso_data_ready_mosi_clk) boot_fail <= ~boot_readback_match;
+    if (!resetn) boot_fail <= 1'b0;
+    else if (err_boot_fail_w) boot_fail <= ~boot_readback_match;
   end
-  // Unexpected trigger
   always @(posedge clk) begin
     if (!resetn) unexp_trig <= 1'b0;
-    else if (state != S_TRIG_WAIT && trigger && trigger_counter <= 1) unexp_trig <= 1'b1; // Unexpected trigger if triggered while not waiting for the last one
+    else if (err_unexp_trig_w) unexp_trig <= 1'b1;
   end
-  // Delay too short
   always @(posedge clk) begin
     if (!resetn) delay_too_short <= 1'b0;
-    else if (do_next_cmd
-             && ((command == CMD_DAC_WR) || (command == CMD_NO_OP))
-             && !cmd_word[TRIG_BIT]
-             && (cmd_word[24:0] < min_delay_latched)) delay_too_short <= 1'b1; // Delay too short if loading delay timer with a value below the minimum
-    else if (state == S_DAC_WR && !dac_wr_done && !wait_for_trig && delay_wait_done) delay_too_short <= 1'b1; // Delay too short if delay timer is zero before DAC write is done
+    else if (err_delay_too_short_w) delay_too_short <= 1'b1;
   end
-  // LDAC misalignment
   always @(posedge clk) begin
     if (!resetn) ldac_misalign <= 1'b0;
-    else if (ldac_unsafe && ldac_shared) ldac_misalign <= 1'b1; // LDAC misalignment if LDAC is shared and another controller is writing to DAC
+    else if (err_ldac_misalign_w) ldac_misalign <= 1'b1;
   end
-  // Bad command
   always @(posedge clk) begin
     if (!resetn) bad_cmd <= 1'b0;
-    else if (do_next_cmd && next_cmd_state == S_ERROR) bad_cmd <= 1'b1; // Bad command if next command is parsed as ERROR
-    else if (state == S_PRE_DELAY && delay_timer < min_delay_latched) bad_cmd <= 1'b1; // Something went wrong and the PRE_DELAY didn't end when it should
+    else if (err_bad_cmd_w) bad_cmd <= 1'b1;
+    else if (err_pre_delay_too_long_w) bad_cmd <= 1'b1; // Using bad_cmd flag for pre-delay error as well
   end
-  // Command buffer underflow
   always @(posedge clk) begin
     if (!resetn) cmd_buf_underflow <= 1'b0;
-    else if (cmd_done && expect_next && !next_cmd_ready) cmd_buf_underflow <= 1'b1; // Underflow if expecting buffer item but buffer is empty
+    else if (err_cmd_buf_underflow_w) cmd_buf_underflow <= 1'b1;
   end
-  // Data buffer overflow
   always @(posedge clk) begin
     if (!resetn) data_buf_overflow <= 1'b0;
-    else if (try_data_write && data_buf_full) data_buf_overflow <= 1'b1;
+    else if (err_data_buf_overflow_w) data_buf_overflow <= 1'b1;
   end
-  // DAC val out of bounds
+  // DAC val out of bounds check
   assign first_dac_val_cal_signed_oob = (first_dac_val_cal_signed < -$signed(ABS_DAC_MAX_SIGNED) || first_dac_val_cal_signed > $signed(ABS_DAC_MAX_SIGNED));
   assign second_dac_val_cal_signed_oob = (second_dac_val_cal_signed < -$signed(ABS_DAC_MAX_SIGNED) || second_dac_val_cal_signed > $signed(ABS_DAC_MAX_SIGNED));
   always @(posedge clk) begin
@@ -753,6 +767,8 @@ module ad5676_dac_ctrl #(
     else if (miso_bit == 1) miso_buf_wr_en <= 1'b1; // Write MISO data to FIFO when last bit is received
     else miso_buf_wr_en <= 1'b0;
   end
+  // Boot readback match check (in MOSI clock domain)
+  assign boot_readback_match = (miso_data_mosi_clk == DAC_TEST_VAL);
 
   //// ---- DAC data output
   // Write calibration value to data buffer

@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h> // usleep
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -24,6 +25,18 @@ static void loader_set_status(file_loader_t *loader, file_loader_status_t status
   pthread_mutex_unlock(&loader->mutex);
 }
 
+// Strip a trailing comment (everything from the first '#' onward) and trim
+// any resulting trailing whitespace, in place. Also strips the newline.
+static void strip_comment(char *line) {
+  char *comment = strchr(line, '#');
+  if (comment != NULL) *comment = '\0';
+  char *end = line + strlen(line);
+  while (end > line && (end[-1] == ' ' || end[-1] == '\t' ||
+                        end[-1] == '\r' || end[-1] == '\n')) {
+    *--end = '\0';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Loader thread
 // ---------------------------------------------------------------------------
@@ -35,6 +48,16 @@ static void *loader_thread_fn(void *arg) {
 
   if (loader->verbose) {
     printf("File loader: starting '%s'\n", loader->path);
+  }
+
+  // Capture sleep time in us from trigger lockout setting (half) at the time the thread started
+  uint32_t usleep_time;
+  if (loader->trigger_lockout_ms < 0.0) {
+    usleep_time = 1000; // default to 1 ms if negative
+  } else if (loader->trigger_lockout_ms > 2000.0) {
+    usleep_time = 1000000; // cap at 1 second
+  } else {
+    usleep_time = (uint32_t)(loader->trigger_lockout_ms * 500.0);
   }
 
   // Open the shim block file at loader->path and loop continuously
@@ -129,8 +152,7 @@ static void *loader_thread_fn(void *arg) {
       continue;
     }
 
-    // Trim trailing newline/whitespace for easier parsing.
-    line[strcspn(line, "\r\n")] = '\0';
+    strip_comment(line);
 
     // Skip blank lines.
     if (line[0] == '\0') continue;
@@ -209,10 +231,71 @@ static void *loader_thread_fn(void *arg) {
 
     } else {
       // ------------------------------------------------------------------
-      // Data line: process it (placeholder -- replace with DAC output).
+      // Data line: parse into per-channel amp values and send to hardware.
       // ------------------------------------------------------------------
-      printf("Line: %s\n", line);
-      usleep(500000); // 0.5 s placeholder; remove when wiring up real DAC writes
+      double amps[HW_MAX_CHANNELS];
+      uint32_t ch = 0;
+      char *ptr = line;
+
+      while (*ptr != '\0' && ch < HW_MAX_CHANNELS) {
+        while (*ptr == ',' || *ptr == ' ' || *ptr == '\t') ptr++;
+        if (*ptr == '\0') break;
+
+        char *end;
+        double val = strtod(ptr, &end);
+        if (end == ptr) {
+          // strtod made no progress: unexpected non-numeric character.
+          // The preflight should have caught this; treat it as a fatal error.
+          fprintf(stderr,
+                  "File loader: '%s': could not parse value at column %u "
+                  "('%.20s...') -- stopping.\n",
+                  loader->path, ch + 1, ptr);
+          fclose(f);
+          loader_set_status(loader, FILE_LOADER_ERROR);
+          return NULL;
+        }
+        if (val < -HW_MAX_ABS_AMPS || val > HW_MAX_ABS_AMPS) {
+          fprintf(stderr,
+                  "File loader: '%s': value %.6f A at column %u is outside "
+                  "the allowed range [%.1f, %.1f] A -- stopping.\n",
+                  loader->path, val, ch + 1, -HW_MAX_ABS_AMPS, HW_MAX_ABS_AMPS);
+          fclose(f);
+          loader_set_status(loader, FILE_LOADER_ERROR);
+          return NULL;
+        }
+        amps[ch++] = val;
+        ptr = end;
+      }
+
+      if (ch != loader->hw->channel_count) {
+        fprintf(stderr,
+                "File loader: '%s': expected %u channels but found %u -- "
+                "stopping.\n",
+                loader->path, loader->hw->channel_count, ch);
+        fclose(f);
+        loader_set_status(loader, FILE_LOADER_ERROR);
+        return NULL;
+      }
+
+      // Wait for room in the hardware FIFO before sending the DAC values
+      while (!hw_dac_fifo_has_room(loader->hw)) {
+        if (loader_should_stop(loader)) {
+            fclose(f);
+            if (loader->verbose) {
+              printf("File loader: exiting '%s'\n", loader->path);
+            }
+            loader_set_status(loader, FILE_LOADER_EMPTY);
+            return NULL;
+        }
+        usleep(usleep_time); // Sleep for half the trigger lockout time to avoid busy-waiting too aggressively
+      }
+      // Buffer the DAC values to the hardware
+      if (hw_buffer_dacs(loader->hw, amps) != 0) {
+        fprintf(stderr, "File loader: '%s': failed to send DAC values -- stopping.\n", loader->path);
+        fclose(f);
+        loader_set_status(loader, FILE_LOADER_ERROR);
+        return NULL;
+      }
 
       last_delim_level = -1; // data line breaks any delimiter chain
     }
@@ -234,23 +317,27 @@ static void *loader_thread_fn(void *arg) {
 // Pre-flight validation
 // ---------------------------------------------------------------------------
 
-// Scan the file at `path` and report the maximum delimiter nesting depth found.
-// Depth is measured by the longest consecutive run of delimiter lines ("xN"),
-// since each additional consecutive delimiter promotes to the next level.
-// Returns 0 on success (max_level_out is set), -1 if the file cannot be opened.
-static int file_check_max_level(const char *path, int *max_level_out) {
+// Scan the file at `path` in a single pass and validate:
+//   - No delimiter nesting depth exceeds FILE_LOOP_MAX_LEVEL
+//   - Every data line has exactly `channel_count` comma/space-separated values
+//   - Every value is in the range [-HW_MAX_ABS_AMPS, +HW_MAX_ABS_AMPS]
+// Prints a specific error to stderr on the first problem found.
+// Returns 0 if the file is valid, -1 otherwise.
+static int file_preflight_check(const char *path, uint32_t channel_count) {
   FILE *f = fopen(path, "r");
   if (f == NULL) {
+    fprintf(stderr, "File loader: cannot open '%s' for validation.\n", path);
     return -1;
   }
 
   char line[1024];
-  int current_run = 0; // consecutive delimiter lines seen so far
-  int max_run     = 0; // longest such run (= highest level index reached)
+  int  current_run = 0; // consecutive delimiter lines (measures nesting depth)
+  int  line_number = 0;
 
   while (fgets(line, sizeof(line), f) != NULL) {
-    line[strcspn(line, "\r\n")] = '\0';
-    if (line[0] == '\0') continue; // blank line -- doesn't break the run
+    line_number++;
+    strip_comment(line);
+    if (line[0] == '\0') continue; // blank or comment-only
 
     int repeat_count = 0;
     bool is_delimiter = (line[0] == 'x' || line[0] == 'X') &&
@@ -259,14 +346,59 @@ static int file_check_max_level(const char *path, int *max_level_out) {
 
     if (is_delimiter) {
       current_run++;
-      if (current_run > max_run) max_run = current_run;
+      if (current_run > FILE_LOOP_MAX_LEVEL) {
+        fprintf(stderr,
+                "File loader: '%s' line %d: nesting depth %d exceeds "
+                "FILE_LOOP_MAX_LEVEL (%d).\n",
+                path, line_number, current_run, FILE_LOOP_MAX_LEVEL);
+        fclose(f);
+        return -1;
+      }
     } else {
       current_run = 0; // data line resets the consecutive-delimiter chain
+
+      // Parse and validate each value on the data line.
+      uint32_t ch = 0;
+      char *ptr = line;
+      while (*ptr != '\0') {
+        // Skip commas and whitespace between values
+        while (*ptr == ',' || *ptr == ' ' || *ptr == '\t') ptr++;
+        if (*ptr == '\0') break;
+
+        char *end;
+        double val = strtod(ptr, &end);
+        if (end == ptr) {
+          fprintf(stderr,
+                  "File loader: '%s' line %d: could not parse value at "
+                  "column %u ('%.20s...').\n",
+                  path, line_number, ch + 1, ptr);
+          fclose(f);
+          return -1;
+        }
+        if (val < -HW_MAX_ABS_AMPS || val > HW_MAX_ABS_AMPS) {
+          fprintf(stderr,
+                  "File loader: '%s' line %d, column %u: value %.6f A is "
+                  "outside the allowed range [%.1f, %.1f] A.\n",
+                  path, line_number, ch + 1, val,
+                  -HW_MAX_ABS_AMPS, HW_MAX_ABS_AMPS);
+          fclose(f);
+          return -1;
+        }
+        ch++;
+        ptr = end;
+      }
+
+      if (ch != channel_count) {
+        fprintf(stderr,
+                "File loader: '%s' line %d: expected %u channels but found %u.\n",
+                path, line_number, channel_count, ch);
+        fclose(f);
+        return -1;
+      }
     }
   }
 
   fclose(f);
-  *max_level_out = max_run;
   return 0;
 }
 
@@ -341,17 +473,9 @@ int file_loader_start(file_loader_t *loader) {
   loader->status         = FILE_LOADER_EMPTY;
   pthread_mutex_unlock(&loader->mutex);
 
-  // Validate the file's nesting depth before spawning the thread so we can
-  // return -1 directly to the caller if it exceeds FILE_LOOP_MAX_LEVEL.
-  int max_level = 0;
-  if (file_check_max_level(loader->path, &max_level) != 0) {
-    fprintf(stderr, "File loader: failed to open '%s' for validation.\n", loader->path);
-    return -1;
-  }
-  if (max_level > FILE_LOOP_MAX_LEVEL) {
-    fprintf(stderr,
-            "File loader: '%s' uses %d nesting levels but FILE_LOOP_MAX_LEVEL is %d.\n",
-            loader->path, max_level, FILE_LOOP_MAX_LEVEL);
+  // Validate the file before spawning the thread: checks nesting depth,
+  // channel count, and value range. Errors are printed inside the function.
+  if (file_preflight_check(loader->path, loader->hw->channel_count) != 0) {
     return -1;
   }
 
@@ -415,13 +539,13 @@ file_loader_status_t file_loader_get_status(file_loader_t *loader) {
 
 // Append CSV-formatted ADC amp readings to the file at path. Returns 0 on success, non-zero on failure.
 int file_append_adc_dump(const char *path, const double *adc_values, uint32_t channel_count) {
-  if (path == NULL || adc_values == NULL) {
+  if (path == NULL || adc_values == NULL || channel_count == 0 || channel_count > HW_MAX_CHANNELS) {
     return -1;
   }
 
   FILE *f = fopen(path, "a");
   if (f == NULL) {
-    fprintf(stderr, "Failed to open ADC dump file '%s' for appending.\n", path);
+    fprintf(stderr, "File loader: failed to open ADC dump file '%s' for appending.\n", path);
     return -1;
   }
 

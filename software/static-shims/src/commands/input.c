@@ -200,13 +200,13 @@ static bool parse_power_on(parsed_command_t *out, parse_state_t *state) {
   return parse_expect_no_args(state, "P does not take arguments");
 }
 
-// Parse F (hard reset).
+// Parse X (hard reset).
 static bool parse_hard_reset(parsed_command_t *out, parse_state_t *state) {
-  if (!(state->token[1] == '\0' && cmd_match(state->token[0], 'F'))) {
+  if (!(state->token[1] == '\0' && cmd_match(state->token[0], 'X'))) {
     return false;
   }
   out->type = CMD_HARD_RESET;
-  return parse_expect_no_args(state, "F does not take arguments");
+  return parse_expect_no_args(state, "X does not take arguments");
 }
 
 // Parse Z (zero outputs).
@@ -294,6 +294,41 @@ static bool parse_update(parsed_command_t *out, parse_state_t *state) {
 
   return true;
 }
+
+// Parse B x1 x2 x3 ... (buffer DAC commands for all channels, no loaded file).
+// Requires exactly hw->channel_count amp values.
+static bool parse_buffer(parsed_command_t *out, parse_state_t *state) {
+  if (!(state->token[1] == '\0' && cmd_match(state->token[0], 'B'))) {
+    return false;
+  }
+  out->type = CMD_BUFFER;
+
+  uint32_t expected = state->runtime_state->hw->channel_count;
+  uint32_t count = 0;
+  char *value_token = NULL;
+
+  while ((value_token = next_token(&state->cursor)) != NULL) {
+    if (count >= expected || count >= HW_MAX_CHANNELS) {
+      command_error(state->error_buf, state->error_buf_size, "B: too many values for channel count");
+      return true;
+    }
+    double amps = 0.0;
+    if (!parse_double(value_token, &amps)) {
+      command_error(state->error_buf, state->error_buf_size, "B: all values must be numeric amps");
+      return true;
+    }
+    out->update_amps[count] = amps;
+    ++count;
+  }
+
+  if (count != expected) {
+    command_error(state->error_buf, state->error_buf_size, "B requires exactly one value per channel");
+    return true;
+  }
+
+  return true;
+}
+
 
 // Parse C (calibrate).
 static bool parse_calibrate(parsed_command_t *out, parse_state_t *state) {

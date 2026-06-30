@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+
 #include "hardware.h"
 
 #define FILE_HANDLING_PATH_MAX 256
@@ -38,7 +39,7 @@ typedef struct {
 } file_loader_t;
 
 // Initialize the loader struct and its mutex.
-file_loader_t file_loader_init(hw_t *hw, bool verbose);
+file_loader_t file_loader_init(hw_t *hw, double trigger_lockout_ms, bool verbose);
 
 // Set the loader's trigger_lockout_ms value. Must be called before file_loader_start() and not while the loader is running.
 int file_loader_set_trigger_lockout(file_loader_t *loader, double trigger_lockout_ms);

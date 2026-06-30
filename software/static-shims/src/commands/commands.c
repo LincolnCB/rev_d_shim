@@ -1,5 +1,6 @@
 #include "commands.h"
 
+#include <glob.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -37,12 +38,13 @@ void commands_print_help(void) {
   printf("  Q          : Quit program.\n");
   printf("  S          : Print status.\n");
   printf("  P          : Power amplifier system on.\n");
-  printf("  F          : Hard reset, power off, unload file.\n");
+  printf("  X          : Hard reset, power off, unload file.\n");
   printf("  Z          : Zero all shim currents, reset file.\n");
   printf("  I [file]   : Read currents from ADC (optionally dump to file).\n");
   printf(" -- Manual mode (no loaded file) --\n");
   printf("  n x        : Set channel n to x amperes.\n");
   printf("  U x1 x2... : Update all channels to given amp values.\n");
+  printf("  B x1 x2... : Buffer all channels to given amp values (wait for trigger).\n");
   printf("  C          : Run calibration (only when no file is loaded).\n");
   printf("  D t        : Set trigger lockout time in ms (default 10.0).\n");
   printf(" -- Loaded file mode (after L command) --\n");
@@ -261,6 +263,18 @@ static bool run_update(const parsed_command_t *cmd, shim_runtime_state_t *state)
   return true;
 }
 
+// Run buffered DAC command to all channels with a list of new values in amps
+// Command format: B v1 v2 v3 ... vn (up to channel count)
+// Requires no file loaded and hardware powered on
+static bool run_buffer(const parsed_command_t *cmd, shim_runtime_state_t *state) {
+  if (cmd == NULL) {
+    return false;
+  }
+  printf("Unfinished, sorry\n");
+
+  return false;
+}
+
 // Run calibration when no file is loaded and hardware is powered on
 static bool run_calibrate(shim_runtime_state_t *state) {
   if (file_loader_get_status(&state->loader) == FILE_LOADER_LOADED) {
@@ -305,6 +319,51 @@ static bool run_set_trigger_lockout(const parsed_command_t *cmd, shim_runtime_st
 
 // -- Loaded file mode (after L command) --
 
+// Resolve a path that may contain glob wildcards to a single concrete path.
+// If the pattern matches exactly one file, it is used directly.
+// If it matches multiple files, the user is prompted to choose one.
+// If it matches nothing, returns -1 and leaves resolved_path unchanged.
+static int resolve_file_pattern(const char *pattern, char *resolved_path, size_t resolved_path_size) {
+  glob_t glob_result;
+
+  int glob_ret = glob(pattern, GLOB_ERR, NULL, &glob_result);
+  if (glob_ret != 0 || glob_result.gl_pathc == 0) {
+    if (glob_ret == 0) globfree(&glob_result); // only safe to free if glob succeeded
+    return -1;
+  }
+
+  if (glob_result.gl_pathc == 1) {
+    snprintf(resolved_path, resolved_path_size, "%s", glob_result.gl_pathv[0]);
+    globfree(&glob_result);
+    return 0;
+  }
+
+  // Multiple matches: ask the user to pick one.
+  printf("Multiple files match pattern '%s':\n", pattern);
+  for (size_t i = 0; i < glob_result.gl_pathc; i++) {
+    printf("  %zu: %s\n", i + 1, glob_result.gl_pathv[i]);
+  }
+  printf("Enter your choice (1-%zu): ", glob_result.gl_pathc);
+  fflush(stdout);
+
+  char choice_buf[32];
+  int choice = 1;
+  if (fgets(choice_buf, sizeof(choice_buf), stdin) != NULL) {
+    int parsed;
+    if (sscanf(choice_buf, "%d", &parsed) == 1 &&
+        parsed >= 1 && parsed <= (int)glob_result.gl_pathc) {
+      choice = parsed;
+    } else {
+      printf("Invalid choice. Using first match.\n");
+    }
+  }
+
+  snprintf(resolved_path, resolved_path_size, "%s", glob_result.gl_pathv[choice - 1]);
+  printf("Selected: %s\n", resolved_path);
+  globfree(&glob_result);
+  return 0;
+}
+
 // Load a shim block file into the active playback buffer
 static bool run_load(const parsed_command_t *cmd, shim_runtime_state_t *state) {
   const char *requested = cmd->file_path;
@@ -317,6 +376,18 @@ static bool run_load(const parsed_command_t *cmd, shim_runtime_state_t *state) {
   } else {
     fprintf(stderr, "L requires a file path the first time it is used.\n");
     return false;
+  }
+
+  // Resolve any glob wildcards in the path to a concrete file before proceeding.
+  // This must happen before last_file is updated so we always store a real path.
+  if (strchr(selected_file, '*') != NULL || strchr(selected_file, '?') != NULL ||
+      strchr(selected_file, '[') != NULL) {
+    char resolved[COMMAND_FILE_PATH_MAX];
+    if (resolve_file_pattern(selected_file, resolved, sizeof(resolved)) != 0) {
+      fprintf(stderr, "L: no files matched pattern '%s'.\n", selected_file);
+      return false;
+    }
+    (void)snprintf(selected_file, sizeof(selected_file), "%s", resolved);
   }
 
   // If a previous load is still in flight, stop it and wait for it to exit
@@ -523,6 +594,8 @@ bool commands_execute(const parsed_command_t *cmd, shim_runtime_state_t *state) 
       return run_set_channel(cmd, state);
     case CMD_UPDATE:
       return run_update(cmd, state);
+    case CMD_BUFFER:
+      return run_buffer(cmd, state);
     case CMD_CALIBRATE:
       return run_calibrate(state);
     case CMD_LOCKOUT:
