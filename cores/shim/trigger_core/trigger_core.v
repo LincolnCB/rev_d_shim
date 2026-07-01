@@ -71,11 +71,11 @@ module trigger_core #(
   wire [27:0] cmd_val = cmd_word[27:0];
 
   // Command execution
-  reg [27:0] delay_counter;
-  reg [27:0] lockout_counter;
-  reg [27:0] ext_trig_counter;
-  reg [27:0] trig_lockout;
-  reg ext_trig_sync[1:0]; // 2-stage synchronizer for external trigger
+  reg  [27:0] delay_counter;
+  reg  [27:0] lockout_counter;
+  reg  [27:0] ext_trig_counter;
+  reg  [27:0] trig_lockout;
+  reg  ext_trig_sync[1:0]; // 2-stage synchronizer for external trigger
   reg  log_trig;
   wire do_log;
   wire do_trig;
@@ -112,7 +112,7 @@ module trigger_core #(
   assign next_cmd_state = cmd_buf_empty ? S_IDLE
                           : (cmd_type == CMD_SYNC_CH) ? (all_waiting ? S_IDLE : S_SYNC_CH) // If all channels are already waiting, go right to idle
                           : (cmd_type == CMD_SET_LOCKOUT) ? (cmd_val >= TRIGGER_LOCKOUT_MIN ? S_IDLE : S_ERROR) // Lockout must be non-zero
-                          : (cmd_type == CMD_EXPECT_EXT_TRIG) ? ((cmd_val != 0) ? S_EXPECT_TRIG : S_IDLE) // Zero triggers goes right to idle
+                          : (cmd_type == CMD_EXPECT_EXT_TRIG) ? S_EXPECT_TRIG
                           : (cmd_type == CMD_DELAY) ? ((cmd_val != 0) ? S_DELAY : S_IDLE) // Zero delay goes right to idle
                           : (cmd_type == CMD_FORCE_TRIG) ? S_IDLE
                           : (cmd_type == CMD_RESET_COUNT) ? S_IDLE

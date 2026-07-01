@@ -58,104 +58,107 @@ void sys_ctrl_turn_off(struct sys_ctrl_t *sys_ctrl, bool verbose) {
 // Set the command buffer reset register (1 = reset) to a 17-bit mask
 void sys_ctrl_set_cmd_buf_reset(struct sys_ctrl_t *sys_ctrl, uint32_t mask, bool verbose) {
   if (mask > 0x1FFFF) {
-    fprintf(stderr, "Invalid command buffer reset mask: 0x%" PRIx32 ". Must be a 17-bit value.\n", mask);
+    fprintf(stderr, "Invalid command buffer reset mask: 0x%08" PRIx32 ". Must be a 17-bit value (<= 0x1FFFF).\n", mask);
     exit(EXIT_FAILURE);
   }
   if (verbose) {
-    printf("Setting cmd_buf_reset to 0x%" PRIx32 "\n", mask);
+    printf("Setting cmd_buf_reset to 0x%05" PRIx32 "\n", mask);
   }
   // Write the 17-bit mask to the cmd_buf_reset register
   *(sys_ctrl->cmd_buf_reset) = mask & 0x1FFFF; // Mask to 17 bits
   if (verbose) {
-    printf("cmd_buf_reset set to 0x%" PRIx32 "\n", *(sys_ctrl->cmd_buf_reset));
+    printf("cmd_buf_reset set to 0x%05" PRIx32 "\n", *(sys_ctrl->cmd_buf_reset));
   }
 }
 
 // Set the data buffer reset register (1 = reset) to a 17-bit mask
 void sys_ctrl_set_data_buf_reset(struct sys_ctrl_t *sys_ctrl, uint32_t mask, bool verbose) {
   if (mask > 0x1FFFF) {
-    fprintf(stderr, "Invalid data buffer reset mask: 0x%" PRIx32 ". Must be a 17-bit value.\n", mask);
+    fprintf(stderr, "Invalid data buffer reset mask: 0x%08" PRIx32 ". Must be a 17-bit value (<= 0x1FFFF).\n", mask);
     exit(EXIT_FAILURE);
   }
   if (verbose) {
-    printf("Setting data_buf_reset to 0x%" PRIx32 "\n", mask);
+    printf("Setting data_buf_reset to 0x%05" PRIx32 "\n", mask);
   }
   // Write the 17-bit mask to the data_buf_reset register
   *(sys_ctrl->data_buf_reset) = mask & 0x1FFFF; // Mask to 17 bits
   if (verbose) {
-    printf("data_buf_reset set to 0x%" PRIx32 "\n", *(sys_ctrl->data_buf_reset));
+    printf("data_buf_reset set to 0x%05" PRIx32 "\n", *(sys_ctrl->data_buf_reset));
   }
 }
 
 // Set the threshold average register to a 32-bit value
 void sys_ctrl_set_thresh_val(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose) {
   if (verbose) {
-    printf("Setting thresh_val to 0x%" PRIx32 "\n", value);
+    printf("Setting thresh_val to 0x%08" PRIx32 " (%" PRIu32 ")\n", value, value);
   }
   // Write the 32-bit value to the threshold average register
   *(sys_ctrl->thresh_val) = value;
+  value = *(sys_ctrl->thresh_val); // Read back the value to ensure it was written correctly
   if (verbose) {
-    printf("thresh_val set to 0x%" PRIx32 "\n", *(sys_ctrl->thresh_val));
+    printf("thresh_val set to 0x%08" PRIx32 " (%" PRIu32 ")\n", value, value);
   }
 }
 
 // Set the threshold window register to a 32-bit value
 void sys_ctrl_set_thresh_window(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose) {
   if (verbose) {
-    printf("Setting thresh_window to 0x%" PRIx32 "\n", value);
+    printf("Setting thresh_window to 0x%08" PRIx32 " (%" PRIu32 ")\n", value, value);
   }
   // Write the 32-bit value to the threshold window register
   *(sys_ctrl->thresh_window) = value;
+  value = *(sys_ctrl->thresh_window); // Read back the value to ensure it was written correctly
   if (verbose) {
-    printf("thresh_window set to 0x%" PRIx32 "\n", *(sys_ctrl->thresh_window));
+    printf("thresh_window set to 0x%08" PRIx32 " (%" PRIu32 ")\n", value, value);
   }
 }
 
 // Set the threshold enable register to a 32-bit value
 void sys_ctrl_set_thresh_en(struct sys_ctrl_t *sys_ctrl, uint32_t value, bool verbose) {
   if (verbose) {
-    printf("Setting thresh_en to 0x%" PRIx32 "\n", value);
+    printf("Setting thresh_en to 0x%08" PRIx32 "\n", value);
   }
   // Write the 32-bit value to the threshold enable register
   *(sys_ctrl->thresh_en) = value;
   if (verbose) {
-    printf("thresh_en set to 0x%" PRIx32 "\n", *(sys_ctrl->thresh_en));
+    printf("thresh_en set to 0x%08" PRIx32 "\n", *(sys_ctrl->thresh_en));
   }
 }
 
 // Set the boot_test_skip register to a 16-bit value
 void sys_ctrl_set_boot_test_skip(struct sys_ctrl_t *sys_ctrl, uint16_t value, bool verbose) {
   if (verbose) {
-    printf("Setting boot_test_skip to 0x%" PRIx32 "\n", value);
+    printf("Setting boot_test_skip to 0x%04" PRIx16 "\n", (uint16_t)value);
   }
   // Write the 16-bit value to the boot_test_skip register
   *(sys_ctrl->boot_test_skip) = (uint32_t)value;
   if (verbose) {
-    printf("boot_test_skip set to 0x%" PRIx32 "\n", *(sys_ctrl->boot_test_skip));
+    /* Print only the lower 16 bits which represent the stored value */
+    printf("boot_test_skip set to 0x%04" PRIx16 "\n", (uint16_t)(*(sys_ctrl->boot_test_skip) & 0xFFFF));
   }
 }
 
 // Set the debug register to a 16-bit value
 void sys_ctrl_set_debug(struct sys_ctrl_t *sys_ctrl, uint16_t value, bool verbose) {
   if (verbose) {
-    printf("Setting debug to 0x%" PRIx32 "\n", value);
+    printf("Setting debug to 0x%04" PRIx16 "\n", (uint16_t)value);
   }
   // Write the 16-bit value to the debug register
   *(sys_ctrl->debug) = (uint32_t)value;
   if (verbose) {
-    printf("debug set to 0x%" PRIx32 "\n", *(sys_ctrl->debug));
+    printf("debug set to 0x%04" PRIx16 "\n", (uint16_t)(*(sys_ctrl->debug) & 0xFFFF));
   }
 }
 
 // Set the DAC calibration init register to a 16-bit signed value
 void sys_ctrl_set_dac_cal_init(struct sys_ctrl_t *sys_ctrl, int16_t value, bool verbose) {
   if (verbose) {
-    printf("Setting DAC calibration init to %d (0x%" PRIx16 ")\n", value, (uint32_t)(uint16_t)value);
+    printf("Setting DAC calibration init to %d (0x%08" PRIx16 ")\n", value, (uint32_t)(uint16_t)value);
   }
   // Write the 16-bit signed value to the DAC calibration init register
   *(sys_ctrl->dac_cal_init) = (uint32_t)(uint16_t)value;
   if (verbose) {
-    printf("DAC calibration init set to %d (0x%" PRIx32 ")\n", (int16_t)(uint16_t)(*(sys_ctrl->dac_cal_init) & 0xFFFF), *(sys_ctrl->dac_cal_init));
+    printf("DAC calibration init set to %d (0x%08" PRIx32 ")\n", (int16_t)(uint16_t)(*(sys_ctrl->dac_cal_init) & 0xFFFF), *(sys_ctrl->dac_cal_init));
   }
 }
 
@@ -166,12 +169,12 @@ void sys_ctrl_toggle_dac_pre_delay(struct sys_ctrl_t *sys_ctrl, bool verbose) {
   uint32_t new_value = current_value ^ 0x1; // Toggle the last bit
 
   if (verbose) {
-    printf("Toggling DAC pre-delay bit from 0x%" PRIx32 " to 0x%" PRIx32 "\n", current_value, new_value);
+    printf("Toggling DAC pre-delay bit from 0x%08" PRIx32 " to 0x%08" PRIx32 "\n", current_value, new_value);
   }
 
   *(sys_ctrl->do_dac_pre_delay) = new_value;
 
   if (verbose) {
-    printf("DAC pre-delay bit set to 0x%" PRIx32 "\n", *(sys_ctrl->do_dac_pre_delay));
+    printf("DAC pre-delay bit set to 0x%08" PRIx32 "\n", *(sys_ctrl->do_dac_pre_delay));
   }
 }

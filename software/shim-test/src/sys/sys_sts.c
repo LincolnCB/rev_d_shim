@@ -64,7 +64,7 @@ struct sys_sts_t create_sys_sts(bool verbose) {
 uint32_t sys_sts_get_hw_status(struct sys_sts_t *sys_sts, bool verbose) {
   if (verbose) {
     printf("Reading hardware status register...\n");
-    printf("Hardware status raw: 0x%" PRIx32 "\n", *(sys_sts->hw_status_reg));
+    printf("Hardware status raw: 0x%08" PRIx32 "\n", *(sys_sts->hw_status_reg));
   }
   return *(sys_sts->hw_status_reg);
 }
@@ -73,7 +73,7 @@ uint32_t sys_sts_get_hw_status(struct sys_sts_t *sys_sts, bool verbose) {
 uint32_t sys_sts_get_clk_freq_hz(struct sys_sts_t *sys_sts, bool verbose) {
   if (verbose) {
     printf("Reading SPI clock frequency register...\n");
-    printf("SPI clock frequency raw: 0x%"PRIx32 " (%" PRIu32 ")\n", *(sys_sts->clk_freq_hz), *(sys_sts->clk_freq_hz));
+    printf("SPI clock frequency raw: 0x%08" PRIx32 " (%" PRIu32 ")\n", *(sys_sts->clk_freq_hz), *(sys_sts->clk_freq_hz));
   }
   return *(sys_sts->clk_freq_hz);
 }
@@ -82,7 +82,7 @@ uint32_t sys_sts_get_clk_freq_hz(struct sys_sts_t *sys_sts, bool verbose) {
 uint32_t sys_sts_get_source_clk_freq_hz(struct sys_sts_t *sys_sts, bool verbose) {
   if (verbose) {
     printf("Reading SPI source clock frequency register...\n");
-    printf("SPI source clock frequency raw: 0x%" PRIx32 " (%" PRIu32 ")\n", *(sys_sts->source_clk_freq_hz), *(sys_sts->source_clk_freq_hz));
+    printf("SPI source clock frequency raw: 0x%08" PRIx32 " (%" PRIu32 ")\n", *(sys_sts->source_clk_freq_hz), *(sys_sts->source_clk_freq_hz));
   }
   return *(sys_sts->source_clk_freq_hz);
 }
@@ -100,7 +100,7 @@ uint32_t get_fifo_status(volatile uint32_t *fifo_sts_ptr, const char *fifo_name,
 void print_hw_status(uint32_t hw_status, bool verbose) {
   bool print_status = verbose;
   bool print_board_number = verbose;
-  if (verbose) printf("Raw hardware state code: 0x%" PRIx32 "\n", HW_STS_STATE(hw_status));
+  if (verbose) printf("Raw hardware state code: 0x%01" PRIx32 "\n", HW_STS_STATE(hw_status));
   switch (HW_STS_STATE(hw_status)) {
     case S_IDLE:
       printf("State: Idle (Waiting For Control Board Enable)\n");
@@ -135,10 +135,10 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
       print_status = true;
       break;
     default:
-      printf("State: Unknown (0x%" PRIx32 ")\n", HW_STS_STATE(hw_status));
+      printf("State: Unknown (0x%01" PRIx32 ")\n", HW_STS_STATE(hw_status));
       break;
   }
-  if (verbose) printf("Raw hardware status code: 0x%" PRIx32 "\n", HW_STS_CODE(hw_status));
+  if (verbose) printf("Raw hardware status code: 0x07%" PRIx32 "\n", HW_STS_CODE(hw_status));
   if (print_status) {
     switch (HW_STS_CODE(hw_status)) {
       case STS_EMPTY:
@@ -309,7 +309,7 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
         print_board_number = true;
         break;
       default:
-        printf("Status: Unknown (0x%" PRIx32 ")\n", HW_STS_CODE(hw_status));
+        printf("Status: Unknown (0x%07" PRIx32 ")\n", HW_STS_CODE(hw_status));
         break;
     }
   }
@@ -417,10 +417,10 @@ uint32_t sys_sts_get_trig_data_fifo_status(struct sys_sts_t *sys_sts, bool verbo
 }
 
 // Get trigger counter value
-uint32_t sys_sts_get_trig_counter(struct sys_sts_t *sys_sts, bool verbose) {
+uint32_t sys_sts_get_trig_count(struct sys_sts_t *sys_sts, bool verbose) {
   if (verbose) {
     printf("Reading trigger counter register...\n");
-    printf("Trigger counter raw: 0x%" PRIx32 "\n", *(sys_sts->trig_counter));
+    printf("Trigger counter raw: 0x%08" PRIx32 "\n", *(sys_sts->trig_counter));
   }
   return *(sys_sts->trig_counter);
 }
@@ -429,7 +429,7 @@ uint32_t sys_sts_get_trig_counter(struct sys_sts_t *sys_sts, bool verbose) {
 uint32_t sys_sts_get_debug(struct sys_sts_t *sys_sts, bool verbose) {
   if (verbose) {
     printf("Reading debug register...\n");
-    printf("Debug register raw: 0x%" PRIx32 "\n", *(sys_sts->debug));
+    printf("Debug register raw: 0x%08" PRIx32 "\n", *(sys_sts->debug));
   }
   return *(sys_sts->debug);
 }
@@ -438,7 +438,7 @@ uint32_t sys_sts_get_debug(struct sys_sts_t *sys_sts, bool verbose) {
 uint32_t sys_sts_get_dac_min_delay_time(struct sys_sts_t *sys_sts, bool verbose) {
   if (verbose) {
     printf("Reading DAC 'delay too short' time register...\n");
-    printf("DAC 'delay too short' time raw: 0x%" PRIx32 "\n", *(sys_sts->dac_min_delay_time));
+    printf("DAC 'delay too short' time raw: 0x%08" PRIx32 "\n", *(sys_sts->dac_min_delay_time));
   }
   return *(sys_sts->dac_min_delay_time);
 }
@@ -447,7 +447,7 @@ uint32_t sys_sts_get_dac_min_delay_time(struct sys_sts_t *sys_sts, bool verbose)
 uint32_t sys_sts_get_adc_min_delay_time(struct sys_sts_t *sys_sts, bool verbose) {
   if (verbose) {
     printf("Reading ADC 'delay too short' time register...\n");
-    printf("ADC 'delay too short' time raw: 0x%" PRIx32 "\n", *(sys_sts->adc_min_delay_time));
+    printf("ADC 'delay too short' time raw: 0x%08" PRIx32 "\n", *(sys_sts->adc_min_delay_time));
   }
   return *(sys_sts->adc_min_delay_time);
 }

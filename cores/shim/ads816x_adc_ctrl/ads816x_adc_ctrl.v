@@ -113,6 +113,13 @@ module ads816x_adc_ctrl (
   wire        cancel_repeat;
   wire        cancel_wait;
   wire        error;
+  // Error flags
+  wire        err_boot_fail_w;
+  wire        err_unexp_trig_w;
+  wire        err_delay_too_short_w;
+  wire        err_bad_cmd_w;
+  wire        err_cmd_buf_underflow_w;
+  wire        err_data_buf_overflow_w;
   // Command word toggled bits
   reg         wait_for_trig;
   reg         expect_next;
@@ -225,7 +232,7 @@ module ads816x_adc_ctrl (
 
 
   //// ---- State machine transitions
-  // Allow a cancel command to cancel a delay or trigger wait
+  // Allow a cancel command to cancel commands
   assign cancel_wait = (state == S_DELAY || state == S_TRIG_WAIT || (state == S_ADC_RD && adc_rd_done))
                         && next_cmd_ready
                         && command == CMD_CANCEL;
@@ -318,7 +325,10 @@ module ads816x_adc_ctrl (
     else if (do_next_cmd
              && ((command == CMD_ADC_RD) || (command == CMD_NO_OP))
              && !cmd_word[TRIG_BIT]) begin
-      if (cmd_word[24:0] < min_delay_latched) begin
+      if (command == CMD_NO_OP) begin // NO_OP can take any delay
+        // For NO_OP, a delay down to 0 is allowed. A delay of 0 will act like a delay of 1 (next command runs next clock cycle)
+        delay_timer <= (cmd_word[24:0] == 25'd0) ? 25'd0 : (cmd_word[24:0] - 1);
+      end else if (cmd_word[24:0] < min_delay_latched) begin
         delay_timer <= 25'h1FFFFFF; // Error will be flagged. Max the delay in the meantime.
       end else begin
         delay_timer <= cmd_word[24:0] - 1; // Load the delay time from the command word (minus 1 since we check for zero in the wait condition)
@@ -344,49 +354,53 @@ module ads816x_adc_ctrl (
   end
 
   //// ---- Errors
-  // Error flag
-  assign error = (state == S_TEST_RD && !n_miso_data_ready_mosi_clk && ~boot_readback_match) // Readback mismatch (boot fail)
-                 || (state != S_TRIG_WAIT && state != S_IDLE && trigger && trigger_counter <= 1) // Unexpected trigger
-                 || (state == S_ADC_RD && !adc_rd_done && !wait_for_trig && delay_wait_done) // Delay too short
-                 || (do_next_cmd && next_cmd_state == S_ERROR) // Bad command
-                 || (cmd_done && expect_next && !next_cmd_ready) // Command buffer underflow
-                 || (start_repeat && cmd_buf_empty) // Command buffer underflow on repeat start
-                 || (try_data_write && data_buf_full); // Data buffer overflow
-  // Boot check fail
-  assign boot_readback_match = (miso_data_mosi_clk[15:8] == SET_OTF_CFG_DATA); // Readback matches the test value
+  // Error flags
+  // Boot test readback fail if the readback value does not match the test value when expected
+  assign err_boot_fail_w          = (state == S_TEST_RD && !n_miso_data_ready_mosi_clk && ~boot_readback_match);
+  // Unexpected trigger if triggered while not waiting for the last one. IDLE state allows skipped triggers
+  assign err_unexp_trig_w         = (state != S_TRIG_WAIT && state != S_IDLE && trigger && trigger_counter <= 1);
+  // Delay too short if delay timer is zero before ADC read is done, or if loading delay timer with a value below the minimum
+  assign err_delay_too_short_w    = (do_next_cmd
+                                      && ((command == CMD_ADC_RD) || (command == CMD_NO_OP))
+                                      && !cmd_word[TRIG_BIT]
+                                      && (cmd_word[24:0] < min_delay_latched))
+                                     || (state == S_ADC_RD && !adc_rd_done && !wait_for_trig && delay_wait_done);
+  // Bad command if next command is parsed as ERROR
+  assign err_bad_cmd_w            = (do_next_cmd && next_cmd_state == S_ERROR);
+  // Command buffer underflow if expecting buffer item but buffer is empty
+  assign err_cmd_buf_underflow_w  = (cmd_done && expect_next && !next_cmd_ready) || (start_repeat && cmd_buf_empty);
+  // Data buffer overflow if trying to write to data buffer while it is full
+  assign err_data_buf_overflow_w  = (try_data_write && data_buf_full);
+  // Combine all error flags into a single error output
+  assign error = err_boot_fail_w
+                || err_unexp_trig_w
+                || err_delay_too_short_w
+                || err_bad_cmd_w
+                || err_cmd_buf_underflow_w
+                || err_data_buf_overflow_w;
   always @(posedge clk) begin
-    if (!resetn) boot_fail <= 1'b0; // Reset boot fail on reset
-    if (state == S_TEST_RD && !n_miso_data_ready_mosi_clk) boot_fail <= ~boot_readback_match;
+    if (!resetn) boot_fail <= 1'b0;
+    else if (err_boot_fail_w) boot_fail <= ~boot_readback_match;
   end
-  // Unexpected trigger
   always @(posedge clk) begin
     if (!resetn) unexp_trig <= 1'b0;
-    else if (state != S_TRIG_WAIT && state != S_IDLE && trigger && trigger_counter <= 1) unexp_trig <= 1'b1;
+    else if (err_unexp_trig_w) unexp_trig <= 1'b1;
   end
-  // Delay too short
   always @(posedge clk) begin
     if (!resetn) delay_too_short <= 1'b0;
-    else if (do_next_cmd
-             && ((command == CMD_ADC_RD) || (command == CMD_NO_OP))
-             && !cmd_word[TRIG_BIT]
-             && (cmd_word[24:0] < min_delay_latched)) delay_too_short <= 1'b1; // Delay too short if loading delay timer with a value below the minimum
-    else if (state == S_ADC_RD && !adc_rd_done && !wait_for_trig && delay_wait_done) delay_too_short <= 1'b1; // Delay too short if delay timer is zero before ADC read is done
+    else if (err_delay_too_short_w) delay_too_short <= 1'b1;
   end
-  // Bad command
   always @(posedge clk) begin
     if (!resetn) bad_cmd <= 1'b0;
-    else if (do_next_cmd && next_cmd_state == S_ERROR) bad_cmd <= 1'b1;
+    else if (err_bad_cmd_w) bad_cmd <= 1'b1;
   end
-  // Command buffer underflow
   always @(posedge clk) begin
     if (!resetn) cmd_buf_underflow <= 1'b0;
-    else if ((cmd_done && expect_next && !next_cmd_ready) || (start_repeat && cmd_buf_empty))
-      cmd_buf_underflow <= 1'b1;
+    else if (err_cmd_buf_underflow_w) cmd_buf_underflow <= 1'b1;
   end
-  // Data buffer overflow
   always @(posedge clk) begin
     if (!resetn) data_buf_overflow <= 1'b0;
-    else if (try_data_write && data_buf_full) data_buf_overflow <= 1'b1;
+    else if (err_data_buf_overflow_w) data_buf_overflow <= 1'b1;
   end
 
 
@@ -571,6 +585,8 @@ module ads816x_adc_ctrl (
     else if (miso_bit == 1) miso_buf_wr_en <= 1'b1; // Write MISO data to FIFO when last bit is received
     else miso_buf_wr_en <= 1'b0;
   end
+  // Boot readback match check (in MOSI clock domain)
+  assign boot_readback_match = (miso_data_mosi_clk[15:8] == SET_OTF_CFG_DATA);
 
 
   //// ---- ADC data output

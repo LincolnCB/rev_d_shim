@@ -11,7 +11,7 @@
 uint32_t *map_32bit_memory(uint32_t base_addr, size_t wordcount, char *name, bool verbose) {
 
   if (verbose) {
-    printf("Mapping memory region [%s] at base address 0x%" PRIx32 " with size %zu bytes...\n", name, base_addr, wordcount * 4);
+    printf("Mapping memory region [%s] at base address 0x%08" PRIx32 " with size %zu bytes...\n", name, base_addr, wordcount * 4);
   }
 
   // File descriptor for /dev/mem

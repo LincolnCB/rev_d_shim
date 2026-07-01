@@ -97,7 +97,7 @@ int cmd_trig_reset_count(const char** args, int arg_count, const command_flag_t*
 }
 
 int cmd_trig_count(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  uint32_t count = sys_sts_get_trig_counter(ctx->sys_sts, *(ctx->verbose));
+  uint32_t count = sys_sts_get_trig_count(ctx->sys_sts, *(ctx->verbose));
   printf("Current trigger count: %u (0x%08X)\n", count, count);
   return 0;
 }
@@ -391,7 +391,7 @@ static void* trigger_monitor_thread(void* arg) {
   while (!*(params->should_stop)) {
     usleep(500000); // 500ms polling interval
 
-    uint32_t current_trigger_count = sys_sts_get_trig_counter(params->sys_sts, false);
+    uint32_t current_trigger_count = sys_sts_get_trig_count(params->sys_sts, false);
     // Since we reset the count after sync_ch, current_trigger_count is the actual triggers received
 
     // Check if 3 seconds have passed since last display

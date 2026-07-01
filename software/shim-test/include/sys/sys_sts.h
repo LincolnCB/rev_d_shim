@@ -186,7 +186,7 @@ uint32_t sys_sts_get_trig_cmd_fifo_status(struct sys_sts_t *sys_sts, bool verbos
 // Get trigger data FIFO status
 uint32_t sys_sts_get_trig_data_fifo_status(struct sys_sts_t *sys_sts, bool verbose);
 // Get trigger counter value
-uint32_t sys_sts_get_trig_counter(struct sys_sts_t *sys_sts, bool verbose);
+uint32_t sys_sts_get_trig_count(struct sys_sts_t *sys_sts, bool verbose);
 // Get debug register value
 uint32_t sys_sts_get_debug(struct sys_sts_t *sys_sts, bool verbose);
 // Get DAC "delay too short" time in SPI clock cycles

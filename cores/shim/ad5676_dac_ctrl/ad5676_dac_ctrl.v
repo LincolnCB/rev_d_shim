@@ -139,8 +139,17 @@ module ad5676_dac_ctrl #(
   wire        cmd_done;
   wire        do_next_cmd;
   wire [ 3:0] next_cmd_state;
-  wire        cancel_wait;
+  wire        cancel;
+  // Error flags
   wire        error;
+  wire        err_boot_fail_w;
+  wire        err_unexp_trig_w;
+  wire        err_delay_too_short_w;
+  wire        err_pre_delay_too_long_w;
+  wire        err_ldac_misalign_w;
+  wire        err_bad_cmd_w;
+  wire        err_cmd_buf_underflow_w;
+  wire        err_data_buf_overflow_w;
   // Command word toggled bits
   reg         do_ldac;
   reg         ldac_unsafe;
@@ -222,10 +231,10 @@ module ad5676_dac_ctrl #(
   assign command = cmd_word[31:29];
   assign next_cmd_ready = !cmd_buf_empty;
   // Command word read enable
-  assign cmd_buf_rd_en = (state != S_ERROR) && next_cmd_ready && (read_next_dac_val_pair || cmd_done || cancel_wait);
+  assign cmd_buf_rd_en = (state != S_ERROR) && next_cmd_ready && (read_next_dac_val_pair || cmd_done || cancel);
   // Command bits processing
   always @(posedge clk) begin
-    if (!resetn || state == S_ERROR || cancel_wait) begin
+    if (!resetn || state == S_ERROR) begin
       do_ldac <= 1'b0;
       wait_for_trig <= 1'b0;
       expect_next <= 1'b0;
@@ -246,16 +255,24 @@ module ad5676_dac_ctrl #(
         wait_for_trig <= 1'b0;
         expect_next <= 1'b0;
       end
+    // If cancelling, un-set the ldac and expect_next flags, but set for trigger wait to properly handle
+    //   cancelling when in the middle of a DAC_WR command.
+    end else if (cancel) begin
+      do_ldac <= 1'b0;
+      wait_for_trig <= 1'b1;
+      expect_next <= 1'b0;
     end
   end
 
 
   //// ---- State machine transitions
-  // Allow a cancel command to cancel a delay or trigger wait:
-  //   Skips the trigger counter or delay timer to 0 next cycle, ending the wait immediately
-  assign cancel_wait =  (state == S_DELAY || state == S_TRIG_WAIT)
-                        && next_cmd_ready
-                        && command == CMD_CANCEL;
+  // Allow a cancel command to cancel command execution while in the DELAY or TRIG_WAIT states
+  //   Won't skip forward with PRE_DELAY because DAC data words are in the buffer, which can't be parsed as commands
+  //   However, a cancel command following a PRE_DELAY DAC command will still turn off the do_ldac and expect_next bits
+  //   This is done once the DAC_WR command has already loaded the DAC words from the buffer
+  assign cancel = (state == S_DELAY || state == S_TRIG_WAIT || (state == S_DAC_WR && last_dac_channel))
+                  && next_cmd_ready
+                  && command == CMD_CANCEL;
   // Current command is finished
   assign cmd_done = (state == S_IDLE && next_cmd_ready) // IDLE and next command is ready
                     // Waiting and wait is fully done
@@ -339,13 +356,16 @@ module ad5676_dac_ctrl #(
   end
   // CANCEL command can skip to the end of the wait
   always @(posedge clk) begin
-    // Reset delay timer on reset, error, or canceling a wait
-    if (!resetn || state == S_ERROR || cancel_wait) delay_timer <= 25'd0;
+    // Reset delay timer on reset, error, or canceling a delay wait
+    if (!resetn || state == S_ERROR || (cancel && state == S_DELAY)) delay_timer <= 25'd0;
     // If the next command is a DAC write or no-op with a delay wait, load the delay timer from command word
     else if (do_next_cmd
              && ((command == CMD_DAC_WR) || (command == CMD_NO_OP))
              && !cmd_word[TRIG_BIT]) begin
-      if (cmd_word[24:0] < min_delay_latched) begin
+      if (command == CMD_NO_OP) begin // NO_OP can take any delay
+        // For NO_OP, a delay down to 0 is allowed. A delay of 0 will act like a delay of 1 (next command runs next clock cycle)
+        delay_timer <= (cmd_word[24:0] == 25'd0) ? 25'd0 : (cmd_word[24:0] - 1);
+      end else if (cmd_word[24:0] < min_delay_latched) begin
         delay_timer <= 25'h1FFFFFF; // Error will be flagged. Max the delay in the meantime.
       end else begin
         delay_timer <= cmd_word[24:0] - 1; // Load the delay time from the command word (minus 1 since we check for zero in the wait condition)
@@ -360,7 +380,8 @@ module ad5676_dac_ctrl #(
   assign trig_wait_done = (trigger && trigger_counter == 1) || trigger_counter == 0;
   // CANCEL command can skip to the end of the wait
   always @(posedge clk) begin
-    if (!resetn || state == S_ERROR || cancel_wait) trigger_counter <= 25'd0;
+    // Cancelling during the DAC_WR state will set the trigger counter to 0 to immediately end once the write is done
+    if (!resetn || state == S_ERROR || cancel) trigger_counter <= 25'd0;
     // If the next command is a DAC write or no-op with a trigger wait, load the trigger counter from command word
     else if (do_next_cmd
              && ((command == CMD_DAC_WR) || (command == CMD_NO_OP))
@@ -375,63 +396,68 @@ module ad5676_dac_ctrl #(
 
 
   //// ---- Errors
-  // Error flag
-  assign error = (state == S_TEST_RD && ~n_miso_data_ready_mosi_clk && ~boot_readback_match) // Readback mismatch (boot fail)
-                  || (state != S_TRIG_WAIT && trigger && trigger_counter <= 1) // Unexpected final trigger
-                  || (state == S_DAC_WR && !dac_wr_done && !wait_for_trig && delay_wait_done) // Delay too short
-                  || (do_next_cmd
-                      && ((command == CMD_DAC_WR) || (command == CMD_NO_OP))
-                      && !cmd_word[TRIG_BIT]
-                      && (cmd_word[24:0] < min_delay_latched)) // Delay in command too short
-                  || (state == S_PRE_DELAY && delay_timer < min_delay_latched) // Something went wrong and the PRE_DELAY didn't end when it should
-                  || (ldac_unsafe && ldac_shared) // LDAC misalignment
-                  || (do_next_cmd && next_cmd_state == S_ERROR) // Bad command
-                  || (cmd_done && expect_next && !next_cmd_ready) // Command buffer underflow
-                  || (try_data_write && data_buf_full) // Data buffer overflow
+  // Error flags
+  // Boot test readback fail if the readback value does not match the test value when expected
+  assign err_boot_fail_w          = (state == S_TEST_RD && ~n_miso_data_ready_mosi_clk && ~boot_readback_match);
+  // Unexpected trigger if triggered while not waiting for the last one. IDLE state allows skipped triggers
+  assign err_unexp_trig_w         = (state != S_TRIG_WAIT && state != S_IDLE && trigger && trigger_counter <= 1);
+  // Delay too short if delay timer is zero before DAC write is done, or if loading delay timer with a value below the minimum
+  assign err_delay_too_short_w    = (state == S_DAC_WR && !dac_wr_done && !wait_for_trig && delay_wait_done)
+                                     || (do_next_cmd
+                                         && ((command == CMD_DAC_WR) || (command == CMD_NO_OP))
+                                         && !cmd_word[TRIG_BIT]
+                                         && (cmd_word[24:0] < min_delay_latched));
+  // Pre-delay too long if minimum delay passes while still in the PRE_DELAY state (should have transitioned to DAC_WR)
+  assign err_pre_delay_too_long_w = (state == S_PRE_DELAY && delay_timer < min_delay_latched);
+  // LDAC misalignment if another board controller fires LDAC while this board controller is writing to DAC
+  assign err_ldac_misalign_w      = (ldac_unsafe && ldac_shared);
+  // Bad command if next command is parsed as ERROR
+  assign err_bad_cmd_w            = (do_next_cmd && next_cmd_state == S_ERROR);
+  // Command buffer underflow if expecting buffer item but buffer is empty
+  assign err_cmd_buf_underflow_w  = (cmd_done && expect_next && !next_cmd_ready);
+  // Data buffer overflow if trying to write to data buffer while it is full
+  assign err_data_buf_overflow_w  = (try_data_write && data_buf_full);
+  // Combine all error flags into a single error output
+  assign error =  err_boot_fail_w
+                  || err_unexp_trig_w
+                  || err_delay_too_short_w
+                  || err_pre_delay_too_long_w
+                  || err_ldac_misalign_w
+                  || err_bad_cmd_w
+                  || err_cmd_buf_underflow_w
+                  || err_data_buf_overflow_w
                   || cal_oob // Calibration value out of bounds
                   || dac_val_oob; // DAC value out of bounds
-  // Boot check fail
-  assign boot_readback_match = (miso_data_mosi_clk == DAC_TEST_VAL); // Readback matches the test value
   always @(posedge clk) begin
-    if (!resetn) boot_fail <= 1'b0; // Reset boot fail on reset
-    if (state == S_TEST_RD && ~n_miso_data_ready_mosi_clk) boot_fail <= ~boot_readback_match;
+    if (!resetn) boot_fail <= 1'b0;
+    else if (err_boot_fail_w) boot_fail <= ~boot_readback_match;
   end
-  // Unexpected trigger
   always @(posedge clk) begin
     if (!resetn) unexp_trig <= 1'b0;
-    else if (state != S_TRIG_WAIT && trigger && trigger_counter <= 1) unexp_trig <= 1'b1; // Unexpected trigger if triggered while not waiting for the last one
+    else if (err_unexp_trig_w) unexp_trig <= 1'b1;
   end
-  // Delay too short
   always @(posedge clk) begin
     if (!resetn) delay_too_short <= 1'b0;
-    else if (do_next_cmd
-             && ((command == CMD_DAC_WR) || (command == CMD_NO_OP))
-             && !cmd_word[TRIG_BIT]
-             && (cmd_word[24:0] < min_delay_latched)) delay_too_short <= 1'b1; // Delay too short if loading delay timer with a value below the minimum
-    else if (state == S_DAC_WR && !dac_wr_done && !wait_for_trig && delay_wait_done) delay_too_short <= 1'b1; // Delay too short if delay timer is zero before DAC write is done
+    else if (err_delay_too_short_w) delay_too_short <= 1'b1;
   end
-  // LDAC misalignment
   always @(posedge clk) begin
     if (!resetn) ldac_misalign <= 1'b0;
-    else if (ldac_unsafe && ldac_shared) ldac_misalign <= 1'b1; // LDAC misalignment if LDAC is shared and another controller is writing to DAC
+    else if (err_ldac_misalign_w) ldac_misalign <= 1'b1;
   end
-  // Bad command
   always @(posedge clk) begin
     if (!resetn) bad_cmd <= 1'b0;
-    else if (do_next_cmd && next_cmd_state == S_ERROR) bad_cmd <= 1'b1; // Bad command if next command is parsed as ERROR
-    else if (state == S_PRE_DELAY && delay_timer < min_delay_latched) bad_cmd <= 1'b1; // Something went wrong and the PRE_DELAY didn't end when it should
+    else if (err_bad_cmd_w) bad_cmd <= 1'b1;
+    else if (err_pre_delay_too_long_w) bad_cmd <= 1'b1; // Using bad_cmd flag for pre-delay error as well
   end
-  // Command buffer underflow
   always @(posedge clk) begin
     if (!resetn) cmd_buf_underflow <= 1'b0;
-    else if (cmd_done && expect_next && !next_cmd_ready) cmd_buf_underflow <= 1'b1; // Underflow if expecting buffer item but buffer is empty
+    else if (err_cmd_buf_underflow_w) cmd_buf_underflow <= 1'b1;
   end
-  // Data buffer overflow
   always @(posedge clk) begin
     if (!resetn) data_buf_overflow <= 1'b0;
-    else if (try_data_write && data_buf_full) data_buf_overflow <= 1'b1;
+    else if (err_data_buf_overflow_w) data_buf_overflow <= 1'b1;
   end
-  // DAC val out of bounds
+  // DAC val out of bounds check
   assign first_dac_val_cal_signed_oob = (first_dac_val_cal_signed < -$signed(ABS_DAC_MAX_SIGNED) || first_dac_val_cal_signed > $signed(ABS_DAC_MAX_SIGNED));
   assign second_dac_val_cal_signed_oob = (second_dac_val_cal_signed < -$signed(ABS_DAC_MAX_SIGNED) || second_dac_val_cal_signed > $signed(ABS_DAC_MAX_SIGNED));
   always @(posedge clk) begin
@@ -741,6 +767,8 @@ module ad5676_dac_ctrl #(
     else if (miso_bit == 1) miso_buf_wr_en <= 1'b1; // Write MISO data to FIFO when last bit is received
     else miso_buf_wr_en <= 1'b0;
   end
+  // Boot readback match check (in MOSI clock domain)
+  assign boot_readback_match = (miso_data_mosi_clk == DAC_TEST_VAL);
 
   //// ---- DAC data output
   // Write calibration value to data buffer
