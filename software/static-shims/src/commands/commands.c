@@ -70,7 +70,8 @@ void commands_print_help(void) {
   printf("Lower-case characters are arguments, to be replaced with some number or path.\n");
   printf("\n");
   printf(" --- General commands ---\n");
-  printf("  H or ?     : Show this help text.\n");
+  printf("  H          : Show this help text.\n");
+  printf("  ?          : Show an extended guide for file format and commands.\n");
   printf("  Q          : Quit program.\n");
   printf("  S          : Print status.\n");
   printf("  P          : Power amplifier system on.\n");
@@ -84,12 +85,152 @@ void commands_print_help(void) {
   printf("  B x1 x2... : Buffer all channels to given amp values (one max, wait for trigger).\n");
   printf("  C          : Run calibration (run before file, clears buffer).\n");
   printf("  D t        : Set trigger lockout time in ms (default 10.0, pauses external triggers).\n");
-  printf("  T [n]      : Trigger next shim row n times (default n=1, pauses extternal triggers).\n");
+  printf("  T [n]      : Trigger next shim row n times (default n=1, pauses external triggers).\n");
   printf("\n");
   printf(" --- File commands ------\n");
   printf("  L [file]   : Load shim block file (or previous file if omitted).\n");
   printf("  E          : Exit loaded file and reset trigger counter.\n");
   printf("  R          : Reset buffers and restart file if loaded.\n");
+  printf("\n");
+}
+
+// Print an extended guide for file format and commands
+void commands_print_guide(void) {
+  printf("================================================\n");
+  printf("=====         Extended Command Guide       =====\n");
+  printf("================================================\n");
+  printf("\n");
+
+  printf("-----------------------------------------------\n");
+  printf("  General commands\n");
+  printf("-----------------------------------------------\n");
+  printf("\n");
+  printf("  H\n");
+  printf("    Show the brief help/command reference.\n");
+  printf("    Less info, for quick reference.\n");
+  printf("\n");
+  printf("  ? \n");
+  printf("    Show this extended command guide.\n");
+  printf("    Goes into much more depth about the file format and command usage.\n");
+  printf("\n");
+  printf("  Q\n");
+  printf("    Quit the program.\n");
+  printf("    All files are closed and the system will be powered off safely.\n");
+  printf("    Using Ctrl-C will safely be handled and work the same way.\n");
+  printf("\n");
+  printf("  S\n");
+  printf("    Print current system status.\n");
+  printf("    Shows the following info:\n");
+  printf("      - Number of channels in use / expected (from command line argument).\n");
+  printf("      - File/buffer status and last loaded file (for easy reloading).\n");
+  printf("      - Trigger count if inside a file.\n");
+  printf("      - Trigger lockout time in ms.\n");
+  printf("      - Hardware status summary (power, running, halted, etc.).\n");
+  printf("      - DAC/ADC/Trigger FIFO status for each utilized board.\n");
+  printf("\n");
+  printf("  P\n");
+  printf("    Power the amplifier system on.\n");
+  printf("    The system will be off by default when this software starts.\n");
+  printf("    It needs to be powered on before running most commands.\n");
+  printf("    The 'X' (hard reset) command will power it off.\n");
+  printf("    Hardware bugs will cause the system to go into a halted state,\n");
+  printf("    which will require a hard reset to recover.\n");
+  printf("\n");
+  printf("  X\n");
+  printf("    Hard reset: power off, unload file, clear all buffers.\n");
+  printf("    This is a more extreme version of the 'Z' command to REALLY ensure safety.\n");
+  printf("    Will require the 'P' command to power the system back on before running other commands.\n");
+  printf("\n");
+  printf("  Z\n");
+  printf("    Zero all shim currents, unload file, clear all buffers.\n");
+  printf("    This will keep the power on, but will unload your file, requiring a 'L' command to restart it.\n");
+  printf("\n");
+  printf("  I [file]\n");
+  printf("    Read currents from ADC. If a file path is given, append the\n");
+  printf("    readings as a CSV row to that file.\n");
+  printf("    The readings will be printed to stdout. in either case.\n");
+  printf("\n");
+
+  printf("------------------------------------------------\n");
+  printf("  Manual commands\n");
+  printf("------------------------------------------------\n");
+  printf("\n");
+  printf("  n x\n");
+  printf("    Set channel n (0-63) to x amperes immediately. Clears any\n");
+  printf("    loaded file buffer.\n");
+  printf("\n");
+  printf("  U x1 x2 ...\n");
+  printf("    Update all channels at once to the given amp values. Clears\n");
+  printf("    any loaded file buffer.\n");
+  printf("\n");
+  printf("  B x1 x2 ...\n");
+  printf("    Buffer one row of amp values (up to one row allowed). The\n");
+  printf("    row is held until the next external trigger is received.\n");
+  printf("\n");
+  printf("  C\n");
+  printf("    Run calibration. Should be run before loading a file. Clears\n");
+  printf("    any loaded file buffer.\n");
+  printf("\n");
+  printf("  D t\n");
+  printf("    Set the trigger lockout time to t milliseconds (default 10.0).\n");
+  printf("    External triggers are paused while this is being set.\n");
+  printf("    The lockout time is the minimum time between triggers, and is used to\n");
+  printf("    prevent double triggers from longer pulses. However, if the lockout time is too long,\n");
+  printf("    it can cause missed triggers.\n");
+  printf("\n");
+  printf("  T [n]\n");
+  printf("    Manually trigger the next shim row n times (default n=1).\n");
+  printf("    External triggers are paused while this is being processed.\n");
+  printf("    This command can only be used when a file is loaded or a command has been buffered.\n");
+  printf("\n");
+
+  printf("------------------------------------------------\n");
+  printf("  File commands\n");
+  printf("------------------------------------------------\n");
+  printf("\n");
+  printf("  L [file]\n");
+  printf("    Load a shim block file and begin playback. If no path is\n");
+  printf("    given, reloads the previously loaded file. Glob wildcards\n");
+  printf("    (* ? []) are supported; if multiple files match you will be\n");
+  printf("    prompted to choose one.\n");
+  printf("\n");
+  printf("  E\n");
+  printf("    Exit the loaded file and reset the trigger counter.\n");
+  printf("    This will NOT zero the shim currents, run 'Z' to do that.\n");
+  printf("\n");
+  printf("  R\n");
+  printf("    Reset all buffers and restart the file from the beginning\n");
+  printf("    if one is loaded (for files, this is basically 'E' and 'L' together).\n");
+  printf("\n");
+
+  printf("------------------------------------------------\n");
+  printf("  Block file format\n");
+  printf("------------------------------------------------\n");
+  printf("\n");
+  printf("  Each data line is a comma- or space-separated list of per-channel\n");
+  printf("  amp values (%.1f to %.1f A). Each trigger advances to the next\n",
+         -HW_MAX_ABS_AMPS, HW_MAX_ABS_AMPS);
+  printf("  line. At end of file, playback loops from the top.\n");
+  printf("  Blank lines and lines beginning with # are ignored.\n");
+  printf("\n");
+  printf("  Delimiter lines (xN, where N is a positive integer) define repeat\n");
+  printf("  blocks. A delimiter closes the data lines above it and loops them\n");
+  printf("  N times before falling through to the next line.\n");
+  printf("\n");
+  printf("  Two consecutive delimiters form a higher nesting level: the second\n");
+  printf("  one wraps everything above both delimiters and repeats that N times.\n");
+  printf("  Up to %d nesting levels are supported. Use x1 as a dummy delimiter\n",
+         FILE_LOOP_MAX_LEVEL);
+  printf("  to bound a block without repeating it, or to add a nesting level.\n");
+  printf("\n");
+  printf("  Example:\n");
+  printf("    1.0, 0.0   |\n");
+  printf("    0.0, 1.0   | repeated 3x by x3\n");
+  printf("    x3         |\n");
+  printf("    2.0, 0.0   | repeated 2x by x2 |\n");
+  printf("    x2         |                    | repeated 4x by x4\n");
+  printf("    x4         |                    |\n");
+  printf("    0.0, 0.0   <- played once, then file loops from top\n");
   printf("\n");
 }
 
@@ -698,6 +839,9 @@ bool commands_execute(const parsed_command_t *cmd, shim_runtime_state_t *state) 
       return true;
     case CMD_HELP:
       commands_print_help();
+      return true;
+    case CMD_GUIDE:
+      commands_print_guide();
       return true;
     case CMD_QUIT:
       state->running = false;

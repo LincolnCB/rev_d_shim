@@ -184,6 +184,12 @@ static void* trigger_data_stream_thread(void* arg) {
   uint64_t samples_written = 0;
 
   while (samples_written < sample_count && !(*should_stop)) {
+    // Check hardware status
+    if (HW_STS_STATE(sys_sts_get_hw_status(ctx->sys_sts, verbose)) == S_HALTED) {
+      fprintf(stderr, "Trigger Data Stream Thread: Hardware is not running. Stopping stream.\n");
+      break;
+    }
+
     // Check trigger data FIFO status
     uint32_t data_status = sys_sts_get_trig_data_fifo_status(ctx->sys_sts, false);
 
@@ -379,19 +385,28 @@ int cmd_stop_trig_data_stream(const char** args, int arg_count, const command_fl
 // Thread function for trigger monitoring
 static void* trigger_monitor_thread(void* arg) {
   trigger_monitor_params_t* params = (trigger_monitor_params_t*)arg;
+  command_context_t* ctx = params->ctx;
+  bool verbose = params->verbose;
+  struct sys_sts_t* sys_sts = ctx->sys_sts;
   time_t last_display = time(NULL);
   uint32_t last_trigger_count = 0;  // Since we reset count after sync, start from 0
   bool completed_message_shown = false;
 
-  if (params->verbose) {
+  if (verbose) {
     printf("Trigger monitor thread started. Expected: %u triggers\n",
            params->expected_total_triggers);
   }
 
   while (!*(params->should_stop)) {
+    // Check hardware status
+    if (HW_STS_STATE(sys_sts_get_hw_status(sys_sts, verbose)) == S_HALTED) {
+      fprintf(stderr, "Trigger Monitor Thread: Hardware halted. Stopping stream.\n");
+      break;
+    }
+
     usleep(500000); // 500ms polling interval
 
-    uint32_t current_trigger_count = sys_sts_get_trig_count(params->sys_sts, false);
+    uint32_t current_trigger_count = sys_sts_get_trig_count(sys_sts, false);
     // Since we reset the count after sync_ch, current_trigger_count is the actual triggers received
 
     // Check if 3 seconds have passed since last display
@@ -420,7 +435,7 @@ static void* trigger_monitor_thread(void* arg) {
     last_trigger_count = current_trigger_count;
   }
 
-  if (params->verbose) {
+  if (verbose) {
     printf("Trigger monitor thread stopping\n");
   }
 
@@ -428,7 +443,7 @@ static void* trigger_monitor_thread(void* arg) {
 }
 
 // Start trigger monitor function
-int start_trigger_monitor(struct sys_sts_t* sys_sts, uint32_t expected_triggers, bool verbose) {
+int start_trigger_monitor(command_context_t* ctx, uint32_t expected_triggers, bool verbose) {
   // Stop existing monitor if running
   if (g_trigger_monitor_active) {
     g_trigger_monitor_should_stop = true;
@@ -439,7 +454,7 @@ int start_trigger_monitor(struct sys_sts_t* sys_sts, uint32_t expected_triggers,
   g_trigger_monitor_should_stop = false;
 
   static trigger_monitor_params_t monitor_params;
-  monitor_params.sys_sts = sys_sts;
+  monitor_params.ctx = ctx;
   monitor_params.expected_total_triggers = expected_triggers;
   monitor_params.should_stop = &g_trigger_monitor_should_stop;
   monitor_params.verbose = verbose;

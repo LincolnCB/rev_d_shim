@@ -15,6 +15,7 @@ module ads816x_adc_ctrl (
   output wire        cmd_buf_rd_en,
   input  wire [31:0] cmd_buf_word,
   input  wire        cmd_buf_empty,
+  input  wire        blocked,
 
   output reg         data_buf_wr_en,
   output reg  [31:0] data_word,
@@ -202,12 +203,17 @@ module ads816x_adc_ctrl (
                     : cmd_buf_word;
   assign command =  cmd_word[31:29];
   assign next_cmd_ready = start_repeat  ? 1'b0
-                          : (repeating) ? 1'b1
-                          : !cmd_buf_empty;
+                          : (repeating) ? !blocked
+                          : !(cmd_buf_empty || blocked);
   // Allow a cancel command to cancel a repeat
-  assign cancel_repeat = (repeat_counter > 0 && !cmd_buf_empty && cmd_buf_word[31:29] == CMD_CANCEL);
+  assign cancel_repeat =  repeat_counter > 0 
+                          && !(cmd_buf_empty || blocked)
+                          && cmd_buf_word[31:29] == CMD_CANCEL;
   // Command word read enable
-  assign cmd_buf_rd_en = (state != S_ERROR) && !cmd_buf_empty && !repeating && (cmd_done || cancel_wait || start_repeat);
+  assign cmd_buf_rd_en =  state != S_ERROR
+                          && !(cmd_buf_empty || blocked)
+                          && !repeating 
+                          && (cmd_done || cancel_wait || start_repeat);
   // Command bits processing
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) begin
@@ -368,9 +374,9 @@ module ads816x_adc_ctrl (
   // Bad command if next command is parsed as ERROR
   assign err_bad_cmd_w            = (do_next_cmd && next_cmd_state == S_ERROR);
   // Command buffer underflow if expecting buffer item but buffer is empty
-  assign err_cmd_buf_underflow_w  = (cmd_done && expect_next && !next_cmd_ready) || (start_repeat && cmd_buf_empty);
+  assign err_cmd_buf_underflow_w  = (cmd_done && expect_next && !next_cmd_ready) || (start_repeat && (cmd_buf_empty || blocked));
   // Data buffer overflow if trying to write to data buffer while it is full
-  assign err_data_buf_overflow_w  = (try_data_write && data_buf_full);
+  assign err_data_buf_overflow_w  = (try_data_write && (data_buf_full || (blocked && !debug)));
   // Combine all error flags into a single error output
   assign error = err_boot_fail_w
                 || err_unexp_trig_w
@@ -638,7 +644,7 @@ module ads816x_adc_ctrl (
   // Write ADC data to the data buffer when attempting a write and buffer isn't full
   always @(posedge clk) begin
     if (!resetn) data_buf_wr_en <= 1'b0; // Reset data word write enable on reset
-    else if (try_data_write && !data_buf_full) data_buf_wr_en <= 1'b1; // Write data word when two words are ready and buffer isn't full
+    else if (try_data_write && !(data_buf_full || (blocked && !debug))) data_buf_wr_en <= 1'b1; // Write data word when two words are ready and buffer isn't full
     else data_buf_wr_en <= 1'b0;
   end
   // MISO data stored flag
@@ -659,7 +665,7 @@ module ads816x_adc_ctrl (
   // For data, [15:0] is the first word, [31:16] is the second word
   always @(posedge clk) begin
     if (!resetn) data_word <= 32'd0; // Reset data word on reset
-    else if (try_data_write && !data_buf_full) begin
+    else if (try_data_write && !(data_buf_full || (blocked && !debug))) begin
       // If ADC data pair is ready, write the two MISO data words to the data buffer
       if (adc_pair_data_ready) begin
         data_word <= {offset_to_signed(miso_data_mosi_clk[15:0]), miso_data_storage};

@@ -163,13 +163,21 @@ static bool parse_expect_no_args(parse_state_t *state, const char *message) {
 
 //// -- General commands --
 
-// Parse H or ? (help).
+// Parse H (help).
 static bool parse_help(parsed_command_t *out, parse_state_t *state) {
-  if (!((state->token[1] == '\0' && cmd_match(state->token[0], 'H')) ||
-        (state->token[0] == '?' && state->token[1] == '\0'))) {
+  if (!(state->token[1] == '\0' && cmd_match(state->token[0], 'H'))) {
     return false;
   }
   out->type = CMD_HELP;
+  return true;
+}
+
+// Parse ? (guide).
+static bool parse_guide(parsed_command_t *out, parse_state_t *state) {
+  if (!(state->token[1] == '\0' && cmd_match(state->token[0], '?'))) {
+    return false;
+  }
+  out->type = CMD_GUIDE;
   return true;
 }
 
@@ -476,6 +484,7 @@ input_parse_result_t input_parse_line(const char *line,
   // first match wins.
   static const parse_fn_t parsers[] = {
     parse_help,
+    parse_guide,
     parse_quit,
     parse_status,
     parse_power_on,

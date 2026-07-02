@@ -12,6 +12,7 @@
 #include "system_commands.h"
 #include "command_helper.h"
 #include "experiment_commands.h"
+#include "trigger_commands.h"
 #include "sys_sts.h"
 #include "sys_ctrl.h"
 #include "clk_ctrl.h"

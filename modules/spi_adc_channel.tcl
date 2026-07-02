@@ -33,8 +33,8 @@ create_bd_pin -dir O -from 31 -to 0 adc_data
 create_bd_pin -dir O adc_data_wr_en
 create_bd_pin -dir I adc_data_full
 
-# Block command and data buffers until HW Manager is ready
-create_bd_pin -dir I block_bufs
+# Block buffers and next command execution until HW Manager is ready
+create_bd_pin -dir I blocked
 
 # Trigger
 create_bd_pin -dir I trigger
@@ -49,35 +49,6 @@ create_bd_pin -dir I miso
 ##################################################
 
 ### ADC SPI Controller
-## Block the command buffer if needed (cmd_buf_empty OR block_bufs)
-cell xilinx.com:ip:util_vector_logic adc_cmd_empty_blocked {
-  C_SIZE 1
-  C_OPERATION or
-} {
-  Op1 adc_cmd_empty
-  Op2 block_bufs
-}
-## Block the data buffer if needed (adc_data_full OR (block_bufs AND NOT debug))
-cell xilinx.com:ip:util_vector_logic n_debug {
-  C_SIZE 1
-  C_OPERATION not
-} {
-  Op1 debug
-}
-cell xilinx.com:ip:util_vector_logic block_bufs_and_not_debug {
-  C_SIZE 1
-  C_OPERATION and
-} {
-  Op1 block_bufs
-  Op2 n_debug/Res
-}
-cell xilinx.com:ip:util_vector_logic adc_data_full_blocked {
-  C_SIZE 1
-  C_OPERATION or
-} {
-  Op1 adc_data_full
-  Op2 block_bufs_and_not_debug/Res
-}
 ## MISO clock-domain synchronous reset
 cell xilinx.com:ip:proc_sys_reset:5.0 miso_rst {} {
   ext_reset_in resetn
@@ -94,10 +65,11 @@ cell shim:user:ads816x_adc_ctrl adc_spi {} {
   min_delay_time adc_min_delay_time
   cmd_buf_rd_en adc_cmd_rd_en
   cmd_buf_word adc_cmd
-  cmd_buf_empty adc_cmd_empty_blocked/Res
+  cmd_buf_empty adc_cmd_empty
+  blocked blocked
   data_buf_wr_en adc_data_wr_en
   data_word adc_data
-  data_buf_full adc_data_full_blocked/Res
+  data_buf_full adc_data_full
   trigger trigger
   setup_done setup_done
   boot_fail boot_fail

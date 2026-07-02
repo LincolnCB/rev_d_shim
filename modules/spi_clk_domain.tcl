@@ -208,22 +208,6 @@ cell xilinx.com:ip:proc_sys_reset:5.0 spi_rst_core {} {
 ##################################################
 
 ### Trigger core
-## Block the command and data buffers if needed (OR block_bufs_sync with cmd_buf_empty and data_buf_full)
-cell xilinx.com:ip:util_vector_logic trig_cmd_empty_blocked {
-  C_SIZE 1
-  C_OPERATION or
-} {
-  Op1 trig_cmd_empty
-  Op2 spi_cfg_sync/block_bufs_sync
-}
-cell xilinx.com:ip:util_vector_logic trig_data_full_blocked {
-  C_SIZE 1
-  C_OPERATION or
-} {
-  Op1 trig_data_full
-  Op2 spi_cfg_sync/block_bufs_sync
-}
-## Trigger core
 # 10000000 = 0.5 seconds at 20 MHz SPI clock
 cell shim:user:trigger_core trig_core {
   TRIGGER_LOCKOUT_DEFAULT 10000000
@@ -232,12 +216,13 @@ cell shim:user:trigger_core trig_core {
   resetn spi_rst_core/peripheral_aresetn
   cmd_word_rd_en trig_cmd_rd_en
   cmd_word trig_cmd
-  cmd_buf_empty trig_cmd_empty_blocked/Res
+  cmd_buf_empty trig_cmd_empty
   data_word_wr_en trig_data_wr_en
   data_word trig_data
-  data_buf_full trig_data_full_blocked/Res
+  data_buf_full trig_data_full
   data_buf_almost_full trig_data_almost_full
   ext_trig ext_trig
+  blocked spi_cfg_sync/block_bufs_sync
   trig_counter spi_sts_sync/trig_counter
   bad_cmd spi_sts_sync/bad_trig_cmd
   data_buf_overflow spi_sts_sync/trig_data_buf_overflow
@@ -265,7 +250,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     dac_data dac_ch${i}_data
     dac_data_wr_en dac_ch${i}_data_wr_en
     dac_data_full dac_ch${i}_data_full
-    block_bufs spi_cfg_sync/block_bufs_sync
+    blocked spi_cfg_sync/block_bufs_sync
     trigger trig_core/trig_out
   }
   ## ADC Channel
@@ -281,7 +266,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     adc_data adc_ch${i}_data
     adc_data_wr_en adc_ch${i}_data_wr_en
     adc_data_full adc_ch${i}_data_full
-    block_bufs spi_cfg_sync/block_bufs_sync
+    blocked spi_cfg_sync/block_bufs_sync
     trigger trig_core/trig_out
   }
 }

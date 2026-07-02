@@ -391,6 +391,12 @@ static void* adc_data_stream_thread(void* arg) {
   int samples_on_line = 0; // Track samples per line for formatting (ASCII mode only)
 
   while (words_written < word_count && !(*should_stop)) {
+    // Check hardware status
+    if (HW_STS_STATE(sys_sts_get_hw_status(ctx->sys_sts, verbose)) == S_HALTED) {
+      fprintf(stderr, "ADC Data Stream Thread: Hardware is halted. Stopping stream.\n");
+      break;
+    }
+
     // Check data FIFO status
     uint32_t data_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, board, false);
 
@@ -845,6 +851,12 @@ static void* adc_cmd_stream_thread(void* arg) {
   int current_iteration = 0;
 
   while (!(*should_stop) && current_iteration < iterations) {
+    // Check hardware status
+    if (HW_STS_STATE(sys_sts_get_hw_status(ctx->sys_sts, verbose)) == S_HALTED) {
+      fprintf(stderr, "ADC Command Stream Thread: Hardware is halted. Stopping stream.\n");
+      break;
+    }
+
     int cmd_index = 0;
     int commands_sent_this_iteration = 0;
 

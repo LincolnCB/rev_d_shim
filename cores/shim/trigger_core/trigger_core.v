@@ -18,7 +18,8 @@ module trigger_core #(
   input  wire        data_buf_almost_full, // Should indicate that the buffer has less than 2 entries free.
 
   // External signals
-  input  wire        ext_trig,
+  input  wire        ext_trig, // Async
+  input  wire        blocked,
   input  wire [7:0]  dac_waiting_for_trig,
   input  wire [7:0]  adc_waiting_for_trig,
 
@@ -66,6 +67,7 @@ module trigger_core #(
   wire all_waiting;
 
   // Command decode
+  wire        cmd_ready = !(cmd_buf_empty || blocked);
   wire [ 2:0] cmd_type = cmd_word[31:29];
   wire        cmd_log_trig = cmd_word[28];
   wire [27:0] cmd_val = cmd_word[27:0];
@@ -92,13 +94,13 @@ module trigger_core #(
       ext_trig_sync[1] <= 0;
     end else begin
       ext_trig_sync[0] <= ext_trig;
-      ext_trig_sync[1] <= ext_trig_sync[0];
+      ext_trig_sync[1] <= ext_trig_sync[0] && !blocked; // Block trigger if blocked is high
     end
   end
 
   // Checks for cancel / reset count command and synchronization conditions
-  assign cancel = !cmd_buf_empty && cmd_type == CMD_CANCEL;
-  assign reset_count = !cmd_buf_empty && cmd_type == CMD_RESET_COUNT;
+  assign cancel = cmd_ready && cmd_type == CMD_CANCEL;
+  assign reset_count = cmd_ready && cmd_type == CMD_RESET_COUNT;
   assign all_waiting = &dac_waiting_for_trig && &adc_waiting_for_trig;
 
   // Command done logic
@@ -177,7 +179,7 @@ module trigger_core #(
   // Data buffer overflow
   always @(posedge clk) begin
     if (!resetn) data_buf_overflow <= 0;
-    else if (do_log && (data_buf_full || data_buf_almost_full)) data_buf_overflow <= 1;
+    else if (do_log && (data_buf_full || data_buf_almost_full || blocked)) data_buf_overflow <= 1;
   end
 
   //// Read enable
@@ -219,7 +221,7 @@ module trigger_core #(
         trig_data_second_word <= 1; // Set flag to write second word next cycle
       end
     // Write first word on trigger if buffer has at least two free entries
-    end else if (do_log && !data_buf_full && !data_buf_almost_full) begin
+    end else if (do_log && !(data_buf_full || data_buf_almost_full || blocked)) begin
       data_word_wr_en <= 1;
       data_word <= trig_timer[31:0]; // First word is the lower 32 bits of the timer
       second_word <= trig_timer[63:32]; // Second word is the upper 32 bits of the timer

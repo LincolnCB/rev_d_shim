@@ -159,6 +159,12 @@ static void* rev_c_dac_cmd_stream_thread(void* arg) {
     int16_t prev_line_dac_vals[32] = {0}; // To store previous values for ramping
 
     while (fgets(line, sizeof(line), file) && !(*should_stop)) {
+    // Check hardware status
+    if (HW_STS_STATE(sys_sts_get_hw_status(ctx->sys_sts, verbose)) != S_RUNNING) {
+      fprintf(stderr, "Rev C Thread: Hardware is not running. Stopping stream.\n");
+      break;
+    }
+
       // Skip empty lines and comments
       char* trimmed = line;
       while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
@@ -929,7 +935,7 @@ int cmd_rev_c_compat(const char** args, int arg_count, const command_flag_t* fla
   // Start trigger monitoring similar to waveform_test
   printf("Starting trigger monitoring...\n");
 
-  if (start_trigger_monitor(ctx->sys_sts, expected_triggers, *(ctx->verbose)) != 0) {
+  if (start_trigger_monitor(ctx, expected_triggers, *(ctx->verbose)) != 0) {
     fprintf(stderr, "Failed to start trigger monitor\n");
     return -1;
   }

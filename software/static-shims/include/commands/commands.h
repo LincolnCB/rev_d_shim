@@ -13,6 +13,7 @@
 typedef enum {
   CMD_NONE = 0,
   CMD_HELP,
+  CMD_GUIDE,
   CMD_QUIT,
   CMD_STATUS,
   CMD_POWER_ON,

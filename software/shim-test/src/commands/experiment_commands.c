@@ -1317,7 +1317,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   printf("Waveform test setup completed. All streaming started successfully.\n");
 
   // Start trigger monitoring
-  if (start_trigger_monitor(ctx->sys_sts, total_expected_triggers, *(ctx->verbose)) != 0) {
+  if (start_trigger_monitor(ctx, total_expected_triggers, *(ctx->verbose)) != 0) {
     fprintf(stderr, "Failed to start trigger monitoring\n");
     return -1;
   }
@@ -1506,6 +1506,12 @@ static void* fieldmap_thread(void* arg) {
   time_t last_status_check_time = time(NULL);
 
   while (samples_collected < total_samples_expected && !(*should_stop)) {
+    // Check hardware status
+    if (HW_STS_STATE(sys_sts_get_hw_status(ctx->sys_sts, verbose)) != S_RUNNING) {
+      fprintf(stderr, "Fieldmap Thread: Hardware is not running. Stopping stream.\n");
+      break;
+    }
+
     int current_board = current_channel / 8;
     time_t current_time = time(NULL);
 

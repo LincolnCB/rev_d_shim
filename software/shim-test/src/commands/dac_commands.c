@@ -20,6 +20,8 @@
 static int validate_system_running(command_context_t* ctx);
 // DAC debug streaming thread function
 static void* dac_debug_stream_thread(void* arg);
+// DAC command streaming thread function
+static void* dac_cmd_stream_thread(void* arg);
 
 static int validate_system_running(command_context_t* ctx) {
   uint32_t hw_status = sys_sts_get_hw_status(ctx->sys_sts, *(ctx->verbose));
@@ -676,9 +678,8 @@ static void* dac_debug_stream_thread(void* arg) {
   uint8_t board = stream_data->board;
   const char* file_path = stream_data->file_path;
   volatile bool* should_stop = stream_data->should_stop;
-  bool verbose = *(ctx->verbose);
 
-  if (verbose) {
+  if (*(ctx->verbose)) {
     printf("DAC Debug Stream Thread[%d]: Starting to write debug data to file '%s'\n",
            board, file_path);
   }
@@ -699,6 +700,12 @@ static void* dac_debug_stream_thread(void* arg) {
   uint64_t samples_written = 0;
 
   while (!(*should_stop)) {
+    // Check hardware status
+    if (HW_STS_STATE(sys_sts_get_hw_status(ctx->sys_sts, *(ctx->verbose))) == S_HALTED) {
+      fprintf(stderr, "DAC Debug Stream Thread: Hardware is halted. Stopping stream.\n");
+      break;
+    }
+
     // Check data FIFO status
     uint32_t data_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, board, false);
 
@@ -715,7 +722,7 @@ static void* dac_debug_stream_thread(void* arg) {
         uint32_t debug_word = dac_read_data(ctx->dac_ctrl, board);
 
         // Format and write the debug data using our formatting function
-        fprintf(file, "[%llu] %s\n", samples_written, dac_format_data(debug_word, verbose));
+        fprintf(file, "[%llu] %s\n", samples_written, dac_format_data(debug_word, *(ctx->verbose)));
         samples_written++;
 
         // Flush periodically to ensure data is written
@@ -774,6 +781,12 @@ void* dac_cmd_stream_thread(void* arg) {
   int current_iteration = 0;
 
   while (!(*should_stop) && current_iteration < iterations) {
+    // Check hardware status
+    if (HW_STS_STATE(sys_sts_get_hw_status(ctx->sys_sts, *(ctx->verbose))) == S_HALTED) {
+      fprintf(stderr, "DAC Command Stream Thread: Hardware is halted. Stopping stream.\n");
+      break;
+    }
+
     int cmd_index = 0;
     int commands_sent_this_iteration = 0;
 
@@ -819,10 +832,10 @@ void* dac_cmd_stream_thread(void* arg) {
 
         if (*(ctx->verbose)) {
           const char* type_names[] = {"DAC_DELAY_CMD", "DAC_TRIGGER_CMD", "DAC_NOOP_TRIGGER_CMD", "DAC_NOOP_DELAY_CMD"};
-          printf("DAC Command Stream Thread[%d]: Iteration %d/%d, Sent command %d/%d (type=%s, value=%u, %s, cont=%s) [FIFO: %u/%u words, %d needed]\n",
+          printf("DAC Command Stream Thread[%d]: Iteration %d/%d, Sent command %d/%d (type=%s, value=%u, %s, cont=%s) [FIFO: %u/%u words, %u needed]\n",
                  board, current_iteration + 1, iterations, commands_sent_this_iteration, command_count,
                  type_names[cmd->type], cmd->value,
-                 cont_flag ? "true" : "false", words_used, DAC_CMD_FIFO_WORDCOUNT, words_needed);
+                 cont_flag ? "true" : "false", cont_flag ? "true" : "false", words_used, DAC_CMD_FIFO_WORDCOUNT, words_needed);
         }
       } else {
         // Not enough space in FIFO, sleep and try again

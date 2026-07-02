@@ -21,6 +21,7 @@ module ad5676_dac_ctrl #(
   output wire        cmd_buf_rd_en,
   input  wire [31:0] cmd_buf_word,
   input  wire        cmd_buf_empty,
+  input  wire        blocked,
 
   output reg         data_buf_wr_en,
   output reg  [31:0] data_word,
@@ -227,9 +228,9 @@ module ad5676_dac_ctrl #(
   ///////////////////////////////////////////////////////////////////////////////
 
   //// ---- Command word
-  assign cmd_word = cmd_buf_empty ? 32'd0 : cmd_buf_word;
+  assign next_cmd_ready = !(cmd_buf_empty || blocked);
+  assign cmd_word = next_cmd_ready ? cmd_buf_word : 32'd0;
   assign command = cmd_word[31:29];
-  assign next_cmd_ready = !cmd_buf_empty;
   // Command word read enable
   assign cmd_buf_rd_en = (state != S_ERROR) && next_cmd_ready && (read_next_dac_val_pair || cmd_done || cancel);
   // Command bits processing
@@ -416,7 +417,7 @@ module ad5676_dac_ctrl #(
   // Command buffer underflow if expecting buffer item but buffer is empty
   assign err_cmd_buf_underflow_w  = (cmd_done && expect_next && !next_cmd_ready);
   // Data buffer overflow if trying to write to data buffer while it is full
-  assign err_data_buf_overflow_w  = (try_data_write && data_buf_full);
+  assign err_data_buf_overflow_w  = (try_data_write && (data_buf_full || (blocked && !debug)));
   // Combine all error flags into a single error output
   assign error =  err_boot_fail_w
                   || err_unexp_trig_w
@@ -798,13 +799,13 @@ module ad5676_dac_ctrl #(
   // Write DAC data to the data buffer when attempting a write and buffer isn't full
   always @(posedge clk) begin
     if (!resetn) data_buf_wr_en <= 1'b0; // Reset data word write enable on reset
-    else if (try_data_write && !data_buf_full) data_buf_wr_en <= 1'b1; // Write data word when two words are ready and buffer isn't full
+    else if (try_data_write && !(data_buf_full || (blocked && !debug))) data_buf_wr_en <= 1'b1; // Write data word when two words are ready and buffer isn't full
     else data_buf_wr_en <= 1'b0;
   end
   // DAC data word
   always @(posedge clk) begin
     if (!resetn) data_word <= 32'd0; // Reset data word on reset or error
-    else if (try_data_write && !data_buf_full) begin
+    else if (try_data_write && !(data_buf_full || (blocked && !debug))) begin
       if (write_cal) begin
         data_word <= {CAL_DATA, 9'd0, cmd_word[18:16], cal_val[cmd_word[18:16]]}; // Write calibration value with channel number and debug code
       end else if (debug_miso_data) begin
