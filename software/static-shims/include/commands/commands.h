@@ -26,6 +26,7 @@ typedef enum {
   CMD_CALIBRATE,
   CMD_LOCKOUT,
   CMD_LOAD,
+  CMD_ARRAY,
   CMD_EXIT_FILE,
   CMD_RESET,
   CMD_TRIGGER,
@@ -38,6 +39,7 @@ typedef struct {
   double amps;
   uint32_t trigger_count;
   char file_path[COMMAND_FILE_PATH_MAX];
+  const char *array_data;  // Points to static buffer in input.c when CMD_ARRAY is parsed; NULL otherwise
   double update_amps[HW_MAX_CHANNELS];
   uint32_t update_count;
   double trigger_lockout_ms;
@@ -51,6 +53,7 @@ typedef struct {
   char last_file[COMMAND_FILE_PATH_MAX];
   double trigger_lockout_ms;
   file_loader_t loader;
+  bool array_loaded; // true if the active/most-recent load came from 'A' rather than 'L'
 } shim_runtime_state_t;
 
 shim_runtime_state_t commands_init_state(hw_t *hw, bool verbose);

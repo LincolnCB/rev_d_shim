@@ -5,6 +5,10 @@
 #include <string.h>
 #include <unistd.h>
 
+// Fixed temp file that the 'A' (array) command writes its inline data to
+// before loading it through the same path as 'L'.
+#define FILE_ARRAY_TEMP_PATH ".static_temp.csv"
+
 // Build a default runtime state for a fixed channel count
 shim_runtime_state_t commands_init_state(hw_t *hw, bool verbose) {
   shim_runtime_state_t state;
@@ -15,6 +19,7 @@ shim_runtime_state_t commands_init_state(hw_t *hw, bool verbose) {
   state.last_file[0] = '\0';
   state.trigger_lockout_ms = 10.0;
   state.loader = file_loader_init(hw, 10.0, verbose);
+  state.array_loaded = false;
   return state;
 }
 
@@ -89,6 +94,7 @@ void commands_print_help(void) {
   printf("\n");
   printf(" --- File commands ------\n");
   printf("  L [file]   : Load shim block file (or previous file if omitted).\n");
+  printf("  A data     : Load an inline array as a shim block file ('/' in place of newlines).\n");
   printf("  E          : Exit loaded file and reset trigger counter.\n");
   printf("  R          : Reset buffers and restart file if loaded.\n");
   printf("\n");
@@ -194,6 +200,14 @@ void commands_print_guide(void) {
   printf("    (* ? []) are supported; if multiple files match you will be\n");
   printf("    prompted to choose one.\n");
   printf("\n");
+  printf("  A data\n");
+  printf("    Load an inline array as a shim block file and begin playback,\n");
+  printf("    same as 'L'. 'data' is everything after the space, taken as one\n");
+  printf("    long string with '/' standing in for the newlines a real block\n");
+  printf("    file would use (e.g. '0,0/1,1/x3'). It is written to a fixed\n");
+  printf("    temp file ('%s') and does NOT update the 'last file'\n", FILE_ARRAY_TEMP_PATH);
+  printf("    used by a bare 'L', so your previous file load is preserved.\n");
+  printf("\n");
   printf("  E\n");
   printf("    Exit the loaded file and reset the trigger counter.\n");
   printf("    This will NOT zero the shim currents, run 'Z' to do that.\n");
@@ -250,10 +264,18 @@ void commands_print_status(shim_runtime_state_t *state) {
       printf("  Update buffered, waiting for trigger.\n");
     }
   } else if (loader_status == FILE_LOADER_LOADED) {
-    printf("  Loaded file            : %s\n", state->loader.path);
+    if (state->array_loaded) {
+      printf("  Loaded array           : (inline, via %s)\n", state->loader.path);
+    } else {
+      printf("  Loaded file            : %s\n", state->loader.path);
+    }
     printf("  Trigger count          : %u\n", hw_get_trigger_count(state->hw));
   } else if (loader_status == FILE_LOADER_ERROR) {
-    printf("  ERROR File error       : %s\n", state->loader.path);
+    if (state->array_loaded) {
+      printf("  ERROR Array error      : %s\n", state->loader.path);
+    } else {
+      printf("  ERROR File error       : %s\n", state->loader.path);
+    }
   }
   printf("  Last file              : %s\n", state->last_file[0] != '\0' ? state->last_file : "(none)");
   printf("  Trigger lockout        : %.4f ms\n", state->trigger_lockout_ms);
@@ -309,6 +331,7 @@ static bool run_hard_reset(shim_runtime_state_t *state) {
     file_loader_request_stop(&state->loader);
     file_loader_join(&state->loader, NULL);
   }
+  state->array_loaded = false;
   // Power off hardware
   hw_power_off(state->hw);
   // Reset all buffers
@@ -329,6 +352,7 @@ static bool run_zero(shim_runtime_state_t *state) {
     file_loader_request_stop(&state->loader);
     file_loader_join(&state->loader, NULL);
   }
+  state->array_loaded = false;
   if (is_buffered(state)) {
     printf("Clearing buffered command.\n");
   }
@@ -391,6 +415,7 @@ static bool run_set_channel(const parsed_command_t *cmd, shim_runtime_state_t *s
     printf("Cancelling in-progress file to apply manual channel update (you can use 'L' to reload it from the beginning).\n");
     file_loader_request_stop(&state->loader);
     file_loader_join(&state->loader, NULL);
+    state->array_loaded = false;
   }
   if (is_buffered(state)) {
     printf("Clearing buffered command.\n");
@@ -429,6 +454,7 @@ static bool run_update(const parsed_command_t *cmd, shim_runtime_state_t *state)
     printf("Cancelling in-progress file to apply manual update to all channels (you can use 'L' to reload from the beginning).\n");
     file_loader_request_stop(&state->loader);
     file_loader_join(&state->loader, NULL);
+    state->array_loaded = false;
   }
   if (is_buffered(state)) {
     printf("Clearing buffered command.\n");
@@ -470,6 +496,7 @@ static bool run_buffer(const parsed_command_t *cmd, shim_runtime_state_t *state)
     printf("Cancelling in-progress file to apply manual update to all channels (you can use 'L' to reload from the beginning).\n");
     file_loader_request_stop(&state->loader);
     file_loader_join(&state->loader, NULL);
+    state->array_loaded = false;
   }
 
   // Clear DAC buffers
@@ -649,6 +676,67 @@ static int resolve_file_pattern(const char *pattern, char *resolved_path, size_t
   return 0;
 }
 
+// Stop any in-flight load, clear hardware buffers, and start the file loader
+// thread at `path`. Shared by 'L' (real files) and 'A' (inline arrays written
+// to a temp file) so both go through the exact same playback start-up.
+// Does NOT touch state->last_file or state->array_loaded -- callers decide
+// what, if anything, to remember about the path they just started.
+static bool start_loaded_file(shim_runtime_state_t *state, const char *path, const char *cmd_label) {
+  // If a previous load is still in flight, stop it and wait for it to exit
+  // before touching the hardware buffers
+  file_loader_status_t prev_status = file_loader_get_status(&state->loader);
+  if (prev_status == FILE_LOADER_LOADED) {
+    printf("Cancelling in-progress file load...\n");
+    file_loader_request_stop(&state->loader);
+    file_loader_join(&state->loader, NULL);
+  }
+  if (is_buffered(state)) {
+    printf("Clearing buffered command.\n");
+  }
+
+  // Clear hardware buffers now that no loader thread is active
+  if (hw_clear_dac_buffers(state->hw) != 0) {
+    fprintf(stderr, "%s: failed to clear DAC hardware buffers.\n", cmd_label);
+    return false;
+  }
+  if (hw_clear_adc_buffers(state->hw) != 0) {
+    fprintf(stderr, "%s: failed to clear ADC hardware buffers.\n", cmd_label);
+    return false;
+  }
+  if (hw_reset_triggers(state->hw) != 0) {
+    fprintf(stderr, "%s: failed to reset triggers.\n", cmd_label);
+    return false;
+  }
+
+  // Configure and start the loader thread
+  (void)snprintf(state->loader.path, sizeof(state->loader.path), "%s", path);
+
+  if (file_loader_start(&state->loader) != 0) {
+    fprintf(stderr, "%s: failed to start file loader thread.\n", cmd_label);
+    return false;
+  }
+
+  // If the hw is powered on, start trigger tracking immediately
+  // Otherwise, power_on command will handle trigger tracking
+  if (hw_running(state->hw)) {
+    printf("Power is already on, starting triggers with lockout %.4f ms.\n", state->trigger_lockout_ms);
+    if (hw_reset_triggers(state->hw) != 0) {
+      fprintf(stderr, "%s: failed to reset triggers after loading file.\n", cmd_label);
+      return false;
+    }
+    if (hw_set_trigger_lockout(state->hw, state->trigger_lockout_ms) != 0) {
+      fprintf(stderr, "%s: failed to set trigger lockout after loading file.\n", cmd_label);
+      return false;
+    }
+    if (hw_start_triggers(state->hw) != 0) {
+      fprintf(stderr, "%s: failed to start triggers after loading file.\n", cmd_label);
+      return false;
+    }
+  }
+
+  return true;
+}
+
 // Load a shim block file into the active playback buffer
 static bool run_load(const parsed_command_t *cmd, shim_runtime_state_t *state) {
   const char *requested = cmd->file_path;
@@ -675,61 +763,49 @@ static bool run_load(const parsed_command_t *cmd, shim_runtime_state_t *state) {
     (void)snprintf(selected_file, sizeof(selected_file), "%s", resolved);
   }
 
-  // If a previous load is still in flight, stop it and wait for it to exit
-  // before touching the hardware buffers
-  file_loader_status_t prev_status = file_loader_get_status(&state->loader);
-  if (prev_status == FILE_LOADER_LOADED) {
-    printf("Cancelling in-progress file load...\n");
-    file_loader_request_stop(&state->loader);
-    file_loader_join(&state->loader, NULL);
-  }
-  if (is_buffered(state)) {
-    printf("Clearing buffered command.\n");
-  }
-
-  // Clear hardware buffers now that no loader thread is active
-  if (hw_clear_dac_buffers(state->hw) != 0) {
-    fprintf(stderr, "L: failed to clear DAC hardware buffers.\n");
-    return false;
-  }
-  if (hw_clear_adc_buffers(state->hw) != 0) {
-    fprintf(stderr, "L: failed to clear ADC hardware buffers.\n");
-    return false;
-  }
-  if (hw_reset_triggers(state->hw) != 0) {
-    fprintf(stderr, "L: failed to reset triggers.\n");
-    return false;
-  }
-
   printf("Loading shim block file: %s\n", selected_file);
-
-  // Configure and start the loader thread
-  (void)snprintf(state->loader.path, sizeof(state->loader.path), "%s", selected_file);
-
-  if (file_loader_start(&state->loader) != 0) {
-    fprintf(stderr, "L: failed to start file loader thread.\n");
+  if (!start_loaded_file(state, selected_file, "L")) {
     return false;
   }
 
-  // If the hw is powered on, start trigger tracking immediately
-  // Otherwise, power_on command will handle trigger tracking
-  if (hw_running(state->hw)) {
-    printf("Power is already on, starting triggers with lockout %.4f ms.\n", state->trigger_lockout_ms);
-    if (hw_reset_triggers(state->hw) != 0) {
-      fprintf(stderr, "L: failed to reset triggers after loading file.\n");
-      return false;
-    }
-    if (hw_set_trigger_lockout(state->hw, state->trigger_lockout_ms) != 0) {
-      fprintf(stderr, "L: failed to set trigger lockout after loading file.\n");
-      return false;
-    }
-    if (hw_start_triggers(state->hw) != 0) {
-      fprintf(stderr, "L: failed to start triggers after loading file.\n");
-      return false;
-    }
-  }
-    
+  state->array_loaded = false;
   (void)snprintf(state->last_file, sizeof(state->last_file), "%s", selected_file);
+  return true;
+}
+
+// Load an inline array string as a shim block file: '/' characters in
+// cmd->array_data stand in for the newlines a real block file would use.
+// Written to a fixed temp file and loaded through the same start-up path as
+// 'L', but does NOT update state->last_file, so a bare 'L' afterward still
+// reloads whatever real file was last loaded.
+static bool run_array(const parsed_command_t *cmd, shim_runtime_state_t *state) {
+  if (cmd == NULL || cmd->array_data[0] == '\0') {
+    fprintf(stderr, "A requires an array string.\n");
+    return false;
+  }
+
+  FILE *f = fopen(FILE_ARRAY_TEMP_PATH, "w");
+  if (f == NULL) {
+    fprintf(stderr, "A: failed to open temp array file '%s' for writing.\n", FILE_ARRAY_TEMP_PATH);
+    return false;
+  }
+
+  // Read char by char, converting slashes to newlines, to the temp file.
+  for (const char *p = cmd->array_data; *p != '\0'; ++p) {
+    fputc(*p == '/' ? '\n' : *p, f);
+  }
+  fputc('\n', f);
+  if (fclose(f) != 0) {
+    fprintf(stderr, "A: failed to write temp array file '%s'.\n", FILE_ARRAY_TEMP_PATH);
+    return false;
+  }
+
+  printf("Loading array as shim block file: %s\n", FILE_ARRAY_TEMP_PATH);
+  if (!start_loaded_file(state, FILE_ARRAY_TEMP_PATH, "A")) {
+    return false;
+  }
+
+  state->array_loaded = true;
   return true;
 }
 
@@ -749,6 +825,7 @@ static bool run_exit_file(shim_runtime_state_t *state) {
     file_loader_request_stop(&state->loader);
     file_loader_join(&state->loader, NULL);
   }
+  state->array_loaded = false;
 
   // Clear out buffers and reset trigger counter
   printf("Clearing buffers and resetting trigger counter.\n");
@@ -810,9 +887,12 @@ static bool run_reset(shim_runtime_state_t *state) {
     return false;
   }
 
-  // Reload the file if loaded
+  // Reload whatever was loaded, from wherever it came from. state->loader.path
+  // already holds the right source (a real file from 'L', or the array temp
+  // file from 'A') from the load that R is restarting, so it's reused as-is
+  // rather than falling back to state->last_file, which would be wrong for
+  // an 'A' array reset.
   if (loaded){
-    (void)snprintf(state->loader.path, sizeof(state->loader.path), "%s", state->last_file);
     if (file_loader_start(&state->loader) != 0) {
       fprintf(stderr, "R: failed to start file loader thread after resetting file.\n");
       return false;
@@ -871,6 +951,8 @@ bool commands_execute(const parsed_command_t *cmd, shim_runtime_state_t *state) 
       return run_trigger(cmd, state);
     case CMD_LOAD:
       return run_load(cmd, state);
+    case CMD_ARRAY:
+      return run_array(cmd, state);
     case CMD_EXIT_FILE:
       return run_exit_file(state);
     case CMD_RESET:

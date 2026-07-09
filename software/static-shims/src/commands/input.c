@@ -6,6 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Static buffer for 'A' (array) command data, sized for HW_MAX_CHANNELS * INPUT_ARRAY_CHARS_PER_CHANNEL * INPUT_ARRAY_MAX_LINES
+static char g_array_data_buffer[INPUT_ARRAY_DATA_MAX];
+
 typedef struct {
   char *token;
   char *cursor;
@@ -388,6 +391,30 @@ static bool parse_load(parsed_command_t *out, parse_state_t *state) {
   return true;
 }
 
+// Parse A <data> (load an inline array as a shim block "file").
+// Everything after the space is taken verbatim as the array data, with '/'
+// standing in for the newlines a real block file would use.
+// Data is stored in the static g_array_data_buffer.
+static bool parse_array(parsed_command_t *out, parse_state_t *state) {
+  if (!(state->token[1] == '\0' && cmd_match(state->token[0], 'A'))) {
+    return false;
+  }
+  out->type = CMD_ARRAY;
+
+  char *rest = remaining_text(state->cursor);
+  if (rest == NULL) {
+    command_error(state->error_buf, state->error_buf_size, "A requires an array string");
+    return true;
+  }
+  if (strlen(rest) >= INPUT_ARRAY_DATA_MAX) {
+    command_error(state->error_buf, state->error_buf_size, "A: array string too long");
+    return true;
+  }
+  (void)snprintf(g_array_data_buffer, INPUT_ARRAY_DATA_MAX, "%s", rest);
+  out->array_data = g_array_data_buffer;
+  return true;
+}
+
 // Parse E (exit loaded file mode).
 static bool parse_exit_file(parsed_command_t *out, parse_state_t *state) {
   if (!(state->token[1] == '\0' && cmd_match(state->token[0], 'E'))) {
@@ -446,6 +473,7 @@ input_parse_result_t input_parse_line(const char *line,
   out->amps = 0.0;
   out->trigger_count = 0;
   out->file_path[0] = '\0';
+  out->array_data = NULL;
   out->trigger_lockout_ms = 0.0;
 
   if (line == NULL) {
@@ -497,6 +525,7 @@ input_parse_result_t input_parse_line(const char *line,
     parse_calibrate,
     parse_lockout,
     parse_load,
+    parse_array,
     parse_exit_file,
     parse_reset,
     parse_trigger,
