@@ -66,6 +66,7 @@ void hw_status_summary(hw_t *hw) {
   // Print state
   printf("  Hardware status        : ");
   print_hw_status(sys_sts_get_hw_status(&hw->sys_sts, hw->verbose), hw->verbose);
+  printf("  Trigger count          : %u\n", hw_get_trigger_count(hw));
   // Print FIFO buffer count for each board
   uint32_t board_count = (hw->channel_count - 1) / 8 + 1;
   for (uint32_t board = 0; board < board_count; board++) {
