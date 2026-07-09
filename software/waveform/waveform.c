@@ -2,7 +2,7 @@
 //
 //  Usage:
 //    waveform <file.csv> [--adc <path> | -a <path>] [--lockout <float> | -l <float>]
-//    [--clk_MHz <float> | -c <float>] [--iters <int> | -i <int>]
+//    [--clk_MHz <float> | -c <float>] [--iters <int> | -i <int>] [--help | -h]
 //
 //  <file.csv> is a required positional argument.
 //  All flags are optional and have defaults:
@@ -10,6 +10,7 @@
 //    --lockout, -l  (double)  default: 10.0
 //    --clk_MHz, -c  (double)  default: 30.0
 //    --iters, -i    (int)     default: 1
+//    --help, -h     
 
 #include <stdio.h>
 #include <stdlib.h>
