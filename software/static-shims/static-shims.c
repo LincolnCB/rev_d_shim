@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "hardware.h"
+#include "static_hardware.h"
 #include "commands.h"
 #include "input.h"
 

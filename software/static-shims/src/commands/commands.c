@@ -278,7 +278,7 @@ void commands_print_status(shim_runtime_state_t *state) {
     }
   }
   printf("  Last file              : %s\n", state->last_file[0] != '\0' ? state->last_file : "(none)");
-  printf("  Trigger lockout        : %.4f ms\n", state->trigger_lockout_ms);
+  printf("  Trigger lockout        : %.3f ms\n", state->trigger_lockout_ms);
   // Hardware status
   hw_status_summary(state->hw);
 }
@@ -307,7 +307,7 @@ static bool run_power_on(shim_runtime_state_t *state) {
   }
   // If a file is loaded, set trigger lockout and start triggers to begin playback
   if (file_loader_get_status(&state->loader) == FILE_LOADER_LOADED) {
-    printf("File is loaded, starting triggers with lockout %.4f ms.\n", state->trigger_lockout_ms);
+    printf("File is loaded, starting triggers with lockout %.3f ms.\n", state->trigger_lockout_ms);
     if (hw_set_trigger_lockout(state->hw, state->trigger_lockout_ms) != 0) {
       fprintf(stderr, "P: failed to set trigger lockout.\n");
       return false;
@@ -390,7 +390,7 @@ static bool run_read(const parsed_command_t *cmd, shim_runtime_state_t *state) {
     printf("ADC current values:\n");
   }
   for (uint32_t ch = 0; ch < state->hw->channel_count; ch++) {
-    printf("  Channel %2u: %+.4f A\n", ch, adc_values_amps[ch]);
+    printf("  Channel %2u: %+.3f A\n", ch, adc_values_amps[ch]);
   }
   return true;
 }
@@ -422,9 +422,9 @@ static bool run_set_channel(const parsed_command_t *cmd, shim_runtime_state_t *s
   }
 
   // Set the channel to the new value in amps
-  printf("Setting channel %d to %.4f A.\n", cmd->channel, cmd->amps);
+  printf("Setting channel %d to %+.3f A.\n", cmd->channel, cmd->amps);
   if (hw_set_dac_channel(state->hw, cmd->channel, cmd->amps) != 0) {
-    fprintf(stderr, "Failed to set channel %d to %.4f A.\n", cmd->channel, cmd->amps);
+    fprintf(stderr, "Failed to set channel %d to %+.3f A.\n", cmd->channel, cmd->amps);
     return false;
   }
 
@@ -434,7 +434,7 @@ static bool run_set_channel(const parsed_command_t *cmd, shim_runtime_state_t *s
     fprintf(stderr, "Failed to read back channel %d after setting it.\n", cmd->channel);
     return false;
   }
-  printf("  Channel %2u: %.4f A\n", cmd->channel, readback_amps);
+  printf("  Channel %2u: %+.3f A\n", cmd->channel, readback_amps);
 
   return true;
 }
@@ -475,7 +475,7 @@ static bool run_update(const parsed_command_t *cmd, shim_runtime_state_t *state)
   }
   printf("ADC current values after update:\n");
   for (uint32_t ch = 0; ch < state->hw->channel_count; ch++) {
-    printf("  Channel %2u: %.4f A\n", ch, adc_values_amps[ch]);
+    printf("  Channel %2u: %+.3f A\n", ch, adc_values_amps[ch]);
   }
     
   return true;
@@ -623,7 +623,7 @@ static bool run_trigger(const parsed_command_t *cmd, shim_runtime_state_t *state
     return false;
   }
   for (uint32_t ch = 0; ch < state->hw->channel_count; ch++) {
-    printf("  Channel %2u: %+.4f A\n", ch, adc_values_amps[ch]);
+    printf("  Channel %2u: %+.3f A\n", ch, adc_values_amps[ch]);
   }
 
   return true;
@@ -719,7 +719,7 @@ static bool start_loaded_file(shim_runtime_state_t *state, const char *path, con
   // If the hw is powered on, start trigger tracking immediately
   // Otherwise, power_on command will handle trigger tracking
   if (hw_running(state->hw)) {
-    printf("Power is already on, starting triggers with lockout %.4f ms.\n", state->trigger_lockout_ms);
+    printf("Power is already on, starting triggers with lockout %.3f ms.\n", state->trigger_lockout_ms);
     if (hw_reset_triggers(state->hw) != 0) {
       fprintf(stderr, "%s: failed to reset triggers after loading file.\n", cmd_label);
       return false;

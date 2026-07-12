@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include "hardware.h"
+#include "static_hardware.h"
 
 // Linearity status for channel calibration
 typedef enum {
@@ -622,7 +622,7 @@ int hw_calibrate(hw_t *hw) {
 
       // If verbose, print the updates to the calibration value
       if (hw->verbose) {
-        printf("  Iteration %d: Current cal=%d, Slope=%.4f, Intercept=%.2f, Variance=%.2f\n",
+        printf("  Iteration %d: Current cal=%d, Slope=%.3f, Intercept=%.2f, Variance=%.2f\n",
                iter + 1, current_cal_value, slope, intercept, variance_y);
         fflush(stdout);
       }
@@ -666,15 +666,15 @@ int hw_calibrate(hw_t *hw) {
       // If NOT verbose, print this iteration's results with special slope formatting
       if (!hw->verbose) {
         if (division_by_zero) {
-          printf("%+.4f A ( inf.) | ", offset_amps);
+          printf("%+.3f A ( inf.) | ", offset_amps);
         } else if (slope < -9.99) {
-          printf("%+.4f A (neg.) | ", offset_amps);
+          printf("%+.3f A (neg.) | ", offset_amps);
         } else if (slope < 0) {
-          printf("%+.4f A (%.2f) | ", offset_amps, slope);
+          printf("%+.3f A (%.2f) | ", offset_amps, slope);
         } else if (slope > 9.99) {
-          printf("%+.4f A (10.0+) | ", offset_amps);
+          printf("%+.3f A (10.0+) | ", offset_amps);
         } else {
-          printf("%+.4f A (%.3f) | ", offset_amps, slope);
+          printf("%+.3f A (%.3f) | ", offset_amps, slope);
         }
       }
 

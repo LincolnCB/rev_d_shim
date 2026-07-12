@@ -552,9 +552,9 @@ int file_append_adc_dump(const char *path, const double *adc_values, uint32_t ch
   // Write ADC values as a single CSV line: ch0_amps, ch1_amps, ...
   for (uint32_t ch = 0; ch < channel_count; ch++) {
     if (ch > 0) {
-      fprintf(f, ",%.4f", adc_values[ch]);
+      fprintf(f, ",%.3f", adc_values[ch]);
     } else {
-      fprintf(f, "%.4f", adc_values[ch]);
+      fprintf(f, "%.3f", adc_values[ch]);
     }
   }
   fprintf(f, "\n");
