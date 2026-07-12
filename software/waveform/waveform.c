@@ -22,8 +22,10 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <unistd.h>
 
 #include "waveform_file_handling.h"
+#include "waveform_hw.h"
 #include "waveform_hw.h"
 
 typedef struct {
@@ -57,6 +59,7 @@ static void print_usage(const char *prog) {
 }
 
 // Parse a double from a string, exiting with an error on failure.
+// Parse a double from a string, exiting with an error on failure.
 static double parse_double_arg(const char *flag, const char *val) {
   char *end;
   errno = 0;
@@ -68,6 +71,7 @@ static double parse_double_arg(const char *flag, const char *val) {
   return d;
 }
 
+// Parse an int from a string, exiting with an error on failure.
 // Parse an int from a string, exiting with an error on failure.
 static int parse_int_arg(const char *flag, const char *val) {
   char *end;
@@ -166,6 +170,10 @@ int main(int argc, char *argv[]) {
   //  handled here, leaving any positional arguments at the end for us
   //  to read via optind below.
   while ((opt = getopt_long(argc, argv, "ha:l:c:i:", long_options, &option_index)) != -1) {
+  // Default (permute) mode: getopt_long reorders argv so all flags are
+  //  handled here, leaving any positional arguments at the end for us
+  //  to read via optind below.
+  while ((opt = getopt_long(argc, argv, "ha:l:c:i:", long_options, &option_index)) != -1) {
     switch (opt) {
       case 'a':
       cfg.adc_file = optarg;
@@ -189,6 +197,7 @@ int main(int argc, char *argv[]) {
   }
 
   // After flag parsing, optind points at the first non-flag argument.
+  // After flag parsing, optind points at the first non-flag argument.
   if (optind >= argc) {
     fprintf(stderr, "Error: missing required <file.csv> argument\n");
     print_usage(argv[0]);
@@ -207,12 +216,18 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
+  if (cfg.iters < 1) {
+    fprintf(stderr, "Error: --iters must be >= 1 (got %d)\n", cfg.iters);
+    return EXIT_FAILURE;
+  }
+
   printf("input_file = %s\n", cfg.input_file);
   printf("adc_file   = %s\n", cfg.adc_file ? cfg.adc_file : "(none)");
   printf("lockout    = %g\n", cfg.lockout);
   printf("clk_MHz    = %g\n", cfg.clk_MHz);
   printf("iters      = %d\n", cfg.iters);
 
+  // --- Validate the input (DAC) file ------------------------------
   // --- Validate the input (DAC) file ------------------------------
   waveform_file_info_t input_info;
   if (validate_input_file(cfg.input_file, &input_info) != 0) {
@@ -221,6 +236,7 @@ int main(int argc, char *argv[]) {
   printf("Input file OK: %d channel(s), %ld row(s), %ld trigger point(s), current range [%g, %g] A\n",
          input_info.num_channels, input_info.num_rows, input_info.num_trigs,
          input_info.min_current, input_info.max_current);
+  input_info.iters = cfg.iters;
   input_info.iters = cfg.iters;
 
   // --- Initialize hardware pointers and check that enough boards/FIFOs are present
@@ -234,6 +250,7 @@ int main(int argc, char *argv[]) {
       return EXIT_FAILURE;
     }
     has_adc_info = true;
+    adc_info.iters = cfg.iters;
     adc_info.iters = cfg.iters;
     printf("ADC file OK: %ld trigger point(s) match the input file\n", adc_info.num_trigs);
   }
@@ -253,7 +270,9 @@ int main(int argc, char *argv[]) {
   }
 
   if (!hw_running(&hw)) {
+  if (!hw_running(&hw)) {
     fprintf(stderr, "Error: hardware is not running\n");
+    hw_power_off(&hw);
     hw_power_off(&hw);
     return EXIT_FAILURE;
   }
@@ -350,6 +369,7 @@ int main(int argc, char *argv[]) {
   if (pthread_create(&trigger_tid, NULL, trigger_stream_thread, &trigger_arg) != 0) {
     fprintf(stderr, "Error: failed to start trigger stream thread\n");
     waveform_file_info_request_stop(&input_info);
+    waveform_file_info_request_stop(&input_info);
     if (has_adc_thread) {
       adc_cmd_file_info_request_stop(&adc_info);
     }
@@ -363,6 +383,8 @@ int main(int argc, char *argv[]) {
     }
     trigger_file_info_destroy(&trigger_arg);
     hw_power_off(&hw);
+    trigger_file_info_destroy(&trigger_arg);
+    hw_power_off(&hw);
     return EXIT_FAILURE;
   }
 
@@ -372,6 +394,7 @@ int main(int argc, char *argv[]) {
 
   // --- Start the expected number of triggers ------------------------
   long expected_triggers = (long)cfg.iters * input_info.num_trigs;
+  hw_start_triggers(&hw, expected_triggers);
   hw_start_triggers(&hw, expected_triggers);
 
   // --- Monitor progress ----------------------------------------------
