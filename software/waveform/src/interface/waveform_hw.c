@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <stdbool.h>
+#include <stdlib.h>
 
 #include "waveform_hw.h"
 
@@ -69,7 +69,7 @@ hw_t hw_init(uint32_t channel_count, double clk_MHz, bool verbose) {
   }
 
   // Set the clock frequency for the hardware
-  if (hw_set_clk_MHz(&hw, clk_MHz, verbose) != 0) {
+  if (hw_set_spi_clock(&hw, clk_MHz) != 0) {
     fprintf(stderr, "Error: failed to set clock frequency to %.3f MHz.\n", clk_MHz);
     exit(1);
   }
@@ -206,7 +206,7 @@ int hw_set_spi_clock(hw_t *hw, double clk_MHz) {
   }
   uint32_t clk_hz = (uint32_t)(clk_MHz * 1e6);
   if (hw->verbose) {
-    printf("Configuring SPI clock to " PRIu32 "MHz...\n", clk_hz);
+    printf("Configuring SPI clock to %" PRIu32 "MHz...\n", clk_hz);
   }
   if (clk_ctrl_set_target_freq(&hw->clk_ctrl, &hw->sys_sts, clk_hz, hw->verbose) != 0) {
     fprintf(stderr, "Error: failed to set SPI clock frequency.\n");
@@ -220,7 +220,7 @@ int hw_set_spi_clock(hw_t *hw, double clk_MHz) {
     printf("SPI clock frequency set to %u Hz\n", clk_freq);
   }
   if ((float) clk_freq < 0.99 * (float) clk_hz || (float) clk_freq > 1.01 * (float) clk_hz) {
-    fprintf(stderr, "Error: SPI clock frequency %u Hz is out of 1\% range.\n", clk_freq);
+    fprintf(stderr, "Error: SPI clock frequency %u Hz is out of 1%% range.\n", clk_freq);
     return -1;
   }
   hw->spi_clk_hz = clk_freq;
@@ -739,14 +739,26 @@ void hw_power_off(hw_t *hw) {
   }
 }
 
-// Send a DAC noop command for a single trigger wait to all active boards
+// Send a DAC noop command for a single trigger wait to all active boards (assumes not last)
 int hw_dac_noop_trig(hw_t *hw) {
   if (hw == NULL) {
     return -1;
   }
   uint32_t board_count = hw->board_count;
   for (uint32_t board = 0; board < board_count; board++) {
-    dac_cmd_noop(&hw->dac_ctrl, board, DAC_TRIGGER_WAIT, DAC_CONTINUE, 1, hw->verbose);
+    dac_cmd_noop(&hw->dac_ctrl, board, DAC_TRIGGER_WAIT, DAC_CONTINUE, DAC_NO_LDAC, 1, hw->verbose);
+  }
+  return 0;
+}
+
+// Send a DAC noop command for a delay to all active boards (assumes not last)
+int hw_dac_noop_delay(hw_t *hw, uint32_t delay_clks) {
+  if (hw == NULL) {
+    return -1;
+  }
+  uint32_t board_count = hw->board_count;
+  for (uint32_t board = 0; board < board_count; board++) {
+    dac_cmd_noop(&hw->dac_ctrl, board, DAC_DELAY_WAIT, DAC_CONTINUE, DAC_NO_LDAC, delay_clks, hw->verbose);
   }
   return 0;
 }
@@ -801,6 +813,17 @@ int hw_get_adc_sample_count(hw_t *hw) {
     }
   }
   return (int)(min_words / 4);
+}
+
+// Get the available trigger sample words (only one buffer)
+// Each trigger sample is 2 words, so it's just the words divided by 2 (rounded down)
+// This indicates how many individual trigger samples can be read
+int hw_get_trigger_sample_count(hw_t *hw) {
+  if (hw == NULL) {
+    return -1;
+  }
+  uint32_t words = FIFO_STS_WORD_COUNT(sys_sts_get_trig_data_fifo_status(&hw->sys_sts, hw->verbose));
+  return (int)(words / 2);
 }
 
 // Send a DAC command with a delay in clock cycles to all active boards
@@ -859,7 +882,7 @@ int hw_set_dacs_trig(hw_t *hw, const double *amps, bool last) {
   return 0;
 }
 
-// Send an ADC no-op single trigger wait to all active boards
+// Send an ADC no-op single trigger wait to all active boards (assumes not last)
 int hw_adc_noop_trig(hw_t *hw) {
   if (hw == NULL) {
     return -1;
@@ -867,6 +890,18 @@ int hw_adc_noop_trig(hw_t *hw) {
   uint32_t board_count = hw->board_count;
   for (uint8_t board = 0; board < board_count; board++) {
     adc_cmd_noop(&hw->adc_ctrl, board, ADC_TRIGGER_WAIT, ADC_CONTINUE, 1, hw->verbose);
+  }
+  return 0;
+}
+
+// Send an ADC no-op delay command to all active boards (assumes not last)
+int hw_adc_noop_delay(hw_t *hw, uint32_t delay_clks) {
+  if (hw == NULL) {
+    return -1;
+  }
+  uint32_t board_count = hw->board_count;
+  for (uint8_t board = 0; board < board_count; board++) {
+    adc_cmd_noop(&hw->adc_ctrl, board, ADC_DELAY_WAIT, ADC_CONTINUE, delay_clks, hw->verbose);
   }
   return 0;
 }

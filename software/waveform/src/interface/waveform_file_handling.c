@@ -115,7 +115,11 @@ static void stream_ctrl_destroy(stream_ctrl_t *ctrl) {
 static void stream_ctrl_request_stop(stream_ctrl_t *ctrl) {
   pthread_mutex_lock(&ctrl->mutex);
   ctrl->stop_requested = true;
-  ctrl->state = STREAM_THREAD_STOP_REQUESTED;
+  // Don't clobber a terminal state: a thread that already completed or stopped
+  // must stay reported as finished even if a late stop request arrives.
+  if (ctrl->state != STREAM_THREAD_COMPLETED && ctrl->state != STREAM_THREAD_STOPPED) {
+    ctrl->state = STREAM_THREAD_STOP_REQUESTED;
+  }
   pthread_mutex_unlock(&ctrl->mutex);
 }
 
@@ -128,9 +132,17 @@ static bool stream_ctrl_should_stop(const stream_ctrl_t *ctrl) {
 
 static bool stream_ctrl_is_finished(const stream_ctrl_t *ctrl) {
   pthread_mutex_lock((pthread_mutex_t *)&ctrl->mutex);
-  bool finished = (ctrl->state == STREAM_THREAD_FINISHED);
+  bool finished = (ctrl->state == STREAM_THREAD_COMPLETED ||
+                   ctrl->state == STREAM_THREAD_STOPPED);
   pthread_mutex_unlock((pthread_mutex_t *)&ctrl->mutex);
   return finished;
+}
+
+static bool stream_ctrl_stopped_early(const stream_ctrl_t *ctrl) {
+  pthread_mutex_lock((pthread_mutex_t *)&ctrl->mutex);
+  bool stopped_early = (ctrl->state == STREAM_THREAD_STOPPED);
+  pthread_mutex_unlock((pthread_mutex_t *)&ctrl->mutex);
+  return stopped_early;
 }
 
 static void stream_ctrl_set_state(stream_ctrl_t *ctrl, stream_thread_state_t state) {
@@ -387,13 +399,26 @@ int validate_adc_file(const char *path, long expected_trigs, adc_file_info_t *in
   return 0;
 }
 
+void adc_data_file_info_init(adc_data_file_info_t *info, long num_samples, int iters) {
+  if (info == NULL) {
+    return;
+  }
+  info->path = NULL;
+  info->num_samples = num_samples;
+  info->iters = iters;
+  info->hw = NULL;
+  stream_ctrl_init(&info->ctrl);
+}
+
 void trigger_file_info_init(trigger_file_info_t *info, const char *label, long num_trigs, int iters) {
   if (info == NULL) {
     return;
   }
   info->label = label;
+  info->path = NULL;
   info->num_trigs = num_trigs;
   info->iters = iters;
+  info->hw = NULL;
   stream_ctrl_init(&info->ctrl);
 }
 
@@ -417,6 +442,10 @@ bool waveform_file_info_is_finished(const waveform_file_info_t *info) {
   if (info == NULL) return true;
   return stream_ctrl_is_finished(&info->ctrl);
 }
+bool waveform_file_info_stopped_early(const waveform_file_info_t *info) {
+  if (info == NULL) return false;
+  return stream_ctrl_stopped_early(&info->ctrl);
+}
 static void waveform_file_info_set_state(waveform_file_info_t *info, stream_thread_state_t state) {
   stream_ctrl_set_state(&info->ctrl, state);
 }
@@ -437,7 +466,35 @@ bool adc_file_info_is_finished(const adc_file_info_t *info) {
   if (info == NULL) return true;
   return stream_ctrl_is_finished(&info->ctrl);
 }
+bool adc_file_info_stopped_early(const adc_file_info_t *info) {
+  if (info == NULL) return false;
+  return stream_ctrl_stopped_early(&info->ctrl);
+}
 static void adc_file_info_set_state(adc_file_info_t *info, stream_thread_state_t state) {
+  stream_ctrl_set_state(&info->ctrl, state);
+}
+
+void adc_data_file_info_destroy(adc_data_file_info_t *info) {
+  if (info == NULL) return;
+  stream_ctrl_destroy(&info->ctrl);
+}
+void adc_data_file_info_request_stop(adc_data_file_info_t *info) {
+  if (info == NULL) return;
+  stream_ctrl_request_stop(&info->ctrl);
+}
+bool adc_data_file_info_should_stop(const adc_data_file_info_t *info) {
+  if (info == NULL) return true;
+  return stream_ctrl_should_stop(&info->ctrl);
+}
+bool adc_data_file_info_is_finished(const adc_data_file_info_t *info) {
+  if (info == NULL) return true;
+  return stream_ctrl_is_finished(&info->ctrl);
+}
+bool adc_data_file_info_stopped_early(const adc_data_file_info_t *info) {
+  if (info == NULL) return false;
+  return stream_ctrl_stopped_early(&info->ctrl);
+}
+static void adc_data_file_info_set_state(adc_data_file_info_t *info, stream_thread_state_t state) {
   stream_ctrl_set_state(&info->ctrl, state);
 }
 
@@ -457,15 +514,19 @@ bool trigger_file_info_is_finished(const trigger_file_info_t *info) {
   if (info == NULL) return true;
   return stream_ctrl_is_finished(&info->ctrl);
 }
+bool trigger_file_info_stopped_early(const trigger_file_info_t *info) {
+  if (info == NULL) return false;
+  return stream_ctrl_stopped_early(&info->ctrl);
+}
 static void trigger_file_info_set_state(trigger_file_info_t *info, stream_thread_state_t state) {
   stream_ctrl_set_state(&info->ctrl, state);
 }
 
 // --- Stream threads ---------------------------------------------------
 //
-// The DAC thread streams real hardware commands. The ADC and trigger
-// threads still use placeholder logic (to be replaced when their real
-// streaming is implemented).
+// The DAC and ADC threads stream real hardware commands. The trigger thread
+// still uses placeholder logic (to be replaced when its real streaming is
+// implemented).
 
 // Send a DAC command to the hardware, blocking until there is command space.
 // *space tracks the locally-known number of free DAC sample command slots; it
@@ -479,10 +540,13 @@ static void trigger_file_info_set_state(trigger_file_info_t *info, stream_thread
 // delay to the row's timestamp before applying it). This needs two free slots,
 // and each of the two commands decrements *space by one.
 //
-// Returns true if a stop was requested before the command could be sent.
-static bool dac_stream_send(waveform_file_info_t *info, bool noop_first,
-                            bool is_trig, uint32_t delay_clks,
-                            const double *amps, bool last, int *space) {
+// Returns 0 on success. Returns non-zero if the command could not be sent:
+// either a stop was requested while waiting for command space, or a hardware
+// command reported an error (logged here before returning). In both cases the
+// caller should stop streaming.
+static int dac_stream_send(waveform_file_info_t *info, bool noop_first,
+                           bool is_trig, uint32_t delay_clks,
+                           const double *amps, bool last, int *space) {
   int needed = noop_first ? 2 : 1;
   while (*space < needed) {
     *space = hw_get_dac_sample_cmd_space(info->hw);
@@ -490,25 +554,37 @@ static bool dac_stream_send(waveform_file_info_t *info, bool noop_first,
       break;
     }
     if (waveform_file_info_should_stop(info)) {
-      return true;
+      return -1;
     }
     usleep(DAC_STREAM_NO_SPACE_SLEEP_US);
   }
 
   if (noop_first) {
-    hw_dac_noop_trig(info->hw);
+    if (hw_dac_noop_trig(info->hw) != 0) {
+      fprintf(stderr, "Error: [DAC] failed to send trigger-wait no-op\n");
+      return -1;
+    }
     (*space)--;
   }
 
   if (is_trig) {
-    hw_set_dacs_trig(info->hw, amps, last);
+    if (hw_set_dacs_trig(info->hw, amps, last) != 0) {
+      fprintf(stderr, "Error: [DAC] failed to send trigger-wait command\n");
+      return -1;
+    }
   } else {
-    hw_set_dacs_delay(info->hw, amps, delay_clks, last);
+    if (hw_set_dacs_delay(info->hw, amps, delay_clks, last) != 0) {
+      fprintf(stderr, "Error: [DAC] failed to send delay command\n");
+      return -1;
+    }
   }
   (*space)--;
-  return false;
+  return 0;
 }
 
+// DAC streaming thread entry point. Reads the waveform file, converts timestamps 
+// from seconds to SPI clock cycles, and sends commands to the DAC
+// hardware, handling trigger points and delays as specified.
 void *dac_stream_thread(void *arg) {
   waveform_file_info_t *info = (waveform_file_info_t *)arg;
   if (info == NULL) {
@@ -516,7 +592,7 @@ void *dac_stream_thread(void *arg) {
   }
   if (info->hw == NULL) {
     fprintf(stderr, "Error: [DAC] no hardware handle provided\n");
-    waveform_file_info_set_state(info, STREAM_THREAD_FINISHED);
+    waveform_file_info_set_state(info, STREAM_THREAD_STOPPED);
     return NULL;
   }
   waveform_file_info_set_state(info, STREAM_THREAD_RUNNING);
@@ -574,7 +650,7 @@ void *dac_stream_thread(void *arg) {
       // is not the final command (last = false).
       if (have_pending) {
         if (dac_stream_send(info, pending_noop_first, pending_is_trig,
-                            pending_delay_clks, pending_amps, false, &space)) {
+                            pending_delay_clks, pending_amps, false, &space) != 0) {
           stopped = true;
           break;
         }
@@ -629,22 +705,132 @@ void *dac_stream_thread(void *arg) {
   // Flush the final buffered command. If every iteration completed without a
   // stop, this is the last command of the whole sequence (last = true).
   if (have_pending && !stopped) {
-    dac_stream_send(info, pending_noop_first, pending_is_trig,
-                    pending_delay_clks, pending_amps, true, &space);
+    (void)dac_stream_send(info, pending_noop_first, pending_is_trig,
+                          pending_delay_clks, pending_amps, true, &space);
   }
 
-  waveform_file_info_set_state(info, STREAM_THREAD_FINISHED);
+  waveform_file_info_set_state(info, stopped ? STREAM_THREAD_STOPPED
+                                             : STREAM_THREAD_COMPLETED);
   return NULL;
 }
 
+// Send an ADC command sequence to the hardware, blocking until there is
+// command space. *space tracks the locally-known number of free ADC command
+// slots; it is decremented per command and refreshed from hardware when it
+// runs low. When there isn't enough space the thread re-checks and, if still
+// short, sleeps ADC_STREAM_NO_SPACE_SLEEP_US before trying again.
+//
+// A read command may be preceded by prefix no-ops that belong to a trigger
+// point: `noop_trig_first` emits a trigger-wait no-op (only used before the
+// very first read, which has nothing ahead of it to supply a trigger), and
+// `noop_delay_first` emits a delay no-op of `noop_delay_clks` cycles (used for
+// a trigger point at a non-zero time, to delay from the trigger to the sample).
+//
+// The read itself is either a trigger-wait read (`is_trig`) or a delay read of
+// `delay_clks` cycles -- this is the delay that follows the read, since on the
+// ADC side a command's wait happens after it. `last` marks the final read of
+// the final iteration (a trigger-wait read that clears the continue flag).
+//
+// Each emitted command decrements *space by one. Returns 0 on success. Returns
+// non-zero if the sequence could not be sent: either a stop was requested while
+// waiting for command space, or a hardware command reported an error (logged
+// here before returning). In both cases the caller should stop streaming.
+static int adc_stream_send(adc_file_info_t *info, bool noop_trig_first,
+                           bool noop_delay_first, uint32_t noop_delay_clks,
+                           bool is_trig, uint32_t delay_clks, bool last, int *space) {
+  int needed = 1 + (noop_trig_first ? 1 : 0) + (noop_delay_first ? 1 : 0);
+  while (*space < needed) {
+    *space = hw_get_adc_cmd_space(info->hw);
+    if (*space >= needed) {
+      break;
+    }
+    if (adc_file_info_should_stop(info)) {
+      return -1;
+    }
+    usleep(ADC_STREAM_NO_SPACE_SLEEP_US);
+  }
+
+  if (noop_trig_first) {
+    if (hw_adc_noop_trig(info->hw) != 0) {
+      fprintf(stderr, "Error: [ADC] failed to send trigger-wait no-op\n");
+      return -1;
+    }
+    (*space)--;
+  }
+  if (noop_delay_first) {
+    if (hw_adc_noop_delay(info->hw, noop_delay_clks) != 0) {
+      fprintf(stderr, "Error: [ADC] failed to send delay no-op\n");
+      return -1;
+    }
+    (*space)--;
+  }
+
+  if (is_trig) {
+    if (hw_adc_read_trig(info->hw, last) != 0) {
+      fprintf(stderr, "Error: [ADC] failed to send trigger-wait read\n");
+      return -1;
+    }
+  } else {
+    if (hw_adc_read_delay(info->hw, delay_clks, last) != 0) {
+      fprintf(stderr, "Error: [ADC] failed to send delay read\n");
+      return -1;
+    }
+  }
+  (*space)--;
+  return 0;
+}
+
+// ADC streaming thread entry point. Reads the ADC file (a list of sample
+// timestamps), converts them from milliseconds to SPI clock cycles, and sends
+// read commands to the ADC hardware.
+//
+// On the ADC side a command's wait happens *after* it, so the delay tied to a
+// row is the gap to the *next* row. Each read is therefore buffered ("pending")
+// until the following row is known: if the next row is a trigger point the read
+// gets a trigger-wait afterwards, otherwise it gets a delay of dt cycles. The
+// final pending read of the final iteration becomes a trigger-wait read with
+// last = true, which clears the continue flag and handles the trailing wait.
+//
+// Trigger points (first row of the whole stream, or a timestamp below the
+// previous one) start a new sweep. The very first read is prefixed with a
+// trigger-wait no-op, since nothing precedes it to supply the first trigger;
+// later trigger points get their trigger from the previous read's trigger-wait.
+// A trigger point at a non-zero time additionally gets a delay no-op prefix, to
+// wait from the trigger to that row's timestamp before reading.
 void *adc_stream_thread(void *arg) {
   adc_file_info_t *info = (adc_file_info_t *)arg;
   if (info == NULL) {
     return NULL;
   }
+  if (info->hw == NULL) {
+    fprintf(stderr, "Error: [ADC] no hardware handle provided\n");
+    adc_file_info_set_state(info, STREAM_THREAD_STOPPED);
+    return NULL;
+  }
   adc_file_info_set_state(info, STREAM_THREAD_RUNNING);
 
-  for (int iter = 0; iter < info->iters && !adc_file_info_should_stop(info); iter++) {
+  // A read command is buffered ("pending") until the next row is known, since
+  // the delay that follows a read is the gap to the next row. The pending state
+  // persists across iterations so the last read of one pass is flagged non-final
+  // (and gets a trigger-wait, since the next pass restarts) once the next pass
+  // begins.
+  bool     have_pending = false;
+  bool     pending_noop_trig = false;   // prefix: trigger-wait no-op (first read only)
+  bool     pending_noop_delay = false;  // prefix: delay no-op (non-zero-time trigger point)
+  uint32_t pending_noop_delay_clks = 0;
+  uint32_t pending_t_clks = 0;          // this pending row's absolute time, in SPI clocks
+
+  // Trigger points are detected exactly as in validation (first row of the whole
+  // stream, or a timestamp below the previous one). This state persists across
+  // iterations, so an iteration boundary counts as a reset (new trigger point).
+  bool     has_prev = false;
+  double   prev_timestamp = 0.0;
+
+  // Locally-tracked number of free ADC command slots.
+  int space = hw_get_adc_cmd_space(info->hw);
+  bool stopped = false;
+
+  for (int iter = 0; iter < info->iters && !stopped; iter++) {
     FILE *fp = fopen(info->path, "r");
     if (fp == NULL) {
       fprintf(stderr, "Error: [ADC] could not reopen '%s': %s\n", info->path, strerror(errno));
@@ -652,11 +838,10 @@ void *adc_stream_thread(void *arg) {
     }
 
     char line[MAX_LINE_LEN];
-    bool has_prev = false;
-    double prev_timestamp = 0.0;
 
     while (fgets(line, sizeof(line), fp) != NULL) {
       if (adc_file_info_should_stop(info)) {
+        stopped = true;
         break;
       }
       strip_comments_and_trim(line);
@@ -670,17 +855,151 @@ void *adc_stream_thread(void *arg) {
         fprintf(stderr, "Broken ADC line that should have been caught earlier.");
         exit(1);
       }
-      double dt = has_prev ? (timestamp - prev_timestamp) : 0.0;
+
+      // Convert this timestamp (in ms) to absolute SPI clock cycles up front so
+      // dt is computed from absolute cycle counts, avoiding rounding drift.
+      uint32_t t_clks = (uint32_t)(((timestamp / 1000.0) * (double)info->hw->spi_clk_hz) + 0.5);
+
+      // A trigger point is the first row of the whole stream or a time reset
+      // (this timestamp is below the previous one).
+      bool is_trig_point = (!has_prev) || (timestamp < prev_timestamp);
+
+      // Flush the buffered read: its trailing wait is determined by this row.
+      // If this row starts a new sweep, the previous read waits for a trigger;
+      // otherwise it delays by the gap between the two rows.
+      if (have_pending) {
+        bool     p_is_trig = is_trig_point;
+        uint32_t p_delay_clks = is_trig_point ? 0 : (t_clks - pending_t_clks);
+        if (adc_stream_send(info, pending_noop_trig, pending_noop_delay,
+                            pending_noop_delay_clks, p_is_trig, p_delay_clks,
+                            false, &space) != 0) {
+          stopped = true;
+          break;
+        }
+        have_pending = false;
+      }
+
+      // Determine the prefix no-ops for this row (emitted just before its read
+      // when it is later flushed).
+      bool     this_noop_trig = false;
+      bool     this_noop_delay = false;
+      uint32_t this_noop_delay_clks = 0;
+      if (is_trig_point) {
+        if (!has_prev) {
+          // Very first read of the whole stream: nothing precedes it to supply
+          // the first trigger, so prefix a trigger-wait no-op.
+          this_noop_trig = true;
+        }
+        if (t_clks != 0) {
+          // Trigger point at a non-zero time: wait from the trigger to this
+          // row's timestamp before reading.
+          this_noop_delay = true;
+          this_noop_delay_clks = t_clks;
+        }
+      }
+
+      // Buffer this row as the new pending read.
+      pending_noop_trig = this_noop_trig;
+      pending_noop_delay = this_noop_delay;
+      pending_noop_delay_clks = this_noop_delay_clks;
+      pending_t_clks = t_clks;
+      have_pending = true;
+
       prev_timestamp = timestamp;
       has_prev = true;
-
-      printf("[ADC] iter %d dt=%g\n", iter + 1, dt);
     }
 
     fclose(fp);
   }
 
-  adc_file_info_set_state(info, STREAM_THREAD_FINISHED);
+  // Flush the final buffered read. If every iteration completed without a stop,
+  // this is the last read of the whole sequence: a trigger-wait read with
+  // last = true, which clears the continue flag and handles the trailing wait.
+  if (have_pending && !stopped) {
+    (void)adc_stream_send(info, pending_noop_trig, pending_noop_delay,
+                          pending_noop_delay_clks, true, 0, true, &space);
+  }
+
+  adc_file_info_set_state(info, stopped ? STREAM_THREAD_STOPPED
+                                        : STREAM_THREAD_COMPLETED);
+  return NULL;
+}
+
+// ADC data streaming thread entry point. Once the ADC command stream is
+// running, this drains the ADC data buffer: it polls for available samples,
+// reads each one (8 channels per active board, converted to amps), and writes
+// it to the output file. It reads num_samples * iters samples in total --
+// matching the ADC command stream -- so the buffer never overflows.
+//
+// Draining the buffer is required even without an output file, so if info->path
+// is unset the samples are still read (and discarded) to keep the hardware from
+// overflowing. Writing the samples out is wired up once a path is provided.
+void *adc_data_stream_thread(void *arg) {
+  adc_data_file_info_t *info = (adc_data_file_info_t *)arg;
+  if (info == NULL) {
+    return NULL;
+  }
+  if (info->hw == NULL) {
+    fprintf(stderr, "Error: [ADC data] no hardware handle provided\n");
+    adc_data_file_info_set_state(info, STREAM_THREAD_STOPPED);
+    return NULL;
+  }
+  adc_data_file_info_set_state(info, STREAM_THREAD_RUNNING);
+
+  // Open the output file if a path was provided. When it's unset (the path is
+  // wired up later) samples are still drained from the buffer but discarded.
+  FILE *out = NULL;
+  if (info->path != NULL) {
+    out = fopen(info->path, "w");
+    if (out == NULL) {
+      fprintf(stderr, "Error: [ADC data] could not open '%s': %s\n", info->path, strerror(errno));
+      adc_data_file_info_set_state(info, STREAM_THREAD_STOPPED);
+      return NULL;
+    }
+  }
+
+  long total = info->num_samples * (long)info->iters;
+  long read_count = 0;
+  double amps[HW_MAX_CHANNELS] = {0.0};
+  bool stopped = false;
+
+  while (read_count < total && !stopped) {
+    if (adc_data_file_info_should_stop(info)) {
+      stopped = true;
+      break;
+    }
+
+    int available = hw_get_adc_sample_count(info->hw);
+    if (available < 0) {
+      fprintf(stderr, "Error: [ADC data] failed to read available sample count\n");
+      stopped = true;
+      break;
+    }
+    if (available == 0) {
+      usleep(ADC_DATA_STREAM_NO_DATA_SLEEP_US);
+      continue;
+    }
+
+    for (int i = 0; i < available && read_count < total; i++) {
+      if (hw_read_adc_data(info->hw, amps) != 0) {
+        fprintf(stderr, "Error: [ADC data] failed to read sample\n");
+        stopped = true;
+        break;
+      }
+      read_count++;
+      // TODO: format/write the per-channel amps to `out` once the output file
+      // format is defined. For now the samples are drained to keep the buffer
+      // from overflowing.
+      (void)out;
+    }
+  }
+
+  if (out != NULL) {
+    fclose(out);
+  }
+
+  adc_data_file_info_set_state(info, stopped ? STREAM_THREAD_STOPPED
+                                             : STREAM_THREAD_COMPLETED);
   return NULL;
 }
 
@@ -689,16 +1008,63 @@ void *trigger_stream_thread(void *arg) {
   if (info == NULL) {
     return NULL;
   }
+  const char *label = info->label ? info->label : "Trigger";
+  if (info->hw == NULL) {
+    fprintf(stderr, "Error: [%s] no hardware handle provided\n", label);
+    trigger_file_info_set_state(info, STREAM_THREAD_STOPPED);
+    return NULL;
+  }
   trigger_file_info_set_state(info, STREAM_THREAD_RUNNING);
 
-  long total = info->num_trigs * (long)info->iters;
-  for (long i = 1; i <= total; i++) {
-    if (trigger_file_info_should_stop(info)) {
-      break;
+  // Open the output file if a path was provided. When it's unset (the path is
+  // wired up later) timepoints are still drained from the buffer but discarded.
+  FILE *out = NULL;
+  if (info->path != NULL) {
+    out = fopen(info->path, "w");
+    if (out == NULL) {
+      fprintf(stderr, "Error: [%s] could not open '%s': %s\n", label, info->path, strerror(errno));
+      trigger_file_info_set_state(info, STREAM_THREAD_STOPPED);
+      return NULL;
     }
-    printf("[Trigger] trigger %ld / %ld\n", i, total);
   }
 
-  trigger_file_info_set_state(info, STREAM_THREAD_FINISHED);
+  long total = info->num_trigs * (long)info->iters;
+  long read_count = 0;
+  bool stopped = false;
+
+  while (read_count < total && !stopped) {
+    if (trigger_file_info_should_stop(info)) {
+      stopped = true;
+      break;
+    }
+
+    int available = hw_get_trigger_sample_count(info->hw);
+    if (available < 0) {
+      fprintf(stderr, "Error: [%s] failed to read available sample count\n", label);
+      stopped = true;
+      break;
+    }
+    if (available == 0) {
+      usleep(TRIGGER_DATA_STREAM_NO_DATA_SLEEP_US);
+      continue;
+    }
+
+    for (int i = 0; i < available && read_count < total; i++) {
+      uint64_t timepoint = trigger_read(&info->hw->trigger_ctrl);
+      (void)timepoint;
+      read_count++;
+      // TODO: format/write the timepoint to `out` once the output file format
+      // is defined. For now the timepoints are drained to keep the buffer from
+      // overflowing.
+      (void)out;
+    }
+  }
+
+  if (out != NULL) {
+    fclose(out);
+  }
+
+  trigger_file_info_set_state(info, stopped ? STREAM_THREAD_STOPPED
+                                            : STREAM_THREAD_COMPLETED);
   return NULL;
 }

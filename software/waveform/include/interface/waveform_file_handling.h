@@ -20,13 +20,26 @@
 // this long (in microseconds) before re-checking for available command space.
 #define DAC_STREAM_NO_SPACE_SLEEP_US 1000
 
+// When the ADC command FIFO has no free space, the ADC stream thread sleeps
+// this long (in microseconds) before re-checking for available command space.
+#define ADC_STREAM_NO_SPACE_SLEEP_US 1000
+
+// When the ADC data buffer has no samples ready, the ADC data stream thread
+// sleeps this long (in microseconds) before polling for available samples again.
+#define ADC_DATA_STREAM_NO_DATA_SLEEP_US 1000
+
+// When the trigger data buffer has no samples ready, the trigger data stream
+// thread sleeps this long (in microseconds) before polling for samples again.
+#define TRIGGER_DATA_STREAM_NO_DATA_SLEEP_US 1000
+
 // Lifecycle state of a stream thread. Defined up front since the *_file_info_t
 // structs below all embed one via stream_ctrl_t.
 typedef enum {
   STREAM_THREAD_IDLE = 0,
   STREAM_THREAD_RUNNING,
   STREAM_THREAD_STOP_REQUESTED,
-  STREAM_THREAD_FINISHED
+  STREAM_THREAD_COMPLETED,   // terminal: ran to completion (all iterations sent)
+  STREAM_THREAD_STOPPED      // terminal: ended early (stop requested or hardware error)
 } stream_thread_state_t;
 
 // Thread-control block shared by all three *_file_info_t structs below.
@@ -64,16 +77,38 @@ typedef struct {
   double min_dt;       // smallest non-negative gap between consecutive timestamps within a trigger;
                        //  -1.0 if it could not be computed (fewer than 2 rows in a trigger)
   int iters;           // number of times to replay the file; set by caller before streaming
+  hw_t *hw;            // hardware handle used to stream commands; set by caller before streaming
   stream_ctrl_t ctrl;
 } adc_file_info_t;
 
-// Info driving the trigger stream. Unlike the DAC/ADC files there's no file
-// to read here: the per-iteration trigger count comes from the DAC file's
-// trigger count (num_trigs), and label is purely for log messages.
+// Info driving the ADC data stream. This is an output stream: once the ADC
+// command stream is running, it polls the ADC data buffer for available
+// samples, reads them, and writes them to an output file. It runs only when
+// the ADC command stream runs.
+//
+// There's no input file to validate here: num_samples (the samples expected
+// per iteration) comes from the ADC file's row count, and path is the output
+// file to write, set by the caller before streaming.
+typedef struct {
+  const char *path;    // output file path; set by caller before streaming
+  long num_samples;    // samples expected per iteration (matches the ADC file rows)
+  int iters;           // number of times the run is replayed
+  hw_t *hw;            // hardware handle used to read samples; set by caller before streaming
+  stream_ctrl_t ctrl;
+} adc_data_file_info_t;
+
+// Info driving the trigger data stream. This is an output stream: it polls the
+// trigger data buffer for logged trigger timepoints, reads them, and writes
+// them to an output file. Unlike the DAC/ADC command files there's no input
+// file here: the per-iteration trigger count comes from the DAC file's trigger
+// count (num_trigs), path is the output file to write (set by the caller before
+// streaming), and label is purely for log messages.
 typedef struct {
   const char *label;   // display label, e.g. "Trigger"
+  const char *path;    // output file path; set by caller before streaming
   long num_trigs;      // trigger points per iteration (matches the DAC file)
   int iters;            // number of times to replay
+  hw_t *hw;            // hardware handle used to read samples; set by caller before streaming
   stream_ctrl_t ctrl;
 } trigger_file_info_t;
 
@@ -121,40 +156,65 @@ int validate_input_file(const char *path, waveform_file_info_t *info);
 
 int validate_adc_file(const char *path, long expected_trigs, adc_file_info_t *info);
 
+// Initialize an adc_data_file_info_t. num_samples should match the ADC file's
+// row count; iters is the number of times the whole run will be replayed. The
+// caller must set ->hw and ->path before starting adc_data_stream_thread.
+void adc_data_file_info_init(adc_data_file_info_t *info, long num_samples, int iters);
+
 // Initialize a trigger_file_info_t. num_trigs should match the DAC file's
-// trigger count; iters is the number of times the whole run will be
-// replayed. Must be called before starting trigger_stream_thread.
+// trigger count; iters is the number of times the whole run will be replayed.
+// The caller must set ->hw and ->path before starting trigger_stream_thread.
 void trigger_file_info_init(trigger_file_info_t *info, const char *label, long num_trigs, int iters);
 
 void waveform_file_info_destroy(waveform_file_info_t *info);
 void waveform_file_info_request_stop(waveform_file_info_t *info);
 bool waveform_file_info_should_stop(const waveform_file_info_t *info);
 bool waveform_file_info_is_finished(const waveform_file_info_t *info);
+bool waveform_file_info_stopped_early(const waveform_file_info_t *info);
 
 void adc_file_info_destroy(adc_file_info_t *info);
 void adc_file_info_request_stop(adc_file_info_t *info);
 bool adc_file_info_should_stop(const adc_file_info_t *info);
 bool adc_file_info_is_finished(const adc_file_info_t *info);
+bool adc_file_info_stopped_early(const adc_file_info_t *info);
+
+void adc_data_file_info_destroy(adc_data_file_info_t *info);
+void adc_data_file_info_request_stop(adc_data_file_info_t *info);
+bool adc_data_file_info_should_stop(const adc_data_file_info_t *info);
+bool adc_data_file_info_is_finished(const adc_data_file_info_t *info);
+bool adc_data_file_info_stopped_early(const adc_data_file_info_t *info);
 
 void trigger_file_info_destroy(trigger_file_info_t *info);
 void trigger_file_info_request_stop(trigger_file_info_t *info);
 bool trigger_file_info_should_stop(const trigger_file_info_t *info);
 bool trigger_file_info_is_finished(const trigger_file_info_t *info);
+bool trigger_file_info_stopped_early(const trigger_file_info_t *info);
 
 // Stream thread entry points, intended for use with pthread_create().
 //
-// Each one replays its source `iters` times (dac/adc re-read their file
-// from disk on each pass; trigger just counts). For each DAC/ADC line, it
-// computes dt from the previous line within that pass (0.0 for the first
-// line of a pass) and, for DAC, also parses the channel values, then
-// prints them. The trigger thread counts up to num_trigs * iters, printing
-// each trigger number. This is a placeholder for real streaming logic.
+// There are four streams, two input (command) and two output (data):
+//   - dac_stream_thread     (input)  replays the DAC command file to hardware.
+//   - adc_stream_thread     (input)  replays the ADC command file to hardware.
+//   - adc_data_stream_thread (output) drains the ADC data buffer, reading each
+//                                    sample and writing it to its output file.
+//   - trigger_stream_thread (output) drains the trigger data buffer, reading
+//                                    each logged timepoint and writing it to its
+//                                    output file.
 //
-// Each thread sets its own state to STREAM_THREAD_FINISHED and returns
-// when its work is done, or earlier if a stop is requested via the
-// corresponding *_file_info_request_stop().
+// The two input threads re-read their command file from disk on each of the
+// `iters` passes. The two output threads poll the hardware buffer for available
+// samples and read up to their expected count (num_samples * iters for ADC
+// data, num_trigs * iters for trigger data), draining the buffer so it does
+// not overflow; when their output path is set they also write each sample out.
+//
+// Each thread sets its own terminal state and returns when its work is done:
+// STREAM_THREAD_COMPLETED if it processed every iteration, or STREAM_THREAD_STOPPED
+// if it ended early because a stop was requested (via the corresponding
+// *_file_info_request_stop()) or a hardware command failed. Callers can tell
+// the two apart with *_file_info_stopped_early().
 void *dac_stream_thread(void *arg);
 void *adc_stream_thread(void *arg);
+void *adc_data_stream_thread(void *arg);
 void *trigger_stream_thread(void *arg);
 
 #endif // WAVEFORM_FILE_HANDLING_H

@@ -92,8 +92,16 @@ int hw_get_adc_cmd_space(hw_t *hw);
 // This indicates how many individual ADC samples can be read
 int hw_get_adc_sample_count(hw_t *hw);
 
-// Send a DAC noop command for a single trigger wait to all active boards
+// Get the available trigger sample words (only one buffer)
+// Each trigger sample is 2 words, so it's just the words divided by 2 (rounded down)
+// This indicates how many individual trigger samples can be read
+int hw_get_trigger_sample_count(hw_t *hw);
+
+// Send a DAC noop command for a single trigger wait to all active boards (assumes not last)
 int hw_dac_noop_trig(hw_t *hw);
+
+// Send a DAC noop command for a delay to all active boards (assumes not last)
+int hw_dac_noop_delay(hw_t *hw, uint32_t delay_clks);
 
 // Send a DAC command with a delay in clock cycles
 // (buffer is HW_MAX_CHANNELS in length and indexed by channel number)
@@ -109,8 +117,11 @@ int hw_set_dacs_delay(hw_t *hw, const double *amps, uint32_t delay_clks, bool la
 // Indicate whether this is the last DAC command in a sequence to control the continue flag
 int hw_set_dacs_trig(hw_t *hw, const double *amps, bool last);
 
-// Send an ADC no-op single trigger wait to start to all active boards
+// Send an ADC no-op single trigger wait to start to all active boards (assumes not last)
 int hw_adc_noop_trig(hw_t *hw);
+
+// Send an ADC no-op delay command to all active boards (assumes not last)
+int hw_adc_noop_delay(hw_t *hw, uint32_t delay_clks);
 
 // Send an ADC read command with a single trigger wait afterwards to all active boards
 // Indicate whether this is the last ADC read command in a sequence to control the continue flag

@@ -32,10 +32,11 @@ typedef struct {
   int iters;               // --iters, default: 1
 } config_t;
 
-static hw_t *g_hw = NULL;
-static waveform_file_info_t *g_input_info = NULL;
-static adc_file_info_t *g_adc_info = NULL;
-static trigger_file_info_t *g_trigger_info = NULL;
+// Set from the signal handler (async-signal-safe) and polled by the main
+// monitor loop, which performs the actual stop-request + hardware power-off
+// from normal thread context. A volatile sig_atomic_t is the only state the
+// handler may safely touch.
+static volatile sig_atomic_t g_stop_requested = 0;
 
 static void print_usage(const char *prog) {
   fprintf(stderr,
@@ -77,23 +78,15 @@ static int parse_int_arg(const char *flag, const char *val) {
   return (int)l;
 }
 
-// --- SIGINT handling ---------------------------------------------------
+// --- Signal handling ---------------------------------------------------
 
-static void handle_sigint(int signum) {
+// Handler for SIGINT/SIGTERM: only record that a stop was requested. Everything
+// that is unsafe to do from signal context -- locking thread mutexes, powering
+// off the hardware, printing -- is done by the main thread once it observes
+// this flag.
+static void handle_stop_signal(int signum) {
   (void)signum;
-  if (g_input_info != NULL) {
-    waveform_file_info_request_stop(g_input_info);
-  }
-  if (g_adc_info != NULL) {
-    adc_file_info_request_stop(g_adc_info);
-  }
-  if (g_trigger_info != NULL) {
-    trigger_file_info_request_stop(g_trigger_info);
-  }
-  if (g_hw != NULL) {
-    hw_power_off(g_hw);
-  }
-  _exit(EXIT_FAILURE);
+  g_stop_requested = 1;
 }
 
 int main(int argc, char *argv[]) {
@@ -180,7 +173,6 @@ int main(int argc, char *argv[]) {
 
   // --- Initialize hardware pointers and check that enough boards/FIFOs are present
   hw_t hw = hw_init(input_info.num_channels, cfg.clk_MHz, false);
-  g_hw = &hw;
 
   // --- Validate the ADC file, if provided -------------------------
   adc_file_info_t adc_info;
@@ -194,12 +186,13 @@ int main(int argc, char *argv[]) {
     printf("ADC file OK: %ld trigger point(s) match the input file\n", adc_info.num_trigs);
   }
 
-  // --- Catch SIGINT so we can power off the hardware before exiting -
+  // --- Catch SIGINT/SIGTERM so we can power off the hardware before exiting -
   struct sigaction sa;
   memset(&sa, 0, sizeof(sa));
-  sa.sa_handler = handle_sigint;
+  sa.sa_handler = handle_stop_signal;
   sigemptyset(&sa.sa_mask);
   sigaction(SIGINT, &sa, NULL);
+  sigaction(SIGTERM, &sa, NULL);
 
   // --- Bring up the hardware ---------------------------------------
   if (hw_power_on(&hw) != 0) {
@@ -233,23 +226,41 @@ int main(int argc, char *argv[]) {
   }
 
   // --- Start the stream threads ------------------------------------
-  pthread_t dac_tid, adc_tid, trigger_tid;
+  pthread_t dac_tid, adc_tid, adc_data_tid, trigger_tid;
   trigger_file_info_t trigger_arg;
+  adc_data_file_info_t adc_data_info;
   bool has_adc_thread = false;
+  bool has_adc_data_thread = false;
 
   trigger_file_info_init(&trigger_arg, "Trigger", input_info.num_trigs, cfg.iters);
 
-  g_input_info = &input_info;
-  g_adc_info = has_adc_info ? &adc_info : NULL;
-  g_trigger_info = &trigger_arg;
-
   input_info.hw = &hw;
+  trigger_arg.hw = &hw;
+  if (has_adc_info) {
+    adc_info.hw = &hw;
+    // The ADC data stream drains one sample per ADC read command; its path is
+    // wired up later, so it just drains the buffer for now.
+    adc_data_file_info_init(&adc_data_info, adc_info.num_rows, cfg.iters);
+    adc_data_info.hw = &hw;
+  }
+
+  // Block SIGINT/SIGTERM while spawning the stream threads so they inherit a
+  // blocked mask and never take the signal themselves. It is unblocked again
+  // below, once the threads are running, so a stop signal is delivered only to
+  // the main thread -- keeping the handler off the worker threads and their
+  // mutexes.
+  sigset_t stop_signals;
+  sigemptyset(&stop_signals);
+  sigaddset(&stop_signals, SIGINT);
+  sigaddset(&stop_signals, SIGTERM);
+  pthread_sigmask(SIG_BLOCK, &stop_signals, NULL);
 
   if (pthread_create(&dac_tid, NULL, dac_stream_thread, &input_info) != 0) {
     fprintf(stderr, "Error: failed to start DAC stream thread\n");
     waveform_file_info_destroy(&input_info);
     if (has_adc_info) {
       adc_file_info_destroy(&adc_info);
+      adc_data_file_info_destroy(&adc_data_info);
     }
     trigger_file_info_destroy(&trigger_arg);
     hw_power_off(&hw);
@@ -263,6 +274,7 @@ int main(int argc, char *argv[]) {
       waveform_file_info_destroy(&input_info);
       if (has_adc_info) {
         adc_file_info_destroy(&adc_info);
+        adc_data_file_info_destroy(&adc_data_info);
       }
       trigger_file_info_destroy(&trigger_arg);
       hw_power_off(&hw);
@@ -271,20 +283,45 @@ int main(int argc, char *argv[]) {
     has_adc_thread = true;
   }
 
+  if (has_adc_info) {
+    if (pthread_create(&adc_data_tid, NULL, adc_data_stream_thread, &adc_data_info) != 0) {
+      fprintf(stderr, "Error: failed to start ADC data stream thread\n");
+      waveform_file_info_request_stop(&input_info);
+      if (has_adc_thread) {
+        adc_file_info_request_stop(&adc_info);
+      }
+      waveform_file_info_destroy(&input_info);
+      adc_file_info_destroy(&adc_info);
+      adc_data_file_info_destroy(&adc_data_info);
+      trigger_file_info_destroy(&trigger_arg);
+      hw_power_off(&hw);
+      return EXIT_FAILURE;
+    }
+    has_adc_data_thread = true;
+  }
+
   if (pthread_create(&trigger_tid, NULL, trigger_stream_thread, &trigger_arg) != 0) {
     fprintf(stderr, "Error: failed to start trigger stream thread\n");
     waveform_file_info_request_stop(&input_info);
     if (has_adc_thread) {
       adc_file_info_request_stop(&adc_info);
     }
+    if (has_adc_data_thread) {
+      adc_data_file_info_request_stop(&adc_data_info);
+    }
     waveform_file_info_destroy(&input_info);
     if (has_adc_info) {
       adc_file_info_destroy(&adc_info);
+      adc_data_file_info_destroy(&adc_data_info);
     }
     trigger_file_info_destroy(&trigger_arg);
     hw_power_off(&hw);
     return EXIT_FAILURE;
   }
+
+  // The stream threads are running; unblock SIGINT/SIGTERM so a stop signal is
+  // delivered to (and handled only by) the main thread from here on.
+  pthread_sigmask(SIG_UNBLOCK, &stop_signals, NULL);
 
   // --- Start the expected number of triggers ------------------------
   long expected_triggers = (long)cfg.iters * input_info.num_trigs;
@@ -297,20 +334,61 @@ int main(int argc, char *argv[]) {
 
   // Let each stream thread run to completion on its own; we just poll their
   // state here. (A stop can still be requested externally, e.g. from the
-  // SIGINT handler.)
+  // signal handler.)
   bool dac_done = false;
   bool adc_done = false;
+  bool adc_data_done = false;
   bool trigger_done = false;
-  while (!dac_done || (has_adc_thread && !adc_done) || !trigger_done) {
+  bool any_stopped_early = false;
+  bool stop_all_requested = false;
+  while (!dac_done || (has_adc_thread && !adc_done) ||
+         (has_adc_data_thread && !adc_data_done) || !trigger_done) {
+    // A stop signal (CTRL+C / SIGTERM): stop polling and fall through to the
+    // join + power-off below.
+    if (g_stop_requested) {
+      break;
+    }
     if (!dac_done && waveform_file_info_is_finished(&input_info)) {
       dac_done = true;
+      if (waveform_file_info_stopped_early(&input_info)) {
+        any_stopped_early = true;
+      }
     }
     if (has_adc_thread && !adc_done && adc_file_info_is_finished(&adc_info)) {
       adc_done = true;
+      if (adc_file_info_stopped_early(&adc_info)) {
+        any_stopped_early = true;
+      }
+    }
+    if (has_adc_data_thread && !adc_data_done && adc_data_file_info_is_finished(&adc_data_info)) {
+      adc_data_done = true;
+      if (adc_data_file_info_stopped_early(&adc_data_info)) {
+        any_stopped_early = true;
+      }
     }
     if (!trigger_done && trigger_file_info_is_finished(&trigger_arg)) {
       trigger_done = true;
+      if (trigger_file_info_stopped_early(&trigger_arg)) {
+        any_stopped_early = true;
+      }
     }
+
+    // If a thread ended early on its own (a hardware error -- a stop signal is
+    // handled by the g_stop_requested break above), ask the rest to stop too so
+    // they don't keep streaming into a system that is about to be powered off.
+    if (any_stopped_early && !stop_all_requested) {
+      fprintf(stderr, "Error: a stream thread stopped early; stopping the others\n");
+      waveform_file_info_request_stop(&input_info);
+      if (has_adc_thread) {
+        adc_file_info_request_stop(&adc_info);
+      }
+      if (has_adc_data_thread) {
+        adc_data_file_info_request_stop(&adc_data_info);
+      }
+      trigger_file_info_request_stop(&trigger_arg);
+      stop_all_requested = true;
+    }
+
     uint32_t current_trigger_count = hw_get_trigger_count(&hw);
     if (current_trigger_count != last_trigger_count) {
       // Print the current trigger count out of the total expected triggers
@@ -323,9 +401,23 @@ int main(int argc, char *argv[]) {
       last_trigger_count = current_trigger_count;
     }
 
-    if (!dac_done || (has_adc_thread && !adc_done) || !trigger_done) {
+    if (!dac_done || (has_adc_thread && !adc_done) ||
+        (has_adc_data_thread && !adc_data_done) || !trigger_done) {
       usleep(500000); // Sleep for 500 ms before polling again
     }
+  }
+
+  // If we left the loop because of CTRL+C, threads may still be running; ask
+  // them all to stop so the joins below return promptly.
+  if (g_stop_requested) {
+    waveform_file_info_request_stop(&input_info);
+    if (has_adc_thread) {
+      adc_file_info_request_stop(&adc_info);
+    }
+    if (has_adc_data_thread) {
+      adc_data_file_info_request_stop(&adc_data_info);
+    }
+    trigger_file_info_request_stop(&trigger_arg);
   }
 
   // --- Join stream threads now that each has reported finished ------
@@ -333,15 +425,28 @@ int main(int argc, char *argv[]) {
   if (has_adc_thread) {
     pthread_join(adc_tid, NULL);
   }
+  if (has_adc_data_thread) {
+    pthread_join(adc_data_tid, NULL);
+  }
   pthread_join(trigger_tid, NULL);
 
   // --- Power off hardware and exit -----------------------------------
   waveform_file_info_destroy(&input_info);
   if (has_adc_info) {
     adc_file_info_destroy(&adc_info);
+    adc_data_file_info_destroy(&adc_data_info);
   }
   trigger_file_info_destroy(&trigger_arg);
   hw_power_off(&hw);
+
+  if (g_stop_requested) {
+    fprintf(stderr, "Interrupted by signal; hardware powered off\n");
+    return EXIT_FAILURE;
+  }
+  if (any_stopped_early) {
+    fprintf(stderr, "Error: one or more stream threads stopped early\n");
+    return EXIT_FAILURE;
+  }
   printf("Done.\n");
 
   return EXIT_SUCCESS;
