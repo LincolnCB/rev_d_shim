@@ -463,20 +463,88 @@ static void trigger_file_info_set_state(trigger_file_info_t *info, stream_thread
 
 // --- Stream threads ---------------------------------------------------
 //
-// Placeholder streaming logic: each thread replays its source `iters`
-// times. DAC/ADC re-open and re-read their file from disk on every pass;
-// within a pass, dt is measured from the previous line (0.0 for the first
-// line of a pass). Replace the bodies below with real streaming logic when
-// it's ready -- the file-reopen/parse loop and dt bookkeeping can go.
+// The DAC thread streams real hardware commands. The ADC and trigger
+// threads still use placeholder logic (to be replaced when their real
+// streaming is implemented).
+
+// Send a DAC command to the hardware, blocking until there is command space.
+// *space tracks the locally-known number of free DAC sample command slots; it
+// is decremented per command and refreshed from hardware when it runs low.
+// When there isn't enough space the thread re-checks and, if still short,
+// sleeps DAC_STREAM_NO_SPACE_SLEEP_US before trying again. `last` marks the
+// final command of the final iteration (clears the continue flag).
+//
+// When `noop_first` is set the command is preceded by a trigger-wait no-op
+// (used for a trigger point at a non-zero time: wait for the trigger, then
+// delay to the row's timestamp before applying it). This needs two free slots,
+// and each of the two commands decrements *space by one.
+//
+// Returns true if a stop was requested before the command could be sent.
+static bool dac_stream_send(waveform_file_info_t *info, bool noop_first,
+                            bool is_trig, uint32_t delay_clks,
+                            const double *amps, bool last, int *space) {
+  int needed = noop_first ? 2 : 1;
+  while (*space < needed) {
+    *space = hw_get_dac_sample_cmd_space(info->hw);
+    if (*space >= needed) {
+      break;
+    }
+    if (waveform_file_info_should_stop(info)) {
+      return true;
+    }
+    usleep(DAC_STREAM_NO_SPACE_SLEEP_US);
+  }
+
+  if (noop_first) {
+    hw_dac_noop_trig(info->hw);
+    (*space)--;
+  }
+
+  if (is_trig) {
+    hw_set_dacs_trig(info->hw, amps, last);
+  } else {
+    hw_set_dacs_delay(info->hw, amps, delay_clks, last);
+  }
+  (*space)--;
+  return false;
+}
 
 void *dac_stream_thread(void *arg) {
   waveform_file_info_t *info = (waveform_file_info_t *)arg;
   if (info == NULL) {
     return NULL;
   }
+  if (info->hw == NULL) {
+    fprintf(stderr, "Error: [DAC] no hardware handle provided\n");
+    waveform_file_info_set_state(info, STREAM_THREAD_FINISHED);
+    return NULL;
+  }
   waveform_file_info_set_state(info, STREAM_THREAD_RUNNING);
 
-  for (int iter = 0; iter < info->iters && !waveform_file_info_should_stop(info); iter++) {
+  // A command is buffered ("pending") until we know whether another command
+  // follows it. This lets us flag the final command of the final iteration --
+  // which clears the hardware continue flag -- even when the file ends with
+  // blank or comment-only lines. The pending buffer persists across iterations
+  // so the last row of one pass is flagged non-final once the next pass starts.
+  bool     have_pending = false;
+  bool     pending_noop_first = false;
+  bool     pending_is_trig = false;
+  uint32_t pending_delay_clks = 0;
+  double   pending_amps[HW_MAX_CHANNELS] = {0.0}; // inactive channels stay 0 for the whole run
+
+  // Trigger points are detected exactly as in validation (first row of the
+  // whole stream, or a timestamp below the previous one), so the number of
+  // trigger-wait commands matches the expected trigger count. This state
+  // persists across iterations, so an iteration boundary counts as a reset.
+  bool     has_prev = false;
+  double   prev_timestamp = 0.0;
+  uint32_t prev_clks = 0;
+
+  // Locally-tracked number of free DAC sample command slots.
+  int space = hw_get_dac_sample_cmd_space(info->hw);
+  bool stopped = false;
+
+  for (int iter = 0; iter < info->iters && !stopped; iter++) {
     FILE *fp = fopen(info->path, "r");
     if (fp == NULL) {
       fprintf(stderr, "Error: [DAC] could not reopen '%s': %s\n", info->path, strerror(errno));
@@ -484,11 +552,10 @@ void *dac_stream_thread(void *arg) {
     }
 
     char line[MAX_LINE_LEN];
-    bool has_prev = false;
-    double prev_timestamp = 0.0;
 
     while (fgets(line, sizeof(line), fp) != NULL) {
       if (waveform_file_info_should_stop(info)) {
+        stopped = true;
         break;
       }
       strip_comments_and_trim(line);
@@ -499,27 +566,71 @@ void *dac_stream_thread(void *arg) {
       char *cursor = line;
       double timestamp;
       if (next_double(&cursor, &timestamp) != 0) {
-        continue; // already validated; shouldn't happen
+        fprintf(stderr, "Broken DAC line that should have been caught earlier.");
+        exit(1);
       }
-      double dt = has_prev ? (timestamp - prev_timestamp) : 0.0;
+
+      // Flush the previously buffered command: another line follows it, so it
+      // is not the final command (last = false).
+      if (have_pending) {
+        if (dac_stream_send(info, pending_noop_first, pending_is_trig,
+                            pending_delay_clks, pending_amps, false, &space)) {
+          stopped = true;
+          break;
+        }
+        have_pending = false;
+      }
+
+      // Convert this timestamp (in ms) to absolute SPI clock cycles up front so
+      // dt is computed from absolute cycle counts, avoiding rounding drift.
+      uint32_t t_clks = (uint32_t)(((timestamp / 1000.0) * (double)info->hw->spi_clk_hz) + 0.5);
+
+      // A trigger point is the first row of the whole stream or a time reset
+      // (this timestamp is below the previous one). Within a sweep, the command
+      // is just a delay of dt cycles from the previous row.
+      if (!has_prev || timestamp < prev_timestamp) {
+        if (t_clks == 0) {
+          // Wait for a trigger, then apply this row immediately.
+          pending_noop_first = false;
+          pending_is_trig = true;
+          pending_delay_clks = 0;
+        } else {
+          // Wait for a trigger (no-op), then delay to this row's time before
+          // applying it (the delay is the row's t, i.e. dt measured from 0).
+          pending_noop_first = true;
+          pending_is_trig = false;
+          pending_delay_clks = t_clks;
+        }
+      } else {
+        pending_noop_first = false;
+        pending_is_trig = false;
+        pending_delay_clks = t_clks - prev_clks;
+      }
       prev_timestamp = timestamp;
+      prev_clks = t_clks;
       has_prev = true;
 
-      double values[MAX_CHANNELS];
+      // Fill the channel-indexed amps buffer. The channel count is constant,
+      // so inactive channels stay at their preloaded 0 and only the active
+      // channels are overwritten each line.
       for (int c = 0; c < info->num_channels; c++) {
-        if (next_double(&cursor, &values[c]) != 0) {
-          values[c] = 0.0;
+        double value;
+        if (next_double(&cursor, &value) != 0) {
+          value = 0.0;
         }
+        pending_amps[c] = value;
       }
-
-      printf("[DAC] iter %d dt=%g values=[", iter + 1, dt);
-      for (int c = 0; c < info->num_channels; c++) {
-        printf("%s%g", c == 0 ? "" : ", ", values[c]);
-      }
-      printf("]\n");
+      have_pending = true;
     }
 
     fclose(fp);
+  }
+
+  // Flush the final buffered command. If every iteration completed without a
+  // stop, this is the last command of the whole sequence (last = true).
+  if (have_pending && !stopped) {
+    dac_stream_send(info, pending_noop_first, pending_is_trig,
+                    pending_delay_clks, pending_amps, true, &space);
   }
 
   waveform_file_info_set_state(info, STREAM_THREAD_FINISHED);
@@ -556,7 +667,8 @@ void *adc_stream_thread(void *arg) {
       char *cursor = line;
       double timestamp;
       if (next_double(&cursor, &timestamp) != 0) {
-        continue; // already validated; shouldn't happen
+        fprintf(stderr, "Broken ADC line that should have been caught earlier.");
+        exit(1);
       }
       double dt = has_prev ? (timestamp - prev_timestamp) : 0.0;
       prev_timestamp = timestamp;

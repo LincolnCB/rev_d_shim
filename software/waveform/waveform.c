@@ -2,13 +2,13 @@
 //
 //  Usage:
 //    waveform <file.csv> [--adc <path> | -a <path>] [--lockout <float> | -l <float>]
-//    [--clk <float> | -c <float>] [--iters <int> | -i <int>]
+//    [--clk_MHz <float> | -c <float>] [--iters <int> | -i <int>]
 //
 //  <file.csv> is a required positional argument.
 //  All flags are optional and have defaults:
 //    --adc, -a      (string)  default: none (unset)
 //    --lockout, -l  (double)  default: 10.0
-//    --clk, -c      (double)  default: 30.0
+//    --clk_MHz, -c  (double)  default: 30.0
 //    --iters, -i    (int)     default: 1
 
 #include <stdio.h>
@@ -28,7 +28,7 @@ typedef struct {
   const char *input_file;  // required positional argument
   const char *adc_file;    // --adc, default: NULL (none)
   double lockout;          // --lockout, default: 10.0
-  double clk;              // --clk, default: 30.0
+  double clk_MHz;          // --clk_MHz, default: 30.0
   int iters;               // --iters, default: 1
 } config_t;
 
@@ -47,7 +47,7 @@ static void print_usage(const char *prog) {
     "Options:\n"
     "  -a, --adc <path>          ADC file path (default: none)\n"
     "  -l, --lockout <float>     Lockout value in ms (default: 10.0)\n"
-    "  -c, --clk <float>         Clock value (default: 30.0)\n"
+    "  -c, --clk_MHz <float>     Clock value (MHz, default: 30.0)\n"
     "  -i, --iters <int>         Number of iterations (default: 1)\n"
     "  -h, --help                Show this help message\n",
     prog);
@@ -101,14 +101,14 @@ int main(int argc, char *argv[]) {
     .input_file = NULL,
     .adc_file   = NULL,
     .lockout    = 10.0,
-    .clk        = 30.0,
+    .clk_MHz    = 30.0,
     .iters      = 1
   };
 
   static struct option long_options[] = {
     {"adc",     required_argument, 0, 'a'},
     {"lockout", required_argument, 0, 'l'},
-    {"clk",     required_argument, 0, 'c'},
+    {"clk_MHz", required_argument, 0, 'c'},
     {"iters",   required_argument, 0, 'i'},
     {"help",    no_argument,       0, 'h'},
     {0, 0, 0, 0}
@@ -129,7 +129,7 @@ int main(int argc, char *argv[]) {
       cfg.lockout = parse_double_arg("--lockout", optarg);
       break;
       case 'c':
-      cfg.clk = parse_double_arg("--clk", optarg);
+      cfg.clk_MHz = parse_double_arg("--clk_MHz", optarg);
       break;
       case 'i':
       cfg.iters = parse_int_arg("--iters", optarg);
@@ -165,7 +165,7 @@ int main(int argc, char *argv[]) {
   printf("input_file = %s\n", cfg.input_file);
   printf("adc_file   = %s\n", cfg.adc_file ? cfg.adc_file : "(none)");
   printf("lockout    = %g\n", cfg.lockout);
-  printf("clk        = %g\n", cfg.clk);
+  printf("clk_MHz    = %g\n", cfg.clk_MHz);
   printf("iters      = %d\n", cfg.iters);
 
   // --- Validate the input (DAC) file ------------------------------
@@ -179,7 +179,7 @@ int main(int argc, char *argv[]) {
   input_info.iters = cfg.iters;
 
   // --- Initialize hardware pointers and check that enough boards/FIFOs are present
-  hw_t hw = hw_init(input_info.num_channels, false);
+  hw_t hw = hw_init(input_info.num_channels, cfg.clk_MHz, false);
   g_hw = &hw;
 
   // --- Validate the ADC file, if provided -------------------------
@@ -202,11 +202,6 @@ int main(int argc, char *argv[]) {
   sigaction(SIGINT, &sa, NULL);
 
   // --- Bring up the hardware ---------------------------------------
-  if (hw_set_spi_clock(&hw, cfg.clk) != 0) {
-    fprintf(stderr, "Error: failed to set SPI clock to %g MHz\n", cfg.clk);
-    return EXIT_FAILURE;
-  }
-
   if (hw_power_on(&hw) != 0) {
     fprintf(stderr, "Error: failed to power on hardware\n");
     return EXIT_FAILURE;
@@ -247,6 +242,8 @@ int main(int argc, char *argv[]) {
   g_input_info = &input_info;
   g_adc_info = has_adc_info ? &adc_info : NULL;
   g_trigger_info = &trigger_arg;
+
+  input_info.hw = &hw;
 
   if (pthread_create(&dac_tid, NULL, dac_stream_thread, &input_info) != 0) {
     fprintf(stderr, "Error: failed to start DAC stream thread\n");

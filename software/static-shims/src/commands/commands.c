@@ -94,7 +94,7 @@ void commands_print_help(void) {
   printf("\n");
   printf(" --- File commands ------\n");
   printf("  L [file]   : Load shim block file (or previous file if omitted).\n");
-  printf("  A data     : Load an inline array as a shim block file ('/' in place of newlines).\n");
+  printf("  A [data]   : Load an inline array as a shim block file ('/' in place of newlines).\n");
   printf("  E          : Exit loaded file and reset trigger counter.\n");
   printf("  R          : Reset buffers and restart file if loaded.\n");
   printf("\n");
@@ -200,7 +200,7 @@ void commands_print_guide(void) {
   printf("    (* ? []) are supported; if multiple files match you will be\n");
   printf("    prompted to choose one.\n");
   printf("\n");
-  printf("  A data\n");
+  printf("  A [data]\n");
   printf("    Load an inline array as a shim block file and begin playback,\n");
   printf("    same as 'L'. 'data' is everything after the space, taken as one\n");
   printf("    long string with '/' standing in for the newlines a real block\n");

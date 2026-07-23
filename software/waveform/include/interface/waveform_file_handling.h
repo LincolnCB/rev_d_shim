@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <pthread.h>
 
+#include "waveform_hw.h"
+
 // Channel count limits: first column is timestamp, remaining columns are
 // channels, so a file needs at least MIN_CHANNELS + 1 and at most
 // MAX_CHANNELS + 1 fields in its header.
@@ -13,6 +15,10 @@
 // Allowed current range, in amps. Any value outside this range is a hard validation error.
 #define CURRENT_MIN_AMPS (-3.0)
 #define CURRENT_MAX_AMPS   3.0
+
+// When the DAC command FIFO has no free space, the DAC stream thread sleeps
+// this long (in microseconds) before re-checking for available command space.
+#define DAC_STREAM_NO_SPACE_SLEEP_US 1000
 
 // Lifecycle state of a stream thread. Defined up front since the *_file_info_t
 // structs below all embed one via stream_ctrl_t.
@@ -44,6 +50,7 @@ typedef struct {
   double min_dt;       // smallest non-negative gap between consecutive timestamps within a trigger;
                        //  -1.0 if it could not be computed (fewer than 2 rows in a trigger)
   int iters;           // number of times to replay the file; set by caller before streaming
+  hw_t *hw;            // hardware handle used to stream commands; set by caller before streaming
   stream_ctrl_t ctrl;
 } waveform_file_info_t;
 

@@ -11,7 +11,7 @@ typedef enum {
 } linearity_status_t;
 
 // Initialize and validate hardware control structure for a given channel count. Exits on failure
-hw_t hw_init(uint32_t channel_count, bool verbose) {
+hw_t hw_init(uint32_t channel_count, double clk_MHz, bool verbose) {
   hw_t hw;
 
   if (channel_count < 1 || channel_count > HW_MAX_CHANNELS) {
@@ -20,6 +20,7 @@ hw_t hw_init(uint32_t channel_count, bool verbose) {
   }
 
   hw.channel_count = channel_count;
+  hw.board_count = (channel_count - 1) / 8 + 1;
   hw.verbose = verbose;
 
   // Initialize all hardware control structures
@@ -31,7 +32,7 @@ hw_t hw_init(uint32_t channel_count, bool verbose) {
   hw.trigger_ctrl = create_trigger_ctrl(verbose);
 
   // Check that enough FIFOs are configured in hardware for the requested channel count
-  for (uint32_t i = 0; i < ((channel_count - 1) / 8 + 1); i++) {
+  for (uint32_t i = 0; i < hw.board_count; i++) {
     if (verbose) {
       printf("Checking FIFO connections for board %u...\n", i);
     }
@@ -53,6 +54,26 @@ hw_t hw_init(uint32_t channel_count, bool verbose) {
     }
   }
 
+  // Clear all buffers (DAC, ADC, and trigger)
+  if (hw_clear_dac_buffers(&hw) != 0) {
+    fprintf(stderr, "Error: failed to clear DAC buffers.\n");
+    exit(1);
+  }
+  if (hw_clear_adc_buffers(&hw) != 0) {
+    fprintf(stderr, "Error: failed to clear ADC buffers.\n");
+    exit(1);
+  }
+  if (hw_clear_trigger_buffers(&hw) != 0) {
+    fprintf(stderr, "Error: failed to clear trigger buffers.\n");
+    exit(1);
+  }
+
+  // Set the clock frequency for the hardware
+  if (hw_set_clk_MHz(&hw, clk_MHz, verbose) != 0) {
+    fprintf(stderr, "Error: failed to set clock frequency to %.3f MHz.\n", clk_MHz);
+    exit(1);
+  }
+
   return hw;
 }
 
@@ -62,7 +83,7 @@ int hw_clear_dac_buffers(hw_t *hw) {
     return -1;
   }
   uint32_t dac_buf_reset_mask = 0;
-  uint32_t board_count = (hw->channel_count - 1) / 8 + 1;
+  uint32_t board_count = hw->board_count;
   for (uint32_t board = 0; board < board_count; board++) {
     dac_buf_reset_mask |= (0x1 << 2 * board); // dac buffer reset bit for board
   }
@@ -110,7 +131,7 @@ int hw_clear_adc_buffers(hw_t *hw) {
     return -1;
   }
   uint32_t adc_buf_reset_mask = 0;
-  uint32_t board_count = (hw->channel_count - 1) / 8 + 1;
+  uint32_t board_count = hw->board_count;
   for (uint32_t board = 0; board < board_count; board++) {
     adc_buf_reset_mask |= (0x2 << 2 * board); // adc buffer reset bit for board
   }
@@ -175,15 +196,15 @@ int hw_clear_trigger_buffers(hw_t *hw) {
 }
 
 // Set the SPI clock frequency to the specified value in MHz. Returns 0 on success, non-zero on failure
-int hw_set_spi_clock(hw_t *hw, double clk_mhz) {
+int hw_set_spi_clock(hw_t *hw, double clk_MHz) {
   if (hw == NULL) {
     return -1;
   }
-  if (clk_mhz <= 0) {
-    fprintf(stderr, "Error: clk_mhz must be positive.\n");
+  if (clk_MHz <= 0) {
+    fprintf(stderr, "Error: clk_MHz must be positive.\n");
     return -1;
   }
-  uint32_t clk_hz = (uint32_t)(clk_mhz * 1e6);
+  uint32_t clk_hz = (uint32_t)(clk_MHz * 1e6);
   if (hw->verbose) {
     printf("Configuring SPI clock to " PRIu32 "MHz...\n", clk_hz);
   }
@@ -202,6 +223,7 @@ int hw_set_spi_clock(hw_t *hw, double clk_mhz) {
     fprintf(stderr, "Error: SPI clock frequency %u Hz is out of 1\% range.\n", clk_freq);
     return -1;
   }
+  hw->spi_clk_hz = clk_freq;
   return 0;
 }
 
@@ -284,9 +306,9 @@ int hw_calibrate(hw_t *hw) {
     return -1;
   }
   uint32_t clk_freq = sys_sts_get_clk_freq_hz(&hw->sys_sts, hw->verbose);
-  double clk_mhz = (double)clk_freq / 1e6;
+  double clk_MHz = (double)clk_freq / 1e6;
   if (clk_freq > 10e6) {
-    printf("Skipping calibration because SPI clock frequency is too high (%.3f Hz). Calibration requires <= 10 MHz.\n", clk_mhz);
+    printf("Skipping calibration because SPI clock frequency is too high (%.3f Hz). Calibration requires <= 10 MHz.\n", clk_MHz);
     return 0;
   }
   hw_clear_dac_buffers(hw);
@@ -715,4 +737,203 @@ void hw_power_off(hw_t *hw) {
   if (hw->verbose) {
     printf("Hardware powered off.\n");
   }
+}
+
+// Send a DAC noop command for a single trigger wait to all active boards
+int hw_dac_noop_trig(hw_t *hw) {
+  if (hw == NULL) {
+    return -1;
+  }
+  uint32_t board_count = hw->board_count;
+  for (uint32_t board = 0; board < board_count; board++) {
+    dac_cmd_noop(&hw->dac_ctrl, board, DAC_TRIGGER_WAIT, DAC_CONTINUE, 1, hw->verbose);
+  }
+  return 0;
+}
+
+// Get the available DAC sample command space (minimum across all active boards)
+// Each DAC sample command occupies 5 command FIFO words (1 command word + 4 data words)
+int hw_get_dac_sample_cmd_space(hw_t *hw) {
+  if (hw == NULL) {
+    return -1;
+  }
+  uint32_t board_count = hw->board_count;
+  uint32_t min_free = DAC_CMD_FIFO_WORDCOUNT;
+  for (uint32_t board = 0; board < board_count; board++) {
+    uint32_t used = FIFO_STS_WORD_COUNT(sys_sts_get_dac_cmd_fifo_status(&hw->sys_sts, board, hw->verbose));
+    uint32_t free_words = (used >= DAC_CMD_FIFO_WORDCOUNT) ? 0 : (DAC_CMD_FIFO_WORDCOUNT - used);
+    if (free_words < min_free) {
+      min_free = free_words;
+    }
+  }
+  return (int)(min_free / 5);
+}
+
+// Get the available ADC command space (minimum across all active boards)
+int hw_get_adc_cmd_space(hw_t *hw) {
+  if (hw == NULL) {
+    return -1;
+  }
+  uint32_t board_count = hw->board_count;
+  uint32_t min_free = ADC_CMD_FIFO_WORDCOUNT;
+  for (uint32_t board = 0; board < board_count; board++) {
+    uint32_t used = FIFO_STS_WORD_COUNT(sys_sts_get_adc_cmd_fifo_status(&hw->sys_sts, board, hw->verbose));
+    uint32_t free_words = (used >= ADC_CMD_FIFO_WORDCOUNT) ? 0 : (ADC_CMD_FIFO_WORDCOUNT - used);
+    if (free_words < min_free) {
+      min_free = free_words;
+    }
+  }
+  return (int)min_free;
+}
+
+// Get the available ADC sample count (minimum across all active boards)
+// Each ADC sample occupies 4 data FIFO words (8 channels as 4 pairs)
+int hw_get_adc_sample_count(hw_t *hw) {
+  if (hw == NULL) {
+    return -1;
+  }
+  uint32_t board_count = hw->board_count;
+  uint32_t min_words = FIFO_STS_WORD_COUNT(sys_sts_get_adc_data_fifo_status(&hw->sys_sts, 0, hw->verbose));
+  for (uint32_t board = 1; board < board_count; board++) {
+    uint32_t words = FIFO_STS_WORD_COUNT(sys_sts_get_adc_data_fifo_status(&hw->sys_sts, board, hw->verbose));
+    if (words < min_words) {
+      min_words = words;
+    }
+  }
+  return (int)(min_words / 4);
+}
+
+// Send a DAC command with a delay in clock cycles to all active boards
+// (buffer is HW_MAX_CHANNELS in length and indexed by channel number)
+// Indicate whether this is the last DAC command in a sequence to control the continue flag
+int hw_set_dacs_delay(hw_t *hw, const double *amps, uint32_t delay_clks, bool last) {
+  if (hw == NULL || amps == NULL) {
+    return -1;
+  }
+  uint32_t board_count = hw->board_count;
+  for (uint8_t board = 0; board < board_count; board++) {
+    int16_t dac_values[8] = {0}; // Default to 0 for unused channels
+    for (uint8_t ch_in_board = 0; ch_in_board < 8; ch_in_board++) {
+      uint32_t ch = board * 8 + ch_in_board;
+      if (ch < hw->channel_count) {
+        double value_amps = amps[ch];
+        if (value_amps < -HW_MAX_ABS_AMPS || value_amps > HW_MAX_ABS_AMPS) {
+          fprintf(stderr, "Error: value_amps %.3f for channel %u is out of range (valid range is -%.1f to %.1f amps).\n",
+                  value_amps, ch, HW_MAX_ABS_AMPS, HW_MAX_ABS_AMPS);
+          return -1;
+        }
+        dac_values[ch_in_board] = (int16_t)((value_amps / HW_MAX_ABS_AMPS) * 32767.0);
+      }
+    }
+    // Write all channels, then delay for delay_clks cycles (LDAC latches all channels together)
+    dac_cmd_dac_wr(&hw->dac_ctrl, board, dac_values, DAC_DELAY_WAIT, !last, DAC_LDAC, delay_clks, hw->verbose);
+  }
+  return 0;
+}
+
+// Send a DAC command with a single trigger wait to all active boards
+// (buffer is HW_MAX_CHANNELS in length and indexed by channel number)
+// Indicate whether this is the last DAC command in a sequence to control the continue flag
+int hw_set_dacs_trig(hw_t *hw, const double *amps, bool last) {
+  if (hw == NULL || amps == NULL) {
+    return -1;
+  }
+  uint32_t board_count = hw->board_count;
+  for (uint8_t board = 0; board < board_count; board++) {
+    int16_t dac_values[8] = {0}; // Default to 0 for unused channels
+    for (uint8_t ch_in_board = 0; ch_in_board < 8; ch_in_board++) {
+      uint32_t ch = board * 8 + ch_in_board;
+      if (ch < hw->channel_count) {
+        double value_amps = amps[ch];
+        if (value_amps < -HW_MAX_ABS_AMPS || value_amps > HW_MAX_ABS_AMPS) {
+          fprintf(stderr, "Error: value_amps %.3f for channel %u is out of range (valid range is -%.1f to %.1f amps).\n",
+                  value_amps, ch, HW_MAX_ABS_AMPS, HW_MAX_ABS_AMPS);
+          return -1;
+        }
+        dac_values[ch_in_board] = (int16_t)((value_amps / HW_MAX_ABS_AMPS) * 32767.0);
+      }
+    }
+    // Write all channels, then wait for a single trigger (LDAC latches all channels together)
+    dac_cmd_dac_wr(&hw->dac_ctrl, board, dac_values, DAC_TRIGGER_WAIT, !last, DAC_LDAC, 1, hw->verbose);
+  }
+  return 0;
+}
+
+// Send an ADC no-op single trigger wait to all active boards
+int hw_adc_noop_trig(hw_t *hw) {
+  if (hw == NULL) {
+    return -1;
+  }
+  uint32_t board_count = hw->board_count;
+  for (uint8_t board = 0; board < board_count; board++) {
+    adc_cmd_noop(&hw->adc_ctrl, board, ADC_TRIGGER_WAIT, ADC_CONTINUE, 1, hw->verbose);
+  }
+  return 0;
+}
+
+// Send an ADC read command with a single trigger wait afterwards to all active boards
+// Indicate whether this is the last ADC read command in a sequence to control the continue flag
+// If last is true, the trigger value will be 0 instead of 1 to immediately finish once read
+int hw_adc_read_trig(hw_t *hw, bool last) {
+  if (hw == NULL) {
+    return -1;
+  }
+  uint32_t board_count = hw->board_count;
+  for (uint8_t board = 0; board < board_count; board++) {
+    adc_cmd_adc_rd(&hw->adc_ctrl, board, ADC_TRIGGER_WAIT, !last, last ? 0 : 1, 0, hw->verbose);
+  }
+  return 0;
+}
+
+// Send an ADC read command with a delay wait afterwards to all active boards
+// Indicate whether this is the last ADC read command in a sequence to control the continue flag
+int hw_adc_read_delay(hw_t *hw, uint32_t delay_clks, bool last) {
+  if (hw == NULL) {
+    return -1;
+  }
+  uint32_t board_count = hw->board_count;
+  for (uint8_t board = 0; board < board_count; board++) {
+    adc_cmd_adc_rd(&hw->adc_ctrl, board, ADC_DELAY_WAIT, !last, delay_clks, 0, hw->verbose);
+  }
+  return 0;
+}
+
+// Read a single sample of 8 ADC channels (4 ADC data words) from all active boards, convert to amps
+// (buffer is HW_MAX_CHANNELS in length and indexed by channel number; only active channels are filled)
+int hw_read_adc_data(hw_t *hw, double *amps) {
+  if (hw == NULL || amps == NULL) {
+    return -1;
+  }
+  uint32_t board_count = hw->board_count;
+
+  // Ensure each active board has at least one full sample (4 words) available
+  for (uint32_t board = 0; board < board_count; board++) {
+    uint32_t word_count = FIFO_STS_WORD_COUNT(sys_sts_get_adc_data_fifo_status(&hw->sys_sts, board, hw->verbose));
+    if (word_count < 4) {
+      fprintf(stderr, "Error: ADC data FIFO for board %u has %u words, need at least 4 for a sample.\n", board, word_count);
+      return -1;
+    }
+  }
+
+  // Read 4 pairs (8 channels) per active board and convert to amps
+  for (uint32_t board = 0; board < board_count; board++) {
+    for (uint32_t pair = 0; pair < 4; pair++) {
+      uint32_t data_word = adc_read_word(&hw->adc_ctrl, board);
+      uint16_t raw = (uint16_t)(data_word & 0xFFFF);
+      int16_t adc_val_lo = (raw <= 32767) ? (int16_t)raw : (int16_t)(raw - 65536);
+      raw = (uint16_t)((data_word >> 16) & 0xFFFF);
+      int16_t adc_val_hi = (raw <= 32767) ? (int16_t)raw : (int16_t)(raw - 65536);
+
+      uint32_t ch_lo = board * 8 + pair * 2;
+      uint32_t ch_hi = ch_lo + 1;
+      if (ch_lo < hw->channel_count) {
+        amps[ch_lo] = HW_MAX_ABS_AMPS * ((double)adc_val_lo) / 32767.0;
+      }
+      if (ch_hi < hw->channel_count) {
+        amps[ch_hi] = HW_MAX_ABS_AMPS * ((double)adc_val_hi) / 32767.0;
+      }
+    }
+  }
+
+  return 0;
 }
