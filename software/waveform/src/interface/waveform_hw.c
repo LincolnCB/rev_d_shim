@@ -224,6 +224,12 @@ int hw_set_spi_clock(hw_t *hw, double clk_MHz) {
     return -1;
   }
   hw->spi_clk_hz = clk_freq;
+  // Cache the hardware minimum command delays (in SPI clock cycles). These are
+  // hardware constants exposed in the status register and available without
+  // powering on; they are used while streaming to split oversized delays into
+  // no-op delay commands without leaving a residual that is "too short".
+  hw->dac_min_delay = sys_sts_get_dac_min_delay_time(&hw->sys_sts, hw->verbose);
+  hw->adc_min_delay = sys_sts_get_adc_min_delay_time(&hw->sys_sts, hw->verbose);
   return 0;
 }
 
@@ -638,16 +644,17 @@ bool hw_dac_timing_valid(hw_t *hw, double min_dt) {
   }
   uint32_t spi_clk_freq_hz = sys_sts_get_clk_freq_hz(&hw->sys_sts, hw->verbose);
   // Round down to nearest integer number of SPI clock cycles for minimum DAC delay
-  uint32_t min_dac_delay_cycles = (uint32_t)((min_dt / 1000.0) * (double)spi_clk_freq_hz);
+  uint32_t min_dac_delay_cycles = (uint32_t)(min_dt * (double)spi_clk_freq_hz);
   // Get the minimum DAC delay from hardware (in SPI clock cycles)
   uint32_t min_dac_delay_hw = sys_sts_get_dac_min_delay_time(&hw->sys_sts, hw->verbose);
   if (min_dac_delay_cycles < min_dac_delay_hw) {
     if (hw->verbose) {
-      fprintf(stderr, "Error: minimum DAC delay %.3f ms (%.0f SPI clock cycles) is less than hardware minimum DAC delay %.3f ms (%u SPI clock cycles).\n",
-             min_dt, (double)min_dac_delay_cycles, (double)min_dac_delay_hw / (double)spi_clk_freq_hz * 1000.0, min_dac_delay_hw);
-      return false;
+      fprintf(stderr, "Error: minimum DAC delay %.6f s (%.0f SPI clock cycles) is less than hardware minimum DAC delay %.6f s (%u SPI clock cycles).\n",
+             min_dt, (double)min_dac_delay_cycles, (double)min_dac_delay_hw / (double)spi_clk_freq_hz, min_dac_delay_hw);
     }
+    return false;
   }
+  return true;
 }
 
 // Validate the minimum file delay against minimum ADC delay.
@@ -657,16 +664,17 @@ bool hw_adc_timing_valid(hw_t *hw, double min_dt) {
   }
   uint32_t spi_clk_freq_hz = sys_sts_get_clk_freq_hz(&hw->sys_sts, hw->verbose);
   // Round down to nearest integer number of SPI clock cycles for minimum ADC delay
-  uint32_t min_adc_delay_cycles = (uint32_t)((min_dt / 1000.0) * (double)spi_clk_freq_hz);
+  uint32_t min_adc_delay_cycles = (uint32_t)(min_dt * (double)spi_clk_freq_hz);
   // Get the minimum ADC delay from hardware (in SPI clock cycles)
   uint32_t min_adc_delay_hw = sys_sts_get_adc_min_delay_time(&hw->sys_sts, hw->verbose);
   if (min_adc_delay_cycles < min_adc_delay_hw) {
     if (hw->verbose) {
-      fprintf(stderr, "Error: minimum ADC delay %.3f ms (%.0f SPI clock cycles) is less than hardware minimum ADC delay %.3f ms (%u SPI clock cycles).\n",
-             min_dt, (double)min_adc_delay_cycles, (double)min_adc_delay_hw / (double)spi_clk_freq_hz * 1000.0, min_adc_delay_hw);
-      return false;
+      fprintf(stderr, "Error: minimum ADC delay %.6f s (%.0f SPI clock cycles) is less than hardware minimum ADC delay %.6f s (%u SPI clock cycles).\n",
+             min_dt, (double)min_adc_delay_cycles, (double)min_adc_delay_hw / (double)spi_clk_freq_hz, min_adc_delay_hw);
     }
+    return false;
   }
+  return true;
 }
 
 // Start the expected count of triggers.
@@ -680,8 +688,9 @@ int hw_start_triggers(hw_t *hw, uint32_t expected_triggers) {
   }
   // Clear, not reset, to keep trigger count
   hw_clear_trigger_buffers(hw);
-  // Expect the specified number of triggers
-  trigger_cmd_expect_ext(&hw->trigger_ctrl, expected_triggers, false, hw->verbose);
+  // Expect the specified number of triggers, logging each trigger's timepoint to
+  // the trigger data FIFO so the trigger data stream has samples to read.
+  trigger_cmd_expect_ext(&hw->trigger_ctrl, expected_triggers, true, hw->verbose);
   HW_SLEEP; // Sleep to allow hardware to process command
   // Check that the trigger buffer is empty
   uint32_t trig_cmd_fifo_sts = sys_sts_get_trig_cmd_fifo_status(&hw->sys_sts, hw->verbose);
@@ -934,21 +943,14 @@ int hw_adc_read_delay(hw_t *hw, uint32_t delay_clks, bool last) {
 }
 
 // Read a single sample of 8 ADC channels (4 ADC data words) from all active boards, convert to amps
-// (buffer is HW_MAX_CHANNELS in length and indexed by channel number; only active channels are filled)
+// Fill these into the provided buffer indexed by channel number (HW_MAX_CHANNELS in length)
+// This will only fill in channels corresponding to active boards
+// Assume data is available before running
 int hw_read_adc_data(hw_t *hw, double *amps) {
   if (hw == NULL || amps == NULL) {
     return -1;
   }
   uint32_t board_count = hw->board_count;
-
-  // Ensure each active board has at least one full sample (4 words) available
-  for (uint32_t board = 0; board < board_count; board++) {
-    uint32_t word_count = FIFO_STS_WORD_COUNT(sys_sts_get_adc_data_fifo_status(&hw->sys_sts, board, hw->verbose));
-    if (word_count < 4) {
-      fprintf(stderr, "Error: ADC data FIFO for board %u has %u words, need at least 4 for a sample.\n", board, word_count);
-      return -1;
-    }
-  }
 
   // Read 4 pairs (8 channels) per active board and convert to amps
   for (uint32_t board = 0; board < board_count; board++) {
@@ -970,5 +972,18 @@ int hw_read_adc_data(hw_t *hw, double *amps) {
     }
   }
 
+  return 0;
+}
+
+// Read a single sample of trigger timepoint data (2 trigger data words) from the trigger buffer
+// Concatenate these and use clock frequency to convert into a trigger time in seconds
+// Assume sample is available before running
+int hw_read_trigger_data(hw_t *hw, double *trigger_time) {
+  if (hw == NULL || trigger_time == NULL) {
+    return -1;
+  }
+
+  uint64_t trigger_data = trigger_read(&hw->trigger_ctrl);
+  *trigger_time = ((double)trigger_data) / (double)hw->spi_clk_hz;
   return 0;
 }

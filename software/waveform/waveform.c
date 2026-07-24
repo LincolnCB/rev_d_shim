@@ -16,6 +16,7 @@
 #include <string.h>
 #include <getopt.h>
 #include <errno.h>
+#include <limits.h>
 #include <signal.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -78,6 +79,22 @@ static int parse_int_arg(const char *flag, const char *val) {
   return (int)l;
 }
 
+// Copy src into dst, dropping the trailing filename extension if one exists
+// (the last '.' in the final path component). "test.csv" -> "test",
+// "archive.tar.gz" -> "archive.tar", "noext" -> "noext". dst must hold at
+// least PATH_MAX bytes.
+static void strip_extension(char *dst, size_t dst_size, const char *src) {
+  snprintf(dst, dst_size, "%s", src);
+  char *slash = strrchr(dst, '/');
+  char *dot = strrchr(dst, '.');
+  // Only trim when the dot belongs to the final path component and isn't a
+  // leading dot (e.g. a dotfile like ".config" has no extension to drop).
+  if (dot != NULL && (slash == NULL || dot > slash + 1) &&
+      (slash == NULL || dot != slash + 1)) {
+    *dot = '\0';
+  }
+}
+
 // --- Signal handling ---------------------------------------------------
 
 // Handler for SIGINT/SIGTERM: only record that a stop was requested. Everything
@@ -87,6 +104,40 @@ static int parse_int_arg(const char *flag, const char *val) {
 static void handle_stop_signal(int signum) {
   (void)signum;
   g_stop_requested = 1;
+}
+
+// Print a one-line notice (flushed immediately so it doesn't interleave with
+// other output) when a stream thread finishes, noting whether it ran to
+// completion or stopped early. Called from the main monitor thread so the
+// prints stay serialized.
+static void print_stream_finished(const char *name, bool stopped_early) {
+  if (stopped_early) {
+    printf("[%s] stream stopped early\n", name);
+  } else {
+    printf("[%s] stream finished\n", name);
+  }
+  fflush(stdout);
+}
+
+// Start both ADC streams -- the command stream and the data (output) stream --
+// together, since the data stream only runs while the command stream does. On
+// success both threads are running and *cmd_tid / *data_tid are set, and it
+// returns 0. On failure it prints an error, makes sure no ADC thread is left
+// running (joining the command thread if the data thread failed to start), and
+// returns -1 so the caller can clean up the rest.
+static int start_adc_streams(adc_cmd_file_info_t *cmd_info, adc_data_file_info_t *data_info,
+                             pthread_t *cmd_tid, pthread_t *data_tid) {
+  if (pthread_create(cmd_tid, NULL, adc_cmd_stream_thread, cmd_info) != 0) {
+    fprintf(stderr, "Error: failed to start ADC command stream thread\n");
+    return -1;
+  }
+  if (pthread_create(data_tid, NULL, adc_data_stream_thread, data_info) != 0) {
+    fprintf(stderr, "Error: failed to start ADC data stream thread\n");
+    adc_cmd_file_info_request_stop(cmd_info);
+    pthread_join(*cmd_tid, NULL);
+    return -1;
+  }
+  return 0;
 }
 
 int main(int argc, char *argv[]) {
@@ -175,7 +226,7 @@ int main(int argc, char *argv[]) {
   hw_t hw = hw_init(input_info.num_channels, cfg.clk_MHz, false);
 
   // --- Validate the ADC file, if provided -------------------------
-  adc_file_info_t adc_info;
+  adc_cmd_file_info_t adc_info;
   bool has_adc_info = false;
   if (cfg.adc_file != NULL) {
     if (validate_adc_file(cfg.adc_file, input_info.num_trigs, &adc_info) != 0) {
@@ -232,16 +283,29 @@ int main(int argc, char *argv[]) {
   bool has_adc_thread = false;
   bool has_adc_data_thread = false;
 
+  // Output CSV paths, derived from the input file name with its extension
+  // trimmed (so "test.csv" yields "test.trig_t_sec.csv", not
+  // "test.csv.trig_t_sec.csv").
+  char input_stem[PATH_MAX];
+  char adc_out_path[PATH_MAX];
+  char trig_out_path[PATH_MAX];
+  strip_extension(input_stem, sizeof(input_stem), cfg.input_file);
+
   trigger_file_info_init(&trigger_arg, "Trigger", input_info.num_trigs, cfg.iters);
 
   input_info.hw = &hw;
   trigger_arg.hw = &hw;
+  // The trigger data stream writes one trigger time (in seconds) per line.
+  snprintf(trig_out_path, sizeof(trig_out_path), "%s.trig_t_sec.csv", input_stem);
+  trigger_arg.path = trig_out_path;
   if (has_adc_info) {
     adc_info.hw = &hw;
-    // The ADC data stream drains one sample per ADC read command; its path is
-    // wired up later, so it just drains the buffer for now.
+    // The ADC data stream drains one sample per ADC read command and writes the
+    // active-channel amps (comma-separated) as one line per sample.
     adc_data_file_info_init(&adc_data_info, adc_info.num_rows, cfg.iters);
     adc_data_info.hw = &hw;
+    snprintf(adc_out_path, sizeof(adc_out_path), "%s.adc_out_A.csv", input_stem);
+    adc_data_info.path = adc_out_path;
   }
 
   // Block SIGINT/SIGTERM while spawning the stream threads so they inherit a
@@ -259,7 +323,7 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "Error: failed to start DAC stream thread\n");
     waveform_file_info_destroy(&input_info);
     if (has_adc_info) {
-      adc_file_info_destroy(&adc_info);
+      adc_cmd_file_info_destroy(&adc_info);
       adc_data_file_info_destroy(&adc_data_info);
     }
     trigger_file_info_destroy(&trigger_arg);
@@ -268,35 +332,17 @@ int main(int argc, char *argv[]) {
   }
 
   if (has_adc_info) {
-    if (pthread_create(&adc_tid, NULL, adc_stream_thread, &adc_info) != 0) {
-      fprintf(stderr, "Error: failed to start ADC stream thread\n");
+    // The ADC command stream and its data (output) stream are launched together.
+    if (start_adc_streams(&adc_info, &adc_data_info, &adc_tid, &adc_data_tid) != 0) {
       waveform_file_info_request_stop(&input_info);
       waveform_file_info_destroy(&input_info);
-      if (has_adc_info) {
-        adc_file_info_destroy(&adc_info);
-        adc_data_file_info_destroy(&adc_data_info);
-      }
-      trigger_file_info_destroy(&trigger_arg);
-      hw_power_off(&hw);
-      return EXIT_FAILURE;
-    }
-    has_adc_thread = true;
-  }
-
-  if (has_adc_info) {
-    if (pthread_create(&adc_data_tid, NULL, adc_data_stream_thread, &adc_data_info) != 0) {
-      fprintf(stderr, "Error: failed to start ADC data stream thread\n");
-      waveform_file_info_request_stop(&input_info);
-      if (has_adc_thread) {
-        adc_file_info_request_stop(&adc_info);
-      }
-      waveform_file_info_destroy(&input_info);
-      adc_file_info_destroy(&adc_info);
+      adc_cmd_file_info_destroy(&adc_info);
       adc_data_file_info_destroy(&adc_data_info);
       trigger_file_info_destroy(&trigger_arg);
       hw_power_off(&hw);
       return EXIT_FAILURE;
     }
+    has_adc_thread = true;
     has_adc_data_thread = true;
   }
 
@@ -304,14 +350,14 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "Error: failed to start trigger stream thread\n");
     waveform_file_info_request_stop(&input_info);
     if (has_adc_thread) {
-      adc_file_info_request_stop(&adc_info);
+      adc_cmd_file_info_request_stop(&adc_info);
     }
     if (has_adc_data_thread) {
       adc_data_file_info_request_stop(&adc_data_info);
     }
     waveform_file_info_destroy(&input_info);
     if (has_adc_info) {
-      adc_file_info_destroy(&adc_info);
+      adc_cmd_file_info_destroy(&adc_info);
       adc_data_file_info_destroy(&adc_data_info);
     }
     trigger_file_info_destroy(&trigger_arg);
@@ -350,27 +396,35 @@ int main(int argc, char *argv[]) {
     }
     if (!dac_done && waveform_file_info_is_finished(&input_info)) {
       dac_done = true;
-      if (waveform_file_info_stopped_early(&input_info)) {
+      bool early = waveform_file_info_stopped_early(&input_info);
+      if (early) {
         any_stopped_early = true;
       }
+      print_stream_finished("DAC", early);
     }
-    if (has_adc_thread && !adc_done && adc_file_info_is_finished(&adc_info)) {
+    if (has_adc_thread && !adc_done && adc_cmd_file_info_is_finished(&adc_info)) {
       adc_done = true;
-      if (adc_file_info_stopped_early(&adc_info)) {
+      bool early = adc_cmd_file_info_stopped_early(&adc_info);
+      if (early) {
         any_stopped_early = true;
       }
+      print_stream_finished("ADC", early);
     }
     if (has_adc_data_thread && !adc_data_done && adc_data_file_info_is_finished(&adc_data_info)) {
       adc_data_done = true;
-      if (adc_data_file_info_stopped_early(&adc_data_info)) {
+      bool early = adc_data_file_info_stopped_early(&adc_data_info);
+      if (early) {
         any_stopped_early = true;
       }
+      print_stream_finished("ADC data", early);
     }
     if (!trigger_done && trigger_file_info_is_finished(&trigger_arg)) {
       trigger_done = true;
-      if (trigger_file_info_stopped_early(&trigger_arg)) {
+      bool early = trigger_file_info_stopped_early(&trigger_arg);
+      if (early) {
         any_stopped_early = true;
       }
+      print_stream_finished("Trigger", early);
     }
 
     // If a thread ended early on its own (a hardware error -- a stop signal is
@@ -380,7 +434,7 @@ int main(int argc, char *argv[]) {
       fprintf(stderr, "Error: a stream thread stopped early; stopping the others\n");
       waveform_file_info_request_stop(&input_info);
       if (has_adc_thread) {
-        adc_file_info_request_stop(&adc_info);
+        adc_cmd_file_info_request_stop(&adc_info);
       }
       if (has_adc_data_thread) {
         adc_data_file_info_request_stop(&adc_data_info);
@@ -391,12 +445,17 @@ int main(int argc, char *argv[]) {
 
     uint32_t current_trigger_count = hw_get_trigger_count(&hw);
     if (current_trigger_count != last_trigger_count) {
-      // Print the current trigger count out of the total expected triggers
-      // as well as which iteration and trigger within that iteration we are on.
-      uint32_t iteration = current_trigger_count / input_info.num_trigs;
-      uint32_t trigger_in_iteration = current_trigger_count % input_info.num_trigs;
-      printf("[HW] trigger count: %u / %ld (iteration %u, trigger %u / %ld)\n",
-             current_trigger_count, expected_triggers, iteration + 1, trigger_in_iteration + 1, input_info.num_trigs);
+      // Report progress against the just-counted trigger. current_trigger_count
+      // is the number of completed triggers (>= 1 here), so its 0-based index
+      // (count - 1) maps to the iteration and the trigger within that iteration
+      // that just fired -- avoiding rolling over to the next iteration when a
+      // full iteration's worth of triggers completes.
+      uint32_t completed = current_trigger_count - 1;
+      uint32_t iteration = completed / input_info.num_trigs;
+      uint32_t trigger_in_iteration = completed % input_info.num_trigs;
+      printf("[HW] trigger count: %u / %ld (iteration %u / %d, trigger %u / %ld)\n",
+             current_trigger_count, expected_triggers,
+             iteration + 1, cfg.iters, trigger_in_iteration + 1, input_info.num_trigs);
       fflush(stdout);
       last_trigger_count = current_trigger_count;
     }
@@ -412,7 +471,7 @@ int main(int argc, char *argv[]) {
   if (g_stop_requested) {
     waveform_file_info_request_stop(&input_info);
     if (has_adc_thread) {
-      adc_file_info_request_stop(&adc_info);
+      adc_cmd_file_info_request_stop(&adc_info);
     }
     if (has_adc_data_thread) {
       adc_data_file_info_request_stop(&adc_data_info);
@@ -433,7 +492,7 @@ int main(int argc, char *argv[]) {
   // --- Power off hardware and exit -----------------------------------
   waveform_file_info_destroy(&input_info);
   if (has_adc_info) {
-    adc_file_info_destroy(&adc_info);
+    adc_cmd_file_info_destroy(&adc_info);
     adc_data_file_info_destroy(&adc_data_info);
   }
   trigger_file_info_destroy(&trigger_arg);

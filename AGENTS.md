@@ -1,9 +1,9 @@
-# Copilot Instructions — Rev. D Shim Amplifier System
+# Agent Instructions — Rev. D Shim Amplifier System
+
+Check folder READMEs for detailed context if needed.
 
 ## Build System
 **Never run `make` without explicit user instruction.** Requires Vivado, PetaLinux, and the [Zynq Toolbox](https://github.com/LincolnCB/zynq_toolbox) (external repo); builds are long and resource-intensive.
-
-Only independently runnable tests are cocotb/Verilator sims in `cores/*/tests/` — no local Makefile; execution is delegated to the Zynq Toolbox build environment.
 
 ## Architecture
 Zynq-7000 FPGA project (target: Snickerdoodle Black) controlling up to 8 magnetic shim amplifier boards.

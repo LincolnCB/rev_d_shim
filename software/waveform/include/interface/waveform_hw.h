@@ -17,6 +17,10 @@
 #define HW_SLEEP usleep(1000) // 1 ms sleep for hardware timing
 #define HW_MAX_CHANNELS 64 // Maximum number of channels supported by hardware
 #define HW_MAX_ABS_AMPS 5.0 // Maximum absolute current in amps for DAC channels
+// The DAC/ADC command delay field is 25 bits, so a single command can encode at
+// most this many SPI clock cycles of delay. Larger gaps must be broken up into a
+// run of no-op delay commands (see the stream code in waveform_file_handling.c).
+#define HW_MAX_DELAY_CLKS ((uint32_t) 0x1FFFFFF) // 2^25 - 1
 
 // Aggregates all hardware control structures needed for boot and operation
 typedef struct {
@@ -29,6 +33,8 @@ typedef struct {
   uint32_t              channel_count;
   uint32_t              board_count;    // number of active 8-channel boards, derived from channel_count
   uint32_t              spi_clk_hz;    // Current SPI clock frequency in Hz
+  uint32_t              dac_min_delay; // Hardware minimum DAC command delay, in SPI clock cycles
+  uint32_t              adc_min_delay; // Hardware minimum ADC command delay, in SPI clock cycles
   bool                  verbose;
 } hw_t;
 
@@ -134,6 +140,12 @@ int hw_adc_read_delay(hw_t* hw, uint32_t delay_clks, bool last);
 // Read a single sample of 8 ADC channels (4 ADC data words) from all active boards, convert to amps
 // Fill these into the provided buffer indexed by channel number (HW_MAX_CHANNELS in length)
 // This will only fill in channels corresponding to active boards
+// Assume data is available before running
 int hw_read_adc_data(hw_t *hw, double *amps);
+
+// Read a single sample of trigger timepoint data (2 trigger data words) from the trigger buffer
+// Concatenate these and use clock frequency to convert into a trigger time in seconds
+// Assume sample is available before running
+int hw_read_trigger_data(hw_t *hw, double *trigger_time);
 
 #endif // WAVEFORM_HW_H

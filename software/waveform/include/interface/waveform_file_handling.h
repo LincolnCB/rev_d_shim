@@ -20,9 +20,9 @@
 // this long (in microseconds) before re-checking for available command space.
 #define DAC_STREAM_NO_SPACE_SLEEP_US 1000
 
-// When the ADC command FIFO has no free space, the ADC stream thread sleeps
-// this long (in microseconds) before re-checking for available command space.
-#define ADC_STREAM_NO_SPACE_SLEEP_US 1000
+// When the ADC command FIFO has no free space, the ADC command stream thread
+// sleeps this long (in microseconds) before re-checking for available command space.
+#define ADC_CMD_STREAM_NO_SPACE_SLEEP_US 1000
 
 // When the ADC data buffer has no samples ready, the ADC data stream thread
 // sleeps this long (in microseconds) before polling for available samples again.
@@ -69,7 +69,7 @@ typedef struct {
 
 // Summary info gathered while validating the ADC file. The ADC file is just
 // a list of sample timestamps (one per line, no header, no channel data).
-// Also used to drive the ADC stream thread once validation succeeds.
+// Also used to drive the ADC command stream thread once validation succeeds.
 typedef struct {
   const char *path;    // source file path
   long num_rows;       // total number of sample timestamps in the file
@@ -79,7 +79,7 @@ typedef struct {
   int iters;           // number of times to replay the file; set by caller before streaming
   hw_t *hw;            // hardware handle used to stream commands; set by caller before streaming
   stream_ctrl_t ctrl;
-} adc_file_info_t;
+} adc_cmd_file_info_t;
 
 // Info driving the ADC data stream. This is an output stream: once the ADC
 // command stream is running, it polls the ADC data buffer for available
@@ -150,11 +150,11 @@ int validate_input_file(const char *path, waveform_file_info_t *info);
 // input file's trigger count).
 //
 // On success, fills *info (with info->iters left at 0 -- set it before
-// starting adc_stream_thread) and returns 0. On failure, prints an error
+// starting adc_cmd_stream_thread) and returns 0. On failure, prints an error
 // (including the offending line number where applicable) to stderr and
 // returns -1.
 
-int validate_adc_file(const char *path, long expected_trigs, adc_file_info_t *info);
+int validate_adc_file(const char *path, long expected_trigs, adc_cmd_file_info_t *info);
 
 // Initialize an adc_data_file_info_t. num_samples should match the ADC file's
 // row count; iters is the number of times the whole run will be replayed. The
@@ -172,11 +172,11 @@ bool waveform_file_info_should_stop(const waveform_file_info_t *info);
 bool waveform_file_info_is_finished(const waveform_file_info_t *info);
 bool waveform_file_info_stopped_early(const waveform_file_info_t *info);
 
-void adc_file_info_destroy(adc_file_info_t *info);
-void adc_file_info_request_stop(adc_file_info_t *info);
-bool adc_file_info_should_stop(const adc_file_info_t *info);
-bool adc_file_info_is_finished(const adc_file_info_t *info);
-bool adc_file_info_stopped_early(const adc_file_info_t *info);
+void adc_cmd_file_info_destroy(adc_cmd_file_info_t *info);
+void adc_cmd_file_info_request_stop(adc_cmd_file_info_t *info);
+bool adc_cmd_file_info_should_stop(const adc_cmd_file_info_t *info);
+bool adc_cmd_file_info_is_finished(const adc_cmd_file_info_t *info);
+bool adc_cmd_file_info_stopped_early(const adc_cmd_file_info_t *info);
 
 void adc_data_file_info_destroy(adc_data_file_info_t *info);
 void adc_data_file_info_request_stop(adc_data_file_info_t *info);
@@ -194,7 +194,7 @@ bool trigger_file_info_stopped_early(const trigger_file_info_t *info);
 //
 // There are four streams, two input (command) and two output (data):
 //   - dac_stream_thread     (input)  replays the DAC command file to hardware.
-//   - adc_stream_thread     (input)  replays the ADC command file to hardware.
+//   - adc_cmd_stream_thread (input)  replays the ADC command file to hardware.
 //   - adc_data_stream_thread (output) drains the ADC data buffer, reading each
 //                                    sample and writing it to its output file.
 //   - trigger_stream_thread (output) drains the trigger data buffer, reading
@@ -213,7 +213,7 @@ bool trigger_file_info_stopped_early(const trigger_file_info_t *info);
 // *_file_info_request_stop()) or a hardware command failed. Callers can tell
 // the two apart with *_file_info_stopped_early().
 void *dac_stream_thread(void *arg);
-void *adc_stream_thread(void *arg);
+void *adc_cmd_stream_thread(void *arg);
 void *adc_data_stream_thread(void *arg);
 void *trigger_stream_thread(void *arg);
 

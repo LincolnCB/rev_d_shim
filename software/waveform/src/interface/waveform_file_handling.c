@@ -296,7 +296,7 @@ int validate_input_file(const char *path, waveform_file_info_t *info) {
 }
 
 // Validate the ADC file (just a list of sample timestamps)
-int validate_adc_file(const char *path, long expected_trigs, adc_file_info_t *info) {
+int validate_adc_file(const char *path, long expected_trigs, adc_cmd_file_info_t *info) {
   // Initialize the info structure to zero to ensure all fields are set to default values
   memset(info, 0, sizeof(*info));
 
@@ -394,7 +394,7 @@ int validate_adc_file(const char *path, long expected_trigs, adc_file_info_t *in
   info->num_rows = num_rows;
   info->num_trigs = num_trigs;
   info->min_dt = min_dt; // -1.0 if never computed (e.g. every line was a trigger point)
-  info->iters = 0;       // caller sets this before starting adc_stream_thread
+  info->iters = 0;       // caller sets this before starting adc_cmd_stream_thread
   stream_ctrl_init(&info->ctrl);
   return 0;
 }
@@ -450,27 +450,27 @@ static void waveform_file_info_set_state(waveform_file_info_t *info, stream_thre
   stream_ctrl_set_state(&info->ctrl, state);
 }
 
-void adc_file_info_destroy(adc_file_info_t *info) {
+void adc_cmd_file_info_destroy(adc_cmd_file_info_t *info) {
   if (info == NULL) return;
   stream_ctrl_destroy(&info->ctrl);
 }
-void adc_file_info_request_stop(adc_file_info_t *info) {
+void adc_cmd_file_info_request_stop(adc_cmd_file_info_t *info) {
   if (info == NULL) return;
   stream_ctrl_request_stop(&info->ctrl);
 }
-bool adc_file_info_should_stop(const adc_file_info_t *info) {
+bool adc_cmd_file_info_should_stop(const adc_cmd_file_info_t *info) {
   if (info == NULL) return true;
   return stream_ctrl_should_stop(&info->ctrl);
 }
-bool adc_file_info_is_finished(const adc_file_info_t *info) {
+bool adc_cmd_file_info_is_finished(const adc_cmd_file_info_t *info) {
   if (info == NULL) return true;
   return stream_ctrl_is_finished(&info->ctrl);
 }
-bool adc_file_info_stopped_early(const adc_file_info_t *info) {
+bool adc_cmd_file_info_stopped_early(const adc_cmd_file_info_t *info) {
   if (info == NULL) return false;
   return stream_ctrl_stopped_early(&info->ctrl);
 }
-static void adc_file_info_set_state(adc_file_info_t *info, stream_thread_state_t state) {
+static void adc_cmd_file_info_set_state(adc_cmd_file_info_t *info, stream_thread_state_t state) {
   stream_ctrl_set_state(&info->ctrl, state);
 }
 
@@ -528,6 +528,43 @@ static void trigger_file_info_set_state(trigger_file_info_t *info, stream_thread
 // still uses placeholder logic (to be replaced when its real streaming is
 // implemented).
 
+// --- Oversized-delay splitting ----------------------------------------
+//
+// A single DAC/ADC command can encode at most HW_MAX_DELAY_CLKS clock cycles of
+// delay (a 25-bit field). A larger gap is broken into a run of no-op delay
+// commands -- each occupies a command-buffer slot but is not a sample -- plus a
+// residual that the real command (DAC write / ADC read) carries. When a real
+// command carries the residual, it must not fall below the hardware minimum
+// delay or the hardware flags it "too short"; the no-op commands themselves have
+// no such minimum.
+
+// Peel the next no-op delay chunk off `remaining` (which is > HW_MAX_DELAY_CLKS).
+// If taking a full-size chunk would leave a residual below min_delay (making the
+// real command "too short"), the chunk is trimmed to leave exactly min_delay
+// behind; otherwise a full HW_MAX_DELAY_CLKS chunk is taken. min_delay is a
+// 25-bit value, so HW_MAX_DELAY_CLKS + min_delay cannot overflow a uint32_t.
+static uint32_t delay_next_chunk(uint32_t remaining, uint32_t min_delay) {
+  if (remaining <= HW_MAX_DELAY_CLKS + min_delay) {
+    return remaining - min_delay;
+  }
+  return HW_MAX_DELAY_CLKS;
+}
+
+// Count the no-op delay commands needed to shave `delay_clks` down to a residual
+// that fits the command delay field (and stays >= min_delay), and report that
+// residual via *residual. Uses the same chunking as the emission loops so the
+// counts always match.
+static uint32_t delay_noop_split(uint32_t delay_clks, uint32_t min_delay, uint32_t *residual) {
+  uint32_t count = 0;
+  uint32_t remaining = delay_clks;
+  while (remaining > HW_MAX_DELAY_CLKS) {
+    remaining -= delay_next_chunk(remaining, min_delay);
+    count++;
+  }
+  *residual = remaining;
+  return count;
+}
+
 // Send a DAC command to the hardware, blocking until there is command space.
 // *space tracks the locally-known number of free DAC sample command slots; it
 // is decremented per command and refreshed from hardware when it runs low.
@@ -537,8 +574,12 @@ static void trigger_file_info_set_state(trigger_file_info_t *info, stream_thread
 //
 // When `noop_first` is set the command is preceded by a trigger-wait no-op
 // (used for a trigger point at a non-zero time: wait for the trigger, then
-// delay to the row's timestamp before applying it). This needs two free slots,
-// and each of the two commands decrements *space by one.
+// delay to the row's timestamp before applying it).
+//
+// The DAC applies a command's delay *before* the write (pre-delay), so when a
+// delay exceeds HW_MAX_DELAY_CLKS the excess is emitted as no-op delay commands
+// ahead of the write and the write itself carries the residual. Each of those
+// no-ops, plus any trigger-wait no-op, decrements *space by one.
 //
 // Returns 0 on success. Returns non-zero if the command could not be sent:
 // either a stop was requested while waiting for command space, or a hardware
@@ -547,7 +588,15 @@ static void trigger_file_info_set_state(trigger_file_info_t *info, stream_thread
 static int dac_stream_send(waveform_file_info_t *info, bool noop_first,
                            bool is_trig, uint32_t delay_clks,
                            const double *amps, bool last, int *space) {
-  int needed = noop_first ? 2 : 1;
+  // A trigger wait carries no delay; a delay command may need leading no-ops to
+  // consume the portion of the delay beyond the 25-bit command delay field.
+  uint32_t residual = delay_clks;
+  uint32_t split_noops = 0;
+  if (!is_trig) {
+    split_noops = delay_noop_split(delay_clks, info->hw->dac_min_delay, &residual);
+  }
+
+  int needed = (noop_first ? 1 : 0) + (int)split_noops + 1;
   while (*space < needed) {
     *space = hw_get_dac_sample_cmd_space(info->hw);
     if (*space >= needed) {
@@ -567,13 +616,26 @@ static int dac_stream_send(waveform_file_info_t *info, bool noop_first,
     (*space)--;
   }
 
+  // Emit the leading no-op delay commands that consume the oversized portion of
+  // the delay, leaving `residual` for the write itself (pre-delay semantics).
+  uint32_t remaining = is_trig ? 0 : delay_clks;
+  while (remaining > HW_MAX_DELAY_CLKS) {
+    uint32_t chunk = delay_next_chunk(remaining, info->hw->dac_min_delay);
+    if (hw_dac_noop_delay(info->hw, chunk) != 0) {
+      fprintf(stderr, "Error: [DAC] failed to send oversized-delay no-op\n");
+      return -1;
+    }
+    (*space)--;
+    remaining -= chunk;
+  }
+
   if (is_trig) {
     if (hw_set_dacs_trig(info->hw, amps, last) != 0) {
       fprintf(stderr, "Error: [DAC] failed to send trigger-wait command\n");
       return -1;
     }
   } else {
-    if (hw_set_dacs_delay(info->hw, amps, delay_clks, last) != 0) {
+    if (hw_set_dacs_delay(info->hw, amps, residual, last) != 0) {
       fprintf(stderr, "Error: [DAC] failed to send delay command\n");
       return -1;
     }
@@ -657,9 +719,10 @@ void *dac_stream_thread(void *arg) {
         have_pending = false;
       }
 
-      // Convert this timestamp (in ms) to absolute SPI clock cycles up front so
-      // dt is computed from absolute cycle counts, avoiding rounding drift.
-      uint32_t t_clks = (uint32_t)(((timestamp / 1000.0) * (double)info->hw->spi_clk_hz) + 0.5);
+      // Convert this timestamp (in seconds) to absolute SPI clock cycles up
+      // front so dt is computed from absolute cycle counts, avoiding rounding
+      // drift.
+      uint32_t t_clks = (uint32_t)((timestamp * (double)info->hw->spi_clk_hz) + 0.5);
 
       // A trigger point is the first row of the whole stream or a time reset
       // (this timestamp is below the previous one). Within a sweep, the command
@@ -718,7 +781,7 @@ void *dac_stream_thread(void *arg) {
 // command space. *space tracks the locally-known number of free ADC command
 // slots; it is decremented per command and refreshed from hardware when it
 // runs low. When there isn't enough space the thread re-checks and, if still
-// short, sleeps ADC_STREAM_NO_SPACE_SLEEP_US before trying again.
+// short, sleeps ADC_CMD_STREAM_NO_SPACE_SLEEP_US before trying again.
 //
 // A read command may be preceded by prefix no-ops that belong to a trigger
 // point: `noop_trig_first` emits a trigger-wait no-op (only used before the
@@ -731,23 +794,44 @@ void *dac_stream_thread(void *arg) {
 // ADC side a command's wait happens after it. `last` marks the final read of
 // the final iteration (a trigger-wait read that clears the continue flag).
 //
+// Both delays may exceed the 25-bit command delay field. An oversized pre-read
+// delay no-op is simply split into several no-op delay commands. An oversized
+// post-read delay is carried as a residual on the read plus trailing no-op delay
+// commands (kept >= the hardware minimum so the read's own delay is not "too
+// short").
+//
 // Each emitted command decrements *space by one. Returns 0 on success. Returns
 // non-zero if the sequence could not be sent: either a stop was requested while
 // waiting for command space, or a hardware command reported an error (logged
 // here before returning). In both cases the caller should stop streaming.
-static int adc_stream_send(adc_file_info_t *info, bool noop_trig_first,
+static int adc_cmd_stream_send(adc_cmd_file_info_t *info, bool noop_trig_first,
                            bool noop_delay_first, uint32_t noop_delay_clks,
                            bool is_trig, uint32_t delay_clks, bool last, int *space) {
-  int needed = 1 + (noop_trig_first ? 1 : 0) + (noop_delay_first ? 1 : 0);
+  // The pre-read delay no-op is itself a no-op (no real command carries part of
+  // it), so it just splits into ceil(noop_delay_clks / HW_MAX_DELAY_CLKS) pieces.
+  uint32_t pre_noops = 0;
+  if (noop_delay_first) {
+    pre_noops = (noop_delay_clks + HW_MAX_DELAY_CLKS - 1) / HW_MAX_DELAY_CLKS;
+  }
+
+  // The post-read delay is carried by the read plus trailing no-op delays; a
+  // trigger wait carries no post-read delay.
+  uint32_t residual = delay_clks;
+  uint32_t post_noops = 0;
+  if (!is_trig) {
+    post_noops = delay_noop_split(delay_clks, info->hw->adc_min_delay, &residual);
+  }
+
+  int needed = (noop_trig_first ? 1 : 0) + (int)pre_noops + 1 + (int)post_noops;
   while (*space < needed) {
     *space = hw_get_adc_cmd_space(info->hw);
     if (*space >= needed) {
       break;
     }
-    if (adc_file_info_should_stop(info)) {
+    if (adc_cmd_file_info_should_stop(info)) {
       return -1;
     }
-    usleep(ADC_STREAM_NO_SPACE_SLEEP_US);
+    usleep(ADC_CMD_STREAM_NO_SPACE_SLEEP_US);
   }
 
   if (noop_trig_first) {
@@ -758,11 +842,17 @@ static int adc_stream_send(adc_file_info_t *info, bool noop_trig_first,
     (*space)--;
   }
   if (noop_delay_first) {
-    if (hw_adc_noop_delay(info->hw, noop_delay_clks) != 0) {
-      fprintf(stderr, "Error: [ADC] failed to send delay no-op\n");
-      return -1;
+    // Split an oversized pre-read delay across several no-op delay commands.
+    uint32_t rem = noop_delay_clks;
+    while (rem > 0) {
+      uint32_t chunk = (rem > HW_MAX_DELAY_CLKS) ? HW_MAX_DELAY_CLKS : rem;
+      if (hw_adc_noop_delay(info->hw, chunk) != 0) {
+        fprintf(stderr, "Error: [ADC] failed to send delay no-op\n");
+        return -1;
+      }
+      (*space)--;
+      rem -= chunk;
     }
-    (*space)--;
   }
 
   if (is_trig) {
@@ -771,17 +861,30 @@ static int adc_stream_send(adc_file_info_t *info, bool noop_trig_first,
       return -1;
     }
   } else {
-    if (hw_adc_read_delay(info->hw, delay_clks, last) != 0) {
+    if (hw_adc_read_delay(info->hw, residual, last) != 0) {
       fprintf(stderr, "Error: [ADC] failed to send delay read\n");
       return -1;
     }
   }
   (*space)--;
+
+  // Emit trailing no-op delay commands that carry the portion of the post-read
+  // delay beyond what the read command itself can encode (delay-read case only).
+  uint32_t remaining = is_trig ? 0 : delay_clks;
+  while (remaining > HW_MAX_DELAY_CLKS) {
+    uint32_t chunk = delay_next_chunk(remaining, info->hw->adc_min_delay);
+    if (hw_adc_noop_delay(info->hw, chunk) != 0) {
+      fprintf(stderr, "Error: [ADC] failed to send oversized-delay no-op\n");
+      return -1;
+    }
+    (*space)--;
+    remaining -= chunk;
+  }
   return 0;
 }
 
 // ADC streaming thread entry point. Reads the ADC file (a list of sample
-// timestamps), converts them from milliseconds to SPI clock cycles, and sends
+// timestamps), converts them from seconds to SPI clock cycles, and sends
 // read commands to the ADC hardware.
 //
 // On the ADC side a command's wait happens *after* it, so the delay tied to a
@@ -797,17 +900,17 @@ static int adc_stream_send(adc_file_info_t *info, bool noop_trig_first,
 // later trigger points get their trigger from the previous read's trigger-wait.
 // A trigger point at a non-zero time additionally gets a delay no-op prefix, to
 // wait from the trigger to that row's timestamp before reading.
-void *adc_stream_thread(void *arg) {
-  adc_file_info_t *info = (adc_file_info_t *)arg;
+void *adc_cmd_stream_thread(void *arg) {
+  adc_cmd_file_info_t *info = (adc_cmd_file_info_t *)arg;
   if (info == NULL) {
     return NULL;
   }
   if (info->hw == NULL) {
     fprintf(stderr, "Error: [ADC] no hardware handle provided\n");
-    adc_file_info_set_state(info, STREAM_THREAD_STOPPED);
+    adc_cmd_file_info_set_state(info, STREAM_THREAD_STOPPED);
     return NULL;
   }
-  adc_file_info_set_state(info, STREAM_THREAD_RUNNING);
+  adc_cmd_file_info_set_state(info, STREAM_THREAD_RUNNING);
 
   // A read command is buffered ("pending") until the next row is known, since
   // the delay that follows a read is the gap to the next row. The pending state
@@ -840,7 +943,7 @@ void *adc_stream_thread(void *arg) {
     char line[MAX_LINE_LEN];
 
     while (fgets(line, sizeof(line), fp) != NULL) {
-      if (adc_file_info_should_stop(info)) {
+      if (adc_cmd_file_info_should_stop(info)) {
         stopped = true;
         break;
       }
@@ -856,9 +959,10 @@ void *adc_stream_thread(void *arg) {
         exit(1);
       }
 
-      // Convert this timestamp (in ms) to absolute SPI clock cycles up front so
-      // dt is computed from absolute cycle counts, avoiding rounding drift.
-      uint32_t t_clks = (uint32_t)(((timestamp / 1000.0) * (double)info->hw->spi_clk_hz) + 0.5);
+      // Convert this timestamp (in seconds) to absolute SPI clock cycles up
+      // front so dt is computed from absolute cycle counts, avoiding rounding
+      // drift.
+      uint32_t t_clks = (uint32_t)((timestamp * (double)info->hw->spi_clk_hz) + 0.5);
 
       // A trigger point is the first row of the whole stream or a time reset
       // (this timestamp is below the previous one).
@@ -870,7 +974,7 @@ void *adc_stream_thread(void *arg) {
       if (have_pending) {
         bool     p_is_trig = is_trig_point;
         uint32_t p_delay_clks = is_trig_point ? 0 : (t_clks - pending_t_clks);
-        if (adc_stream_send(info, pending_noop_trig, pending_noop_delay,
+        if (adc_cmd_stream_send(info, pending_noop_trig, pending_noop_delay,
                             pending_noop_delay_clks, p_is_trig, p_delay_clks,
                             false, &space) != 0) {
           stopped = true;
@@ -916,11 +1020,11 @@ void *adc_stream_thread(void *arg) {
   // this is the last read of the whole sequence: a trigger-wait read with
   // last = true, which clears the continue flag and handles the trailing wait.
   if (have_pending && !stopped) {
-    (void)adc_stream_send(info, pending_noop_trig, pending_noop_delay,
+    (void)adc_cmd_stream_send(info, pending_noop_trig, pending_noop_delay,
                           pending_noop_delay_clks, true, 0, true, &space);
   }
 
-  adc_file_info_set_state(info, stopped ? STREAM_THREAD_STOPPED
+  adc_cmd_file_info_set_state(info, stopped ? STREAM_THREAD_STOPPED
                                         : STREAM_THREAD_COMPLETED);
   return NULL;
 }
@@ -987,10 +1091,28 @@ void *adc_data_stream_thread(void *arg) {
         break;
       }
       read_count++;
-      // TODO: format/write the per-channel amps to `out` once the output file
-      // format is defined. For now the samples are drained to keep the buffer
-      // from overflowing.
-      (void)out;
+      // Write the active-channel amps as one comma-separated line per sample.
+      // The amps buffer is indexed by channel number, so the active channels are
+      // just indices 0 .. channel_count-1. When there's no output file the
+      // sample is still read above, draining the buffer, and simply discarded.
+      if (out != NULL) {
+        for (uint32_t c = 0; c < info->hw->channel_count; c++) {
+          if (fprintf(out, "%s%.6g", (c == 0) ? "" : ",", amps[c]) < 0) {
+            fprintf(stderr, "Error: [ADC data] failed to write to '%s': %s\n",
+                    info->path, strerror(errno));
+            stopped = true;
+            break;
+          }
+        }
+        if (!stopped && fputc('\n', out) == EOF) {
+          fprintf(stderr, "Error: [ADC data] failed to write to '%s': %s\n",
+                  info->path, strerror(errno));
+          stopped = true;
+        }
+        if (stopped) {
+          break;
+        }
+      }
     }
   }
 
@@ -1050,13 +1172,24 @@ void *trigger_stream_thread(void *arg) {
     }
 
     for (int i = 0; i < available && read_count < total; i++) {
-      uint64_t timepoint = trigger_read(&info->hw->trigger_ctrl);
-      (void)timepoint;
+      double trigger_time;
+      if (hw_read_trigger_data(info->hw, &trigger_time) != 0) {
+        fprintf(stderr, "Error: [%s] failed to read trigger sample\n", label);
+        stopped = true;
+        break;
+      }
       read_count++;
-      // TODO: format/write the timepoint to `out` once the output file format
-      // is defined. For now the timepoints are drained to keep the buffer from
-      // overflowing.
-      (void)out;
+      // Write one trigger time (in seconds) per line. When there's no output
+      // file the timepoint is still read above, draining the buffer, and simply
+      // discarded.
+      if (out != NULL) {
+        if (fprintf(out, "%.9g\n", trigger_time) < 0) {
+          fprintf(stderr, "Error: [%s] failed to write to '%s': %s\n",
+                  label, info->path, strerror(errno));
+          stopped = true;
+          break;
+        }
+      }
     }
   }
 

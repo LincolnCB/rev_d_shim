@@ -11,6 +11,30 @@
 // Global pointer to hardware state so the signal handler can reach it
 static hw_t *g_hw = NULL;
 
+// Print usage and a README-level summary of the tool
+static void print_usage(const char *prog) {
+  printf("Usage: %s [--verbose] <channel_count>\n", prog);
+  printf("\n");
+  printf("Interactive command-line tool for driving the Rev D shim amplifier\n");
+  printf("with static (DC) currents. Boots the FPGA hardware, then accepts\n");
+  printf("single-character commands to set per-channel currents manually, from\n");
+  printf("files, or on external/forced triggers.\n");
+  printf("\n");
+  printf("Arguments:\n");
+  printf("  channel_count    Number of active shim channels (1-%u).\n", HW_MAX_CHANNELS);
+  printf("\n");
+  printf("Options:\n");
+  printf("  --verbose        Enable detailed logging.\n");
+  printf("  -h, --help       Show this help and exit.\n");
+  printf("\n");
+  printf("On start it initializes hardware, configures the clock, and drops into\n");
+  printf("a 'static-shims>' prompt. Ctrl+C (or Q) powers the system off safely\n");
+  printf("before exiting. At the prompt, type H for brief help or ? for the\n");
+  printf("extended guide (file format + full command list).\n");
+  printf("\n");
+  printf("Currents are limited to +/-5.0 A.\n");
+}
+
 // Handle Ctrl+C by powering off the hardware and exiting cleanly
 static void handle_sigint(int sig) {
   (void)sig;
@@ -28,19 +52,22 @@ int main(int argc, char **argv) {
 
   // Capture verbose flag and channel count argument
   for (int i = 1; i < argc; i++) {
-    if (strcmp(argv[i], "--verbose") == 0) {
+    if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+      print_usage(argv[0]);
+      return 0;
+    } else if (strcmp(argv[i], "--verbose") == 0) {
       verbose = true;
     } else if (channel_count_arg == NULL) {
       channel_count_arg = argv[i];
     } else {
-      fprintf(stderr, "Usage: %s [--verbose] <channel_count>\n", argv[0]);
+      print_usage(argv[0]);
       return 1;
     }
   }
 
   // Validate channel count argument
   if (channel_count_arg == NULL) {
-    fprintf(stderr, "Usage: %s [--verbose] <channel_count>\n", argv[0]);
+    print_usage(argv[0]);
     return 1;
   }
 

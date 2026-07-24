@@ -4,9 +4,48 @@
 #include <stdbool.h>
 #include <inttypes.h>
 
+#include <string.h>
+
 #include "sys_sts.h"
 
-int main(void) {
+static void print_usage(const char *prog) {
+  printf(
+      "Usage: %s [-h|--help]\n"
+      "\n"
+      "Read-only diagnostic tool for the Rev D shim amplifier. Reads the FPGA\n"
+      "system status register (mapped at 0x40100000) and prints a human-readable\n"
+      "snapshot of the hardware state. It only observes and reports, and never\n"
+      "drives or reconfigures the hardware.\n"
+      "\n"
+      "Takes no arguments. Run it on the target to dump the current status.\n"
+      "\n"
+      "Reports:\n"
+      "  - Hardware status: decoded state, status code, and associated board.\n"
+      "  - Trigger count: number of hardware triggers seen.\n"
+      "  - Clock frequencies: SPI clock and SPI source clock, in Hz.\n"
+      "  - Timing debug register: clock-locked/SPI-off flags, DAC/ADC ~CS high\n"
+      "    times, and SPI clock snoop reconfiguration state machine state.\n"
+      "  - Minimum delay times: DAC and ADC \"delay too short\" thresholds.\n"
+      "  - Per-board FIFO status (boards 0-7): DAC/ADC command/data FIFO status,\n"
+      "    last received command word, and command count since reset.\n"
+      "  - Trigger FIFOs: command and data FIFO status.\n"
+      "\n"
+      "Options:\n"
+      "  -h, --help    Show this help message and exit.\n",
+      prog);
+}
+
+int main(int argc, char *argv[]) {
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+      print_usage(argv[0]);
+      return EXIT_SUCCESS;
+    }
+    fprintf(stderr, "Unknown argument: %s\n", argv[i]);
+    print_usage(argv[0]);
+    return EXIT_FAILURE;
+  }
+
   struct sys_sts_t sys_sts = create_sys_sts(false);
 
   uint32_t hw_status = sys_sts_get_hw_status(&sys_sts, false);
