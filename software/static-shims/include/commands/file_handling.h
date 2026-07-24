@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 
-#include "hardware.h"
+#include "static_hardware.h"
 
 #define FILE_HANDLING_PATH_MAX 256
 #define FILE_LOOP_MAX_LEVEL 10  // maximum supported delimiter nesting depth

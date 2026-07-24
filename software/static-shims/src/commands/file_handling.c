@@ -37,6 +37,26 @@ static void strip_comment(char *line) {
   }
 }
 
+// Check whether `line` is a delimiter line ("xN"/"XN" where N is a positive
+// integer), ignoring any leading or trailing whitespace around it. This lets
+// whitespace act purely as a separator between values (as it already does on
+// data lines) rather than as meaningful content that can break delimiter
+// detection -- e.g. a line of " x1 " (as can happen when an inline array's
+// '/' tokens have surrounding spaces) is still recognized as "x1".
+// On success, writes the repeat count to *repeat_count_out and returns true.
+static bool parse_delimiter_line(const char *line, int *repeat_count_out) {
+  while (*line == ' ' || *line == '\t') line++;
+  if (*line != 'x' && *line != 'X') {
+    return false;
+  }
+  int repeat_count = 0;
+  if (sscanf(line + 1, "%d", &repeat_count) != 1 || repeat_count <= 0) {
+    return false;
+  }
+  *repeat_count_out = repeat_count;
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Loader thread
 // ---------------------------------------------------------------------------
@@ -161,9 +181,7 @@ static void *loader_thread_fn(void *arg) {
     // Check if this line is a delimiter ("xN" where N is a positive int).
     // ------------------------------------------------------------------
     int repeat_count = 0;
-    bool is_delimiter = (line[0] == 'x' || line[0] == 'X') &&
-                        sscanf(line + 1, "%d", &repeat_count) == 1 &&
-                        repeat_count > 0;
+    bool is_delimiter = parse_delimiter_line(line, &repeat_count);
 
     if (is_delimiter) {
       // Determine which level this delimiter belongs to.
@@ -340,9 +358,7 @@ static int file_preflight_check(const char *path, uint32_t channel_count) {
     if (line[0] == '\0') continue; // blank or comment-only
 
     int repeat_count = 0;
-    bool is_delimiter = (line[0] == 'x' || line[0] == 'X') &&
-                        sscanf(line + 1, "%d", &repeat_count) == 1 &&
-                        repeat_count > 0;
+    bool is_delimiter = parse_delimiter_line(line, &repeat_count);
 
     if (is_delimiter) {
       current_run++;
@@ -552,9 +568,9 @@ int file_append_adc_dump(const char *path, const double *adc_values, uint32_t ch
   // Write ADC values as a single CSV line: ch0_amps, ch1_amps, ...
   for (uint32_t ch = 0; ch < channel_count; ch++) {
     if (ch > 0) {
-      fprintf(f, ",%.4f", adc_values[ch]);
+      fprintf(f, ",%.3f", adc_values[ch]);
     } else {
-      fprintf(f, "%.4f", adc_values[ch]);
+      fprintf(f, "%.3f", adc_values[ch]);
     }
   }
   fprintf(f, "\n");

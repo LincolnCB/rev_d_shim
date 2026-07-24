@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "hardware.h"
+#include "static_hardware.h"
 #include "file_handling.h"
 
 #define COMMAND_FILE_PATH_MAX 256

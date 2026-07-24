@@ -18,9 +18,45 @@
 #include "trigger_ctrl.h"
 #include "command_handler.h"
 
+//////////////////// Usage ////////////////////
+static void print_usage(const char *prog_name)
+{
+  printf(
+    "Rev. D Manual Test Program\n"
+    "\n"
+    "Usage: %s [OPTIONS]\n"
+    "\n"
+    "Interactive test tool for the Rev D shim amplifier hardware. On startup it\n"
+    "initializes the system, clock, status, DAC, ADC, and trigger control modules,\n"
+    "then drops into a command loop for issuing hardware commands.\n"
+    "\n"
+    "Options:\n"
+    "  -h, --help      Show this help message and exit.\n"
+    "  --verbose       Enable verbose output from the hardware control modules.\n"
+    "\n"
+    "Once running, type 'help' at the 'Command>' prompt to list the available\n"
+    "interactive commands, or 'exit' to quit.\n",
+    prog_name);
+}
+
 //////////////////// Main ////////////////////
 int main(int argc, char *argv[])
 {
+  // Parse optional command-line flags
+  bool verbose = false;
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+      print_usage(argv[0]);
+      return 0;
+    } else if (strcmp(argv[i], "--verbose") == 0) {
+      verbose = true;
+    } else {
+      fprintf(stderr, "Error: unknown argument '%s'\n\n", argv[i]);
+      print_usage(argv[0]);
+      return 1;
+    }
+  }
+
   //////////////////// 1. Setup ////////////////////
   printf("Rev. C to D One-to-One Test Program\n");
   printf("Setup:\n");
@@ -32,12 +68,6 @@ int main(int argc, char *argv[])
   struct dac_ctrl_t dac_ctrl;         // DAC command FIFOs (all boards)
   struct adc_ctrl_t adc_ctrl;         // ADC command and data FIFOs (all boards)
   struct trigger_ctrl_t trigger_ctrl; // Trigger command and data FIFOs
-
-  // Parse optional verbose argument
-  bool verbose = false;
-  if (argc == 2 && strcmp(argv[1], "--verbose") == 0) {
-    verbose = true;
-  }
 
   // Initialize hardware control structures
   printf("Initializing hardware control modules...\n");
