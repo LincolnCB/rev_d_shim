@@ -1,6 +1,6 @@
 # Rev D Shim Amplifier
 
-This system includes multiple command-line tools for controlling, driving, and diagnosing the shim hardware. These all currently need to be run with sudo privileges in order to handle memory mapping.
+This system includes multiple command-line tools for controlling, driving, and diagnosing the shim hardware.
 
 | Tool | Type | What it does |
 |---|---|---|
@@ -10,7 +10,7 @@ This system includes multiple command-line tools for controlling, driving, and d
 | `waveform` | One-shot, file-driven | Plays a multi-channel **waveform** from a CSV on the DACs, optionally reads back ADC samples, and logs trigger times. Configurable clock, lockout, and iteration count. |
 | `shim-test` | Interactive | Manual test bench for **every aspect** of the shim driver — exercise the system, clock, DACs, ADCs, trigger, and streaming/experiment features by hand. For bring-up, debugging, and validation. |
 
-## At a glance
+## Overview
 
 - **Diagnostics / recovery:** `status` (inspect the hardware) and `reset-shims` (recover to idle).
 - **Driving the hardware:** `static-shims` for DC currents and `waveform` for time-varying playback.

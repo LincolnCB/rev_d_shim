@@ -18,8 +18,8 @@ typedef enum {
 } adc_continue_mode_t;
 
 //////////////////// ADC Control Definitions ////////////////////
-// ADC FIFO address
-#define ADC_FIFO(board)    (0x80001000 + (board) * 0x10000)
+// Device name format for board N: /dev/adc_fifo_N_axi_bridge
+#define ADC_FIFO_DEV_FMT       "/dev/adc_fifo_%d_axi_bridge"
 
 // ADC FIFO depths
 #define ADC_CMD_FIFO_WORDCOUNT   (uint32_t)(1 << 10) // 1024 words (2^10)

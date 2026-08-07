@@ -1,51 +1,56 @@
-#include <fcntl.h> // For open function
-#include <inttypes.h> // For PRIx32 format specifier
-#include <stdint.h> // For uint32_t type
-#include <stdbool.h> // For bool type
-#include <stdio.h> // For printf and perror functions
-#include <stdlib.h> // For exit function and NULL definition etc.
+#include <fcntl.h>    // For open function
+#include <stdint.h>   // For uint32_t type
+#include <stdbool.h>  // For bool type
+#include <stdio.h>    // For printf and perror functions
+#include <stdlib.h>   // For NULL definition etc.
 #include <sys/mman.h> // For mmap function
-#include <unistd.h> // For sysconf function
+#include <unistd.h>   // For sysconf, close functions
 
-// Map a 32-bit memory region
-uint32_t *map_32bit_memory(uint32_t base_addr, size_t wordcount, char *name, bool verbose) {
+// Map a named shim-regs device into userspace as a volatile 32-bit word array.
+// Opens `dev_path` (e.g. "/dev/axi_sys_ctrl"), mmaps `wordcount` words at
+// offset 0, and returns a pointer to the mapped region. No physical addresses
+// appear in userspace; the shim-regs kernel module owns address translation.
+// The file descriptor is closed immediately after mmap -- the mapping persists
+// independently. Returns NULL on failure.
+volatile uint32_t *map_32bit_memory(const char *dev_path, size_t wordcount, const char *name, bool verbose) {
 
   if (verbose) {
-    printf("Mapping memory region [%s] at base address 0x%08" PRIx32 " with size %zu bytes...\n", name, base_addr, wordcount * 4);
+    printf("Mapping device [%s] (%s, %zu words)...\n", name, dev_path, wordcount);
   }
 
-  // File descriptor for /dev/mem
-  int dev_mem_fd;
-
-  // Open /dev/mem to access physical memory
-  if (verbose) printf("Opening /dev/mem...\n");
-  if((dev_mem_fd = open("/dev/mem", O_RDWR)) < 0) {
+  // Open the shim-regs device node
+  int fd = open(dev_path, O_RDWR);
+  if (fd < 0) {
     perror("open");
     return NULL;
   }
 
-  // Calculate the page size and the number of pages needed
+  // Round the requested byte size up to a page boundary for mmap
   long page_size = sysconf(_SC_PAGESIZE);
-  size_t num_pages = ((wordcount * 4) + page_size - 1) / page_size; // Round up to the nearest page
+  size_t map_size = ((wordcount * 4) + page_size - 1) / page_size * page_size;
 
-  // Map the memory region
-  if (verbose) printf("Mapping %zu pages of size %ld bytes...\n", num_pages, page_size);
-  uint32_t *mapped_memory = (uint32_t *)mmap(NULL, num_pages * page_size, PROT_READ | PROT_WRITE, MAP_SHARED, dev_mem_fd, base_addr);
+  if (verbose) {
+    printf("Mapping %zu bytes (%zu pages of %ld bytes)...\n",
+           map_size, map_size / page_size, page_size);
+  }
 
-  // Check if the mapping was successful
-  if (mapped_memory == MAP_FAILED) {
+  // Map the device's register window at offset 0 directly into this process.
+  // After mmap returns, every register access is a single load/store -- no
+  // syscall overhead per access.
+  volatile uint32_t *mapped = (volatile uint32_t *)mmap(
+      NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+
+  // The fd is no longer needed once the mapping is established
+  close(fd);
+
+  if (mapped == MAP_FAILED) {
     perror("mmap");
-    close(dev_mem_fd);
     return NULL;
   }
 
   if (verbose) {
-    printf("Memory region %s mapped", name);
+    printf("Device [%s] mapped (%zu bytes).\n", name, map_size);
   }
 
-  // Close the file descriptor for /dev/mem
-  close(dev_mem_fd);
-
-  // Return the pointer to the mapped memory region
-  return mapped_memory;
+  return mapped;
 }

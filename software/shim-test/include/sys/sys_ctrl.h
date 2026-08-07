@@ -8,8 +8,8 @@
 // AXI interface addresses
 // Addresses are defined in the hardware design Tcl file
 
-// System control and configuration register
-#define SYS_CTRL_BASE             (uint32_t) 0x40000000
+// System control and configuration register shim-regs driver device name
+#define SYS_CTRL_DEV              "/dev/axi_sys_ctrl"
 #define SYS_CTRL_WORDCOUNT        (uint32_t) 10 // Size in 32-bit words
 // 32-bit offsets within the system control and configuration register
 #define CTRL_ENABLE_OFFSET        (uint32_t) 0

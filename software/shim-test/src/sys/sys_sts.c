@@ -12,7 +12,7 @@ struct sys_sts_t create_sys_sts(bool verbose) {
   struct sys_sts_t sys_sts;
 
   // Map system status register
-  volatile uint32_t *sys_sts_ptr = map_32bit_memory(SYS_STS, SYS_STS_WORDCOUNT, "System Status", verbose);
+  volatile uint32_t *sys_sts_ptr = map_32bit_memory(SYS_STS_DEV, SYS_STS_WORDCOUNT, "System Status", verbose);
   if (sys_sts_ptr == NULL) {
     fprintf(stderr, "Failed to map system status memory region.\n");
     exit(EXIT_FAILURE);

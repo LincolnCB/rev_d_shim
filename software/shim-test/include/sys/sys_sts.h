@@ -6,8 +6,8 @@
 #include <pthread.h>
 
 //////////////////// System Status Definitions ////////////////////
-// Status register
-#define SYS_STS           (uint32_t) 0x40100000
+// Status register shim-regs driver device
+#define SYS_STS_DEV       "/dev/status_reg"
 #define SYS_STS_WORDCOUNT (uint32_t) 73 // Size in 32-bit words
 // 32-bit offsets within the status register
 #define HW_STS_REG_OFFSET (uint32_t) 0 // Hardware status register

@@ -8,7 +8,7 @@
 // Create a system control structure
 struct sys_ctrl_t create_sys_ctrl(bool verbose) {
   struct sys_ctrl_t sys_ctrl;
-  volatile uint32_t *sys_ctrl_ptr = map_32bit_memory(SYS_CTRL_BASE, SYS_CTRL_WORDCOUNT, "System Ctrl", verbose);
+  volatile uint32_t *sys_ctrl_ptr = map_32bit_memory(SYS_CTRL_DEV, SYS_CTRL_WORDCOUNT, "System Ctrl", verbose);
   if (sys_ctrl_ptr == NULL) {
     fprintf(stderr, "Failed to map system control memory region.\n");
     exit(EXIT_FAILURE);

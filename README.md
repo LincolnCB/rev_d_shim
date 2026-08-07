@@ -8,4 +8,4 @@ To use this repo, you will need the following repos. Each repo has a DOI that ca
 - Our build environment repo, [Zynq Toolbox](https://github.com/LincolnCB/zynq_toolbox) ([https://github.com/LincolnCB/zynq_toolbox](https://github.com/LincolnCB/zynq_toolbox)), which is an extension of Pavel's original [Red Pitay Notes](https://github.com/pavel-demin/red-pitaya-notes) repo.
 - The hardware design files for the Rev. D version of our shim amplifier system, which have been created by Don Straney and are available in our [hardware repo](https://github.com/stockmann-lab/shim_amp_hardware_linear/) ([https://github.com/stockmann-lab/shim_amp_hardware_linear/](https://github.com/stockmann-lab/shim_amp_hardware_linear/))
 
-
+Please see the [README](rootfs_include/README.md) in the `rootfs_include` directory for a description of the command-line tools that are included in this system. This README will be included in the SD card image that is built by the Zynq Toolbox build system, so it will be available on the target system at build time.
