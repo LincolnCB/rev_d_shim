@@ -224,9 +224,9 @@ Configuration notes:
 - The SG descriptor rings also need known physical addresses — give them their own
   small `u-dma-buf` region.
 - Follow the repo's out-of-tree kernel-module flow: drop the module under the
-  project's `kernel_modules/` (symlinking the vendored copy) and list it in
-  `cfg/[board]/[board_ver]/petalinux/[version]/kernel_modules`. The build script
-  generates the recipe automatically -- no hand-written `meta-user/recipes-modules` --
+  project's `kernel_modules/` (symlinking the vendored copy). The build script
+  auto-discovers every subdirectory there -- there is no cfg list to maintain --
+  generates the recipe automatically (no hand-written `meta-user/recipes-modules`),
   and appends `KERNEL_MODULE_AUTOLOAD`, so the module loads at boot. Declare the DMA
   regions via device-tree nodes or module parameters, since a bare autoload loads the
   module with none. The only ongoing cost is rebuilding against new kernels.
@@ -235,7 +235,7 @@ Alternatives, kept on the table but not preferred: `dma_alloc_coherent` inside a
 custom kernel driver (more code we own, no capability advantage), or a bare CMA
 allocation via the existing misc driver (same, plus fragmentation risk).
 
-### 8.2 How the MCDMA gets driven (leaning B; prove in ex07)
+### 8.2 How the MCDMA gets driven (decided: B, proven in ex07)
 
 This is coupled to the choice above and should be decided alongside it.
 
@@ -251,9 +251,13 @@ channel pointers directly. More code, and we own the SG bookkeeping — but it s
 the driver-maturity question entirely, and it preserves the current architecture
 (mmap once, no syscalls in the loop).
 
-**B pairs naturally with `u-dma-buf` and with how this system already works.** Prove
-it in ex07 first; evaluate A as a possible simplification afterward rather than
-betting on it.
+**B pairs naturally with `u-dma-buf` and with how this system already works.**
+**Proven in ex07:** a userspace program maps the MCDMA control window through a
+`pl-reg`-bound misc device (`/dev/mcdma`, non-root), allocates with `u-dma-buf`, builds
+SG descriptor rings, and round-trips 2+2 channels byte-for-byte. The register map and
+descriptor layout match mainline `xilinx_dma.c` (notably: MCDMA BD `control` at 0x14,
+Run/Stop in both the per-channel and common control registers). Evaluate A as a
+possible simplification afterward rather than betting on it.
 
 ## 9. Deferred: streaming and loopback
 
@@ -326,13 +330,13 @@ parameterized `axi_mcdma` with TDEST routing is the first hardware task.
 
 **Kernel modules.** Each module is a directory under
 `projects/<prj>/kernel_modules/<mod>` (usually a symlink into
-`examples/kernel_modules/`) whose name is also listed in
-`cfg/.../petalinux/<ver>/kernel_modules`. `scripts/petalinux/kernel_modules.sh` builds
-them out-of-tree, generates the recipe (no hand-written `meta-user/recipes-modules`),
-and appends `KERNEL_MODULE_AUTOLOAD`, so they load automatically at boot. A bare
-autoload loads `u-dma-buf` with **no** regions — declare regions via device-tree nodes
-or module parameters. `u-dma-buf` is already vendored under
-`examples/kernel_modules/u-dma-buf` and symlinked into ex07.
+`examples/kernel_modules/`). `scripts/petalinux/kernel_modules.sh` auto-discovers
+every subdirectory there -- there is no cfg list -- builds them out-of-tree, generates
+the recipe (no hand-written `meta-user/recipes-modules`), and appends
+`KERNEL_MODULE_AUTOLOAD`, so they load automatically at boot. A bare autoload loads
+`u-dma-buf` with **no** regions -- declare regions via device-tree nodes or module
+parameters. `u-dma-buf` is already vendored under `examples/kernel_modules/u-dma-buf`
+and symlinked into ex07.
 
 **Non-root userspace access (established pattern).** PetaLinux's device-tree generator
 emits one node per addressed PL IP automatically; a small "misc device" driver

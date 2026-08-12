@@ -74,9 +74,9 @@ knowledge. Read it before answering architecture questions.
   ex04). The current ex07 block design is still the single-channel `axi_dma` loopback
   scaffold; converting it to a parameterized `axi_mcdma` is the first hardware task.
 - Kernel modules: put each under `projects/<prj>/kernel_modules/<mod>` (usually a
-  symlink into `examples/kernel_modules/`) and list its name in
-  `cfg/.../petalinux/<ver>/kernel_modules`. The build script compiles them out-of-tree
-  and appends `KERNEL_MODULE_AUTOLOAD`, so they load at boot (a bare autoload has no
+  symlink into `examples/kernel_modules/`). The build script auto-discovers every
+  subdirectory there (no cfg list), compiles them out-of-tree, and appends
+  `KERNEL_MODULE_AUTOLOAD`, so they load at boot (a bare autoload has no
   regions — declare `u-dma-buf` regions via device tree or module params). `u-dma-buf`
   is already vendored and symlinked into ex07.
 - Non-root userspace access is an established pattern: a small misc-device driver
