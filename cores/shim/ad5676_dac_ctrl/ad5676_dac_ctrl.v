@@ -193,7 +193,21 @@ module ad5676_dac_ctrl #(
   // Latched n_cs high time
   reg  [ 4:0] n_cs_high_time_latched;
   // SPI channel index and bit counter
-  reg  [ 2:0] dac_channel;
+  // Separating the DAC channel index from DAC sample index for debugging
+  reg  [ 2:0] dac_sample_idx;
+  reg  [ 2:0] dac_channel_order [0:7];
+  initial begin
+    dac_channel_order[0] = 3'd0;
+    dac_channel_order[1] = 3'd1;
+    dac_channel_order[2] = 3'd2;
+    dac_channel_order[3] = 3'd3;
+    dac_channel_order[4] = 3'd4;
+    dac_channel_order[5] = 3'd5;
+    dac_channel_order[6] = 3'd7;
+    dac_channel_order[7] = 3'd6;
+  end
+  wire [ 2:0] dac_channel = dac_channel_order[dac_sample_idx];
+  wire [ 2:0] dac_channel_next = dac_channel_order[dac_sample_idx + 1];
   reg  [ 4:0] spi_bit;
   reg         running_spi_bit;
   // SPI MOSI shift register
@@ -536,8 +550,8 @@ module ad5676_dac_ctrl #(
   assign start_8ch_dac_wr = (state == S_PRE_DELAY && pre_delay_wait_done)
                             || (do_next_cmd && command == CMD_DAC_WR && immediately_start_8ch_dac_wr);
   // DAC channel count status
-  assign last_dac_channel = ((state == S_DAC_WR || state == S_SET_MID) && dac_channel == 3'd7) || (state == S_DAC_WR_CH); // Last channel is when in DAC_WR state and channel is 7, or if doing a single-channel write
-  assign second_dac_channel_of_pair = (state == S_DAC_WR && dac_channel[0] == 1'b1); // Even channel is when the least significant bit is set (off by 1)
+  assign last_dac_channel = ((state == S_DAC_WR || state == S_SET_MID) && dac_sample_idx == 3'd7) || (state == S_DAC_WR_CH); // Last channel is when in DAC_WR state and channel is 7, or if doing a single-channel write
+  assign second_dac_channel_of_pair = (state == S_DAC_WR && dac_sample_idx[0] == 1'b1); // Even channel is when the least significant bit is set (off by 1)
   assign dac_spi_cmd_done = ((state == S_DAC_WR)
                              || (state == S_DAC_WR_CH)
                              || (state == S_TEST_WR)
@@ -562,11 +576,11 @@ module ad5676_dac_ctrl #(
   assign dac_wr_done = last_dac_channel && dac_spi_cmd_done;
   // DAC channel index
   always @(posedge clk) begin
-    if (!resetn || state == S_ERROR) dac_channel <= 3'd0;
-    else if (start_8ch_dac_wr) dac_channel <= 3'd0;
-    else if (do_next_cmd && command == CMD_ZERO) dac_channel <= 3'd0;
-    else if (do_next_cmd && command == CMD_DAC_WR_CH) dac_channel <= cmd_word[18:16]; // Set channel from command word for single-channel write
-    else if ((state == S_DAC_WR || state == S_SET_MID) && dac_spi_cmd_done) dac_channel <= dac_channel + 1; // Increment channel when timer is done
+    if (!resetn || state == S_ERROR) dac_sample_idx <= 3'd0;
+    else if (start_8ch_dac_wr) dac_sample_idx <= 3'd0;
+    else if (do_next_cmd && command == CMD_ZERO) dac_sample_idx <= 3'd0;
+    else if (do_next_cmd && command == CMD_DAC_WR_CH) dac_sample_idx <= cmd_word[18:16]; // Set channel from command word for single-channel write
+    else if ((state == S_DAC_WR || state == S_SET_MID) && dac_spi_cmd_done) dac_sample_idx <= dac_sample_idx + 1; // Increment channel when timer is done
   end
   // DAC value loading
   // Load and calibrate DAC values from command word
@@ -581,7 +595,7 @@ module ad5676_dac_ctrl #(
       // Prepare DAC values if any DAC value loading condition is met
       end else if (read_next_dac_val_pair && next_cmd_ready) begin
         first_dac_val_cal_signed <= $signed({cmd_word[15], cmd_word[15:0]}) + $signed({cal_val[dac_channel][15], cal_val[dac_channel]}); // Add calibration to first DAC value
-        second_dac_val_cal_signed <= $signed({cmd_word[31], cmd_word[31:16]}) + $signed({cal_val[dac_channel + 1][15], cal_val[dac_channel + 1]}); // Add calibration to second DAC value
+        second_dac_val_cal_signed <= $signed({cmd_word[31], cmd_word[31:16]}) + $signed({cal_val[dac_channel_next][15], cal_val[dac_channel_next]}); // Add calibration to second DAC value
         dac_vals_ready <= 1'b1; // Indicate that DAC values have been loaded
       end else if (do_next_cmd && command == CMD_DAC_WR_CH) begin
         first_dac_val_cal_signed <= $signed({cmd_word[15], cmd_word[15:0]}) + $signed({cal_val[cmd_word[18:16]][15], cal_val[cmd_word[18:16]]}); // Add calibration to DAC value
@@ -604,7 +618,7 @@ module ad5676_dac_ctrl #(
       // If a DAC pair is currently loading, store the absolute values (dac_channel is already ready)
       if (!dac_vals_ready && read_next_dac_val_pair && next_cmd_ready) begin
         abs_dac_val[dac_channel] <= signed_to_abs(cmd_word[15:0]);
-        abs_dac_val[dac_channel + 1] <= signed_to_abs(cmd_word[31:16]);
+        abs_dac_val[dac_channel_next] <= signed_to_abs(cmd_word[31:16]);
       // If a single DAC value is coming from the command word, store the absolute value in the command-word-indicated channel
       end else if (!dac_vals_ready && do_next_cmd && command == CMD_DAC_WR_CH) begin
         abs_dac_val[cmd_word[18:16]] <= signed_to_abs(cmd_word[15:0]);
@@ -613,7 +627,7 @@ module ad5676_dac_ctrl #(
         abs_dac_val[0] <= 16'd0;
       // Store zero on each channel after writing the previous one when in SET_MID state
       end else if (state == S_SET_MID && dac_spi_cmd_done && !last_dac_channel) begin
-        abs_dac_val[dac_channel + 1] <= 16'd0;
+        abs_dac_val[dac_channel_next] <= 16'd0;
       end
     end
   end
@@ -696,7 +710,7 @@ module ad5676_dac_ctrl #(
       mosi_prepped <= 1'b1;
     // When finished setting midrange values for a channel, load the next until all channels are set
     end else if (state == S_SET_MID && dac_spi_cmd_done && !last_dac_channel) begin
-      mosi_shift_reg <= spi_write_cmd(0, dac_channel + 1, cal_midrange[dac_channel + 1]);
+      mosi_shift_reg <= spi_write_cmd(0, dac_channel_next, cal_midrange[dac_channel_next]);
       mosi_prepped <= 1'b1;
     // For single-channel DAC commands, load the shift register with just the one DAC value
     end else if (state == S_DAC_WR_CH && dac_vals_ready) begin
@@ -708,7 +722,7 @@ module ad5676_dac_ctrl #(
       mosi_prepped <= 1'b1;
     // When finished writing the first channel of a pair, load the shift register with the second DAC value of the pair
     end else if (state == S_DAC_WR && !second_dac_channel_of_pair && dac_spi_cmd_done ) begin
-      mosi_shift_reg <= spi_write_cmd(1, dac_channel + 1, signed_to_offset(second_dac_val_cal_signed));
+      mosi_shift_reg <= spi_write_cmd(1, dac_channel_next, signed_to_offset(second_dac_val_cal_signed));
       mosi_prepped <= 1'b1;
     end
   end
