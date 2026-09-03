@@ -1,5 +1,61 @@
+/* DMA reserved DDR: physically-contiguous regions carved out of the 1 GB LPDDR2
+ * ahead of Linux, so the DMA path cannot fail to allocate from fragmentation at
+ * trigger time. u-dma-buf exposes each as /dev/udmabufN and the software reads
+ * the real base and size from /sys/class/u-dma-buf/udmabufN/* rather than
+ * hardcoding them, so SHIM_DMA_DATA_SIZE is the single knob to resize the
+ * prebuffered-sequence buffer. The data region sits above the fixed descriptor
+ * region, so growing it moves no base.
+ *
+ * A shared-dma-pool/reusable (CMA) region must be 4 MiB-aligned in both base and
+ * size on 32-bit ARM -- a smaller or misaligned region fails u-dma-buf's probe
+ * with of_reserved_mem_device_init return=-22 -- so the descriptor region is the
+ * 4 MiB CMA minimum and every base stays 4 MiB-aligned. The 0x30000000 base
+ * (768 MiB into the 1 GB map) is verified clear of every other node on this board. */
+#define SHIM_DMA_DESC_BASE  0x30000000
+#define SHIM_DMA_DESC_SIZE  0x00400000   /* 4 MB  -- SG descriptor rings (CMA minimum)      */
+#define SHIM_DMA_DATA_BASE  0x30400000   /* = SHIM_DMA_DESC_BASE + SHIM_DMA_DESC_SIZE       */
+#define SHIM_DMA_DATA_SIZE  0x04000000   /* 64 MB -- prebuffered DAC sequence + ADC capture */
+
 /include/ "system-conf.dtsi"
 / {
+  reserved-memory {
+    #address-cells = <1>;
+    #size-cells = <1>;
+    ranges;
+
+    shim_dma_desc: shim_dma_desc@30000000 {
+      compatible = "shared-dma-pool";
+      reusable;
+      reg = <SHIM_DMA_DESC_BASE SHIM_DMA_DESC_SIZE>;
+    };
+
+    shim_dma_data: shim_dma_data@30400000 {
+      compatible = "shared-dma-pool";
+      reusable;
+      reg = <SHIM_DMA_DATA_BASE SHIM_DMA_DATA_SIZE>;
+    };
+  };
+
+  /* Data region -> /dev/udmabuf0: the prebuffered DAC sequence and ADC capture. */
+  udmabuf0 {
+    compatible = "ikwzm,u-dma-buf";
+    device-name = "udmabuf0";
+    minor-number = <0>;
+    size = <SHIM_DMA_DATA_SIZE>;
+    memory-region = <&shim_dma_data>;
+    sync-mode = <3>;
+  };
+
+  /* Descriptor-ring region -> /dev/udmabuf1: the MCDMA SG descriptors, which the
+   * engine fetches by physical address, so they need a known-phys region of their own. */
+  udmabuf1 {
+    compatible = "ikwzm,u-dma-buf";
+    device-name = "udmabuf1";
+    minor-number = <1>;
+    size = <SHIM_DMA_DESC_SIZE>;
+    memory-region = <&shim_dma_desc>;
+    sync-mode = <3>;
+  };
 };
 
 &amba_pl {
