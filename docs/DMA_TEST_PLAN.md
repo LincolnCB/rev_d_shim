@@ -23,41 +23,59 @@ The goal of the whole stage: the existing tools run unprivileged, the DMA `/dev`
 These are the device-tree and module-build changes. The build-artifact checks can be marked now; the on-target checks wait for a boot.
 
 **1.2.a -- The three modules are in the image (host).**
-Run: `find tmp/snickerdoodle_black/1.0/rev_d_shim/petalinux -path '*lib/modules*/updates/*.ko' | sort`
+Run:
+```bash
+find tmp/snickerdoodle_black/1.0/rev_d_shim/petalinux -path '*lib/modules*/updates/*.ko' | sort
+```
 Expect: `pl-reg.ko`, `pl-irq.ko`, and `u-dma-buf.ko` all present under `.../updates/`.
 Result: `[PASS]` 2026-09-03 -- all three present under `lib/modules/6.6.40-xilinx-.../updates/`.
 
 **1.2.b -- The device tree carries both regions and both udmabuf nodes (host).**
-Run: decompile the built dtb and inspect the nodes --
-`dtc -I dtb -O dts tmp/snickerdoodle_black/1.0/rev_d_shim/petalinux/build/tmp/work/zynq_generic_7z020-xilinx-linux-gnueabi/linux-xlnx/*/recipe-sysroot/boot/devicetree/system-top.dtb 2>/dev/null | grep -A6 'shim_dma\|udmabuf'`
+Run: decompile the built dtb and grep the nodes --
+```bash
+dtc -I dtb -O dts tmp/snickerdoodle_black/1.0/rev_d_shim/petalinux/build/tmp/work/zynq_generic_7z020-xilinx-linux-gnueabi/linux-xlnx/*/recipe-sysroot/boot/devicetree/system-top.dtb 2>/dev/null | grep -A6 'shim_dma\|udmabuf'
+```
 Expect: `shim_dma_desc@30000000` reg `<0x30000000 0x400000>`, `shim_dma_data@30400000` reg `<0x30400000 0x4000000>`, `udmabuf0` -> data region (size `0x4000000`), `udmabuf1` -> desc region (size `0x400000`), memory-region phandles matching.
 Result: `[PASS]` 2026-09-03 -- addresses, sizes, and phandles all as intended; `SHIM_DMA_*` macros expanded correctly.
 
 **1.2.c -- The modules load at boot (target).**
-Run: `lsmod | grep -E 'pl_reg|pl_irq|u_dma_buf'`
+Run:
+```bash
+lsmod | grep -E 'pl_reg|pl_irq|u_dma_buf'
+```
 Expect: all three listed (loaded names use underscores).
-Result: `[ ]`
+Result: `[PASS]` 2026-09-04 -- `pl_irq`, `pl_reg`, `u_dma_buf` all loaded.
 
 **1.2.d -- u-dma-buf probed both regions without the CMA-alignment failure (target).**
-Run: `dmesg | grep -iE 'u-dma-buf|udmabuf|reserved_mem'`
+Run:
+```bash
+dmesg | grep -iE 'u-dma-buf|udmabuf|reserved_mem'
+```
 Expect: udmabuf0 and udmabuf1 register cleanly; no `of_reserved_mem_device_init failed return=-22` and no other probe error. This is the alignment gotcha the dtsi comment calls out -- a misaligned or too-small reusable region fails exactly here.
-Result: `[ ]`
+Result: `[PASS]` 2026-09-04 -- both nodes registered (driver 5.2.0); udmabuf0 phys `0x30400000` size `67108864`, udmabuf1 phys `0x30000000` size `4194304`; no probe error.
 
 **1.2.e -- The DMA device nodes appear with the intended geometry (target).**
-Run: `ls -l /dev/udmabuf0 /dev/udmabuf1` then
-`for d in udmabuf0 udmabuf1; do echo "$d:"; cat /sys/class/u-dma-buf/$d/phys_addr /sys/class/u-dma-buf/$d/size; done`
+Run:
+```bash
+ls -l /dev/udmabuf0 /dev/udmabuf1
+for d in udmabuf0 udmabuf1; do echo "$d:"; cat /sys/class/u-dma-buf/$d/phys_addr /sys/class/u-dma-buf/$d/size; done
+```
 Expect: both nodes exist. `udmabuf0` (data) phys_addr `0x30400000`, size `67108864` (64 MB). `udmabuf1` (desc) phys_addr `0x30000000`, size `4194304` (4 MB). These are the values the software reads at runtime instead of hardcoding.
-Result: `[ ]`
+Result: `[PASS]` 2026-09-04 -- both nodes present with the intended phys_addr and size. They come up `crw------- root root` (mode 0600) for now; step 5's boot-script `chmod` is what makes them non-root, so this is expected here, not a failure.
 
 **1.2.f -- The reserved regions took the DDR out of the kernel's hands (target).**
-Run: `cat /proc/iomem | grep -iE 'reserved|3000|3040'` (and optionally `dmesg | grep -i 'reserved'`)
-Expect: the `0x30000000` and `0x30400000` regions show up as reserved, not general System RAM.
-Result: `[ ]`
+Run:
+```bash
+dmesg | grep -i 'reserved mem'
+cat /proc/iomem | grep -iE 'reserved'   # note: reusable CMA regions do not appear here
+```
+Expect: dmesg shows both regions initialized -- `OF: reserved mem: 0x30000000..0x303fffff ... shim_dma_desc` and `0x30400000..0x343fffff ... shim_dma_data`, both `map reusable`. Because the regions are reusable/shared-dma-pool (CMA), the kernel hands the memory back as movable until u-dma-buf claims it, so they intentionally do not appear as a reserved range in `/proc/iomem` -- dmesg is the authoritative check here.
+Result: `[PASS]` 2026-09-04 -- both regions initialized `map reusable` at the intended ranges; the default global CMA pool (16 MiB at `0x3f000000`) is separate and does not overlap.
 
 **1.2.g -- The existing SPI datapath is unchanged (target).**
 Run: exercise the current tools exactly as before the port (they still use `/dev/mem` at this point -- steps 3-5 have not moved them yet). A normal DAC-out / ADC-in check through `shim-test` or the usual bring-up sequence.
 Expect: identical behavior to a pre-port build -- boot self-test passes, a known sequence produces the same DAC output and ADC readback. Steps 1-2 must be invisible to the datapath.
-Result: `[ ]`
+Result: `[PASS]` 2026-09-04 -- datapath behaves as before the port.
 
 Note: `pl-reg` and `pl-irq` load here but bind nothing yet -- no node carries their compatible until step 3 (register windows) and step 4 (the hw_manager interrupt). Their real bring-up checks live in those steps below.
 
