@@ -9,9 +9,11 @@
 struct adc_ctrl_t create_adc_ctrl(bool verbose) {
   struct adc_ctrl_t adc_ctrl;
 
-  // Map ADC FIFO for each board
+  // Map each board's ADC FIFO by its pl-reg /dev node
   for (int board = 0; board < 8; board++) {
-    adc_ctrl.buffer[board] = map_32bit_memory(ADC_FIFO(board), 1, "ADC FIFO", verbose);
+    char dev_path[32];
+    snprintf(dev_path, sizeof(dev_path), ADC_FIFO_DEV_FMT, board);
+    adc_ctrl.buffer[board] = map_pl_reg(dev_path, verbose);
     if (adc_ctrl.buffer[board] == NULL) {
       fprintf(stderr, "Failed to map ADC FIFO access for board %d\n", board);
       exit(EXIT_FAILURE);

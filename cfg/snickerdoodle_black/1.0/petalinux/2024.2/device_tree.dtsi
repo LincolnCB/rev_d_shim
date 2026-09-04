@@ -59,8 +59,12 @@
 };
 
 &amba_pl {
+  /* Hardware manager interrupt (IRQ_F2P[0]) handed to userspace non-root by
+   * pl-irq-shim, which binds this private compatible and publishes
+   * /dev/hw_manager_irq at mode 0666 -- no kernel bootarg, no udev. The trigger
+   * spec is unchanged from the generic-uio configuration it replaces. */
   hw_manager_irq: hw_manager_irq {
-    compatible = "generic-uio";
+    compatible = "zynq-toolbox,pl-irq-shim";
     interrupt-parent = <&intc>;
     interrupts = <0 29 1>;
   };

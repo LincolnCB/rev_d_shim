@@ -156,7 +156,7 @@ struct clk_ctrl_t create_clk_ctrl(bool verbose) {
   struct clk_ctrl_t clk_ctrl;
 
   // Map SPI clock control base address
-  volatile uint32_t *clk_ptr = map_32bit_memory(CLK_BASE, CLK_WORDCOUNT, "SPI Clock Ctrl", verbose);
+  volatile uint32_t *clk_ptr = map_pl_reg(CLK_DEV, verbose);
   if (clk_ptr == NULL) {
     fprintf(stderr, "Failed to map SPI clock control memory region.\n");
     exit(EXIT_FAILURE);

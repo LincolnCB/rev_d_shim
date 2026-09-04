@@ -9,9 +9,11 @@
 struct dac_ctrl_t create_dac_ctrl(bool verbose) {
   struct dac_ctrl_t dac_ctrl;
 
-  // Map DAC FIFO for each board
+  // Map each board's DAC FIFO by its pl-reg /dev node
   for (int board = 0; board < 8; board++) {
-    dac_ctrl.buffer[board] = map_32bit_memory(DAC_FIFO(board), 1, "DAC FIFO", verbose);
+    char dev_path[32];
+    snprintf(dev_path, sizeof(dev_path), DAC_FIFO_DEV_FMT, board);
+    dac_ctrl.buffer[board] = map_pl_reg(dev_path, verbose);
     if (dac_ctrl.buffer[board] == NULL) {
       fprintf(stderr, "Failed to map DAC FIFO access for board %d\n", board);
       exit(EXIT_FAILURE);

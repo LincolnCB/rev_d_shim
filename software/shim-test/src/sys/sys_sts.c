@@ -12,7 +12,7 @@ struct sys_sts_t create_sys_sts(bool verbose) {
   struct sys_sts_t sys_sts;
 
   // Map system status register
-  volatile uint32_t *sys_sts_ptr = map_32bit_memory(SYS_STS, SYS_STS_WORDCOUNT, "System Status", verbose);
+  volatile uint32_t *sys_sts_ptr = map_pl_reg(SYS_STS_DEV, verbose);
   if (sys_sts_ptr == NULL) {
     fprintf(stderr, "Failed to map system status memory region.\n");
     exit(EXIT_FAILURE);
@@ -538,7 +538,7 @@ struct hw_manager_irq_data {
 // Thread function to monitor hardware manager interrupt
 static void *hw_manager_irq_thread_func(void *arg) {
   struct hw_manager_irq_data *irq_data = (struct hw_manager_irq_data *)arg;
-  const char *uio_path = "/dev/uio0"; // Hardware manager interrupt is uio0
+  const char *irq_path = "/dev/hw_manager_irq"; // pl-irq-shim node for the hw_manager interrupt
   int fd;
   uint32_t irq_count;
   uint32_t clear_value = 1;
@@ -547,15 +547,15 @@ static void *hw_manager_irq_thread_func(void *arg) {
     printf("Hardware manager interrupt monitor thread started\n");
   }
 
-  // Open the UIO device for hardware manager interrupt
-  fd = open(uio_path, O_RDWR);
+  // Open the pl-irq device for the hardware manager interrupt
+  fd = open(irq_path, O_RDWR);
   if (fd < 0) {
-    perror("Failed to open hardware manager UIO device (/dev/uio0)");
+    perror("Failed to open hardware manager interrupt device (/dev/hw_manager_irq)");
     pthread_exit(NULL);
   }
 
   if (irq_data->verbose) {
-    printf("Opened UIO device: %s\n", uio_path);
+    printf("Opened interrupt device: %s\n", irq_path);
   }
 
   // Clear any pending interrupt at startup
@@ -599,7 +599,7 @@ static void *hw_manager_irq_thread_func(void *arg) {
         printf("Hardware still running - continuing interrupt monitoring\n");
       }
     } else {
-      perror("Failed to read from UIO device");
+      perror("Failed to read from interrupt device");
       break; // Exit on read error
     }
   }

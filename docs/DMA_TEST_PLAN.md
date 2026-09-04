@@ -79,44 +79,78 @@ Result: `[PASS]` 2026-09-04 -- datapath behaves as before the port.
 
 Note: `pl-reg` and `pl-irq` load here but bind nothing yet -- no node carries their compatible until step 3 (register windows) and step 4 (the hw_manager interrupt). Their real bring-up checks live in those steps below.
 
-### Step 3 -- Register windows onto pl-reg (map_memory.c migration)
+### Step 3 -- Register windows onto pl-reg-shim (map_memory.c migration)
 
-To be filled in when step 3 lands. Expected checks:
+`pl-reg-shim` binds this project's four register cores and publishes each window as a short-named `/dev` node; the shim programs open those nodes instead of `/dev/mem`.
 
-**1.3.a -- Each addressed PL block appears as a named /dev node (target).**
-Expect: `/dev/<label>` misc devices named from the Vivado instance labels, one per register window that `map_memory.c` used to reach through `/dev/mem`, each mode `0666`. Enumerate against the block design's addressed IPs.
-Result: `[ ]`
+**1.3.a -- Each register window appears as a short-named /dev node (target).**
+Run:
+```bash
+ls -l /dev/sys_ctrl /dev/sys_sts /dev/spi_clk /dev/trig_fifo /dev/dac_fifo_* /dev/adc_fifo_*
+dmesg | grep pl-reg-shim
+```
+Expect: every node present, mode `crw-rw-rw-` (0666). `dmesg` shows one `/dev/<name> ready (mode 0666): 0x... size 0x..., compatible "xlnx,..."` line per bound window -- `sys_ctrl` (`xlnx,axi-sys-ctrl-1.0`), `sys_sts` (`axi-sts-register`), `spi_clk` (`axi-clock-timing-snoop`), and one `dac_fifo_<b>` / `adc_fifo_<b>` per board plus `trig_fifo` (all `axi-fifo-bridge`). The count of `dac_fifo_*` / `adc_fifo_*` equals the board count in the bitstream.
+Result: `[PASS]` 2026-09-04 -- all 12 windows bound at 0666 with the intended base/size/compatible; this was a 4-board bitstream, so `dac_fifo_0..3` / `adc_fifo_0..3` + the 3 singletons + `trig_fifo`.
 
 **1.3.b -- The tools run fully non-root (target).**
-Expect: `shim-test` / `waveform` / `static-shims` / `status` open their register windows as a normal user, no `/dev/mem`, no permission error.
+Run: as a normal user (no sudo), run a read-only tool that maps the windows, e.g.
+```bash
+status
+```
+Expect: it initializes and prints without a permission error and without touching `/dev/mem` (`grep /dev/mem` of the tools finds nothing). A wrong or missing node would fail loudly at `open()` with `ENOENT` instead of reading a stale address.
+Result: `[PASS]` 2026-09-04 -- `status` ran as a normal user, no sudo, no permission error.
+
+**1.3.c -- Register reads are sensible and match the pre-port build (target).**
+Run:
+```bash
+status
+```
+Expect: the values read back through the `pl-reg-shim` nodes match a known-good `/dev/mem` build -- a valid hardware-state code, a reported SPI clock near the configured frequency, sane FIFO status -- i.e. the datapath reads identically, just through named nodes.
+Result: `[PASS]` 2026-09-04 -- state `Idle`, SPI clock reads 30.000 MHz (matches `spi_clk_freq_mhz` in the block design), boards 0-3 `Present: Yes` / 4-7 `Present: No` (matches the 4-board bitstream). The `spi_clk` window (0x800) reading the right frequency confirms the mapping is byte-correct.
+
+Note: `status` reads per-board FIFO state through the `sys_sts` register, so it does not open the per-board `dac_fifo_<b>` / `adc_fifo_<b>` nodes and runs fine on a partial-board bitstream. The tools that do map those nodes (`shim-test`'s DAC/ADC commands, `waveform`) will fail loudly at `open()` for an absent board, given the hardcoded `board < 8` loop.
+
+Note: `pl-irq-shim` still binds nothing at this step -- the `hw_manager_irq` node is `generic-uio` until step 4 -- so `/dev/hw_manager_irq` does not exist yet and the interrupt still arrives on `/dev/uio0`. That is expected here, not a failure.
+
+### Step 4 -- The hw_manager interrupt onto pl-irq-shim (sys_sts.c migration)
+
+The `hw_manager_irq` dtsi node is retagged `zynq-toolbox,pl-irq-shim`, `sys_sts.c`'s monitor opens `/dev/hw_manager_irq` instead of `/dev/uio0`, and the now-dead `uio_pdrv_genirq.of_id` bootarg is dropped from the kernel command line.
+
+**1.4.a -- The interrupt node is present, non-root, and /dev/uio0 is gone (target).**
+Run:
+```bash
+ls -l /dev/hw_manager_irq
+dmesg | grep pl-irq-shim
+ls -l /dev/uio0    # expect: No such file or directory
+```
+Expect: `/dev/hw_manager_irq` present at `crw-rw-rw-` (0666); `dmesg` shows `/dev/hw_manager_irq ready (mode 0666): irq <n>, compatible "zynq-toolbox,pl-irq-shim"`. `/dev/uio0` no longer exists (generic-uio fully retired -- the bootarg is gone).
+Result: `[PASS]` 2026-09-04 -- `/dev/hw_manager_irq` at 0666, `pl-irq-shim` bound (irq 49, `zynq-toolbox,pl-irq-shim`), `/dev/uio0` absent.
+
+**1.4.b -- The interrupt is delivered non-root and wakes the monitor (target).**
+Run: as a normal user (no sudo), run a workflow that arms `hw_manager` and then causes an interrupt (a normal run that reaches a state change, or an injected fault/shutdown).
+Expect: the monitor thread reports the interrupt and the decoded hardware status once per event, then re-arms and blocks again (or exits cleanly when the state leaves `S_RUNNING`). No permission error, no spin/storm of repeated prints.
 Result: `[ ]`
 
-**1.3.c -- Register reads match the old path (target).**
-Expect: a spot-check of known registers (e.g. a status/ID word) reads the same value through the `pl-reg` node as it did through `/dev/mem`.
-Result: `[ ]`
-
-### Step 4 -- The hw_manager interrupt onto pl-irq (sys_sts.c migration)
-
-To be filled in when step 4 lands. Expected checks:
-
-**1.4.a -- The interrupt is delivered non-root through the pl-irq node (target).**
-Expect: the `hw_manager` interrupt arrives via its `/dev/<label>` pl-irq device (replacing `/dev/uio0`), readable/pollable by a normal user; a deliberate status change wakes a `poll()`/`read()`.
-Result: `[ ]`
-
-**1.4.b -- Re-arm works and there is no interrupt storm (target).**
-Expect: after handling, re-arming (`write` of 1) re-enables delivery; a level-triggered line does not refire until the source is cleared.
+**1.4.c -- Re-arm works and there is no interrupt storm (target).**
+Expect: after handling, the monitor's `write(fd, 1)` re-enables delivery; the line does not refire until the source changes again -- the loop blocks in `read()` rather than busy-looping.
 Result: `[ ]`
 
 ### Step 5 -- Boot-script permissions on the udmabuf nodes
 
-To be filled in when step 5 lands. Expected checks:
+`boot_script.sh` (installed as an `/etc/init.d` service) `chmod 0666`s `/dev/udmabuf*` and the `u-dma-buf` `sync_*` sysfs controls, which come up root-owned (`/dev` 0600, sysfs 0664) with no mode knob.
 
 **1.5.a -- The udmabuf nodes and their sync controls are world-accessible (target).**
-Expect: after the boot service runs, `/dev/udmabuf0` and `/dev/udmabuf1` are mode `0666`, and the `sync_for_cpu` / `sync_for_device` sysfs files under `/sys/class/u-dma-buf/udmabuf*/` are writable by a normal user.
-Result: `[ ]`
+Run:
+```bash
+ls -l /dev/udmabuf0 /dev/udmabuf1
+ls -l /sys/class/u-dma-buf/udmabuf0/sync_for_device /sys/class/u-dma-buf/udmabuf0/sync_for_cpu
+test -w /sys/class/u-dma-buf/udmabuf1/sync_for_device && echo "udmabuf1 sync writable"
+```
+Expect: both `/dev/udmabuf*` at `crw-rw-rw-` (0666); the `sync_for_device` / `sync_for_cpu` sysfs files `-rw-rw-rw-` (0666); the `test -w` prints its line. Without the boot script these are 0600 / 0664 and a non-root `sync` fails `EACCES`.
+Result: `[PASS]` 2026-09-04 -- `/dev/udmabuf0`/`1` at 0666, `sync_for_device`/`sync_for_cpu` at 0666, `udmabuf1` sync writable.
 
 **1.5.b -- A non-root program can map and sync a buffer end to end (target).**
-Expect: open `/dev/udmabuf0`, `mmap` it, write a pattern, `sync_for_device`, read back, `sync_for_cpu`, all as a normal user with no error.
+Expect: as a normal user, `open` `/dev/udmabuf0`, `mmap` it, write a pattern, `sync_for_device`, read back, `sync_for_cpu`, all with no error. Fully exercised by the Stage 3 DMA software; until then, 1.5.a's permission checks are the proxy.
 Result: `[ ]`
 
 ### Stage 1 exit

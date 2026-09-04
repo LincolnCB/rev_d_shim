@@ -8,9 +8,8 @@
 struct sys_sts_t;
 
 //////////////////// SPI Clock Control Definitions ////////////////////
-//// SPI clock control
-#define CLK_BASE            (uint32_t) 0x40200000
-#define CLK_WORDCOUNT       (uint32_t) 2048 * 4 // Size in 32-bit words. 2048 bytes * 4 bytes per word
+//// SPI clock control device node (pl-reg-shim)
+#define CLK_DEV             "/dev/spi_clk"
 //// 32-bit offsets within the SPI_CLK interface
 // Reset register
 // To activate software reset, the value 0x0000_000A must be written to the register. 

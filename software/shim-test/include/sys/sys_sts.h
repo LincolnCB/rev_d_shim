@@ -6,9 +6,8 @@
 #include <pthread.h>
 
 //////////////////// System Status Definitions ////////////////////
-// Status register
-#define SYS_STS           (uint32_t) 0x40100000
-#define SYS_STS_WORDCOUNT (uint32_t) 73 // Size in 32-bit words
+// Status register device node (pl-reg-shim)
+#define SYS_STS_DEV       "/dev/sys_sts"
 // 32-bit offsets within the status register
 #define HW_STS_REG_OFFSET (uint32_t) 0 // Hardware status register
 // Command FIFO status offset for DAC board (in 32-bit words)

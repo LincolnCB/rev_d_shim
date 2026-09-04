@@ -5,8 +5,8 @@
 #include <stdbool.h>
 
 //////////////////// Trigger Control Definitions ////////////////////
-// Trigger FIFO address
-#define TRIG_FIFO                 (uint32_t) 0x80100000
+// Trigger FIFO device node (pl-reg-shim)
+#define TRIG_FIFO_DEV             "/dev/trig_fifo"
 
 // Trigger FIFO depths
 #define TRIG_CMD_FIFO_WORDCOUNT   (uint32_t)(1 << 10) // 1024 words (2^10)

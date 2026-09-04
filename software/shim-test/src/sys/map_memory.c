@@ -1,51 +1,37 @@
+#include <errno.h> // For errno
 #include <fcntl.h> // For open function
-#include <inttypes.h> // For PRIx32 format specifier
-#include <stdint.h> // For uint32_t type
 #include <stdbool.h> // For bool type
-#include <stdio.h> // For printf and perror functions
-#include <stdlib.h> // For exit function and NULL definition etc.
+#include <stdint.h> // For uint32_t type
+#include <stdio.h> // For printf and fprintf functions
+#include <string.h> // For strerror function
 #include <sys/mman.h> // For mmap function
-#include <unistd.h> // For sysconf function
+#include <unistd.h> // For sysconf and close functions
 
-// Map a 32-bit memory region
-uint32_t *map_32bit_memory(uint32_t base_addr, size_t wordcount, char *name, bool verbose) {
+// Map a pl-reg register window by its /dev node (see map_memory.h)
+uint32_t *map_pl_reg(const char *dev_path, bool verbose) {
 
-  if (verbose) {
-    printf("Mapping memory region [%s] at base address 0x%08" PRIx32 " with size %zu bytes...\n", name, base_addr, wordcount * 4);
-  }
+  if (verbose) printf("Mapping register window [%s]...\n", dev_path);
 
-  // File descriptor for /dev/mem
-  int dev_mem_fd;
-
-  // Open /dev/mem to access physical memory
-  if (verbose) printf("Opening /dev/mem...\n");
-  if((dev_mem_fd = open("/dev/mem", O_RDWR)) < 0) {
-    perror("open");
+  // pl-reg-shim publishes each node mode 0666, so no root is needed
+  int fd = open(dev_path, O_RDWR);
+  if (fd < 0) {
+    fprintf(stderr, "Failed to open %s: %s\n", dev_path, strerror(errno));
     return NULL;
   }
 
-  // Calculate the page size and the number of pages needed
+  // Each pl-reg node exposes exactly one window, mapped at offset 0. Every
+  // register window in this design fits in a page, so one page always covers it.
   long page_size = sysconf(_SC_PAGESIZE);
-  size_t num_pages = ((wordcount * 4) + page_size - 1) / page_size; // Round up to the nearest page
-
-  // Map the memory region
-  if (verbose) printf("Mapping %zu pages of size %ld bytes...\n", num_pages, page_size);
-  uint32_t *mapped_memory = (uint32_t *)mmap(NULL, num_pages * page_size, PROT_READ | PROT_WRITE, MAP_SHARED, dev_mem_fd, base_addr);
-
-  // Check if the mapping was successful
-  if (mapped_memory == MAP_FAILED) {
-    perror("mmap");
-    close(dev_mem_fd);
+  void *mapped = mmap(NULL, page_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  if (mapped == MAP_FAILED) {
+    fprintf(stderr, "mmap of %s failed: %s\n", dev_path, strerror(errno));
+    close(fd);
     return NULL;
   }
 
-  if (verbose) {
-    printf("Memory region %s mapped", name);
-  }
+  // The mapping outlives the fd
+  close(fd);
 
-  // Close the file descriptor for /dev/mem
-  close(dev_mem_fd);
-
-  // Return the pointer to the mapped memory region
-  return mapped_memory;
+  if (verbose) printf("Register window %s mapped\n", dev_path);
+  return (uint32_t *)mapped;
 }

@@ -24,8 +24,8 @@ typedef enum {
 } dac_ldac_mode_t;
 
 //////////////////// DAC Control Definitions ////////////////////
-// DAC FIFO address
-#define DAC_FIFO(board)    (0x80000000 + (board) * 0x10000)
+// DAC FIFO device node (pl-reg-shim, one per board)
+#define DAC_FIFO_DEV_FMT   "/dev/dac_fifo_%d"
 
 // DAC FIFO depths
 #define DAC_CMD_FIFO_WORDCOUNT   (uint32_t)(1 << 13) // 8192 words (2^13)

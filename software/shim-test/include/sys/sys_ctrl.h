@@ -5,12 +5,11 @@
 #include <stdbool.h>
 
 //////////////////// Mapped Memory Definitions ////////////////////
-// AXI interface addresses
-// Addresses are defined in the hardware design Tcl file
+// PL register windows are reached through pl-reg-shim /dev nodes, named from the
+// Vivado instance labels in the hardware design (no root, no hardcoded address).
 
-// System control and configuration register
-#define SYS_CTRL_BASE             (uint32_t) 0x40000000
-#define SYS_CTRL_WORDCOUNT        (uint32_t) 10 // Size in 32-bit words
+// System control and configuration register device node
+#define SYS_CTRL_DEV              "/dev/sys_ctrl"
 // 32-bit offsets within the system control and configuration register
 #define CTRL_ENABLE_OFFSET        (uint32_t) 0
 #define POWER_ENABLE_OFFSET       (uint32_t) 1
