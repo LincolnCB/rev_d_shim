@@ -9,8 +9,11 @@
 struct dac_ctrl_t create_dac_ctrl(bool verbose) {
   struct dac_ctrl_t dac_ctrl;
 
-  // Map each board's DAC FIFO by its pl-reg /dev node
-  for (int board = 0; board < 8; board++) {
+  // Boards absent from this bitstream keep a NULL mapping
+  for (int board = 0; board < MAX_BOARDS; board++) dac_ctrl.buffer[board] = NULL;
+
+  // Map each present board's DAC FIFO by its pl-reg /dev node
+  for (int board = 0; board < board_count(); board++) {
     char dev_path[32];
     snprintf(dev_path, sizeof(dev_path), DAC_FIFO_DEV_FMT, board);
     dac_ctrl.buffer[board] = map_pl_reg(dev_path, verbose);

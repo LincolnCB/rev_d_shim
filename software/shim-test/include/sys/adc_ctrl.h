@@ -67,7 +67,7 @@ typedef enum {
 
 // ADC control structure
 struct adc_ctrl_t {
-  volatile uint32_t *buffer[8];  // ADC FIFO (command and data)
+  volatile uint32_t *buffer[MAX_BOARDS];  // ADC FIFO (command and data)
 };
 
 // Function declarations

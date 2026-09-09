@@ -6,6 +6,7 @@
 #include <string.h> // For strerror function
 #include <sys/mman.h> // For mmap function
 #include <unistd.h> // For sysconf and close functions
+#include "map_memory.h"
 
 // Map a pl-reg register window by its /dev node (see map_memory.h)
 uint32_t *map_pl_reg(const char *dev_path, bool verbose) {
@@ -34,4 +35,23 @@ uint32_t *map_pl_reg(const char *dev_path, bool verbose) {
 
   if (verbose) printf("Register window %s mapped\n", dev_path);
   return (uint32_t *)mapped;
+}
+
+// Discover how many boards are present in the running bitstream (see map_memory.h)
+int board_count(void) {
+  static int cached = -1;
+  if (cached >= 0) return cached;
+
+  int count = 0;
+  // The first absent dac_fifo node ends the count. This path must track
+  // DAC_FIFO_DEV_FMT in dac_ctrl.h.
+  for (int board = 0; board < MAX_BOARDS; board++) {
+    char dev_path[32];
+    snprintf(dev_path, sizeof(dev_path), "/dev/dac_fifo_%d", board);
+    if (access(dev_path, F_OK) != 0) break;
+    count++;
+  }
+
+  cached = count;
+  return count;
 }

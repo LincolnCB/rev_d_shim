@@ -9,8 +9,11 @@
 struct adc_ctrl_t create_adc_ctrl(bool verbose) {
   struct adc_ctrl_t adc_ctrl;
 
-  // Map each board's ADC FIFO by its pl-reg /dev node
-  for (int board = 0; board < 8; board++) {
+  // Boards absent from this bitstream keep a NULL mapping
+  for (int board = 0; board < MAX_BOARDS; board++) adc_ctrl.buffer[board] = NULL;
+
+  // Map each present board's ADC FIFO by its pl-reg /dev node
+  for (int board = 0; board < board_count(); board++) {
     char dev_path[32];
     snprintf(dev_path, sizeof(dev_path), ADC_FIFO_DEV_FMT, board);
     adc_ctrl.buffer[board] = map_pl_reg(dev_path, verbose);

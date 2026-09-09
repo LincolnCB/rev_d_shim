@@ -86,7 +86,7 @@ typedef enum {
 
 // DAC control structure
 struct dac_ctrl_t {
-  volatile uint32_t *buffer[8];  // DAC FIFO (command and data)
+  volatile uint32_t *buffer[MAX_BOARDS];  // DAC FIFO (command and data)
 };
 
 // Function declarations

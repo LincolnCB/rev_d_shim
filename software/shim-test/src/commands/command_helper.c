@@ -38,10 +38,10 @@ uint32_t parse_value(const char* str, char** endptr) {
     return (uint32_t)strtol(arg, endptr, 0); // Handles 0x, decimal, octal
   }
 }
-// Validate and parse board number (0-7)
+// Validate and parse board number against the boards present in this bitstream
 int parse_board_number(const char* str) {
   int board = atoi(str);
-  if (board < 0 || board > 7) {
+  if (board < 0 || board >= board_count()) {
     return -1;
   }
   return board;
@@ -140,18 +140,19 @@ int parse_trigger_mode(const char* mode_str, const char* value_str, bool* is_tri
 int validate_board_number(const char* board_str) {
   int board = parse_board_number(board_str);
   if (board == -1) {
-    printf("Error: Invalid board number '%s'. Must be 0-7.\n", board_str);
+    printf("Error: Invalid board number '%s'. Must be 0 to %d.\n", board_str, board_count() - 1);
     return -1;
   }
   return board;
 }
 
-// Validate channel number (0-63) and return board and channel, or -1 on error
+// Validate channel number and return board and channel, or -1 on error
 int validate_channel_number(const char* channel_str, int* board, int* channel) {
   char* endptr;
   int ch = strtol(channel_str, &endptr, 10);
-  if (*endptr != '\0' || ch < 0 || ch > 63) {
-    printf("Error: Invalid channel number '%s'. Must be 0-63.\n", channel_str);
+  int max_ch = board_count() * 8 - 1;  // 8 channels per board, absent boards excluded
+  if (*endptr != '\0' || ch < 0 || ch > max_ch) {
+    printf("Error: Invalid channel number '%s'. Must be 0 to %d.\n", channel_str, max_ch);
     return -1;
   }
   *board = ch / 8;
