@@ -163,7 +163,82 @@ Result: `[ ]`
 
 ## Stage 2 -- PL datapath (MCDMA plus routing), mmap path preserved
 
-To be filled in as Stage 2 lands. Acceptance criteria from the plan, to turn into concrete checks:
+Stage 2 is built in sub-steps, each leaving a working, testable tree. Stage 2a
+lands the MCDMA engine, the 64-bit HP0 memory path, and its non-root control
+window, with the 16 streams wired as a per-channel loopback so the engine can be
+brought up byte-exact before the real SPI datapath is rewired onto it (2b) and
+the completion/error interrupts are folded into `hw_manager` (2c). The existing
+mmap FIFO datapath is untouched in 2a.
+
+### Stage 2a -- MCDMA engine, HP0, control window (loopback bring-up)
+
+**2a.1 -- The block design builds with the MCDMA, HP0, and control window (host).**
+Run (from the built project under `tmp/snickerdoodle_black/1.0/rev_d_shim`):
+```bash
+# MCDMA parameters
+find . -path '*system_mcdma_0*' -name '*.xci' | head -1 | xargs grep -iE 'c_num_mm2s_channels|c_num_s2mm_channels|c_sg_length_width|c_m_axi_(mm2s|s2mm)_data_width'
+# packet-atomic mux + its TDEST window; per-channel demux routing
+find . -path '*system_s2mm_mux_0*'  -name '*.xci' | head -1 | xargs grep -iE 'HAS_TLAST|ARB_ON_TLAST|ARB_ON_MAX_XFERS|M00_AXIS_(BASE|HIGH)TDEST'
+find . -path '*system_mm2s_demux_0*' -name '*.xci' | head -1 | xargs grep -iE 'M0[0-3]_AXIS_(BASE|HIGH)TDEST'
+# HP0 enabled on the PS
+find . -path '*system_ps_0*' -name '*.xci' | head -1 | xargs grep -i 'PCW_USE_S_AXI_HP0'
+```
+Expect: the build completes; MCDMA has 4 MM2S + 4 S2MM channels (== `board_count`), 23-bit SG length, 64-bit MM2S/S2MM data; the `s2mm_mux` has `HAS_TLAST=1`, `ARB_ON_TLAST=1`, `ARB_ON_MAX_XFERS=1024`, and its single MI window spans `[0x0, 0x3]`; the `mm2s_demux` routes M00..M03 to TDEST 0..3; `PCW_USE_S_AXI_HP0=1`. The sixteen `introut` lines are left unconnected in 2a (benign unconnected-output warnings, not errors).
+Result: `[PASS]` 2026-09-08 -- all values as intended (mcdma 4+4, sg 23-bit, 64-bit masters; mux HAS_TLAST/ARB_ON_TLAST/1024 + window [0,3]; demux 0..3; HP0 enabled). Whole-design synthesis fits: 33,410 LUT (~63% of 53,200) at 4 boards, DMA infra ~11k (mcdma 6,156 + HP0 SmartConnect 4,402 + demux/mux/loop-fifos ~0.5k).
+
+**2a.2 -- The MCDMA node is retagged for pl-reg-shim in the device tree (host).**
+Run:
+```bash
+dtc -I dtb -O dts tmp/snickerdoodle_black/1.0/rev_d_shim/petalinux/images/linux/system.dtb 2>/dev/null | grep -iB1 -A5 'axi_mcdma@40400000'
+```
+Expect: the `axi_mcdma@40400000` node carries `compatible = "zynq-toolbox,mcdma-userspace"` (the private string that keeps the in-kernel Xilinx driver off it, overriding the auto `xlnx,axi-mcdma-1.2`), the node keeps its `mcdma` label so `pl-reg-shim` names it `/dev/mcdma`, and `pl-reg-shim`'s match table lists that compatible.
+Result: `[PASS]` 2026-09-08 -- the final `system.dtb` shows `axi_mcdma@40400000` with `compatible = "zynq-toolbox,mcdma-userspace"` and `reg = <0x40400000 0x10000>`; `__symbols__` maps `mcdma` to the node, so the `pl-reg-shim` label lookup resolves to `/dev/mcdma`.
+
+**2a.3 -- pl-reg-shim binds the MCDMA control window non-root (target).**
+Run:
+```bash
+dmesg | grep -i 'mcdma'
+ls -l /dev/mcdma
+```
+Expect: `pl-reg-shim` reports `/dev/mcdma ready (mode 0666) ... compatible "zynq-toolbox,mcdma-userspace"`; `/dev/mcdma` is present at mode 0666 (world-rw, no root).
+Result: `[ ]`
+
+**2a.4 -- Byte-exact MCDMA loopback round-trip, non-root (target).**
+Run:
+```bash
+mcdma-loopback
+mcdma-loopback 1        # a single non-zero channel alone, to isolate the mux
+```
+Expect: every channel reports `ok  received 2048/2048 bytes`, then `All channels round-tripped.`, with no root and no data-mismatch lines. A single-channel run also round-trips. This proves the engine, the HP0 64-bit path, the TDEST demux/mux routing, and non-root control together. (The channel count must match the built `board_count`; on the 4-board bitstream that is channels 0-3.)
+Result: `[ ]`
+
+**2a.5 -- The existing SPI datapath is unchanged (target).**
+Run:
+```bash
+status
+```
+Expect: same output as a pre-2a build -- state `Idle`, SPI clock correct, boards present as built. Adding the MCDMA on GP0/HP0 does not disturb the GP1 mmap FIFO path.
+Result: `[ ]`
+
+**Next step -- on-target Stage 2a bring-up.** The host checks (2a.1, 2a.2) pass
+from the build artifacts, so the design and device tree are correct. The
+remaining Stage 2a work is a boot on the snickerdoodle black to run the three
+target checks, in order: 2a.3 (`/dev/mcdma` binds non-root -- `dmesg | grep -i
+mcdma` and `ls -l /dev/mcdma`), 2a.4 (`mcdma-loopback` byte-exact on all four
+channels, then `mcdma-loopback 1` alone), and 2a.5 (`status` shows the SPI
+datapath unchanged). If 2a.4 round-trips, the MCDMA engine, the HP0 64-bit path,
+the TDEST demux/mux routing, and non-root control are all proven in the rev_d
+context, and Stage 2b (the real per-board datapath: MM2S demux, S2MM
+packet-atomic mux, the new ADC packetizer core, the `axis_fifo_bridge` adapters,
+and the per-board `datapath_mode` mux/gating in `axi_sys_ctrl`, defaulting to
+mmap) can begin. If a channel fails, the `mcdma-loopback` failure dump (per-`dst`
+head bytes, per-channel MCDMA status) tells starvation (all-zero `dst`) apart
+from misrouting (another channel's high byte in `dst`).
+
+### Stage 2b/2c acceptance criteria
+
+To be turned into concrete checks as the real datapath (2b) and the interrupt
+fold (2c) land. From the plan:
 
 - Byte-exact loopback-style transfer on the DMA-driven FIFOs (a known pattern pushed MM2S through the DAC-command FIFO and/or captured S2MM from the ADC-data FIFO comes back identical).
 - The mmap fallback still works with a board's `datapath_mode` bit set to PS -- the same tools, same result, on the un-migrated path.

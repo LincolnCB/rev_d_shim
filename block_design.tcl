@@ -164,6 +164,7 @@ cell xilinx.com:ip:xlconstant:1.1 const_1 {
 
 ### Create processing system
 # Enable M_AXI_GP0 and M_AXI_GP1
+# Enable S_AXI_HP0 as the 64-bit memory path to DDR for the MCDMA
 # Enable UART1 on the correct MIO pins
 # UART1 baud rate 921600
 # Pullup for UART1 RX
@@ -178,6 +179,7 @@ init_ps ps {
   PCW_USE_M_AXI_GP0 1
   PCW_USE_M_AXI_GP1 1
   PCW_USE_S_AXI_ACP 0
+  PCW_USE_S_AXI_HP0 1
   PCW_UART1_PERIPHERAL_ENABLE 1
   PCW_UART1_UART1_IO {MIO 36 .. 37}
   PCW_UART1_BAUD_RATE 921600
@@ -195,6 +197,7 @@ init_ps ps {
 } {
   M_AXI_GP0_ACLK ps/FCLK_CLK0
   M_AXI_GP1_ACLK ps/FCLK_CLK0
+  S_AXI_HP0_ACLK ps/FCLK_CLK0
 }
 
 ## PS clock reset core
@@ -207,7 +210,7 @@ cell xilinx.com:ip:proc_sys_reset:5.0 ps_rst {} {
 ### AXI Smart Connect
 cell xilinx.com:ip:smartconnect:1.0 sys_cfg_axi_intercon {
   NUM_SI 1
-  NUM_MI 3
+  NUM_MI 4
 } {
   aclk ps/FCLK_CLK0
   S00_AXI ps/M_AXI_GP0
@@ -536,6 +539,130 @@ wire axi_spi_interface/adc_cmd_buf_overflow hw_manager/adc_cmd_buf_overflow
 wire axi_spi_interface/adc_data_buf_underflow hw_manager/adc_data_buf_underflow
 wire axi_spi_interface/trig_cmd_buf_overflow hw_manager/trig_cmd_buf_overflow
 wire axi_spi_interface/trig_data_buf_underflow hw_manager/trig_data_buf_underflow
+
+###############################################################################
+
+### DMA bring-up (Stage 2a): AXI MCDMA with per-channel loopback
+#
+# One MCDMA with `board_count` MM2S (PS->PL) and `board_count` S2MM (PL->PS)
+# channels lands the DDR-backed DMA engine into this design ahead of rewiring the
+# real SPI datapath onto it. Each MM2S channel loops straight back to its own
+# S2MM channel through a small AXIS FIFO, so the engine, the 64-bit HP0 memory
+# path, and non-root register control (/dev/mcdma via pl-reg-shim) can be brought
+# up and validated byte-exact without disturbing the existing mmap FIFO datapath.
+# The routing (TDEST demux -> per-channel FIFO -> packet-atomic TDEST mux) and the
+# MCDMA settings are the ones proven in ex05_dma. Later stages replace this
+# loopback with the real per-board datapath and fold the MCDMA completion/error
+# interrupts into hw_manager (the introut lines are left unconnected here).
+
+## MCDMA memory masters -> DDR over HP0 (payload out, payload in, descriptor fetch)
+cell xilinx.com:ip:smartconnect:1.0 axi_mem_intercon {
+  NUM_SI 3
+  NUM_MI 1
+} {
+  aclk ps/FCLK_CLK0
+  aresetn ps_rst/peripheral_aresetn
+  M00_AXI ps/S_AXI_HP0
+}
+
+## AXI MCDMA: board_count channels per direction.
+# - Memory-map data width 64 (matches HP0); the AXIS stream width is read-only
+#   (derived), 32-bit here. Do not run HP0 in 32-bit mode.
+# - Scatter-gather is mandatory; descriptor rings live in DDR, fetched over M_AXI_SG.
+# - Buffer-length register 23 bits (8 MB/descriptor) so a multi-MB transfer is a
+#   single descriptor instead of a 16 KB-capped chain.
+# - Version 1.2: axi_mcdma:1.1 is not supported on zynq-7020.
+cell xilinx.com:ip:axi_mcdma:1.2 mcdma {
+  c_num_mm2s_channels $board_count
+  c_num_s2mm_channels $board_count
+  c_include_mm2s 1
+  c_include_s2mm 1
+  c_include_sg 1
+  c_sg_length_width 23
+  c_addr_width 32
+  c_m_axi_mm2s_data_width 64
+  c_m_axi_s2mm_data_width 64
+} {
+  s_axi_lite_aclk ps/FCLK_CLK0
+  s_axi_aclk ps/FCLK_CLK0
+  axi_resetn ps_rst/peripheral_aresetn
+  S_AXI_LITE sys_cfg_axi_intercon/M03_AXI
+  M_AXI_MM2S axi_mem_intercon/S00_AXI
+  M_AXI_S2MM axi_mem_intercon/S01_AXI
+  M_AXI_SG   axi_mem_intercon/S02_AXI
+}
+# MCDMA control window on GP0; DDR windows seen by each memory master over HP0.
+addr 0x40400000 64K mcdma/S_AXI_LITE ps/M_AXI_GP0
+addr 0x00000000 1G ps/S_AXI_HP0 mcdma/M_AXI_MM2S
+addr 0x00000000 1G ps/S_AXI_HP0 mcdma/M_AXI_S2MM
+addr 0x00000000 1G ps/S_AXI_HP0 mcdma/M_AXI_SG
+
+## TDEST demux: the MM2S single stream -> per-channel streams (routing per MI below).
+cell xilinx.com:ip:axis_switch:1.1 mm2s_demux {
+  NUM_SI 1
+  NUM_MI $board_count
+  ROUTING_MODE 0
+  TDEST_WIDTH 8
+  DECODER_REG 1
+} {
+  S00_AXIS mcdma/M_AXIS_MM2S
+  aclk ps/FCLK_CLK0
+  aresetn ps_rst/peripheral_aresetn
+}
+
+## Packet-atomic TDEST mux: per-channel streams -> the S2MM single stream.
+# HAS_TLAST is set explicitly so ARB_ON_TLAST takes -- it depends on TLAST being
+# present, so leaving it to propagation makes the tool drop it and the arbiter
+# re-arbitrates every beat (channels 1..n starve). With it set, the arbiter holds
+# a granted SI to TLAST; ARB_ON_MAX_XFERS 1024 is a backstop above the loopback
+# packet size. The MI TDEST decode window spans [0, board_count-1] (0x hex, the
+# IP's bitString format) or it drops every channel but 0; TDEST/TLAST pass through
+# so MCDMA S2MM still demuxes each packet by TDEST.
+cell xilinx.com:ip:axis_switch:1.1 s2mm_mux {
+  NUM_SI $board_count
+  NUM_MI 1
+  ROUTING_MODE 0
+  ARB_ALGORITHM 0
+  ARB_ON_TLAST 1
+  ARB_ON_MAX_XFERS 1024
+  HAS_TLAST 1
+  HAS_ACLKEN 0
+  TDATA_NUM_BYTES 4
+  TDEST_WIDTH 8
+  M00_AXIS_BASETDEST [format 0x%08X 0]
+  M00_AXIS_HIGHTDEST [format 0x%08X [expr {$board_count - 1}]]
+} {
+  M00_AXIS mcdma/S_AXIS_S2MM
+  aclk ps/FCLK_CLK0
+  aresetn ps_rst/peripheral_aresetn
+}
+
+## Per-channel loopback: demux MI i -> AXIS FIFO -> mux SI i, all at TDEST == i.
+for {set i 0} {$i < $board_count} {incr i} {
+  set mi [format M%02d $i]
+  set si [format S%02d $i]
+
+  # Route demux MI i to TDEST == i. Pass 0x-prefixed hex: these bitString params
+  # must not be bare integers, or the derived C_M_AXIS_*TDEST_ARRAY modelparam
+  # rejects any value needing more than one bit.
+  set_property -dict [list \
+    CONFIG.${mi}_AXIS_BASETDEST [format 0x%08X $i] \
+    CONFIG.${mi}_AXIS_HIGHTDEST [format 0x%08X $i]] [get_bd_cells mm2s_demux]
+
+  # Elastic AXIS FIFO carrying channel i's loopback packet (TDEST/TLAST preserved
+  # so S2MM routes each packet back to itself).
+  cell xilinx.com:ip:axis_data_fifo:2.0 dma_loop_fifo_${i} {
+    TDATA_NUM_BYTES 4
+    HAS_TLAST 1
+    TDEST_WIDTH 8
+    FIFO_DEPTH 512
+  } {
+    S_AXIS mm2s_demux/${mi}_AXIS
+    M_AXIS s2mm_mux/${si}_AXIS
+    s_axis_aclk ps/FCLK_CLK0
+    s_axis_aresetn ps_rst/peripheral_aresetn
+  }
+}
 
 ###############################################################################
 

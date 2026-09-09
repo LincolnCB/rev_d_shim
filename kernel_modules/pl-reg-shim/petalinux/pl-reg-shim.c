@@ -274,6 +274,10 @@ static const struct of_device_id pl_reg_of_match[] = {
 	{ .compatible = "xlnx,axi-sts-register-1.0" },       // status_reg   @0x40100000
 	{ .compatible = "xlnx,axi-clock-timing-snoop-1.0" }, // spi_clk_snoop @0x40200000
 	{ .compatible = "xlnx,axi-fifo-bridge-1.0" },        // dac/adc/trig FIFO bridges
+	// The project's device_tree.dtsi retags the MCDMA control window with this
+	// private compatible so no in-kernel driver claims it, letting pl-reg-shim
+	// bind it and publish /dev/mcdma
+	{ .compatible = "zynq-toolbox,mcdma-userspace" },    // mcdma control @0x40400000
 	{ /* sentinel */ },
 };
 MODULE_DEVICE_TABLE(of, pl_reg_of_match);

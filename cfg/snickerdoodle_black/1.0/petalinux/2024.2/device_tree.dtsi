@@ -69,3 +69,17 @@
     interrupts = <0 29 1>;
   };
 };
+
+/* Claim the MCDMA control window for userspace (pl-reg-shim), deterministically.
+ *
+ * PetaLinux's device-tree generator treats axi_mcdma as an AXI-Ethernet DMA
+ * companion: it tags the node xlnx,eth-dma and omits xlnx,addrwidth, so the
+ * mainline xilinx_dma driver matches the generic xlnx,axi-mcdma compatible and
+ * then bails in probe on the missing property -- leaving the binding to a probe
+ * failure. Override the compatible to a private string that only pl-reg-shim
+ * matches, so no in-kernel driver attempts to bind and pl-reg-shim claims the
+ * node cleanly every boot. The node keeps its label (mcdma), so pl-reg-shim
+ * still names the device /dev/mcdma. */
+&mcdma {
+  compatible = "zynq-toolbox,mcdma-userspace";
+};
