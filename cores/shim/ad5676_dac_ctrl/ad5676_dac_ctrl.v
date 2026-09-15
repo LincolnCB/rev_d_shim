@@ -312,8 +312,8 @@ module ad5676_dac_ctrl #(
   always @(posedge clk) begin
     if (!resetn)                                                state <= S_RESET; // Reset to initial state
     else if (error || halt)                                     state <= S_ERROR; // Check for error states
-    else if (state == S_RESET)                                  state <= boot_test_skip ? S_SET_MID : S_INIT; // Skip boot test if requested
-    else if (state == S_INIT)                                   state <= S_TEST_WR; // Transition to TEST_WR first in initialization
+    else if (state == S_RESET)                                  state <= S_INIT; // Always enter INIT; INIT branches on boot_test_skip
+    else if (state == S_INIT)                                   state <= boot_test_skip ? S_SET_MID : S_TEST_WR; // Skip the boot test straight to the midrange write if requested
     else if (state == S_TEST_WR && dac_spi_cmd_done)            state <= S_REQ_RD; // Transition to REQ_RD after writing test value
     else if (state == S_REQ_RD && dac_spi_cmd_done)             state <= S_TEST_RD; // Transition to TEST_RD after requesting read
     else if (state == S_TEST_RD && ~n_miso_data_ready_mosi_clk) state <= boot_readback_match ? S_SET_MID : S_ERROR; // Transition to SET_MID if readback matches, otherwise error
@@ -405,7 +405,7 @@ module ad5676_dac_ctrl #(
   // Delay too short if delay timer is zero before DAC write is done, or if loading delay timer with a value below the minimum
   assign err_delay_too_short_w    = (state == S_DAC_WR && !dac_wr_done && !wait_for_trig && delay_wait_done)
                                      || (do_next_cmd
-                                         && ((command == CMD_DAC_WR) || (command == CMD_NO_OP))
+                                         && (command == CMD_DAC_WR)
                                          && !cmd_word[TRIG_BIT]
                                          && (cmd_word[24:0] < min_delay_latched));
   // Pre-delay too long if minimum delay passes while still in the PRE_DELAY state (should have transitioned to DAC_WR)
@@ -678,9 +678,9 @@ module ad5676_dac_ctrl #(
       mosi_shift_reg <= {mosi_shift_reg[22:0], 1'b0};
       mosi_prepped <= 1'b0;
     end
-    // If just exiting reset load the shift register with the test value for boot-up sequence
+    // In INIT, prep the first SPI word: the boot-test write, or the first midrange write when the boot test is skipped
     else if (state == S_INIT) begin
-      mosi_shift_reg <= spi_write_cmd(1, DAC_TEST_CH, DAC_TEST_VAL);
+      mosi_shift_reg <= boot_test_skip ? spi_write_cmd(0, 0, cal_midrange[0]) : spi_write_cmd(1, DAC_TEST_CH, DAC_TEST_VAL);
       mosi_prepped <= 1'b1;
     // If finished with the test write, load the shift register with the read request
     end else if (state == S_TEST_WR && dac_spi_cmd_done) begin
@@ -690,8 +690,8 @@ module ad5676_dac_ctrl #(
     end else if (state == S_REQ_RD && dac_spi_cmd_done) begin
       mosi_shift_reg <= spi_write_cmd(1, DAC_TEST_CH, cal_midrange[DAC_TEST_CH]);
       mosi_prepped <= 1'b1;
-    // When setting channels to midrange (test read done/skipped or CMD_ZERO), load the shift register with the first channel's midrange value
-    end else if ((state == S_TEST_RD && dac_spi_cmd_done) || (state == S_RESET && boot_test_skip) || (do_next_cmd && command == CMD_ZERO)) begin
+    // When setting channels to midrange (boot test read done or CMD_ZERO), load the shift register with the first channel's midrange value
+    end else if ((state == S_TEST_RD && dac_spi_cmd_done) || (do_next_cmd && command == CMD_ZERO)) begin
       mosi_shift_reg <= spi_write_cmd(0, 0, cal_midrange[0]);
       mosi_prepped <= 1'b1;
     // When finished setting midrange values for a channel, load the next until all channels are set

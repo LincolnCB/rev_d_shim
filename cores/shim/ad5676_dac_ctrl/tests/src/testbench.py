@@ -1,4 +1,5 @@
 import cocotb
+import os
 from cocotb.triggers import RisingEdge
 import random
 
@@ -8,7 +9,7 @@ async def setup_testbench(dut, clk_period=4, miso_sck_period=4, time_unit="ns"):
     tb = shim_ad5676_dac_ctrl_base(dut, clk_period, miso_sck_period, time_unit)
     return tb
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_reset(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_reset")
@@ -18,7 +19,7 @@ async def test_reset(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_dac_wr(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_dac_wr")
@@ -40,6 +41,9 @@ async def test_dac_wr(dut):
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
     scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
 
+    # The header sets TRIGGER WAIT, so drive triggers to satisfy the post-write wait
+    trigger_driver_task = cocotb.start_soon(tb.random_trigger_driver())
+
     # Send commands and wait for completion
     await tb.send_commands(cmd_word_list)
     await scoreboard_task
@@ -49,11 +53,12 @@ async def test_dac_wr(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
+    trigger_driver_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_dac_wr_ch(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_dac_wr_ch")
@@ -81,11 +86,11 @@ async def test_dac_wr_ch(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_zero(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_zero")
@@ -113,11 +118,11 @@ async def test_zero(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_noop_trigger_wait(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_noop_trigger_wait")
@@ -148,12 +153,12 @@ async def test_noop_trigger_wait(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
-    trigger_driver_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
+    trigger_driver_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_noop_trigger_wait_no_ldac(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_noop_trigger_wait_no_ldac")
@@ -184,12 +189,12 @@ async def test_noop_trigger_wait_no_ldac(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
-    trigger_driver_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
+    trigger_driver_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_noop_delay(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_noop_delay")
@@ -217,11 +222,11 @@ async def test_noop_delay(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_noop_delay_no_ldac(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_noop_delay_no_ldac")
@@ -249,11 +254,11 @@ async def test_noop_delay_no_ldac(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_set_cal(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_set_cal")
@@ -281,11 +286,11 @@ async def test_set_cal(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_get_cal(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_get_cal")
@@ -313,11 +318,11 @@ async def test_get_cal(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_bad_cmd(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_bad_cmd")
@@ -331,6 +336,9 @@ async def test_bad_cmd(dut):
     cmd_value = 0b110  # Invalid command type
     cmd_word_list = []
     cmd_word_list.append((cmd_value << 29))
+
+    # This test intentionally drives the DUT into S_ERROR.
+    tb.expect_error = True
 
     # Start the command buffer model and scoreboard
     await RisingEdge(dut.clk)
@@ -346,11 +354,11 @@ async def test_bad_cmd(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_cancel(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_cancel")
@@ -381,11 +389,14 @@ async def test_cancel(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()\
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
 
-@cocotb.test()
+# Free-running waveform sim (no pass/fail). Skipped in the automated suite so `make tests`
+# stays bounded; run on demand with RUN_EXAMPLE_SIMS=1 (e.g.
+# RUN_EXAMPLE_SIMS=1 ./scripts/make/test_core.sh rev_d_shim shim ad5676_dac_ctrl).
+@cocotb.test(skip=not os.environ.get("RUN_EXAMPLE_SIMS"))
 async def example_simulation(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: example_simulation")

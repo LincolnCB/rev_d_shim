@@ -21,7 +21,7 @@ import os
             at_least=1)
 
 @CoverPoint("shutdown_sense.shutdown_sense",
-            xf=lambda dut: int(dut.shutdown_sense.value),
+            xf=lambda dut: int(dut.shutdown_sense_o.value),
             bins=[0, 1, 2, 4, 8, 16, 32, 64, 128],
             at_least=1)
 def sample_coverage(dut):

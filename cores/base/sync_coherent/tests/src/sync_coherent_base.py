@@ -2,7 +2,6 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge, ReadOnly, ReadWrite
 import random
-from collections import deque
 
 class sync_coherent_base:
 
@@ -24,9 +23,10 @@ class sync_coherent_base:
         self.dut._log.info(f"DUT Initialized with in_clk_period: {self.in_clk_period} {self.time_unit}")
         self.dut._log.info(f"DUT Initialized with out_clk_period: {self.out_clk_period} {self.time_unit}")
 
-        # Expected data queue
-        self.expected_data_q = deque()
-        self.num_expected_data = 1
+        # Coalesced value streams for the producer/consumer scoreboard, and their sync flag.
+        self.expected_seq = []
+        self.dout_seq = []
+        self.producer_done = False
 
         # Clock tasks
         self.in_clk_task = None
@@ -43,20 +43,20 @@ class sync_coherent_base:
         if self.out_clk_task and self.out_clk_task.done():
             self.out_clk_task = None
 
-        self.in_clk_task = cocotb.start_soon(Clock(self.dut.in_clk, self.in_clk_period, units=self.time_unit).start(start_high=False))
-        self.out_clk_task = cocotb.start_soon(Clock(self.dut.out_clk, self.out_clk_period, units=self.time_unit).start(start_high=False))
+        self.in_clk_task = cocotb.start_soon(Clock(self.dut.in_clk, self.in_clk_period, unit=self.time_unit).start(start_high=False))
+        self.out_clk_task = cocotb.start_soon(Clock(self.dut.out_clk, self.out_clk_period, unit=self.time_unit).start(start_high=False))
         self.dut._log.info("Clocks started.")
 
     async def kill_clocks(self):
         """Kills the running read and write clock tasks."""
         if self.in_clk_task and not self.in_clk_task.done():
-            self.in_clk_task.kill()
+            self.in_clk_task.cancel()
             self.dut._log.info("In clock killed.")
         else:
             self.dut._log.info("In clock task not active or already done.")
 
         if self.out_clk_task and not self.out_clk_task.done():
-            self.out_clk_task.kill()
+            self.out_clk_task.cancel()
             self.dut._log.info("Out clock killed.")
         else:
             self.dut._log.info("Out clock task not active or already done.")
@@ -72,7 +72,7 @@ class sync_coherent_base:
         await RisingEdge(self.dut.in_clk)
         self.dut._log.info("STARTING IN SIDE RESET")
         self.dut.in_resetn.value = 0  # Assert active-low reset
-        self.expected_data_q.clear()  # Clear expected data queue on reset
+        self.expected_seq = []  # Clear expected stream on reset
         await RisingEdge(self.dut.in_clk)
         await RisingEdge(self.dut.in_clk)
         self.dut.in_resetn.value = 1  # Deassert reset
@@ -85,85 +85,66 @@ class sync_coherent_base:
         await RisingEdge(self.dut.out_clk)
         self.dut._log.info("STARTING OUT SIDE RESET")
         self.dut.out_resetn.value = 0  # Assert active-low reset
-        self.expected_data_q.clear()  # Clear expected data queue on reset
+        self.expected_seq = []  # Clear expected stream on reset
         await RisingEdge(self.dut.out_clk)
         await RisingEdge(self.dut.out_clk)
         self.dut.out_resetn.value = 1  # Deassert reset
 
         await ReadOnly()  # Ensure all signals are updated
         assert self.dut.dout.value == self.dut.dout_default.value, "DOUT should be reset to default value."
+        # Leave the ReadOnly phase so coroutines started right after this reset can await ReadOnly.
+        await RisingEdge(self.dut.out_clk)
         self.dut._log.info("OUT SIDE RESET COMPLETE")
 
-    # Does not handle WIDTH parameter while driving!
-    async def static_din_driver_and_monitor(self, cycles=10, initial_data=1, expect_dummy=True):
-        # DUT will always write to the FIFO, even before a valid data we drive comes.
-        # Therefore, first append a dummy value to the expected data queue.
-        if expect_dummy:
-            self.expected_data_q.append(self.MAX_DATA_VALUE)
-        self.num_expected_data = cycles + 1 if expect_dummy else cycles
-
-        for i in range(cycles):
-            await RisingEdge(self.dut.in_clk)
-            data = initial_data + i
-            self.dut.din.value = data
-            self.dut._log.info(f"DIN Driver: Driving din with value {data}.")
-
-            await ReadOnly()
-            if (self.dut.wr_en.value):
-                self.dut._log.info(f"DIN Driver/Monitor: Current din going to expected data queue is {data}.")
-                self.expected_data_q.append(data)
-                self.dut._log.info(f"Expected data queue updated: {list(self.expected_data_q)}")
-                if len(self.expected_data_q) > self.DEPTH:
-                    self.dut._log.warning(f"Expected data queue exceeded depth: {len(self.expected_data_q)}")
-            else:
-                self.dut._log.info(f"DIN Driver/Monitor: wr_en is low, not writing din to expected data queue. wr_en: {self.dut.wr_en.value}")
+    # Drives `cycles` values on din, one per in_clk cycle, and builds the expected COALESCED
+    # stream of values the DUT commits to the FIFO. Consecutive duplicates are merged: the DUT
+    # re-commits the current din whenever the FIFO drains (wr_en's ||empty term), and those
+    # repeats surface on dout as an unchanged value. A value is dropped when the FIFO is full
+    # (wr_en low) and is then absent from both streams. The FIFO is empty right after reset, so
+    # the reset-held din is always the first commit -- seed it.
+    async def static_din_driver_and_monitor(self, cycles=10, initial_data=1):
+        await self._drive_and_record([initial_data + i for i in range(cycles)])
 
     async def random_din_driver_and_monitor(self, cycles=10):
-        # DUT will always write to the FIFO, even before a valid data we drive comes.
-        # Therefore, first append a dummy value to the expected data queue.
-        self.expected_data_q.append(self.MAX_DATA_VALUE)
-        self.num_expected_data = cycles + 1  # Include the initial dummy value
+        await self._drive_and_record([random.randint(0, self.MAX_DATA_VALUE) for _ in range(cycles)])
 
-        for _ in range(cycles):
+    async def _drive_and_record(self, values):
+        self.producer_done = False
+        seed = int(self.dut.din.value)
+        self.expected_seq = [seed]
+        last = seed
+        for v in values:
             await RisingEdge(self.dut.in_clk)
-            data = random.randint(0, self.MAX_DATA_VALUE)
-            self.dut.din.value = data
-            self.dut._log.info(f"DIN Driver: Driving din with value {data}.")
-
+            self.dut.din.value = v
             await ReadOnly()
-            if (self.dut.wr_en.value):
-                self.dut._log.info(f"DIN Driver/Monitor: Current din going to expected data queue is {data}.")
-                self.expected_data_q.append(data)
-                self.dut._log.info(f"Expected data queue updated: {list(self.expected_data_q)}")
-                if len(self.expected_data_q) > self.DEPTH:
-                    self.dut._log.warning(f"Expected data queue exceeded depth: {len(self.expected_data_q)}")
-            else:
-                self.dut._log.info(f"DIN Driver/Monitor: wr_en is low, not writing din to expected data queue. wr_en: {self.dut.wr_en.value}")
-
-        await RisingEdge(self.dut.in_clk)
-        self.dut.din.value = 0  # Reset din to 0 after writing
+            # wr_en is combinational; sampled here it predicts whether the NEXT edge commits v.
+            if int(self.dut.wr_en.value) and v != last:
+                self.expected_seq.append(v)
+                last = v
+        await RisingEdge(self.dut.in_clk)   # let the final predicted write commit
+        self.producer_done = True
 
     async def dout_scoreboard(self):
-        num_expected_data_read = 0
+        # Build the coalesced stream of values seen on dout (one sample per non-empty out read,
+        # consecutive duplicates merged) and compare it to the expected commit stream. fifo_empty
+        # is out_clk-domain and only changes on out_clk edges, so the value read just after one
+        # edge gates the next edge's dout update. One ReadOnly per iteration (cocotb requirement).
+        self.dout_seq = []
+        last = None
+        empty_before = None
         while True:
             await RisingEdge(self.dut.out_clk)
-            # Sample previous fifo_empty value
-            prev_fifo_empty = int(self.dut.fifo_empty.value)
             await ReadOnly()
-
-            if (prev_fifo_empty == 1):
-                self.dut._log.info("Attempted to read dout, but async fifo is empty, will try again later.")
-            else:
-                expected_data = self.expected_data_q.popleft()
-                num_expected_data_read += 1
-                actual_data = int(self.dut.dout.value)
-                self.dut._log.info(f"Expected data: {expected_data}, Actual data: {actual_data}")
-                self.dut._log.info(f"Expected data queue: {list(self.expected_data_q)}")
-                assert actual_data == expected_data, f"Data mismatch: expected {expected_data}, got {actual_data}"
-
-            if num_expected_data_read == self.num_expected_data:
-                self.dut._log.info("All expected data has been read.")
+            if empty_before is False:
+                val = int(self.dut.dout.value)
+                if val != last:
+                    self.dout_seq.append(val)
+                    last = val
+            empty_before = (int(self.dut.fifo_empty.value) == 1)
+            if self.producer_done and len(self.dout_seq) >= len(self.expected_seq):
                 break
+        assert self.dout_seq == self.expected_seq, \
+            f"stream mismatch:\n  expected {self.expected_seq}\n  got      {self.dout_seq}"
 
     async def prev_din_and_wr_en_scoreboard(self):
         while True:
@@ -173,9 +154,9 @@ class sync_coherent_base:
             await ReadOnly()
 
             if prev_fifo_full == 0:
-                assert prev_din_tracker == self.dut.prev_din.value, f"prev_din mismatch: expected {prev_din_tracker}, got {self.dut.prev_din.value}"
+                assert prev_din_tracker == int(self.dut.prev_din.value), f"prev_din mismatch: expected {prev_din_tracker}, got {int(self.dut.prev_din.value)}"
 
-            wr_en_condition = (int(self.dut.din.value) != int(self.dut.prev_din.value) and int(self.dut.fifo_full) == 0) or int(self.dut.fifo_empty) == 1
+            wr_en_condition = (int(self.dut.din.value) != int(self.dut.prev_din.value) and int(self.dut.fifo_full.value) == 0) or int(self.dut.fifo_empty.value) == 1
 
             if wr_en_condition:
                 assert int(self.dut.wr_en.value) == 1, \

@@ -126,8 +126,8 @@ async def test_full_and_empty_conditions(dut):
         await RisingEdge(dut.wr_clk)
         await RisingEdge(dut.rd_clk)
 
-        write_side_flag_checker.kill()
-        read_side_flag_checker.kill()
+        write_side_flag_checker.cancel()
+        read_side_flag_checker.cancel()
         await tb.kill_clocks()
 
 # Test for almost full and almost empty conditions explicitly, filling FIFO to almost full and reading until almost empty
@@ -219,6 +219,6 @@ async def test_fifo_async_simultaneous_read_write(dut):
         await RisingEdge(dut.wr_clk)
         await RisingEdge(dut.rd_clk)
 
-        write_side_flag_checker.kill()
-        read_side_flag_checker.kill()
+        write_side_flag_checker.cancel()
+        read_side_flag_checker.cancel()
         await tb.kill_clocks()

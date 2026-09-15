@@ -367,7 +367,7 @@ module ads816x_adc_ctrl (
   assign err_unexp_trig_w         = (state != S_TRIG_WAIT && state != S_IDLE && trigger && trigger_counter <= 1);
   // Delay too short if delay timer is zero before ADC read is done, or if loading delay timer with a value below the minimum
   assign err_delay_too_short_w    = (do_next_cmd
-                                      && ((command == CMD_ADC_RD) || (command == CMD_NO_OP))
+                                      && (command == CMD_ADC_RD)
                                       && !cmd_word[TRIG_BIT]
                                       && (cmd_word[24:0] < min_delay_latched))
                                      || (state == S_ADC_RD && !adc_rd_done && !wait_for_trig && delay_wait_done);
@@ -523,13 +523,14 @@ module ads816x_adc_ctrl (
       if (!last_adc_word) mosi_shift_reg <= {spi_req_otf_sample_cmd(sample_order[adc_word_idx[2:0]]+1), 8'd0};
       // The last (ninth for this command) word is always channel 0 (dummy read to allow one-cycle MISO delay)
       else if (last_adc_word) mosi_shift_reg <= {spi_req_otf_sample_cmd(3'b0), 8'd0};
-    // When starting a single-channel command, use the channel from the command word
-    end else if ((do_next_cmd && (next_cmd_state == S_ADC_RD_CH))
-                  || ((state == S_ADC_RD_CH) && adc_spi_cmd_done)) begin
-      // The first word uses the channel from the command
-      if (!last_adc_word) mosi_shift_reg <= {spi_req_otf_sample_cmd(cmd_word[2:0]), 8'd0};
-      // The last (second for this command) word is always channel 0 (dummy read to allow one-cycle MISO delay)
-      else if (last_adc_word) mosi_shift_reg <= {spi_req_otf_sample_cmd(3'b0), 8'd0};
+    // A single-channel read is always exactly two words: request the commanded channel, then a
+    // dummy read. Keep the two loads on separate triggers so a queued next command can't leak its
+    // channel into this read's dummy slot (cmd_word already points at the next command by then).
+    end else if (do_next_cmd && (next_cmd_state == S_ADC_RD_CH)) begin
+      mosi_shift_reg <= {spi_req_otf_sample_cmd(cmd_word[2:0]), 8'd0};
+    // The second word is always channel 0 (dummy read to allow one-cycle MISO delay)
+    end else if ((state == S_ADC_RD_CH) && adc_spi_cmd_done) begin
+      mosi_shift_reg <= {spi_req_otf_sample_cmd(3'b0), 8'd0};
     end
   end
   // Start MISO read in MOSI clock domain

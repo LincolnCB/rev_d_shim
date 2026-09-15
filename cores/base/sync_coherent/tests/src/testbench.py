@@ -40,7 +40,7 @@ async def test_prev_din_after_reset(dut):
     await out_side_reset_task2
 
     # Now start driving with prev_din after reset
-    din_driver_task2 = cocotb.start_soon(tb.static_din_driver_and_monitor(cycles=10, initial_data=10, expect_dummy=False))
+    din_driver_task2 = cocotb.start_soon(tb.static_din_driver_and_monitor(cycles=10, initial_data=10))
     dout_scoreboard_task2 = cocotb.start_soon(tb.dout_scoreboard())
 
     await din_driver_task2
@@ -52,11 +52,11 @@ async def test_prev_din_after_reset(dut):
     await RisingEdge(dut.in_clk)
     await RisingEdge(dut.out_clk)
     await tb.kill_clocks()
-    din_driver_task1.kill()
-    dout_scoreboard_task1.kill()
-    din_driver_task2.kill()
-    dout_scoreboard_task2.kill()
-    prev_din_and_wr_en_scoreboard_task.kill()
+    din_driver_task1.cancel()
+    dout_scoreboard_task1.cancel()
+    din_driver_task2.cancel()
+    dout_scoreboard_task2.cancel()
+    prev_din_and_wr_en_scoreboard_task.cancel()
 
 @cocotb.test()
 async def test_faster_in_clk(dut):
@@ -94,9 +94,9 @@ async def test_faster_in_clk(dut):
     await RisingEdge(dut.in_clk)
     await RisingEdge(dut.out_clk)
     await tb.kill_clocks()
-    din_driver_and_monitor_task.kill()
-    dout_scoreboard_task.kill()
-    prev_din_and_wr_en_scoreboard_task.kill()
+    din_driver_and_monitor_task.cancel()
+    dout_scoreboard_task.cancel()
+    prev_din_and_wr_en_scoreboard_task.cancel()
 
 @cocotb.test()
 async def test_slower_in_clk(dut):
@@ -134,9 +134,9 @@ async def test_slower_in_clk(dut):
     await RisingEdge(dut.in_clk)
     await RisingEdge(dut.out_clk)
     await tb.kill_clocks()
-    din_driver_and_monitor_task.kill()
-    dout_scoreboard_task.kill()
-    prev_din_and_wr_en_scoreboard_task.kill()
+    din_driver_and_monitor_task.cancel()
+    dout_scoreboard_task.cancel()
+    prev_din_and_wr_en_scoreboard_task.cancel()
 
 @cocotb.test()
 async def test_random(dut):
@@ -176,8 +176,8 @@ async def test_random(dut):
         await RisingEdge(dut.in_clk)
         await RisingEdge(dut.out_clk)
         await tb.kill_clocks()
-        din_driver_and_monitor_task.kill()
-        dout_scoreboard_task.kill()
-        prev_din_and_wr_en_scoreboard_task.kill()
+        din_driver_and_monitor_task.cancel()
+        dout_scoreboard_task.cancel()
+        prev_din_and_wr_en_scoreboard_task.cancel()
 
 

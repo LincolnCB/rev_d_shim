@@ -52,13 +52,13 @@ class fifo_async_base:
     async def kill_clocks(self):
         """Kills the running read and write clock tasks."""
         if self.rd_clk_task and not self.rd_clk_task.done():
-            self.rd_clk_task.kill()
+            self.rd_clk_task.cancel()
             self.dut._log.info("Read clock killed.")
         else:
             self.dut._log.info("Read clock task not active or already done.")
 
         if self.wr_clk_task and not self.wr_clk_task.done():
-            self.wr_clk_task.kill()
+            self.wr_clk_task.cancel()
             self.dut._log.info("Write clock killed.")
         else:
             self.dut._log.info("Write clock task not active or already done.")

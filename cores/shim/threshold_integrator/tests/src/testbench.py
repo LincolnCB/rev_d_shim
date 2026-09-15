@@ -1,4 +1,5 @@
 import cocotb
+import os
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge, ReadOnly, ReadWrite
 import random
@@ -8,7 +9,7 @@ async def setup_testbench(dut, clk_period=4, time_unit='ns'):
     tb = threshold_integrator_base(dut, clk_period, time_unit)
     return tb
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_reset(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_reset")
@@ -25,9 +26,9 @@ async def test_reset(dut):
     # Give time to coroutines to finish and kill their tasks
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    state_transition_monitor_and_scoreboard_task.kill()
+    state_transition_monitor_and_scoreboard_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_idle_to_out_of_bounds(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_idle_to_out_of_bounds")
@@ -57,16 +58,16 @@ async def test_idle_to_out_of_bounds(dut):
     await RisingEdge(dut.clk)
     await ReadOnly()
 
-    assert int(dut.state.value) == 4, f"Expected state after disallowed window size: 4 (OUT_OF_BOUNDS), got: {int(tb.dut.state.value)} ({tb.get_state_name(tb.dut.state.value)})"
+    assert int(dut.state.value) == 5, f"Expected state after disallowed window size: 5 (OUT_OF_BOUNDS), got: {int(tb.dut.state.value)} ({tb.get_state_name(tb.dut.state.value)})"
     assert dut.over_thresh.value == 1, "Expected over_thresh to be asserted after disallowed window size"
 
     # Give time to coroutines to finish and kill their tasks
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    state_transition_monitor_and_scoreboard_task.kill()
+    state_transition_monitor_and_scoreboard_task.cancel()
 
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_idle_to_running(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_idle_to_running")
@@ -85,9 +86,9 @@ async def test_idle_to_running(dut):
     # Give time to coroutines to finish and kill their tasks
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    state_transition_monitor_and_scoreboard_task.kill()
+    state_transition_monitor_and_scoreboard_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_reset_to_running_to_reset_to_running(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_reset_to_running_to_reset_to_running")
@@ -113,7 +114,7 @@ async def test_reset_to_running_to_reset_to_running(dut):
     # Give time to coroutines to finish and kill their tasks
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    state_transition_monitor_and_scoreboard_task.kill()
+    state_transition_monitor_and_scoreboard_task.cancel()
 
 
 @cocotb.test(skip=True)
@@ -126,7 +127,7 @@ async def print_expected_fifo_overflows(dut):
         window = 2**(i+1)-1
         await tb.fifo_will_overflow(window)
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_running_state_fifo_overflow(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_running_state_fifo_overflow")
@@ -150,9 +151,9 @@ async def test_running_state_fifo_overflow(dut):
     # Give time to coroutines to finish and kill their tasks
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    state_transition_monitor_and_scoreboard_task.kill()
+    state_transition_monitor_and_scoreboard_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_running_state_over_threshold(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_running_state_over_threshold")
@@ -176,9 +177,9 @@ async def test_running_state_over_threshold(dut):
     # Give time to coroutines to finish and kill their tasks
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    state_transition_monitor_and_scoreboard_task.kill()
+    state_transition_monitor_and_scoreboard_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_running_state_w_set_window_and_max_threshold_average(dut):
     for i in range(11, 15):
         tb = await setup_testbench(dut)
@@ -203,10 +204,10 @@ async def test_running_state_w_set_window_and_max_threshold_average(dut):
         # Give time to coroutines to finish and kill their tasks
         await RisingEdge(dut.clk)
         await RisingEdge(dut.clk)
-        state_transition_monitor_and_scoreboard_task.kill()
+        state_transition_monitor_and_scoreboard_task.cancel()
 
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_running_state_w_set_window_and_set_threshold_average(dut):
     for i in range(11, 15):
         tb = await setup_testbench(dut)
@@ -231,9 +232,9 @@ async def test_running_state_w_set_window_and_set_threshold_average(dut):
         # Give time to coroutines to finish and kill their tasks
         await RisingEdge(dut.clk)
         await RisingEdge(dut.clk)
-        state_transition_monitor_and_scoreboard_task.kill()
+        state_transition_monitor_and_scoreboard_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_running_state_w_random_window_and_random_threshold_average(dut):
 
     modes = [
@@ -268,9 +269,12 @@ async def test_running_state_w_random_window_and_random_threshold_average(dut):
         # Give time to coroutines to finish and kill their tasks
         await RisingEdge(dut.clk)
         await RisingEdge(dut.clk)
-        state_transition_monitor_and_scoreboard_task.kill()
+        state_transition_monitor_and_scoreboard_task.cancel()
 
-@cocotb.test()
+# Free-running calibration exercise (no pass/fail). Skipped in the automated suite so
+# `make tests` stays bounded; run on demand with RUN_EXAMPLE_SIMS=1 (e.g.
+# RUN_EXAMPLE_SIMS=1 ./scripts/make/test_core.sh rev_d_shim shim threshold_integrator).
+@cocotb.test(skip=not os.environ.get("RUN_EXAMPLE_SIMS"))
 async def test_channel_cal_operation(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_channel_cal_operation")

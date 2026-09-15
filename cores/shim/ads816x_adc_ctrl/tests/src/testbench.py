@@ -1,4 +1,5 @@
 import cocotb
+import os
 from cocotb.triggers import RisingEdge
 import random
 
@@ -8,7 +9,7 @@ async def setup_testbench(dut, clk_period=4, miso_sck_period=4, time_unit="ns"):
     tb = shim_ads816x_adc_ctrl_base(dut, clk_period, miso_sck_period, time_unit)
     return tb
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_reset(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_reset")
@@ -18,7 +19,7 @@ async def test_reset(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_set_ord(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_set_ord")
@@ -40,7 +41,7 @@ async def test_set_ord(dut):
 
     # Start the command buffer model and scoreboard
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(cmd_word_list))
 
     # Send commands and wait for completion
     await tb.send_commands(cmd_word_list)
@@ -51,12 +52,12 @@ async def test_set_ord(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    transition_monitor_task.kill()
-    scoreboard_task.kill()
-    miso_transition_monitor_task.kill()
+    cmd_buf_task.cancel()
+    transition_monitor_task.cancel()
+    scoreboard_task.cancel()
+    miso_transition_monitor_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_noop_trigger_wait(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_noop_trigger_wait")
@@ -74,7 +75,7 @@ async def test_noop_trigger_wait(dut):
     # Start the command buffer model and scoreboard
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(cmd_word_list))
 
     # Start the random trigger driver
     trigger_driver_task = cocotb.start_soon(tb.random_trigger_driver())
@@ -88,13 +89,13 @@ async def test_noop_trigger_wait(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
-    trigger_driver_task.kill()
-    miso_transition_monitor_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
+    trigger_driver_task.cancel()
+    miso_transition_monitor_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_noop_delay(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_noop_delay")
@@ -112,7 +113,7 @@ async def test_noop_delay(dut):
     # Start the command buffer model and scoreboard
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(cmd_word_list))
 
     # Send commands and wait for completion
     await tb.send_commands(cmd_word_list)
@@ -123,12 +124,12 @@ async def test_noop_delay(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
-    miso_transition_monitor_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
+    miso_transition_monitor_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_bad_cmd(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_bad_cmd")
@@ -144,10 +145,13 @@ async def test_bad_cmd(dut):
     cmd_word_list = []
     cmd_word_list.append((cmd_type << 29))
 
+    # This test intentionally drives the DUT into S_ERROR.
+    tb.expect_error = True
+
     # Start the command buffer model and scoreboard
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(cmd_word_list))
 
     # Send commands and wait for completion
     await tb.send_commands(cmd_word_list)
@@ -158,12 +162,12 @@ async def test_bad_cmd(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
-    miso_transition_monitor_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
+    miso_transition_monitor_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_cancel(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_cancel")
@@ -184,7 +188,7 @@ async def test_cancel(dut):
     # Start the command buffer model and scoreboard
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(cmd_word_list))
 
     # Send commands and wait for completion
     await tb.send_commands(cmd_word_list)
@@ -195,12 +199,12 @@ async def test_cancel(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
-    miso_transition_monitor_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
+    miso_transition_monitor_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_adc_rd_ch_no_repeat(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_adc_rd_ch_no_repeat")
@@ -219,7 +223,7 @@ async def test_adc_rd_ch_no_repeat(dut):
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
     data_buf_task = cocotb.start_soon(tb.data_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(cmd_word_list))
 
     # Send commands and wait for completion
     await tb.send_commands(cmd_word_list)
@@ -230,13 +234,13 @@ async def test_adc_rd_ch_no_repeat(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
-    data_buf_task.kill()
-    miso_transition_monitor_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
+    data_buf_task.cancel()
+    miso_transition_monitor_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_adc_rd_ch_no_repeat_back_to_back(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_adc_rd_ch_no_repeat_back_to_back")
@@ -257,7 +261,7 @@ async def test_adc_rd_ch_no_repeat_back_to_back(dut):
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
     data_buf_task = cocotb.start_soon(tb.data_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(cmd_word_list))
 
     # Send commands and wait for completion
     await tb.send_commands(cmd_word_list)
@@ -268,13 +272,13 @@ async def test_adc_rd_ch_no_repeat_back_to_back(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
-    data_buf_task.kill()
-    miso_transition_monitor_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
+    data_buf_task.cancel()
+    miso_transition_monitor_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_adc_rd_ch_repeating(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_adc_rd_ch_repeating")
@@ -294,7 +298,7 @@ async def test_adc_rd_ch_repeating(dut):
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
     data_buf_task = cocotb.start_soon(tb.data_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(cmd_word_list))
 
     # Send commands and wait for completion
     await tb.send_commands(cmd_word_list)
@@ -305,13 +309,13 @@ async def test_adc_rd_ch_repeating(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
-    data_buf_task.kill()
-    miso_transition_monitor_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
+    data_buf_task.cancel()
+    miso_transition_monitor_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_adc_rd_no_repeat(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_adc_rd_no_repeat")
@@ -330,7 +334,7 @@ async def test_adc_rd_no_repeat(dut):
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
     data_buf_task = cocotb.start_soon(tb.data_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(cmd_word_list))
 
     # Send commands and wait for completion
     await tb.send_commands(cmd_word_list)
@@ -341,13 +345,13 @@ async def test_adc_rd_no_repeat(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
-    data_buf_task.kill()
-    miso_transition_monitor_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
+    data_buf_task.cancel()
+    miso_transition_monitor_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_adc_rd_no_repeat_back_to_back(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_adc_rd_no_repeat_back_to_back")
@@ -368,7 +372,7 @@ async def test_adc_rd_no_repeat_back_to_back(dut):
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
     data_buf_task = cocotb.start_soon(tb.data_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(cmd_word_list))
 
     # Send commands and wait for completion
     await tb.send_commands(cmd_word_list)
@@ -379,13 +383,13 @@ async def test_adc_rd_no_repeat_back_to_back(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
-    data_buf_task.kill()
-    miso_transition_monitor_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
+    data_buf_task.cancel()
+    miso_transition_monitor_task.cancel()
 
-@cocotb.test(skip=True)
+@cocotb.test()
 async def test_adc_rd_repeating(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_adc_rd_repeating")
@@ -405,7 +409,7 @@ async def test_adc_rd_repeating(dut):
     await RisingEdge(dut.clk)
     cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
     data_buf_task = cocotb.start_soon(tb.data_buf_model())
-    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(len(cmd_word_list)))
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(cmd_word_list))
 
     # Send commands and wait for completion
     await tb.send_commands(cmd_word_list)
@@ -416,13 +420,16 @@ async def test_adc_rd_repeating(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    cmd_buf_task.kill()
-    scoreboard_task.kill()
-    transition_monitor_task.kill()
-    miso_transition_monitor_task.kill()
-    data_buf_task.kill()
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
+    miso_transition_monitor_task.cancel()
+    data_buf_task.cancel()
 
-@cocotb.test()
+# Free-running waveform sim (no pass/fail). Skipped in the automated suite so `make tests`
+# stays bounded; run on demand with RUN_EXAMPLE_SIMS=1 (e.g.
+# RUN_EXAMPLE_SIMS=1 ./scripts/make/test_core.sh rev_d_shim shim ads816x_adc_ctrl).
+@cocotb.test(skip=not os.environ.get("RUN_EXAMPLE_SIMS"))
 async def example_simulation(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: example_simulation")

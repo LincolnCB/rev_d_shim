@@ -14,6 +14,7 @@ class trigger_core_base:
         3: 'CMD_EXPECT_EXT_TRIG',
         4: 'CMD_DELAY',
         5: 'CMD_FORCE_TRIG',
+        6: 'CMD_RESET_COUNT',
         7: 'CMD_CANCEL'
     }
 
@@ -34,7 +35,7 @@ class trigger_core_base:
         # Parameters
         self.TRIGGER_LOCKOUT_DEFAULT = int(self.dut.TRIGGER_LOCKOUT_DEFAULT.value)
         self.TRIGGER_LOCKOUT_MIN = int(self.dut.TRIGGER_LOCKOUT_MIN.value)
-        self.MAX_CMD_VALUE = 0x1FFFFFFF  # 29 bits for cmd_value
+        self.MAX_CMD_VALUE = 0x0FFFFFFF  # cmd_val is 28 bits ([27:0]); bit [28] is the log-enable flag
 
         # Initialize clock
         cocotb.start_soon(Clock(dut.clk, clk_period, time_unit).start(start_high=False))
@@ -115,10 +116,11 @@ class trigger_core_base:
                 assert int(self.dut.cmd_done.value) == 1, \
                     f"cmd_done should be asserted when state is S_SYNC_CH and all_waiting is 1, but got {int(self.dut.cmd_done.value)}"
 
-            # S_EXPECT_TRIG
-            if int(self.dut.state.value) == 3 and int(self.dut.trig_counter.value) == 0:
+            # S_EXPECT_TRIG: cmd_done on the final expected external trigger, once past the lockout.
+            if (int(self.dut.state.value) == 3 and int(self.dut.ext_trig_counter.value) == 1
+                    and int(self.dut.lockout_counter.value) == 0 and int(self.dut.ext_trig_sync[1].value) == 1):
                 assert int(self.dut.cmd_done.value) == 1, \
-                    f"cmd_done should be asserted when state is S_EXPECT_TRIG and trig_counter is 0, but got {int(self.dut.cmd_done.value)}"
+                    f"cmd_done should be asserted on the final expected trigger in S_EXPECT_TRIG, but got {int(self.dut.cmd_done.value)}"
 
             # S_DELAY
             if int(self.dut.state.value) == 4 and int(self.dut.delay_counter.value) == 0:
@@ -176,14 +178,10 @@ class trigger_core_base:
                     assert int(self.dut.next_cmd_state.value) == 2, \
                         f"next_cmd_state should be S_SYNC_CH when cmd_type is CMD_SYNC_CH and all_waiting is 0, but got {self.get_state_name(int(self.dut.next_cmd_state.value))}"
 
-            # next_cmd_state should be S_EXPECT_TRIG or S_IDLE if cmd_type is CMD_EXPECT_EXT_TRIG and cmd_val is not 0 or 0 respectively
+            # next_cmd_state is S_EXPECT_TRIG for CMD_EXPECT_EXT_TRIG (cmd_val 0 means wait for infinite triggers).
             elif int(self.dut.cmd_type.value) == 3:
-                if int(self.dut.cmd_val.value) != 0:
-                    assert int(self.dut.next_cmd_state.value) == 3, \
-                        f"next_cmd_state should be S_EXPECT_TRIG when cmd_type is CMD_EXPECT_EXT_TRIG and cmd_val is not 0, but got {self.get_state_name(int(self.dut.next_cmd_state.value))}"
-                else:
-                    assert int(self.dut.next_cmd_state.value) == 1, \
-                        f"next_cmd_state should be S_IDLE when cmd_type is CMD_EXPECT_EXT_TRIG and cmd_val is 0, but got {self.get_state_name(int(self.dut.next_cmd_state.value))}"
+                assert int(self.dut.next_cmd_state.value) == 3, \
+                    f"next_cmd_state should be S_EXPECT_TRIG when cmd_type is CMD_EXPECT_EXT_TRIG, but got {self.get_state_name(int(self.dut.next_cmd_state.value))}"
 
             # next_cmd_state should be S_DELAY or S_IDLE if cmd_type is CMD_DELAY and cmd_val is not 0 or 0 respectively
             elif int(self.dut.cmd_type.value) == 4:
@@ -193,6 +191,11 @@ class trigger_core_base:
                 else:
                     assert int(self.dut.next_cmd_state.value) == 1, \
                         f"next_cmd_state should be S_IDLE when cmd_type is CMD_DELAY and cmd_val is 0, but got {self.get_state_name(int(self.dut.next_cmd_state.value))}"
+
+            # next_cmd_state is S_IDLE for CMD_RESET_COUNT (resets the trigger count, no state change).
+            elif int(self.dut.cmd_type.value) == 6:
+                assert int(self.dut.next_cmd_state.value) == 1, \
+                    f"next_cmd_state should be S_IDLE when cmd_type is CMD_RESET_COUNT, but got {self.get_state_name(int(self.dut.next_cmd_state.value))}"
 
             # next_cmd_state should be S_ERROR otherwise
             else:
@@ -244,7 +247,7 @@ class trigger_core_base:
         """
         Generate a command word from command type and value.
         """
-        cmd_word = (cmd_type << 29) | (cmd_value & 0x1FFFFFFF)
+        cmd_word = (cmd_type << 29) | (cmd_value & 0x0FFFFFFF)
         return cmd_word
 
     def command_word_decoder(self, cmd_word):
@@ -252,7 +255,7 @@ class trigger_core_base:
         Decode a command word into command type and value.
         """
         cmd_type = (cmd_word >> 29) & 0x7
-        cmd_value = cmd_word & 0x1FFFFFFF
+        cmd_value = cmd_word & 0x0FFFFFFF
         return cmd_type, cmd_value
 
     def random_command_word_generator(self, n):
@@ -273,20 +276,22 @@ class trigger_core_base:
         while len(cmd_list) < n:
             # Pick whether to generate an unexpected command
             if random.random() < unexpected_prob:
-                cmd_type = random.choice([0, 6])  # unexpected types
+                cmd_type = 0  # 0 is the only invalid command type (6 is now CMD_RESET_COUNT)
             else:
-                cmd_type = random.choice([1, 2, 3, 4, 5, 7])  # expected types
+                cmd_type = random.choice([1, 2, 3, 4, 5, 6, 7])  # valid types
 
             # Generate cmd_value based on type
             if cmd_type == 1:  # CMD_SYNC_CH
                 cmd_value = random.randint(0, self.MAX_CMD_VALUE)
             elif cmd_type == 2:  # CMD_SET_LOCKOUT
                 cmd_value = random.randint(0, 50)
-            elif cmd_type == 3:  # CMD_EXPECT_EXT_TRIG
-                cmd_value = random.randint(0, 50)
+            elif cmd_type == 3:  # CMD_EXPECT_EXT_TRIG (avoid 0 = infinite wait, which never completes here)
+                cmd_value = random.randint(1, 50)
             elif cmd_type == 4:  # CMD_DELAY
                 cmd_value = random.randint(0, 50)
             elif cmd_type == 5:  # CMD_FORCE_TRIG
+                cmd_value = random.randint(0, self.MAX_CMD_VALUE)
+            elif cmd_type == 6:  # CMD_RESET_COUNT
                 cmd_value = random.randint(0, self.MAX_CMD_VALUE)
             elif cmd_type == 7:  # CMD_CANCEL
                 cmd_value = random.randint(0, self.MAX_CMD_VALUE)
@@ -376,6 +381,9 @@ class trigger_core_base:
                     task = cocotb.start_soon(self.cmd_force_trig_scoreboard(cmd_value, command_i))
                 elif cmd_type == 7:
                     task = cocotb.start_soon(self.cmd_cancel_scoreboard(cmd_value, command_i))
+                elif cmd_type == 6:
+                    # RESET_COUNT clears trig_counter/timer and returns to idle; no dedicated scoreboard.
+                    task = None
                 else:
                     task = cocotb.start_soon(self.cmd_unexpected_scoreboard(cmd_type, cmd_value, command_i))
 
@@ -465,63 +473,67 @@ class trigger_core_base:
         # Wait one clock cycle for the trig_counter to be updated
         await RisingEdge(self.dut.clk)
         await ReadOnly()
-        self.dut._log.info(f"For command index:{command_i} Expected trig_counter: {expected_trig_counter}, DUT trig_counter: {int(self.dut.trig_counter.value)}")
-        assert int(self.dut.trig_counter.value) == expected_trig_counter, \
-            f"For command index:{command_i} Trigger counter mismatch: expected {expected_trig_counter} but got {int(self.dut.trig_counter.value)}"
+        self.dut._log.info(f"For command index:{command_i} Expected ext_trig_counter: {expected_trig_counter}, DUT ext_trig_counter: {int(self.dut.ext_trig_counter.value)}")
+        assert int(self.dut.ext_trig_counter.value) == expected_trig_counter, \
+            f"For command index:{command_i} ext_trig_counter mismatch: expected {expected_trig_counter} but got {int(self.dut.ext_trig_counter.value)}"
 
         # Cancel exit condition
         if int(self.dut.cancel.value) == 1:
             self.dut._log.info(f"For command index:{command_i} Command was cancelled before starting trigger countdown.")
             return
         elif expected_trig_counter == 0:
-            self.dut._log.info(f"For command index:{command_i} Command value is 0, no triggers expected.")
-            assert int(self.dut.state.value) == 1, \
-                f"For command index:{command_i} State should be S_IDLE for 0 trigger count, but got {self.get_state_name(int(self.dut.state.value))}"
+            # A value of 0 arms "infinite" waiting: the DUT stays in S_EXPECT_TRIG and only a
+            # CANCEL completes it, so there is no count to run down here.
+            self.dut._log.info(f"For command index:{command_i} Command value is 0 (infinite wait).")
+            assert int(self.dut.state.value) == 3, \
+                f"For command index:{command_i} State should be S_EXPECT_TRIG for infinite (0) trigger count, but got {self.get_state_name(int(self.dut.state.value))}"
             return
 
+        expected = cmd_value
+        num_of_trigs_done = 0
+        # Invariant: at each loop top we are in a ReadOnly phase with ext_trig_counter == expected.
         while True:
-            await RisingEdge(self.dut.clk)
-            previous_do_trig = int(self.dut.do_trig.value)
-            previous_lockout_counter = int(self.dut.lockout_counter.value)
-            await ReadOnly()
-
             # Cancel exit condition
             if int(self.dut.cancel.value) == 1:
                 self.dut._log.info(f"For command index:{command_i} Command was cancelled during trigger countdown.")
                 return
 
-            # Assert that we are still in EXPECT_TRIG state
+            # Still counting down in S_EXPECT_TRIG.
             assert int(self.dut.state.value) == 3, \
                 f"For command index:{command_i} State should be S_EXPECT_TRIG, but got {self.get_state_name(int(self.dut.state.value))}"
 
-            # If there is an ext_trig and lockout_counter is 0, do_trig should be asserted
-            if int(self.dut.ext_trig.value) == 1 and int(self.dut.lockout_counter.value) == 0:
-                assert int(self.dut.do_trig.value) == 1, \
-                    f"For command index:{command_i} do_trig should be asserted when ext_trig is 1 and lockout_counter is 0, but got {int(self.dut.do_trig.value)}"
+            do_trig_now = int(self.dut.do_trig.value)
+            lockout_now = int(self.dut.lockout_counter.value)
+            ext_sync_now = int(self.dut.ext_trig_sync[1].value)
 
-            # When do_trig is asserted, trig_counter should decrement by 1 in the next cycle if it is greater than 0
-            if previous_do_trig == 1 and expected_trig_counter > 0:
-                expected_trig_counter -= 1
+            # do_trig is driven by the SYNCHRONIZED trigger (ext_trig_sync[1]), gated by the lockout.
+            if ext_sync_now == 1 and lockout_now == 0:
+                assert do_trig_now == 1, \
+                    f"For command index:{command_i} do_trig should be asserted when the synchronized trigger is high and lockout_counter is 0, but got {do_trig_now}"
+
+            # Advance across the edge that acts on do_trig_now.
+            await RisingEdge(self.dut.clk)
+            await ReadOnly()
+
+            if do_trig_now == 1:
+                expected -= 1
                 num_of_trigs_done += 1
-                self.dut._log.info(f"For command index:{command_i} Expected trig_counter decremented to: {expected_trig_counter}")
-                assert int(self.dut.trig_counter.value) == expected_trig_counter, \
-                    f"For command index:{command_i} Trigger counter mismatch after do_trig: expected {expected_trig_counter} but got {int(self.dut.trig_counter.value)}"
-
-            # When do trig is asserted, lockout_counter should be set to trig_lockout in the next cycle
-            if previous_do_trig == 1:
-                assert self.dut.lockout_counter.value == self.dut.trig_lockout.value , \
+                if expected == 0:
+                    # This trigger completes the command: cmd_done fires and the counter is reloaded
+                    # for the next command (or cleared if the FIFO is empty), so stop verifying it here.
+                    self.dut._log.info(f"For command index:{command_i} All {num_of_trigs_done} expected triggers done.")
+                    return
+                assert int(self.dut.ext_trig_counter.value) == expected, \
+                    f"For command index:{command_i} ext_trig_counter mismatch after do_trig: expected {expected} but got {int(self.dut.ext_trig_counter.value)}"
+                # Lockout reloads to trig_lockout after an accepted trigger.
+                assert int(self.dut.lockout_counter.value) == int(self.dut.trig_lockout.value), \
                     f"For command index:{command_i} Lockout counter mismatch after do_trig: expected {int(self.dut.trig_lockout.value)} but got {int(self.dut.lockout_counter.value)}"
-            elif previous_lockout_counter > 0:
-                # If lockout_counter is greater than 0, it should decrement by 1 in the next cycle
-                assert int(self.dut.lockout_counter.value) == previous_lockout_counter - 1, \
-                    f"For command index:{command_i} Lockout counter mismatch: expected {previous_lockout_counter - 1} but got {int(self.dut.lockout_counter.value)}"
-
-            if num_of_trigs_done == num_of_expected_trigs:
-                assert int(self.dut.trig_counter.value) == 0, \
-                    f"For command index:{command_i} Trigger counter should be 0 after all expected triggers are done, but got {int(self.dut.trig_counter.value)}"
-                self.dut._log.info(f"For command index:{command_i} All expected triggers are done.")
-                self.dut._log.info(f"num_of_trigs_done: {num_of_trigs_done}, num_of_expected_trigs: {num_of_expected_trigs}")
-                break
+            else:
+                assert int(self.dut.ext_trig_counter.value) == expected, \
+                    f"For command index:{command_i} ext_trig_counter should hold at {expected} without a trigger, but got {int(self.dut.ext_trig_counter.value)}"
+                if lockout_now > 0:
+                    assert int(self.dut.lockout_counter.value) == lockout_now - 1, \
+                        f"For command index:{command_i} Lockout counter mismatch: expected {lockout_now - 1} but got {int(self.dut.lockout_counter.value)}"
 
 
     async def cmd_delay_scoreboard(self, cmd_value, command_i):
@@ -589,17 +601,17 @@ class trigger_core_base:
 
         await RisingEdge(self.dut.clk)
         await ReadOnly()
-        assert int(self.dut.trig_counter.value) == 0, \
-            f"For command index:{command_i} trig_counter should be 0 after CANCEL command, but got {int(self.dut.trig_counter.value)}"
+        assert int(self.dut.ext_trig_counter.value) == 0, \
+            f"For command index:{command_i} ext_trig_counter should be 0 after CANCEL command, but got {int(self.dut.ext_trig_counter.value)}"
 
         assert int(self.dut.delay_counter.value) == 0, \
             f"For command index:{command_i} delay_counter should be 0 after CANCEL command, but got {int(self.dut.delay_counter.value)}"
 
-        assert int(self.dut.trig_out.value) == 0, \
-            f"For command index:{command_i} trig_out should be 0 after CANCEL command, but got {int(self.dut.trig_out.value)}"
-
         assert int(self.dut.state.value) == 1, \
             f"For command index:{command_i} State should be S_IDLE after CANCEL command, but got {self.get_state_name(int(self.dut.state.value))}"
+
+        # trig_out is not checked here: CANCEL returns to S_IDLE, and in a command stream the next
+        # command may itself drive a trigger, so trig_out is not a stable post-CANCEL invariant.
 
     async def cmd_unexpected_scoreboard(self, cmd_type, cmd_value, command_i):
         """ Scoreboard to catch any unexpected commands being executed."""
@@ -638,12 +650,13 @@ class trigger_core_base:
 
         while True:
             await RisingEdge(self.dut.clk)
-            prev_do_trig = int(self.dut.do_trig.value)
+            prev_do_log = int(self.dut.do_log.value)
 
             await ReadOnly()
-            sample_cond = int(self.dut.do_trig.value) == 1 and int(self.dut.data_buf_full.value) == 0 and int(self.dut.data_buf_almost_full.value) == 0
+            # The DUT writes log words only when do_log is asserted (a trigger with logging enabled).
+            sample_cond = int(self.dut.do_log.value) == 1 and int(self.dut.data_buf_full.value) == 0 and int(self.dut.data_buf_almost_full.value) == 0
 
-            if prev_do_trig == 1 and expected_trig_timer == 0:
+            if prev_do_log == 1 and expected_trig_timer == 0:
                 expected_trig_timer = 1
             elif expected_trig_timer > 0:
                 expected_trig_timer += 1
@@ -670,6 +683,9 @@ class trigger_core_base:
         while 2*len(self.expected_trig_timer_list) > 0 or not self.data_buf.is_empty():
             await RisingEdge(self.dut.clk)
             await ReadOnly()
+
+            if self.data_buf.is_empty():
+                continue  # log words not written yet; wait for the DUT
 
             read_data = int(self.data_buf.pop_item())
 

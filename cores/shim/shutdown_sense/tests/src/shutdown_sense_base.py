@@ -10,7 +10,7 @@ class shutdown_sense_base:
         self.time_unit = time_unit
 
         # Start the clock
-        cocotb.start_soon(Clock(self.dut.clk, clk_period, units=time_unit).start())
+        cocotb.start_soon(Clock(self.dut.clk, clk_period, unit=time_unit).start())
 
         # Initialize input signals
         self.dut.shutdown_sense_pin.value = 0
@@ -36,16 +36,19 @@ class shutdown_sense_base:
             assert self.dut.shutdown_sense_sel.value == shutdown_sense_sel_expected_next, \
                 f"Expected shutdown_sense_sel: {int(shutdown_sense_sel_expected_next)}, got: {int(self.dut.shutdown_sense_sel.value)}"
 
+            # shutdown_sense_o is a packed [7:0] reg; cocotb 2.0 disallows indexing a packed
+            # handle, so read the whole value once and test individual bits.
+            sense_val = int(self.dut.shutdown_sense_o.value)
             for i in range(8):
-                assert self.dut.shutdown_sense[i].value == shutdown_sense_expected_next[i], \
-                    f"Expected shutdown_sense[{i}]: {int(shutdown_sense_expected_next[i])}, got: {int(self.dut.shutdown_sense[i].value)}"
+                assert ((sense_val >> i) & 1) == shutdown_sense_expected_next[i], \
+                    f"Expected shutdown_sense[{i}]: {int(shutdown_sense_expected_next[i])}, got: {(sense_val >> i) & 1}"
 
             self.dut._log.info(f"MONITOR THIS CYCLE:")
             self.dut._log.info(f"DUT shutdown_sense_en: {int(self.dut.shutdown_sense_en.value)}")
             self.dut._log.info(f"DUT shutdown_sense_pin: {int(self.dut.shutdown_sense_pin.value)}")
             self.dut._log.info(f"DUT shutdown_sense_sel: {int(self.dut.shutdown_sense_sel.value)}, "
                                f"EXPECTED shutdown_sense_sel: {shutdown_sense_sel_expected_next}")
-            self.dut._log.info(f"DUT shutdown_sense: {[int(sense.value) for sense in self.dut.shutdown_sense]}, "
+            self.dut._log.info(f"DUT shutdown_sense: {[(sense_val >> b) & 1 for b in range(8)]}, "
                                f"EXPECTED shutdown_sense: {list(reversed(shutdown_sense_expected_next))}")
 
             # Update the next cycle's expected values based on the current state of the DUT

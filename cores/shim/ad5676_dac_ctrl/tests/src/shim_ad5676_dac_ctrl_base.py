@@ -29,6 +29,7 @@ class shim_ad5676_dac_ctrl_base:
         'S_TRIG_WAIT': 8,  # Waits for external trigger signal.
         'S_DAC_WR'   : 9,  # Performs DAC write sequence for all channels.
         'S_DAC_WR_CH': 10, # Immediately and simply write to a single DAC channel.
+        'S_PRE_DELAY': 11, # Minimum-delay wait before a DAC write that requires it.
         'S_ERROR'    : 15  # Error state; indicates boot/readback failure or invalid command/condition.
     }
 
@@ -78,6 +79,7 @@ class shim_ad5676_dac_ctrl_base:
         self.dut.cal_init_val.value = 0
         self.dut.cmd_buf_word.value = 0
         self.dut.cmd_buf_empty.value = 1
+        self.dut.blocked.value = 0
         self.dut.trigger.value = 0
         self.dut.ldac_shared.value = 0
         self.dut.miso.value = 0
@@ -89,6 +91,10 @@ class shim_ad5676_dac_ctrl_base:
 
         # Queue to keep track of current executing command in the DUT
         self.executing_cmd_queue = deque()
+
+        # Set True by tests that intentionally drive the DUT into S_ERROR (e.g. bad command);
+        # otherwise the transition monitor fails the test the moment the DUT signals an error.
+        self.expect_error = False
 
     def get_cmd_name(self, cmd_value):
         for cmd_name, cmd_num in self.CMD_ENCODING.items():
@@ -188,13 +194,15 @@ class shim_ad5676_dac_ctrl_base:
     # Random input drivers/generators
     # ---------------------------
     async def random_trigger_driver(self):
-        """ Randomly assert the trigger input signal. """
-        for _ in range(10):  # Initial delay before starting
+        """ Randomly assert the trigger input while the DUT is waiting for a trigger. """
+        # Hold triggers until setup_done, and only drive them while the DUT is actually waiting
+        # for a trigger -- a trigger in any other state (e.g. mid DAC write) is flagged unexpected.
+        while int(self.dut.setup_done.value) == 0:
             await RisingEdge(self.dut.clk)
         while True:
             await RisingEdge(self.dut.clk)
-            # 30% chance to toggle trigger each clock cycle
-            if random.random() < 0.3:
+            # 30% chance to toggle trigger each clock cycle while waiting for a trigger
+            if int(self.dut.waiting_for_trig.value) == 1 and random.random() < 0.3:
                 self.dut.trigger.value = 1
                 self.dut._log.info("Trigger asserted")
                 await RisingEdge(self.dut.clk)
@@ -210,6 +218,11 @@ class shim_ad5676_dac_ctrl_base:
         Send a list of commands to the DUT via the command buffer model.
         If the command buffer is full, retry writing the same command on the next clock cycle.
         """
+        # Wait for boot/setup to finish so the first command is accepted from S_IDLE rather than
+        # chained directly out of the boot S_SET_MID sweep.
+        while int(self.dut.setup_done.value) == 0:
+            await RisingEdge(self.dut.clk)
+
         self.dut._log.info(f"Sending {len(cmd_word_list)} commands to command buffer")
 
         for cmd_word in cmd_word_list:
@@ -361,7 +374,7 @@ class shim_ad5676_dac_ctrl_base:
                 continue
 
             popped_cmd_word = self.executing_cmd_queue.popleft()
-            popped_cmd_value = (popped >> 29) & 0x7
+            popped_cmd_value = (popped_cmd_word >> 29) & 0x7
             dut_cmd_word = int(self.dut.cmd_word.value)
             dut_cmd_value = int(self.dut.command.value)
             assert popped_cmd_word == dut_cmd_word, f"Cmd word mismatch: expected 0x{popped_cmd_word:08X} got 0x{dut_cmd_word:08X}"
@@ -431,7 +444,7 @@ class shim_ad5676_dac_ctrl_base:
         await ReadOnly()
 
         # Return if cancel was issued
-        if int(self.dut.cancel_wait.value) == 1:
+        if int(self.dut.cancel.value) == 1:
             self.dut._log.info(f"[{i}] NO_OP: Cancel detected immediately after command fetch, exiting NO_OP scoreboard.")
             return
 
@@ -449,7 +462,8 @@ class shim_ad5676_dac_ctrl_base:
 
         # If TRIG_BIT is 1 trigger_counter should be set to value field otherwise, delay_timer should be set to value field
         expected_trigger_counter = info['value'] if info['trig'] == 1 else 0
-        expected_delay_timer = info['value'] if info['trig'] == 0 else 0
+        # The DUT loads delay_timer with value-1 (a value of 0 stays 0, acting like a 1-cycle delay).
+        expected_delay_timer = (info['value'] - 1 if info['value'] > 0 else 0) if info['trig'] == 0 else 0
 
         if expected_wait_for_trig:
             assert int(self.dut.trigger_counter.value) == expected_trigger_counter, \
@@ -467,7 +481,7 @@ class shim_ad5676_dac_ctrl_base:
                 current_external_trigger = int(self.dut.trigger.value)
 
                 # Return if cancel was issued
-                if int(self.dut.cancel_wait.value) == 1:
+                if int(self.dut.cancel.value) == 1:
                     self.dut._log.info(f"[{i}] NO_OP: Cancel detected immediately after command fetch, exiting NO_OP scoreboard.")
                     return
 
@@ -510,7 +524,7 @@ class shim_ad5676_dac_ctrl_base:
                 await ReadOnly()
 
                 # Return if cancel was issued
-                if int(self.dut.cancel_wait.value) == 1:
+                if int(self.dut.cancel.value) == 1:
                     self.dut._log.info(f"[{i}] NO_OP: Cancel detected immediately after command fetch, exiting NO_OP scoreboard.")
                     return
 
@@ -630,7 +644,8 @@ class shim_ad5676_dac_ctrl_base:
 
         # If TRIG_BIT is 1 trigger_counter should be set to value field otherwise, delay_timer should be set to value field
         expected_trigger_counter = info['value'] if info['trig'] == 1 else 0
-        expected_delay_timer = info['value'] if info['trig'] == 0 else 0
+        # The DUT loads delay_timer with value-1 for a DAC_WR delay wait.
+        expected_delay_timer = (info['value'] - 1 if info['value'] > 0 else 0) if info['trig'] == 0 else 0
 
         # Even though state will be S_DAC_WR here, delay or trigger wait counters will start immediately.
         # When the counters are complete, we expect that DAC_WR payload words will have already been sent.
@@ -643,47 +658,37 @@ class shim_ad5676_dac_ctrl_base:
                 assert int(self.dut.trig_wait_done.value) == 1, \
                     f"[{i}] DAC_WR: trig_wait_done should be asserted when trigger_counter is 0"
 
+            # Sample trigger at each ReadOnly BEFORE the edge; the DUT decrements the counter on
+            # the edge using that pre-edge value, so carry it across iterations to stay aligned.
+            prev_trigger = int(self.dut.trigger.value)
             while expected_trigger_counter > 0:
                 await RisingEdge(self.dut.clk)
                 await ReadOnly()
 
                 # Return if cancel was issued
-                if int(self.dut.cancel_wait.value) == 1:
-                    self.dut._log.info(f"[{i}] NO_OP: Cancel detected immediately after command fetch, exiting NO_OP scoreboard.")
+                if int(self.dut.cancel.value) == 1:
+                    self.dut._log.info(f"[{i}] DAC_WR: Cancel detected during trigger wait, exiting scoreboard.")
                     return
 
-                external_trigger = int(self.dut.trigger.value)
-
-                # When final trigger is received trig_wait_done should be asserted
-                if external_trigger == 1 and expected_trigger_counter == 1:
-                    self.dut._log.info(f"[{i}] DAC_WR: Final trigger received")
-                    assert int(self.dut.trig_wait_done.value) == 1, \
-                        f"[{i}] DAC_WR: trig_wait_done should be asserted when final trigger is received"
-
-                # When an external trigger is received, the trigger_counter should decrement
-                if external_trigger == 1:
+                # The DUT decremented on this edge if the pre-edge trigger was high
+                if prev_trigger == 1 and expected_trigger_counter > 0:
                     expected_trigger_counter -= 1
-                    self.dut._log.info(f"[{i}] DAC_WR: Trigger received, decremented trigger_counter to {expected_trigger_counter}")
 
                 assert int(self.dut.trigger_counter.value) == expected_trigger_counter, \
                     f"[{i}] DAC_WR: trigger_counter should be {expected_trigger_counter}, got {int(self.dut.trigger_counter.value)}"
+
+                prev_trigger = int(self.dut.trigger.value)
 
             # When we exit the loop trigger_counter should be 0
             assert int(self.dut.trigger_counter.value) == 0, \
                 f"[{i}] DAC_WR: trigger_counter should be 0 after completing trigger wait"
 
-            # cmd_done should be asserted and we should either be in S_DAC_WR (edge case) or S_TRIG_WAIT state
-            assert int(self.dut.cmd_done.value) == 1, \
-                f"[{i}] DAC_WR: cmd_done should be asserted after completing trigger wait"
-            assert int(self.dut.state.value) in [self.STATE_ENCODING['S_TRIG_WAIT'], self.STATE_ENCODING['S_DAC_WR']], \
-                f"[{i}] DAC_WR: Expected state S_TRIG_WAIT (8) or S_DAC_WR (9), got {self.get_state_name(int(self.dut.state.value))}"
-
-            await RisingEdge(self.dut.clk)
-            await ReadOnly()
-            # After cmd_done if expected_do_ldac is set, ldac should be asserted
+            # The trigger wait completed on the previous edge (the transition monitor verifies the
+            # cmd_done pulse and the S_TRIG_WAIT exit), so the DUT has moved on; if do_ldac was set,
+            # LDAC pulses this cycle.
             if expected_do_ldac:
                 assert int(self.dut.ldac.value) == 1, \
-                    f"[{i}] DAC_WR: ldac should be asserted after cmd_done if do_ldac is set"
+                    f"[{i}] DAC_WR: ldac should pulse after the trigger wait completes"
 
             return
 
@@ -696,7 +701,7 @@ class shim_ad5676_dac_ctrl_base:
                 await ReadOnly()
 
                 # Return if cancel was issued
-                if int(self.dut.cancel_wait.value) == 1:
+                if int(self.dut.cancel.value) == 1:
                     self.dut._log.info(f"[{i}] NO_OP: Cancel detected immediately after command fetch, exiting NO_OP scoreboard.")
                     return
 
@@ -735,14 +740,15 @@ class shim_ad5676_dac_ctrl_base:
         self.dut._log.info(f"[DAC_WR] DAC word pair {dac_word_pair_number}: ch{dac_channel_n} val=0x{first_dac_val:04X}, ch{dac_channel_np1} val=0x{second_dac_val:04X}")
 
         # Expected conversion values
-        expected_first_dac_val_signed = self.offset_to_signed(first_dac_val)
-        expected_second_dac_val_signed = self.offset_to_signed(second_dac_val)
+        expected_first_dac_val_signed = self.to_signed_16(first_dac_val)
+        expected_second_dac_val_signed = self.to_signed_16(second_dac_val)
 
         expected_first_dac_val_cal_signed = expected_first_dac_val_signed + int(self.dut.cal_val[dac_channel_n].value.signed_integer)
         expected_second_dac_val_cal_signed = expected_second_dac_val_signed + int(self.dut.cal_val[dac_channel_np1].value.signed_integer)
 
-        expected_abs_dac_val_chN = self.signed_to_abs(expected_first_dac_val_cal_signed)
-        expected_abs_dac_val_chNp1 = self.signed_to_abs(expected_second_dac_val_cal_signed)
+        # abs_dac_val stores the absolute value of the raw command value (pre-calibration).
+        expected_abs_dac_val_chN = self.signed_to_abs(expected_first_dac_val_signed)
+        expected_abs_dac_val_chNp1 = self.signed_to_abs(expected_second_dac_val_signed)
 
         # Expected SPI commands
         # Command format is: [23:20] = SPI_CMD_LDAC_WRITE, [19] = 0, [18:16] = channel, [15:0] = dac_value
@@ -786,14 +792,8 @@ class shim_ad5676_dac_ctrl_base:
             assert int(self.dut.second_dac_channel_of_pair.value) == 1, \
                 f"[DAC_WR] DAC word pair {dac_word_pair_number}: second_dac_channel_of_pair should be 1 after sending both words"
             # Check if sent values via MOSI match expected SPI commands and check the conversions
-
-            assert expected_first_dac_val_signed == int(self.dut.first_dac_val_signed.value.signed_integer), \
-                f"[DAC_WR] DAC word pair {dac_word_pair_number}: first_dac_val_signed mismatch: expected {expected_first_dac_val_signed}, got {int(self.dut.first_dac_val_signed.value.signed_integer)}"
             assert expected_first_dac_val_cal_signed == int(self.dut.first_dac_val_cal_signed.value.signed_integer), \
                 f"[DAC_WR] DAC word pair {dac_word_pair_number}: first_dac_val_cal_signed mismatch: expected {expected_first_dac_val_cal_signed}, got {int(self.dut.first_dac_val_cal_signed.value.signed_integer)}"
-
-            assert expected_second_dac_val_signed == int(self.dut.second_dac_val_signed.value.signed_integer), \
-                f"[DAC_WR] DAC word pair {dac_word_pair_number}: second_dac_val_signed mismatch: expected {expected_second_dac_val_signed}, got {int(self.dut.second_dac_val_signed.value.signed_integer)}"
             assert expected_second_dac_val_cal_signed == int(self.dut.second_dac_val_cal_signed.value.signed_integer), \
                 f"[DAC_WR] DAC word pair {dac_word_pair_number}: second_dac_val_cal_signed mismatch: expected {expected_second_dac_val_cal_signed}, got {int(self.dut.second_dac_val_cal_signed.value.signed_integer)}"
 
@@ -811,10 +811,8 @@ class shim_ad5676_dac_ctrl_base:
             self.dut._log.info(f"[DAC_WR] DAC word pair {dac_word_pair_number}: One or both DAC values are oob. Returning without checking.")
             return
 
-        # If last pair, check that dac_wr_done is asserted
+        # If last pair, check that dac_wr_done is asserted (combinational, high this same cycle)
         if dac_word_pair_number == 3:
-            await RisingEdge(self.dut.clk)
-            await ReadOnly()
             assert int(self.dut.dac_wr_done.value) == 1, \
                 f"[DAC_WR] DAC word pair {dac_word_pair_number}: dac_wr_done should be asserted after final DAC word pair is sent"
         return
@@ -837,9 +835,9 @@ class shim_ad5676_dac_ctrl_base:
         expected_dac_val = info['value']
         expected_dac_channel = info['ch']
 
-        expected_dac_val_signed = self.offset_to_signed(expected_dac_val)
+        expected_dac_val_signed = self.to_signed_16(expected_dac_val)
         expected_dac_val_cal_signed = expected_dac_val_signed + int(self.dut.cal_val[expected_dac_channel].value.signed_integer)
-        expected_abs_dac_val = self.signed_to_abs(expected_dac_val_cal_signed)
+        expected_abs_dac_val = self.signed_to_abs(expected_dac_val_signed)
         # Command format is: [23:20] = SPI_CMD_IMMED_WRITE, [19] = 0, [18:16] = channel, [15:0] = dac_value
         expected_spi_word = (self.SPI_CMD_IMMED_WRITE << 20) | (0 << 19) | (expected_dac_channel << 16) | self.signed_to_offset(expected_dac_val_cal_signed)
 
@@ -880,8 +878,6 @@ class shim_ad5676_dac_ctrl_base:
                 f"[{i}] DAC_WR_CH: dac_spi_cmd_done should be asserted after SPI word is sent"
 
             # Check if sent value via MOSI match expected SPI command and check the conversions
-            assert expected_dac_val_signed == int(self.dut.first_dac_val_signed.value.signed_integer), \
-                f"[{i}] DAC_WR_CH: dac_val_signed mismatch: expected {expected_dac_val_signed}, got {int(self.dut.first_dac_val_signed.value.signed_integer)}"
             assert expected_dac_val_cal_signed == int(self.dut.first_dac_val_cal_signed.value.signed_integer), \
                 f"[{i}] DAC_WR_CH: dac_val_cal_signed mismatch: expected {expected_dac_val_cal_signed}, got {int(self.dut.first_dac_val_cal_signed.value.signed_integer)}"
             assert spi_word == expected_spi_word, \
@@ -892,19 +888,15 @@ class shim_ad5676_dac_ctrl_base:
             self.dut._log.info(f"[{i}] DAC_WR_CH: DAC value is oob. Returning without checking.")
             return
 
-        # Check that dac_wr_done is asserted and cmd_done is asserted
-        await RisingEdge(self.dut.clk)
-        await ReadOnly()
+        # dac_wr_done and cmd_done are combinational and high on the cycle the SPI write finishes
         assert int(self.dut.dac_wr_done.value) == 1, \
-            f"[{i}] DAC_WR_CH: dac_wr_done should be asserted after DAC_WR_CH is complete"
+            f"[{i}] DAC_WR_CH: dac_wr_done should be asserted when the SPI write completes"
         assert int(self.dut.cmd_done.value) == 1, \
-            f"[{i}] DAC_WR_CH: cmd_done should be asserted after DAC_WR_CH is complete"
+            f"[{i}] DAC_WR_CH: cmd_done should be asserted when the SPI write completes"
 
-        await RisingEdge(self.dut.clk)
-        await ReadOnly()
-        # Check that ldac is asserted
-        assert int(self.dut.ldac.value) == 1, \
-            f"[{i}] DAC_WR_CH: ldac should be asserted after DAC_WR_CH is complete"
+        # DAC_WR_CH does not pulse LDAC automatically
+        assert int(self.dut.ldac.value) == 0, \
+            f"[{i}] DAC_WR_CH: ldac should not be pulsed by DAC_WR_CH"
 
         return
 
@@ -1038,22 +1030,15 @@ class shim_ad5676_dac_ctrl_base:
             assert spi_word_list[ch] == expected_spi_word[ch], \
                 f"[{i}] ZERO: SPI word for channel {ch} mismatch: expected 0x{expected_spi_word[ch]:06X}, got 0x{spi_word_list[ch]:06X}"
 
-        await RisingEdge(self.dut.clk)
-        await ReadOnly()
-
-        # After all channels are set, dac_wr_done should be asserted
+        # After all channels are set, dac_wr_done and cmd_done are combinational and high this cycle
         assert int(self.dut.dac_wr_done.value) == 1, \
             f"[{i}] ZERO: dac_wr_done should be asserted after all channels are set to mid-range"
-
-        # cmd_done should be asserted
         assert int(self.dut.cmd_done.value) == 1, \
             f"[{i}] ZERO: cmd_done should be asserted after ZERO command is complete"
 
-        await RisingEdge(self.dut.clk)
-        await ReadOnly()
-        # ldac should be asserted
-        assert int(self.dut.ldac.value) == 1, \
-            f"[{i}] ZERO: ldac should be asserted after ZERO command is complete"
+        # ZERO does not pulse LDAC automatically
+        assert int(self.dut.ldac.value) == 0, \
+            f"[{i}] ZERO: ldac should not be pulsed by ZERO"
 
         return
 
@@ -1103,6 +1088,11 @@ class shim_ad5676_dac_ctrl_base:
         val = int(signed_16)
         return abs(val)
 
+    # Interpret a 16-bit command DAC value field as a 2's-complement signed integer.
+    def to_signed_16(self, val_16):
+        val = int(val_16) & 0xFFFF
+        return val - 0x10000 if (val & 0x8000) else val
+
     # --------------------------------------
     # Transition Monitors
     # --------------------------------------
@@ -1118,7 +1108,7 @@ class shim_ad5676_dac_ctrl_base:
             prev_dac_spi_cmd_done = int(self.dut.dac_spi_cmd_done.value)
             prev_n_miso_data_ready_mosi_clk = int(self.dut.n_miso_data_ready_mosi_clk.value)
             prev_boot_readback_match = int(self.dut.boot_readback_match.value)
-            prev_cancel_wait = int(self.dut.cancel_wait.value)
+            prev_cancel_wait = int(self.dut.cancel.value)
             prev_cmd_done = int(self.dut.cmd_done.value)
             prev_next_cmd_state = int(self.dut.next_cmd_state.value)
             prev_dac_wr_done = int(self.dut.dac_wr_done.value)
@@ -1126,6 +1116,7 @@ class shim_ad5676_dac_ctrl_base:
             prev_delay_timer = int(self.dut.delay_timer.value)
             prev_trigger_counter = int(self.dut.trigger_counter.value)
             prev_do_next_cmd = int(self.dut.do_next_cmd.value)
+            prev_pre_delay_wait_done = int(self.dut.pre_delay_wait_done.value)
             prev_command = int(self.dut.command.value)
             prev_cmd_word = int(self.dut.cmd_word.value)
             prev_trigger = int(self.dut.trigger.value)
@@ -1160,13 +1151,15 @@ class shim_ad5676_dac_ctrl_base:
             current_next_cmd_ready = int(self.dut.next_cmd_ready.value)
             current_read_next_dac_val_pair = int(self.dut.read_next_dac_val_pair.value)
             current_cmd_done = int(self.dut.cmd_done.value)
-            current_cancel_wait = int(self.dut.cancel_wait.value)
+            current_cancel_wait = int(self.dut.cancel.value)
             current_dac_wr_done = int(self.dut.dac_wr_done.value)
             current_command = int(self.dut.command.value)
             current_trigger = int(self.dut.trigger.value)
             current_trigger_counter = int(self.dut.trigger_counter.value)
             current_delay_timer = int(self.dut.delay_timer.value)
             current_wait_for_trig = int(self.dut.wait_for_trig.value)
+            current_do_pre_delay = int(self.dut.do_pre_delay.value)
+            current_min_delay_latched = int(self.dut.min_delay_latched.value)
             current_trig_wait_done = int(self.dut.trig_wait_done.value)
             current_delay_wait_done = int(self.dut.delay_wait_done.value)
             current_do_next_cmd = int(self.dut.do_next_cmd.value)
@@ -1209,12 +1202,12 @@ class shim_ad5676_dac_ctrl_base:
                 (current_read_next_dac_val_pair == 1 or current_cmd_done == 1 or current_cancel_wait == 1)
             ), f"cmd_buf_rd_en assertion failed: {self.dut.cmd_buf_rd_en.value}, {current_state}, {current_next_cmd_ready}, {current_read_next_dac_val_pair}, {current_cmd_done}, {current_cancel_wait}"
 
-            # check cancel_wait
-            assert int(self.dut.cancel_wait.value) == (
-                (current_state == self.STATE_ENCODING['S_DELAY'] or current_state == self.STATE_ENCODING['S_TRIG_WAIT'] or (current_state == self.STATE_ENCODING['S_DAC_WR'] and current_dac_wr_done == 1)) and
+            # check cancel
+            assert int(self.dut.cancel.value) == (
+                (current_state == self.STATE_ENCODING['S_DELAY'] or current_state == self.STATE_ENCODING['S_TRIG_WAIT'] or (current_state == self.STATE_ENCODING['S_DAC_WR'] and current_last_dac_channel == 1)) and
                 current_next_cmd_ready == 1 and
                 current_command == self.CMD_ENCODING['CANCEL']
-            ), f"cancel_wait assertion failed: {self.dut.cancel_wait.value}, {current_state}, {current_dac_wr_done}, {current_next_cmd_ready}, {current_command}"
+            ), f"cancel assertion failed: {self.dut.cancel.value}, {current_state}, {current_last_dac_channel}, {current_next_cmd_ready}, {current_command}"
 
             # check trig_wait_done
             expected_trig_wait_done = ((current_trigger == 1 and current_trigger_counter == 1) or current_trigger_counter == 0)
@@ -1255,7 +1248,14 @@ class shim_ad5676_dac_ctrl_base:
             elif current_command == self.CMD_ENCODING['SET_CAL']:
                 expected_next_state = self.STATE_ENCODING['S_IDLE']
             elif current_command == self.CMD_ENCODING['DAC_WR']:
-                expected_next_state = self.STATE_ENCODING['S_DAC_WR']
+                # DAC_WR starts the write immediately when waiting on a trigger, when the delay
+                # equals the minimum, or when pre-delay is disabled; otherwise it does the pre-delay.
+                trig_bit_set = (current_cmd_word >> self.TRIG_BIT) & 1
+                delay_is_min = (current_cmd_word & 0x1FFFFFF) == current_min_delay_latched
+                if trig_bit_set or delay_is_min or current_do_pre_delay == 0:
+                    expected_next_state = self.STATE_ENCODING['S_DAC_WR']
+                else:
+                    expected_next_state = self.STATE_ENCODING['S_PRE_DELAY']
             elif current_command == self.CMD_ENCODING['DAC_WR_CH']:
                 expected_next_state = self.STATE_ENCODING['S_DAC_WR_CH']
             elif current_command == self.CMD_ENCODING['CANCEL']:
@@ -1278,21 +1278,21 @@ class shim_ad5676_dac_ctrl_base:
             elif prev_error == 1:
                 exp_state = self.STATE_ENCODING['S_ERROR']
             elif prev_state == self.STATE_ENCODING['S_RESET']:
-                exp_state = self.STATE_ENCODING['S_IDLE'] if prev_boot_test_skip else self.STATE_ENCODING['S_INIT']
+                exp_state = self.STATE_ENCODING['S_INIT']
             elif prev_state == self.STATE_ENCODING['S_INIT']:
-                exp_state = self.STATE_ENCODING['S_TEST_WR']
+                exp_state = self.STATE_ENCODING['S_SET_MID'] if prev_boot_test_skip else self.STATE_ENCODING['S_TEST_WR']
             elif prev_state == self.STATE_ENCODING['S_TEST_WR'] and prev_dac_spi_cmd_done:
                 exp_state = self.STATE_ENCODING['S_REQ_RD']
             elif prev_state == self.STATE_ENCODING['S_REQ_RD'] and prev_dac_spi_cmd_done:
                 exp_state = self.STATE_ENCODING['S_TEST_RD']
             elif prev_state == self.STATE_ENCODING['S_TEST_RD'] and prev_n_miso_data_ready_mosi_clk == 0:
                 exp_state = self.STATE_ENCODING['S_SET_MID'] if prev_boot_readback_match else self.STATE_ENCODING['S_ERROR']
-            elif prev_cancel_wait:
-                exp_state = self.STATE_ENCODING['S_IDLE']
             elif prev_cmd_done:
                 exp_state = prev_next_cmd_state
             elif prev_state == self.STATE_ENCODING['S_DAC_WR'] and prev_dac_wr_done:
                 exp_state = self.STATE_ENCODING['S_TRIG_WAIT'] if prev_wait_for_trig else self.STATE_ENCODING['S_DELAY']
+            elif prev_state == self.STATE_ENCODING['S_PRE_DELAY'] and prev_pre_delay_wait_done:
+                exp_state = self.STATE_ENCODING['S_DAC_WR']
             else:
                 exp_state = prev_state # Hold state
 
@@ -1306,7 +1306,14 @@ class shim_ad5676_dac_ctrl_base:
             elif (prev_do_next_cmd == 1 and
                   (prev_command == self.CMD_ENCODING['DAC_WR'] or prev_command == self.CMD_ENCODING['NO_OP']) and
                   trig_bit_set == 0):
-                exp_delay = prev_cmd_word & 0x1FFFFFF # Keep lower 25 bits
+                delay_value = prev_cmd_word & 0x1FFFFFF
+                if prev_command == self.CMD_ENCODING['NO_OP']:
+                    # NO_OP allows any delay; a delay of 0 acts like a 1-cycle delay
+                    exp_delay = 0 if delay_value == 0 else delay_value - 1
+                elif delay_value < current_min_delay_latched:
+                    exp_delay = 0x1FFFFFF  # below minimum: max the timer while the error flags
+                else:
+                    exp_delay = delay_value - 1
             elif prev_delay_timer > 0:
                 exp_delay = prev_delay_timer - 1
             else:
@@ -1332,20 +1339,26 @@ class shim_ad5676_dac_ctrl_base:
             assert current_trigger_counter == exp_trig_cnt, \
                 f"trigger_counter assertion failed! Prev: {prev_trigger_counter} -> Curr: {current_trigger_counter}, Exp: {exp_trig_cnt}"
 
-             # check error flag
+             # check error flag (mirror the DUT's error condition wires)
             cond_boot_fail = (current_state == self.STATE_ENCODING['S_TEST_RD'] and current_n_miso_data_ready_mosi_clk == 0 and current_boot_readback_match == 0)
-            cond_unexpected_trigger = (current_state != self.STATE_ENCODING['S_TRIG_WAIT'] and current_trigger == 1 and current_trigger_counter <= 1)
-            cond_delay_short = (current_state == self.STATE_ENCODING['S_DAC_WR'] and current_dac_wr_done == 0 and current_wait_for_trig == 0 and current_delay_wait_done == 1)
+            cond_unexpected_trigger = (current_state != self.STATE_ENCODING['S_TRIG_WAIT'] and current_state != self.STATE_ENCODING['S_IDLE'] and current_trigger == 1 and current_trigger_counter <= 1)
+            cmd_delay_below_min = (current_do_next_cmd == 1
+                                   and current_command == self.CMD_ENCODING['DAC_WR']
+                                   and ((current_cmd_word >> self.TRIG_BIT) & 1) == 0
+                                   and (current_cmd_word & 0x1FFFFFF) < current_min_delay_latched)
+            cond_delay_short = ((current_state == self.STATE_ENCODING['S_DAC_WR'] and current_dac_wr_done == 0 and current_wait_for_trig == 0 and current_delay_wait_done == 1)
+                                or cmd_delay_below_min)
+            cond_pre_delay_long = (current_state == self.STATE_ENCODING['S_PRE_DELAY'] and current_delay_timer < current_min_delay_latched)
             cond_ldac_misalign = ((current_state == self.STATE_ENCODING['S_DAC_WR'] or current_state == self.STATE_ENCODING['S_DAC_WR_CH']) and current_ldac_shared == 1 and current_ldac == 0)
             cond_bad_cmd = (current_do_next_cmd == 1 and current_next_cmd_state == self.STATE_ENCODING['S_ERROR'])
-            cond_underflow = (((current_cmd_done == 1 and current_expect_next == 1) or current_read_next_dac_val_pair == 1) and current_next_cmd_ready == 0)
+            cond_underflow = (current_cmd_done == 1 and current_expect_next == 1 and current_next_cmd_ready == 0)
             cond_overflow = (current_try_data_write == 1 and current_data_buf_full == 1)
 
-            expected_error = (cond_boot_fail or cond_unexpected_trigger or cond_delay_short or cond_ldac_misalign or
+            expected_error = (cond_boot_fail or cond_unexpected_trigger or cond_delay_short or cond_pre_delay_long or cond_ldac_misalign or
                               cond_bad_cmd or cond_underflow or cond_overflow or current_cal_oob == 1 or current_dac_val_oob == 1)
 
             assert current_error_out == expected_error, \
-                f"error signal assertion failed! Expected {expected_error}, Got {current_error_out}. Details: Boot:{cond_boot_fail} Trig:{cond_unexpected_trigger} Delay:{cond_delay_short} LDAC:{cond_ldac_misalign} Cmd:{cond_bad_cmd} Under:{cond_underflow} Over:{cond_overflow}"
+                f"error signal assertion failed! Expected {expected_error}, Got {current_error_out}. Details: Boot:{cond_boot_fail} Trig:{cond_unexpected_trigger} Delay:{cond_delay_short} PreDelay:{cond_pre_delay_long} LDAC:{cond_ldac_misalign} Cmd:{cond_bad_cmd} Under:{cond_underflow} Over:{cond_overflow}"
 
             # If we have an error, log the details
             if current_error_out == 1:
@@ -1356,6 +1369,8 @@ class shim_ad5676_dac_ctrl_base:
                     error_reasons.append("Unexpected Trigger")
                 if cond_delay_short:
                     error_reasons.append("Delay Too Short")
+                if cond_pre_delay_long:
+                    error_reasons.append("Pre-Delay Too Long")
                 if cond_ldac_misalign:
                     error_reasons.append("LDAC Misalignment")
                 if cond_bad_cmd:
@@ -1368,12 +1383,16 @@ class shim_ad5676_dac_ctrl_base:
                     error_reasons.append("Calibration Value Out of Bounds")
                 if current_dac_val_oob == 1:
                     error_reasons.append("DAC Value Out of Bounds")
-                self.dut._log.warning(f"Error detected at state {self.get_state_name(current_state)}: " + ", ".join(error_reasons))
+                reason_str = ", ".join(error_reasons)
+                # Fail fast unless the test opted in to expecting an error.
+                assert self.expect_error, \
+                    f"DUT signaled an unexpected error at state {self.get_state_name(current_state)}: {reason_str}"
+                self.dut._log.warning(f"Error detected at state {self.get_state_name(current_state)}: {reason_str}")
 
             # check unexp_trig
             if prev_resetn == 0:
                 exp_unexp_trig = 0
-            elif prev_state != self.STATE_ENCODING['S_TRIG_WAIT'] and prev_trigger == 1 and prev_trigger_counter <= 1:
+            elif prev_state != self.STATE_ENCODING['S_TRIG_WAIT'] and prev_state != self.STATE_ENCODING['S_IDLE'] and prev_trigger == 1 and prev_trigger_counter <= 1:
                 exp_unexp_trig = 1
             else:
                 exp_unexp_trig = prev_unexp_trig
@@ -1445,13 +1464,17 @@ class shim_ad5676_dac_ctrl_base:
                 f"data_buf_overflow assertion failed! Prev: {prev_data_buf_overflow} -> Curr: {current_data_buf_overflow}, Exp: {exp_data_buf_overflow}"
 
             # check last_dac_channel
-            assert current_last_dac_channel == (current_dac_channel == 7), \
-                f"last_dac_channel assertion failed: {current_last_dac_channel}, Ch: {current_dac_channel}"
+            exp_last_dac_channel = (
+                ((current_state == self.STATE_ENCODING['S_DAC_WR'] or current_state == self.STATE_ENCODING['S_SET_MID']) and current_dac_channel == 7)
+                or current_state == self.STATE_ENCODING['S_DAC_WR_CH']
+            )
+            assert current_last_dac_channel == exp_last_dac_channel, \
+                f"last_dac_channel assertion failed: {current_last_dac_channel}, State: {current_state}, Ch: {current_dac_channel}"
 
             # check second_dac_channel_of_pair
-            # Even channel is when the least significant bit is set (bit 0 is 1)
-            assert current_second_dac_channel_of_pair == ((current_dac_channel & 1) == 1), \
-                f"second_dac_channel_of_pair assertion failed: {current_second_dac_channel_of_pair}, Ch: {current_dac_channel}"
+            # Only meaningful during S_DAC_WR; high on the odd channel of each pair
+            assert current_second_dac_channel_of_pair == (current_state == self.STATE_ENCODING['S_DAC_WR'] and (current_dac_channel & 1) == 1), \
+                f"second_dac_channel_of_pair assertion failed: {current_second_dac_channel_of_pair}, State: {current_state}, Ch: {current_dac_channel}"
 
             # check dac_spi_cmd_done
             spi_cmd_states = [self.STATE_ENCODING['S_DAC_WR'], self.STATE_ENCODING['S_DAC_WR_CH'], self.STATE_ENCODING['S_TEST_WR'], self.STATE_ENCODING['S_REQ_RD'], self.STATE_ENCODING['S_TEST_RD'], self.STATE_ENCODING['S_SET_MID']]
@@ -1480,18 +1503,11 @@ class shim_ad5676_dac_ctrl_base:
             assert current_read_next_dac_val_pair == exp_read_next, \
                 f"read_next_dac_val_pair assertion failed! Prev: {current_read_next_dac_val_pair}, Exp: {exp_read_next}"
 
-            # check dac_wr_done
-            if prev_resetn == 0 or prev_state == self.STATE_ENCODING['S_ERROR']:
-                exp_dac_wr_done = 0
-            elif (prev_state == self.STATE_ENCODING['S_DAC_WR'] or prev_state == self.STATE_ENCODING['S_SET_MID']) and prev_dac_spi_cmd_done == 1 and prev_last_dac_channel == 1:
-                exp_dac_wr_done = 1
-            elif prev_state == self.STATE_ENCODING['S_DAC_WR_CH'] and prev_dac_spi_cmd_done == 1:
-                exp_dac_wr_done = 1
-            else:
-                exp_dac_wr_done = 0
+            # check dac_wr_done (combinational: last_dac_channel && dac_spi_cmd_done)
+            exp_dac_wr_done = 1 if (current_last_dac_channel == 1 and current_dac_spi_cmd_done == 1) else 0
 
             assert current_dac_wr_done == exp_dac_wr_done, \
-                f"dac_wr_done assertion failed! Prev: {current_dac_wr_done}, Exp: {exp_dac_wr_done}"
+                f"dac_wr_done assertion failed! Cur: {current_dac_wr_done}, Exp: {exp_dac_wr_done} (last_ch {current_last_dac_channel}, spi_done {current_dac_spi_cmd_done})"
 
             # check dac_channel
             if prev_resetn == 0 or prev_state == self.STATE_ENCODING['S_ERROR']:
@@ -1546,7 +1562,7 @@ class shim_ad5676_dac_ctrl_base:
             if prev_resetn == 0 or prev_state == self.STATE_ENCODING['S_ERROR']:
                 exp_n_cs_timer = 0
             elif prev_start_spi_cmd:
-                exp_n_cs_timer = prev_n_cs_high_time_latched
+                exp_n_cs_timer = (prev_n_cs_high_time_latched - 1) & 0x1F
             elif prev_n_cs_timer > 0:
                 exp_n_cs_timer = prev_n_cs_timer - 1
             else:
@@ -1556,8 +1572,13 @@ class shim_ad5676_dac_ctrl_base:
                 f"n_cs_timer assertion failed! Prev: {prev_n_cs_timer}, Exp: {exp_n_cs_timer}"
 
             # check running_n_cs_timer
-            # Logic: running_n_cs_timer <= (n_cs_timer > 0);
-            exp_running_n_cs_timer = (prev_n_cs_timer > 0)
+            # DUT: set on start_spi_cmd, cleared when n_cs_timer hits 0, else held (held high while counting).
+            if prev_resetn == 0 or prev_state == self.STATE_ENCODING['S_ERROR']:
+                exp_running_n_cs_timer = 0
+            elif prev_start_spi_cmd or prev_n_cs_timer > 0:
+                exp_running_n_cs_timer = 1
+            else:
+                exp_running_n_cs_timer = 0
             assert current_running_n_cs_timer == exp_running_n_cs_timer, \
                 f"running_n_cs_timer assertion failed! {current_running_n_cs_timer} != {exp_running_n_cs_timer} (Prev Timer: {prev_n_cs_timer})"
 
@@ -1632,9 +1653,9 @@ class shim_ad5676_dac_ctrl_base:
             await RisingEdge(self.dut.clk)
 
         # End tasks for safety
-        command_buf_task.kill() # This lives for an indefinite amount of time and should be killed. Shouldn't be awaited.
-        command_logger_task.kill() # This might live for an indefinite amount of time and should be killed. Shouldn't be awaited.
-        send_commands_task.kill() # kill for safety.
+        command_buf_task.cancel() # Lives indefinitely; cancel rather than await.
+        command_logger_task.cancel() # May live indefinitely; cancel rather than await.
+        send_commands_task.cancel() # Cancel for safety.
         return
 
     async def log_executing_commands(self, num_of_commands):

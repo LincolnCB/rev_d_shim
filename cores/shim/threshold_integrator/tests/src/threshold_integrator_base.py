@@ -1,7 +1,6 @@
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge, ReadOnly, ReadWrite
-from cocotb.binary import BinaryValue
 import random
 from collections import deque
 
@@ -10,11 +9,12 @@ class threshold_integrator_base:
     # State encoding dictionary
     STATES = {
         0: "IDLE",
-        1: "SETUP",
-        2: "WAIT",
-        3: "RUNNING",
-        4: "OUT_OF_BOUNDS",
-        5: "ERROR"
+        1: "CALC_CHUNK_WIDTH",
+        2: "CALC_MAX_VALUE",
+        3: "WAIT_FOR_SAMPLE_CORE",
+        4: "RUNNING",
+        5: "OUT_OF_BOUNDS",
+        6: "ERROR"
     }
 
     def __init__(self, dut, clk_period=4, time_unit="ns"):
@@ -28,8 +28,8 @@ class threshold_integrator_base:
         # Initialize input signals
         self.dut.enable.value = 0
         self.dut.window.value = 0
-        self.dut.threshold_average.value = 0
-        self.dut.sample_core_done.value = 0
+        self.dut.thresh_val.value = 0
+        self.dut.sample_core_setup.value = 0
         self.dut.abs_sample_concat.value = 0
 
         # Inputs to drive
@@ -98,28 +98,28 @@ class threshold_integrator_base:
                     f"Expected state after reset: 0 (IDLE), got: {int(self.dut.state.value)} ({self.get_state_name(self.dut.state.value)})"
 
             # IDLE to OUT_OF_BOUNDS
-            if previous_state_value == 0 and int(self.dut.over_thresh) == 1:
-                assert int(self.dut.state.value) == 4,\
-                    f"Expected state after over_thresh in IDLE: 4 (OUT_OF_BOUNDS), got: {int(self.dut.state.value)} ({self.get_state_name(self.dut.state.value)})"
+            if previous_state_value == 0 and int(self.dut.over_thresh.value) == 1:
+                assert int(self.dut.state.value) == 5,\
+                    f"Expected state after over_thresh in IDLE: 5 (OUT_OF_BOUNDS), got: {int(self.dut.state.value)} ({self.get_state_name(self.dut.state.value)})"
 
                 assert int(self.dut.window.value) < 2**11,\
                     f"Expected window value in OUT_OF_BOUNDS: < 2**11, got: {int(self.dut.window.value)}"
 
             # RUNNING to OUT_OF_BOUNDS
-            if bool(previous_channel_over_thresh_value) and previous_state_value == 3:
+            if bool(previous_channel_over_thresh_value) and previous_state_value == 4:
 
                 self.dut._log.info(f"Current State: {int(self.dut.state.value)} ({self.get_state_name(self.dut.state.value)})")
                 self.dut._log.info(f"channel_over_thresh value: {previous_channel_over_thresh_value}")
 
-                assert int(self.dut.state.value) == 4, \
-                    f"Expected state after channel_over_thresh: 4 (OUT_OF_BOUNDS), got: {int(self.dut.state.value)} ({self.get_state_name(self.dut.state.value)})"
+                assert int(self.dut.state.value) == 5, \
+                    f"Expected state after channel_over_thresh: 5 (OUT_OF_BOUNDS), got: {int(self.dut.state.value)} ({self.get_state_name(self.dut.state.value)})"
 
                 assert self.dut.over_thresh.value == 1, \
                     f"Expected over_thresh: 1, got: {int(self.dut.over_thresh.value)}"
 
             # RUNNING to ERROR
             # FIFO overflow
-            if (previous_fifo_full_value and previous_wr_en_value and previous_state_value == 3):
+            if (previous_fifo_full_value and previous_wr_en_value and previous_state_value == 4):
 
                 self.dut._log.info(f"Current State: {int(self.dut.state.value)} ({self.get_state_name(self.dut.state.value)})")
                 self.dut._log.info(f"fifo_full value: {previous_fifo_full_value}")
@@ -129,14 +129,14 @@ class threshold_integrator_base:
                 assert self.dut.err_overflow.value == 1, \
                     f"Expected err_overflow: 1, got: {int(self.dut.err_overflow.value)}"
 
-                assert int(self.dut.state.value) == 5, \
-                    f"Expected state after overflow: 5 (ERROR), got: {int(self.dut.state.value)} ({self.get_state_name(self.dut.state.value)})"
+                assert int(self.dut.state.value) == 6, \
+                    f"Expected state after overflow: 6 (ERROR), got: {int(self.dut.state.value)} ({self.get_state_name(self.dut.state.value)})"
 
                 assert self.expected_number_of_elements_in_fifo >=1024, \
                     f"Expected number of elements in the MODEL FIFO to be >= 1024, got: {self.expected_number_of_elements_in_fifo}"
 
             # FIFO underflow
-            if (previous_fifo_empty_value and previous_rd_en_value and previous_state_value == 3):
+            if (previous_fifo_empty_value and previous_rd_en_value and previous_state_value == 4):
 
                 self.dut._log.info(f"Current State: {int(self.dut.state.value)} ({self.get_state_name(self.dut.state.value)})")
                 self.dut._log.info(f"fifo_empty value: {previous_fifo_empty_value}")
@@ -145,8 +145,8 @@ class threshold_integrator_base:
                 assert self.dut.err_underflow.value == 1, \
                     f"Expected err_underflow: 1, got: {int(self.dut.err_underflow.value)}"
 
-                assert int(self.dut.state.value) == 5, \
-                    f"Expected state after underflow: 5 (ERROR), got: {int(self.dut.state.value)} ({self.get_state_name(self.dut.state.value)})"
+                assert int(self.dut.state.value) == 6, \
+                    f"Expected state after underflow: 6 (ERROR), got: {int(self.dut.state.value)} ({self.get_state_name(self.dut.state.value)})"
 
     async def idle_to_running_state(self, window_value=(2**16)-1, threshold_average_value=(2**10)-1):
         """
@@ -169,7 +169,7 @@ class threshold_integrator_base:
         self.dut.window.value = self.driven_window_value
 
         self.driven_threshold_average_value = threshold_average_value
-        self.dut.threshold_average.value = self.driven_threshold_average_value
+        self.dut.thresh_val.value = self.driven_threshold_average_value
 
         # DUT should be in SETUP state
         await RisingEdge(self.dut.clk)
@@ -199,8 +199,8 @@ class threshold_integrator_base:
         assert int(self.dut.window.value) == self.driven_window_value, \
             f"Expected window value: {self.driven_window_value}, got: {int(self.dut.window.value)}"
 
-        assert int(self.dut.threshold_average.value) == self.driven_threshold_average_value, \
-            f"Expected threshold_average value: {self.driven_threshold_average_value}, got: {int(self.dut.threshold_average.value)}"
+        assert int(self.dut.thresh_val.value) == self.driven_threshold_average_value, \
+            f"Expected threshold_average value: {self.driven_threshold_average_value}, got: {int(self.dut.thresh_val.value)}"
 
         self.dut._log.info(f"Window: {self.driven_window_value}")
         self.dut._log.info(f"Threshold Average: {self.driven_threshold_average_value}")
@@ -208,52 +208,51 @@ class threshold_integrator_base:
         self.dut._log.info(f"Current Chunk Width: {int(self.dut.chunk_width.value)}")
 
         assert int(self.dut.state.value) == 1, \
-            f"Expected state after enabling: 1 (SETUP), got: {int(self.dut.state.value)} ({self.get_state_name(self.dut.state.value)})"
+            f"Expected state after enabling: 1 (CALC_CHUNK_WIDTH), got: {int(self.dut.state.value)} ({self.get_state_name(self.dut.state.value)})"
 
-        assert int(self.dut.window_reg.value) == self.driven_window_value >> 4, \
-            f"Expected window_reg: {self.driven_window_value >> 4}, got: {int(self.dut.window_reg.value)}"
+        assert int(self.dut.window_mult_reg.value) == self.driven_window_value >> 4, \
+            f"Expected window_mult_reg: {self.driven_window_value >> 4}, got: {int(self.dut.window_mult_reg.value)}"
 
-        assert int(self.dut.threshold_average_shift.value) == self.driven_threshold_average_value, \
-            f"Expected threshold_average_shift: {self.driven_threshold_average_value}, got: {int(self.dut.threshold_average_shift.value)}"
+        assert int(self.dut.thresh_val_shift.value) == self.driven_threshold_average_value, \
+            f"Expected thresh_val_shift: {self.driven_threshold_average_value}, got: {int(self.dut.thresh_val_shift.value)}"
 
-        assert int(self.dut.chunk_width.value) == self.expected_chunk_width, \
-            f"Expected chunk_width: {self.expected_chunk_width}, got: {int(self.dut.chunk_width.value)}"
-
-        # Wait for the DUT to transition to WAIT state
+        # chunk_width is finalized when the FSM enters CALC_MAX_VALUE (state 2).
         while True:
             await RisingEdge(self.dut.clk)
             await ReadWrite()
             if int(self.dut.state.value) == 2:
                 break
 
-        self.dut._log.info(f"Expected Chunk Size: {self.expected_chunk_size}")
-        self.dut._log.info(f"Current Chunk Size: {int(self.dut.chunk_mask.value + 1)}")
+        assert int(self.dut.chunk_width.value) == self.expected_chunk_width, \
+            f"Expected chunk_width: {self.expected_chunk_width}, got: {int(self.dut.chunk_width.value)}"
 
-        # Assertions
-        assert int(self.dut.state.value) == 2, \
-            f"Expected state after setup: 2 (WAIT), got: {int(self.dut.state.value)} ({self.get_state_name(self.dut.state.value)})"
+        # max_value and chunk_mask are finalized when the FSM enters WAIT_FOR_SAMPLE_CORE (state 3).
+        while True:
+            await RisingEdge(self.dut.clk)
+            await ReadWrite()
+            if int(self.dut.state.value) == 3:
+                break
+
+        self.dut._log.info(f"Expected Chunk Size: {self.expected_chunk_size}")
+        self.dut._log.info(f"Current Chunk Size: {(int(self.dut.chunk_mask.value) + 1)}")
 
         assert int(self.dut.max_value.value) == self.driven_threshold_average_value * (self.driven_window_value >> 4), \
             f"Expected max_value: {self.driven_threshold_average_value * (self.driven_window_value >> 4)}, got: {int(self.dut.max_value.value)}"
 
-        assert int(self.dut.chunk_mask.value + 1) == self.expected_chunk_size, \
-            f"Expected chunk_size: {self.expected_chunk_size}, got: {int(self.dut.chunk_mask.value + 1)}"
+        assert (int(self.dut.chunk_mask.value) + 1) == self.expected_chunk_size, \
+            f"Expected chunk_size: {self.expected_chunk_size}, got: {(int(self.dut.chunk_mask.value) + 1)}"
 
-        # Go to RUNNING state
-        await RisingEdge(self.dut.clk)
-        self.dut.sample_core_done.value = 1
-
-        # Now in first cycle of RUNNING state
+        # Assert sample_core_setup to advance WAIT_FOR_SAMPLE_CORE -> RUNNING (state 4).
+        self.dut.sample_core_setup.value = 1
         await RisingEdge(self.dut.clk)
         await ReadWrite()
-        self.dut.sample_core_done.value = 0
+        self.dut.sample_core_setup.value = 0
 
-        # Assertions
-        assert int(self.dut.state.value) == 3, \
-            f"Expected state after sample_core_done: 3 (RUNNING), got: {int(self.dut.state.value)} ({self.get_state_name(self.dut.state.value)})"
+        assert int(self.dut.state.value) == 4, \
+            f"Expected state after sample_core_setup: 4 (RUNNING), got: {int(self.dut.state.value)} ({self.get_state_name(self.dut.state.value)})"
 
-        assert int(self.dut.inflow_chunk_timer.value) == (int(self.dut.chunk_mask.value + 1) << 4) - 1, \
-            f"Expected inflow_chunk_timer: {(int(self.dut.chunk_mask.value + 1) << 4) - 1}, got: {int(self.dut.inflow_chunk_timer.value)}"
+        assert int(self.dut.inflow_chunk_timer.value) == ((int(self.dut.chunk_mask.value) + 1) << 4) - 1, \
+            f"Expected inflow_chunk_timer: {((int(self.dut.chunk_mask.value) + 1) << 4) - 1}, got: {int(self.dut.inflow_chunk_timer.value)}"
 
         assert int(self.dut.outflow_timer.value) == int(self.dut.window.value) - 1, \
             f"Expected outflow_timer: {int(self.dut.window.value) - 1}, got: {int(self.dut.outflow_timer.value)}"
@@ -263,9 +262,9 @@ class threshold_integrator_base:
 
         self.dut._log.info("Transitioned to RUNNING state successfully")
         self.dut._log.info(f"Window: {int(self.dut.window.value)}")
-        self.dut._log.info(f"Threshold Average: {int(self.dut.threshold_average.value)}")
+        self.dut._log.info(f"Threshold Average: {int(self.dut.thresh_val.value)}")
 
-        self.dut._log.info(f"Current Chunk Size: {int(self.dut.chunk_mask.value + 1)}")
+        self.dut._log.info(f"Current Chunk Size: {(int(self.dut.chunk_mask.value) + 1)}")
         self.dut._log.info(f"Expected Chunk Size: {self.expected_chunk_size}")
 
         self.dut._log.info(f"Current Chunk Width: {int(self.dut.chunk_width.value)}")
@@ -304,7 +303,7 @@ class threshold_integrator_base:
         constructed_abs_sample_concat = 0
 
         # Initiliaze previous values for scoreboard
-        previous_inflow_chunk_timer_value = {(int(self.dut.chunk_mask.value + 1) << 4) - 1}
+        previous_inflow_chunk_timer_value = ((int(self.dut.chunk_mask.value) + 1) << 4) - 1
         previous_outflow_timer_value = int(self.dut.window.value) - 1
 
         previous_inflow_value = [0] * 8
@@ -361,9 +360,9 @@ class threshold_integrator_base:
                 elif mode == "max_abs_sample_concat_values":
                     random_15_bit_value = 2**15 - 1
                 elif mode == "high_abs_sample_concat_values":
-                    random_15_bit_value = random.randint(int(self.dut.threshold_average.value), 2**15-1)
+                    random_15_bit_value = random.randint(int(self.dut.thresh_val.value), 2**15-1)
                 elif mode == "low_abs_sample_concat_values":
-                    random_15_bit_value = random.randint(0, int(self.dut.threshold_average.value) - 1)
+                    random_15_bit_value = random.randint(0, int(self.dut.thresh_val.value) - 1)
 
                 inflow_value[i] = random_15_bit_value
                 constructed_abs_sample_concat |= random_15_bit_value << (i * 15)
@@ -399,7 +398,8 @@ class threshold_integrator_base:
                 # This is when chunks sums will start getting in to the FIFO
                 else:
                     for i in range(8):
-                        expected_inflow_chunk_sum[i] += previous_inflow_value[i]
+                        # The DUT queues the accumulated chunk sum WITHOUT the current sample,
+                        # then restarts the next chunk with the current sample as its carryover.
                         self.channel_queues[i].append(expected_inflow_chunk_sum[i])
                         self.expected_number_of_elements_in_fifo += 1
 
@@ -414,15 +414,15 @@ class threshold_integrator_base:
                         assert int(self.dut.queued_fifo_in_chunk_sum[i].value) == expected_inflow_chunk_sum[i], \
                             f"Expected queued_fifo_in_chunk_sum[{i}]: {expected_inflow_chunk_sum[i]}, got: {int(self.dut.queued_fifo_in_chunk_sum[i].value)}"
 
-                        # Inflow chunk sum should reset to 0
-                        expected_inflow_chunk_sum[i] = 0
+                        # Inflow chunk sum restarts at the current sample (carryover into the next chunk)
+                        expected_inflow_chunk_sum[i] = previous_inflow_value[i]
 
                         self.dut._log.info(f"Expected inflow_chunk_sum[{i}] this cycle: {expected_inflow_chunk_sum[i]}")
                         self.dut._log.info(f"Current inflow_chunk_sum[{i}] this cycle: {int(self.dut.inflow_chunk_sum[i].value)}")
 
-                        # Check if the inflow_chunk_sum is reset to 0
-                        assert int(self.dut.inflow_chunk_sum[i].value) == 0, \
-                            f"Expected inflow_chunk_sum[{i}] to be reset to 0, got: {int(self.dut.inflow_chunk_sum[i].value)}"
+                        # Check if the inflow_chunk_sum restarted with the current sample
+                        assert int(self.dut.inflow_chunk_sum[i].value) == previous_inflow_value[i], \
+                            f"Expected inflow_chunk_sum[{i}] to restart at {previous_inflow_value[i]}, got: {int(self.dut.inflow_chunk_sum[i].value)}"
 
                     # When previous_inflow_chunk_timer_value is 0, it means we are at the start of a new chunk so:
                     # Inflow chunk timer should be set to (chunk_size << 4) - 1

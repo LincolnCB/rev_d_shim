@@ -28,7 +28,7 @@ async def test_idle(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    state_scoreboard_task.kill()
+    state_scoreboard_task.cancel()
 
 @cocotb.test()
 async def idle_to_running_to_halted(dut):
@@ -49,8 +49,8 @@ async def idle_to_running_to_halted(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
-    state_scoreboard_task.kill()
-    reach_s_halted_task.kill()
+    state_scoreboard_task.cancel()
+    reach_s_halted_task.cancel()
 
 # Helper: run state_scoreboard_dispatcher concurrently with a drive coroutine,
 # await both, then kill any residual tasks.
@@ -60,8 +60,8 @@ async def _run_with_scoreboard(dut, tb, drive_coro):
     await Combine(state_task, drive_task)
     for _ in range(4):
         await RisingEdge(dut.clk)
-    state_task.kill()
-    drive_task.kill()
+    state_task.cancel()
+    drive_task.cancel()
 
 
 # -----------------------------------------------------------------------------
@@ -643,8 +643,8 @@ async def test_halted_only_pow_en_low_stays_halted(dut):
     await Combine(state_task, drive_task)
     for _ in range(4):
         await RisingEdge(dut.clk)
-    state_task.kill()
-    drive_task.kill()
+    state_task.cancel()
+    drive_task.cancel()
 
 
 @cocotb.test()
@@ -747,7 +747,9 @@ async def test_output_signals_at_s_halted(dut):
     assert dut.n_shutdown_force.value == 0,  "n_shutdown_force should be 0 in S_HALTED"
     assert dut.shutdown_rst.value == 0,      "shutdown_rst should be 0 in S_HALTED"
     assert dut.shutdown_sense_en.value == 0, "shutdown_sense_en should be 0 in S_HALTED"
-    assert dut.spi_en.value == 0,        "spi_en should be 0 in S_HALTED"
+    # spi_en is not cleared on entry to S_HALTED; reaching S_HALTED from S_RUNNING keeps it 1
+    # (the SPI subsystem is stopped via spi_halt) until the S_HALTED -> S_IDLE transition.
+    assert dut.spi_en.value == 1,        "spi_en should still be 1 in S_HALTED (reached from S_RUNNING)"
     assert dut.spi_clk_gate.value == 0,      "spi_clk_gate should be 0 in S_HALTED"
     assert dut.block_bufs.value == 1,        "block_bufs should be 1 in S_HALTED"
     assert dut.unlock_cfg.value == 1,        "unlock_cfg should be 1 in S_HALTED"

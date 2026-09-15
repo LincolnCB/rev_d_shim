@@ -3,7 +3,6 @@ from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge, ReadOnly, ReadWrite, Combine
 from collections import deque
 
-from distro import info
 from fwft_fifo_model import fwft_fifo_model
 import random
 
@@ -78,6 +77,7 @@ class shim_ads816x_adc_ctrl_base:
         self.dut.n_cs_high_time.value = 8 # Default n_cs high time
         self.dut.cmd_buf_word.value = 0
         self.dut.cmd_buf_empty.value = 1
+        self.dut.blocked.value = 0
         self.dut.data_buf_full.value = 0
         self.dut.trigger.value = 0
         self.dut.miso.value = 0
@@ -91,8 +91,9 @@ class shim_ads816x_adc_ctrl_base:
         # Queue to keep track of current executing command in the DUT
         self.executing_cmd_queue = deque()
 
-        # Repeating global flags
-        self.adc_rd_ch_repeating_ch = None
+        # Set True by tests that intentionally drive the DUT into S_ERROR (e.g. bad command);
+        # otherwise the transition monitor fails the test the moment the DUT signals an error.
+        self.expect_error = False
 
         # Delay and trig global flags
         self.delay_count = None
@@ -131,7 +132,6 @@ class shim_ads816x_adc_ctrl_base:
         self.cmd_buf.reset()
         self.data_buf.reset()
         self.executing_cmd_queue.clear()
-        self.adc_rd_ch_repeating_ch = None
         self.delay_count = None
         self.trig_count = None
         await RisingEdge(self.dut.clk)
@@ -160,13 +160,15 @@ class shim_ads816x_adc_ctrl_base:
     # Random input drivers/generators
     # ---------------------------
     async def random_trigger_driver(self):
-        """ Randomly assert the trigger input signal. """
-        for _ in range(10):  # Initial delay before starting
+        """ Randomly assert the trigger input while the DUT is waiting for a trigger. """
+        # Hold triggers until setup_done, and only drive them while the DUT is actually waiting
+        # for a trigger -- a trigger in any other state is flagged unexpected and drives S_ERROR.
+        while int(self.dut.setup_done.value) == 0:
             await RisingEdge(self.dut.clk)
         while True:
             await RisingEdge(self.dut.clk)
-            # 30% chance to toggle trigger each clock cycle
-            if random.random() < 0.3:
+            # 30% chance to toggle trigger each clock cycle while waiting for a trigger
+            if int(self.dut.waiting_for_trig.value) == 1 and random.random() < 0.3:
                 self.dut.trigger.value = 1
                 self.dut._log.info("Trigger asserted")
                 await RisingEdge(self.dut.clk)
@@ -342,11 +344,12 @@ class shim_ads816x_adc_ctrl_base:
     # Executing command scoreboard dispatcher
     # --------------------------------------
 
-    async def executing_command_scoreboard(self, num_of_commands: int):
+    async def executing_command_scoreboard(self, cmd_word_list):
         """
         Pop entries from executing_cmd_queue (filled when cmd_buf_rd_en is asserted)
         and run per-command scoreboards.
         """
+        num_of_commands = len(cmd_word_list)
         if num_of_commands == 0:
             self.dut._log.info("Executing command scoreboard finished: 0 commands expected.")
             return
@@ -400,21 +403,44 @@ class shim_ads816x_adc_ctrl_base:
                     forked.append(cocotb.start_soon(self._sb_adc_rd_repeating(repeat_count_word)))
 
             elif decoded["cmd"] == self.CMD_ENCODING['ADC_RD_CH']:
-                forked.append(cocotb.start_soon(self._sb_adc_rd_ch(decoded, idx)))
-                # If the command is repeating, start a separate scoreboard for the repeats with repeating count as an argument from the cmd_buf
+                # Consecutive ADC_RD_CH reads (back-to-back or repeating) are pipelined into a single
+                # SPI stream, so model the whole group with one scoreboard.
                 if decoded["repeat"] == 1:
+                    # Repeating: the channel is read (1 + repeat_count) times.
                     while True:
                         await RisingEdge(self.dut.clk)
                         await ReadOnly()
                         if len(self.executing_cmd_queue) > 0:
                             break
-                    # Sanity check
                     expected_repeat_count_word = self.executing_cmd_queue.popleft()
                     repeat_count_word = int(self.dut.cmd_buf_word.value)
                     assert repeat_count_word == expected_repeat_count_word, f"Repeat count mismatch: expected {expected_repeat_count_word} got {repeat_count_word}"
-                    # Fork the repeating scoreboard
                     processed += 1
-                    forked.append(cocotb.start_soon(self._sb_adc_rd_ch_repeating(repeat_count_word)))
+                    channels = [decoded["ch"]] * (1 + repeat_count_word)
+                    forked.append(cocotb.start_soon(self._sb_adc_rd_ch(channels, idx)))
+                else:
+                    # Back-to-back: collect the run of consecutive non-repeating ADC_RD_CH commands.
+                    channels = [decoded["ch"]]
+                    k = idx + 1
+                    while k < num_of_commands:
+                        d = self.decode_cmd(cmd_word_list[k])
+                        if d["cmd"] == self.CMD_ENCODING['ADC_RD_CH'] and d["repeat"] == 0:
+                            channels.append(d["ch"])
+                            k += 1
+                        else:
+                            break
+                    forked.append(cocotb.start_soon(self._sb_adc_rd_ch(channels, idx)))
+                    # Consume the additional grouped commands as the DUT reads them.
+                    for extra in range(len(channels) - 1):
+                        while True:
+                            await RisingEdge(self.dut.clk)
+                            await ReadOnly()
+                            if len(self.executing_cmd_queue) > 0:
+                                break
+                        popped_extra = self.executing_cmd_queue.popleft()
+                        assert popped_extra == cmd_word_list[idx + 1 + extra], \
+                            f"ADC_RD_CH group cmd mismatch: expected 0x{cmd_word_list[idx + 1 + extra]:08X} got 0x{popped_extra:08X}"
+                        processed += 1
 
             elif decoded["cmd"] == self.CMD_ENCODING['CANCEL']:
                 forked.append(cocotb.start_soon(self._sb_cancel(idx)))
@@ -463,7 +489,8 @@ class shim_ads816x_adc_ctrl_base:
 
         # If TRIG_BIT is 1 trigger_counter should be set to value field otherwise, delay_timer should be set to value field
         expected_trigger_counter = info['value'] if info['trig'] == 1 else 0
-        expected_delay_timer = info['value'] if info['trig'] == 0 else 0
+        # The DUT loads delay_timer with value-1 (a value of 0 stays 0, acting like a 1-cycle delay).
+        expected_delay_timer = (info['value'] - 1 if info['value'] > 0 else 0) if info['trig'] == 0 else 0
 
         if expected_wait_for_trig:
             assert int(self.dut.trigger_counter.value) == expected_trigger_counter, \
@@ -647,38 +674,24 @@ class shim_ads816x_adc_ctrl_base:
             if forked:
                 await Combine(*forked)
 
-    async def _sb_adc_rd_ch(self, info: dict, i: int):
-        """Verify ADC_RD_CH command execution."""
-        self.dut._log.info(f"[{i}] ADC_RD_CH: ch={info['ch']} repeat={info['repeat']}")
+    async def _sb_adc_rd_ch(self, channels, i):
+        """Verify a group of consecutive ADC_RD_CH reads. Back-to-back and repeating reads are
+        pipelined into a single SPI stream: one request frame per channel plus a trailing dummy
+        (channel 0) that flushes the last sample."""
+        self.dut._log.info(f"[{i}] ADC_RD_CH group: channels={channels}")
         forked = []
 
-        # Set the global repeating flag for repeating commands
-        if info['repeat'] == 1:
-            self.adc_rd_ch_repeating_ch = info['ch']
-        else:
-            self.adc_rd_ch_repeating_ch = None
-
-        # ADC_RD_CH reads one channel followed by a dummy read of channel 0
-        num_channels = 2
-
-        # SPI command to request on-the-fly sample of channel `ch` is:
-        # [15:0] spi_req_otf_sample_cmd(input [2:0] ch)
-        # where spi_req_otf_sample_cmd = {2'b10, ch, 11'd0};
+        # spi_req_otf_sample_cmd(ch) = {2'b10, ch, 11'd0}. Each ADC_RD_CH read is an independent
+        # [request ch, dummy] pair -- the next read doesn't start until this one's sample is back,
+        # so reads don't overlap (unlike ADC_RD).
         expected_spi_cmd = []
+        for ch in channels:
+            expected_spi_cmd.append((0b10 << 14) | (ch << 11))
+            expected_spi_cmd.append((0b10 << 14) | (0 << 11))
+        num_read_backs = len(channels)
+        num_channels = len(expected_spi_cmd)
 
-        # spi_req_otf_sample_cmd(cmd_word[2:0])
-        expected_single_channel_cmd = (0b10 << 14) | (info['ch'] << 11)
-        expected_spi_cmd.append(expected_single_channel_cmd)
-
-        # dummy is channel 0
-        expected_dummy_cmd = (0b10 << 14) | (0 << 11)
-        expected_spi_cmd.append(expected_dummy_cmd)
-
-        # Don't read back the dummy and generate random expected read backs
-        expected_adc_samples = []
-        num_read_backs = num_channels - 1
-        for _ in range(num_read_backs):
-            expected_adc_samples.append(random.randint(0, 0xFFFF))
+        expected_adc_samples = [random.randint(0, 0xFFFF) for _ in range(num_read_backs)]
 
         forked.append(cocotb.start_soon(self._sb_mosi_data(expected_spi_cmd, num_channels=num_channels)))
         forked.append(cocotb.start_soon(self._sb_miso_data_miso_clk(num_read_backs=num_read_backs, expected_adc_samples=expected_adc_samples)))
@@ -686,48 +699,6 @@ class shim_ads816x_adc_ctrl_base:
 
         if forked:
             await Combine(*forked)
-
-    async def _sb_adc_rd_ch_repeating(self, repeat_count: int):
-        """Verify ADC_RD_CH command execution for repeating commands. Initial one is handled separately."""
-        self.dut._log.info(f"ADC_RD_CH Repeating command: repeat_count={repeat_count}")
-        # Wait for initial command to complete
-        while True:
-            await RisingEdge(self.dut.clk)
-            await ReadOnly()
-            if int(self.dut.cmd_done.value) == 1:
-                break
-
-        # If cancel_repeat is issued, exit the scoreboard
-        #if int(self.dut.cancel_repeat.value) == 1:
-        #    self.dut._log.info("ADC_RD_CH repeating command was cancelled via CANCEL (cancel repeat) command, exiting repeating scoreboard.")
-        #    return
-
-        # Handle repeating commands
-        for repeat_idx in range(repeat_count):
-            self.dut._log.info(f"ADC_RD_CH Repeating command iteration {repeat_idx + 1} of {repeat_count}")
-            forked = []
-
-            # ADC_RD_CH reads one channel followed by a dummy read of channel 0
-            num_channels = 2
-            expected_spi_cmd = []
-
-            expected_single_channel_cmd = (0b10 << 14) | (self.adc_rd_ch_repeating_ch << 11)
-            expected_spi_cmd.append(expected_single_channel_cmd)
-            expected_dummy_cmd = (0b10 << 14) | (0 << 11)
-            expected_spi_cmd.append(expected_dummy_cmd)
-
-            # Don't read back the dummy and generate random expected read backs
-            expected_adc_samples = []
-            num_read_backs = num_channels - 1
-            for _ in range(num_read_backs):
-                expected_adc_samples.append(random.randint(0, 0xFFFF))
-
-            forked.append(cocotb.start_soon(self._sb_mosi_data(expected_spi_cmd, num_channels=num_channels)))
-            forked.append(cocotb.start_soon(self._sb_miso_data_miso_clk(num_read_backs=num_read_backs, expected_adc_samples=expected_adc_samples)))
-            forked.append(cocotb.start_soon(self._sb_miso_data_mosi_clk(num_read_backs=num_read_backs, expected_adc_samples=expected_adc_samples, single_channel_read=True)))
-
-            if forked:
-                await Combine(*forked)
 
     async def _sb_mosi_data(self, expected_spi_cmd, num_channels=2):
         """Verify MOSI data correctness during SPI transactions."""
@@ -756,8 +727,7 @@ class shim_ads816x_adc_ctrl_base:
             assert int(self.dut.adc_spi_cmd_done.value) == 1, \
                 f"[{idx}] adc_spi_cmd_done should be asserted after sending SPI command."
 
-        await RisingEdge(self.dut.clk)
-        await ReadOnly()
+        # adc_rd_done is combinational (last_adc_word && adc_spi_cmd_done), high this same cycle
         assert int(self.dut.adc_rd_done.value) == 1, \
             f"[{idx}] adc_rd_done should be asserted after sending SPI commands."
         # cmd_done should be asserted after all SPI commands are sent if trig_wait_done or delay_wait_done is also asserted
@@ -811,16 +781,18 @@ class shim_ads816x_adc_ctrl_base:
                 if int(self.dut.data_buf_wr_en.value) == 1:
                     break
 
-            # for single channel read, data_word is 32-bit {16'b0, expected_adc_samples[idx]}
+            # The DUT stores offset_to_signed(sample) (flip MSB), so the data word holds the
+            # signed-converted samples.
+            # for single channel read, data_word is 32-bit {16'b0, signed(expected_adc_samples[idx])}
             if single_channel_read:
-                expected_data_word = 0x0000FFFF & expected_adc_samples[idx]
+                expected_data_word = 0x0000FFFF & (expected_adc_samples[idx] ^ 0x8000)
                 data_word = int(self.data_buf.pop_item())
                 self.dut._log.info(f"[{idx}] Data buffer word received: 0x{data_word:08X}, Expected: 0x{expected_data_word:08X}")
                 assert data_word == expected_data_word, \
                     f"[{idx}] Data buffer word mismatch: expected 0x{expected_data_word:08X} got 0x{data_word:08X}"
-            # for multi-channel read, data_word is 32-bit {expected_adc_samples[idx + 1], expected_adc_samples[idx]
+            # for multi-channel read, data_word is 32-bit {signed(sample[idx+1]), signed(sample[idx])}
             else:
-                expected_data_word = ((expected_adc_samples[2*idx + 1] & 0xFFFF) << 16) | (expected_adc_samples[2*idx] & 0xFFFF)
+                expected_data_word = (((expected_adc_samples[2*idx + 1] ^ 0x8000) & 0xFFFF) << 16) | ((expected_adc_samples[2*idx] ^ 0x8000) & 0xFFFF)
                 data_word = int(self.data_buf.pop_item())
                 self.dut._log.info(f"[{idx}] Data buffer word received: 0x{data_word:08X}, Expected: 0x{expected_data_word:08X}")
                 assert data_word == expected_data_word, \
@@ -828,6 +800,8 @@ class shim_ads816x_adc_ctrl_base:
         return
 
     async def _sb_adc_rd_delay(self, delay_count: int):
+        # The DUT loads delay_timer with value-1
+        delay_count = delay_count - 1 if delay_count > 0 else 0
         await RisingEdge(self.dut.clk)
         await ReadOnly()
 
@@ -1205,11 +1179,11 @@ class shim_ads816x_adc_ctrl_base:
             elif prev_error:
                 exp_state = self.STATE_ENCODING['S_ERROR']
             elif prev_state == self.STATE_ENCODING['S_RESET']:
-                exp_state = self.STATE_ENCODING['S_IDLE'] if prev_boot_test_skip else self.STATE_ENCODING['S_INIT']
+                exp_state = self.STATE_ENCODING['S_INIT']
             elif prev_state == self.STATE_ENCODING['S_INIT']:
                 exp_state = self.STATE_ENCODING['S_SET_OTF']
             elif prev_state == self.STATE_ENCODING['S_SET_OTF'] and prev_adc_spi_cmd_done:
-                exp_state = self.STATE_ENCODING['S_REQ_RD']
+                exp_state = self.STATE_ENCODING['S_IDLE'] if prev_boot_test_skip else self.STATE_ENCODING['S_REQ_RD']
             elif prev_state == self.STATE_ENCODING['S_REQ_RD'] and prev_adc_spi_cmd_done:
                 exp_state = self.STATE_ENCODING['S_TEST_RD']
             elif prev_state == self.STATE_ENCODING['S_TEST_RD'] and (not prev_n_miso_data_ready_mosi_clk):
@@ -1278,8 +1252,14 @@ class shim_ads816x_adc_ctrl_base:
             elif prev_do_next_cmd and \
                  (prev_command_val == self.CMD_ENCODING['ADC_RD'] or prev_command_val == self.CMD_ENCODING['NO_OP']) and \
                  not ((prev_cmd_word_val >> self.TRIG_BIT) & 1):
-                # load the delay timer from command word (lower 25 bits)
-                exp_delay_timer = prev_cmd_word_val & 0x1FFFFFF
+                # DUT loads value-1 (NO_OP: 0 stays 0; ADC_RD below the minimum: max the timer)
+                delay_value = prev_cmd_word_val & 0x1FFFFFF
+                if prev_command_val == self.CMD_ENCODING['NO_OP']:
+                    exp_delay_timer = 0 if delay_value == 0 else delay_value - 1
+                elif delay_value < int(self.dut.min_delay_latched.value):
+                    exp_delay_timer = 0x1FFFFFF
+                else:
+                    exp_delay_timer = delay_value - 1
             elif prev_delay_timer > 0:
                 exp_delay_timer = prev_delay_timer - 1
             else:
@@ -1309,7 +1289,10 @@ class shim_ads816x_adc_ctrl_base:
              # check error
             err_boot = (curr_state == self.STATE_ENCODING['S_TEST_RD'] and not curr_n_miso_data_ready_mosi_clk and not curr_boot_readback_match)
             err_trig = (curr_state != self.STATE_ENCODING['S_TRIG_WAIT'] and curr_trigger and curr_trigger_counter <= 1)
-            err_delay = (curr_state == self.STATE_ENCODING['S_ADC_RD'] and not curr_adc_rd_done and not curr_wait_for_trig and curr_delay_wait_done)
+            err_delay = ((curr_state == self.STATE_ENCODING['S_ADC_RD'] and not curr_adc_rd_done and not curr_wait_for_trig and curr_delay_wait_done)
+                         or (curr_do_next_cmd and curr_command == self.CMD_ENCODING['ADC_RD']
+                             and not ((int(self.dut.cmd_word.value) >> self.TRIG_BIT) & 1)
+                             and (int(self.dut.cmd_word.value) & 0x1FFFFFF) < int(self.dut.min_delay_latched.value)))
             err_cmd = (curr_do_next_cmd and curr_next_cmd_state == self.STATE_ENCODING['S_ERROR'])
             err_underflow = (curr_cmd_done and curr_expect_next and not curr_next_cmd_ready)
             err_repeat = (curr_start_repeat and curr_cmd_buf_empty)
@@ -1337,6 +1320,10 @@ class shim_ads816x_adc_ctrl_base:
                     self.dut._log.warning(f"  Command buffer underflow on repeat start: start_repeat={curr_start_repeat}, cmd_buf_empty={curr_cmd_buf_empty}")
                 if err_data_full:
                     self.dut._log.warning(f"  Data buffer overflow: try_data_write={curr_try_data_write}, data_buf_full={curr_data_buf_full}")
+
+                # Fail fast unless the test opted in to expecting an error.
+                assert self.expect_error, \
+                    f"DUT signaled an unexpected error at state {self.get_state_name(curr_state)} (see warnings above)"
 
             # check boot_readback_match
             # (miso_data_mosi_clk[15:8] == SET_OTF_CFG_DATA)
@@ -1434,13 +1421,8 @@ class shim_ads816x_adc_ctrl_base:
             assert curr_adc_spi_cmd_done == exp_adc_spi_cmd_done, \
                 f"Comb Error: adc_spi_cmd_done expected {exp_adc_spi_cmd_done}, got {curr_adc_spi_cmd_done}"
 
-            # check adc_rd_done
-            if prev_resetn == 0 or prev_state == self.STATE_ENCODING['S_ERROR']:
-                exp_adc_rd_done = 0
-            elif prev_last_adc_word and prev_adc_spi_cmd_done:
-                exp_adc_rd_done = 1
-            else:
-                exp_adc_rd_done = 0
+            # check adc_rd_done (combinational: last_adc_word && adc_spi_cmd_done)
+            exp_adc_rd_done = 1 if (curr_last_adc_word and curr_adc_spi_cmd_done) else 0
 
             assert curr_adc_rd_done == exp_adc_rd_done, \
                 f"Sequential Error: adc_rd_done expected {exp_adc_rd_done}, got {curr_adc_rd_done}"
@@ -1464,7 +1446,7 @@ class shim_ads816x_adc_ctrl_base:
             # check start_spi_cmd
             cond_cmd_rd = (curr_do_next_cmd and (curr_command == self.CMD_ENCODING['ADC_RD'] or curr_command == self.CMD_ENCODING['ADC_RD_CH']))
             cond_init = (curr_state == self.STATE_ENCODING['S_INIT'])
-            cond_test_wr = (curr_state == self.STATE_ENCODING['S_SET_OTF'] and curr_adc_spi_cmd_done)
+            cond_test_wr = (curr_state == self.STATE_ENCODING['S_SET_OTF'] and curr_adc_spi_cmd_done and not prev_boot_test_skip)
             cond_req_rd = (curr_state == self.STATE_ENCODING['S_REQ_RD'] and curr_adc_spi_cmd_done)
             cond_adc_rd_cont = ((curr_state == self.STATE_ENCODING['S_ADC_RD'] or curr_state == self.STATE_ENCODING['S_ADC_RD_CH']) and
                                 curr_adc_spi_cmd_done and not curr_last_adc_word)
@@ -1476,7 +1458,7 @@ class shim_ads816x_adc_ctrl_base:
 
             # check n_cs_high_time_latched
             if prev_resetn == 0:
-                exp_n_cs_high_time_latched = 8
+                exp_n_cs_high_time_latched = 0
             elif prev_state == self.STATE_ENCODING['S_RESET']:
                 exp_n_cs_high_time_latched = prev_n_cs_high_time
             else:
@@ -1489,7 +1471,7 @@ class shim_ads816x_adc_ctrl_base:
             if prev_resetn == 0 or prev_state == self.STATE_ENCODING['S_ERROR']:
                 exp_n_cs_timer = 0
             elif prev_start_spi_cmd:
-                exp_n_cs_timer = prev_n_cs_high_time_latched
+                exp_n_cs_timer = (prev_n_cs_high_time_latched - 1) & 0xFF
             elif prev_n_cs_timer > 0:
                 exp_n_cs_timer = prev_n_cs_timer - 1
             else:
@@ -1498,8 +1480,13 @@ class shim_ads816x_adc_ctrl_base:
             assert curr_n_cs_timer == exp_n_cs_timer, \
                 f"Sequential Error: n_cs_timer expected {exp_n_cs_timer}, got {curr_n_cs_timer}"
 
-            # check running_n_cs_timer
-            exp_running_n_cs_timer = 1 if prev_n_cs_timer > 0 else 0
+            # check running_n_cs_timer (DUT: set on start_spi_cmd, cleared when n_cs_timer hits 0, else held)
+            if prev_resetn == 0 or prev_state == self.STATE_ENCODING['S_ERROR']:
+                exp_running_n_cs_timer = 0
+            elif prev_start_spi_cmd or prev_n_cs_timer > 0:
+                exp_running_n_cs_timer = 1
+            else:
+                exp_running_n_cs_timer = 0
             assert curr_running_n_cs_timer == exp_running_n_cs_timer, \
                 f"Sequential Error: running_n_cs_timer expected {exp_running_n_cs_timer}, got {curr_running_n_cs_timer}"
 
@@ -1630,7 +1617,8 @@ class shim_ads816x_adc_ctrl_base:
             if prev_resetn == 0 or prev_state == self.STATE_ENCODING['S_ERROR']:
                 exp_miso_data_storage = 0
             elif not prev_n_miso_data_ready_mosi_clk and prev_single_reads == 0:
-                exp_miso_data_storage = prev_miso_data_mosi_clk
+                # DUT stores offset_to_signed(miso_data): offset binary -> 2's complement (flip MSB)
+                exp_miso_data_storage = prev_miso_data_mosi_clk ^ 0x8000
             else:
                 exp_miso_data_storage = prev_miso_data_storage
 
@@ -1734,9 +1722,9 @@ class shim_ads816x_adc_ctrl_base:
             await RisingEdge(self.dut.clk)
 
         # End tasks for safety
-        command_buf_task.kill() # This lives for an indefinite amount of time and should be killed. Shouldn't be awaited.
-        command_logger_task.kill() # This might live for an indefinite amount of time and should be killed. Shouldn't be awaited.
-        send_commands_task.kill() # kill for safety.
+        command_buf_task.cancel() # Lives indefinitely; cancel rather than await.
+        command_logger_task.cancel() # May live indefinitely; cancel rather than await.
+        send_commands_task.cancel() # Cancel for safety.
         return
 
     async def log_executing_commands(self, num_of_commands):
