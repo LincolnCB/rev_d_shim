@@ -62,10 +62,9 @@ int cmd_adc_last_received_cmd(const char** args, int arg_count, const command_fl
   }
 
   uint32_t cmd_word = sys_sts_get_last_received_adc_cmd(ctx->sys_sts, (uint8_t)board, *(ctx->verbose));
-  uint8_t cmd_code = (uint8_t)((cmd_word >> ADC_CMD_CMD_LSB) & 0x7);
 
   printf("Last received ADC command for board %d: 0x%08" PRIx32 "\n", board, cmd_word);
-  printf("Decoded command: %s\n", adc_format_command(cmd_code, *(ctx->verbose)));
+  printf("Decoded command: %s\n", adc_format_command(cmd_word, *(ctx->verbose)));
   return 0;
 }
 

@@ -6,8 +6,8 @@ import random
 
 
 # Drives the DUT's first-word-fall-through FIFO read port from a software model and
-# scoreboards the AXIS output for chunk-atomic framing. A single aclk domain: the FIFO
-# read side and the packetizer both run on it, matching fifo_async's read-side count.
+# scoreboards the AXIS output for adaptive word-granular framing. A single aclk domain:
+# the FIFO read side and the packetizer both run on it, matching fifo_async's read count.
 class adc_packetizer_base:
 
     def __init__(self, dut, clk_period=10, time_unit="ns"):
@@ -19,15 +19,13 @@ class adc_packetizer_base:
         self.DATA_WIDTH       = int(dut.DATA_WIDTH.value)
         self.DEST_WIDTH       = int(dut.DEST_WIDTH.value)
         self.FIFO_COUNT_WIDTH = int(dut.FIFO_COUNT_WIDTH.value)
-        self.CHUNK_WORDS      = int(dut.CHUNK_WORDS.value)
-        self.MAX_CHUNKS       = int(dut.MAX_CHUNKS.value)
+        self.MAX_PACKET_WORDS = int(dut.MAX_PACKET_WORDS.value)
         self.BOARD_INDEX      = int(dut.BOARD_INDEX.value)
-        self.MAX_PACKET_WORDS = self.MAX_CHUNKS * self.CHUNK_WORDS
         self.DATA_MASK        = (1 << self.DATA_WIDTH) - 1
 
         self.dut._log.info(f"DUT params: DATA_WIDTH={self.DATA_WIDTH}, DEST_WIDTH={self.DEST_WIDTH}, "
-                           f"FIFO_COUNT_WIDTH={self.FIFO_COUNT_WIDTH}, CHUNK_WORDS={self.CHUNK_WORDS}, "
-                           f"MAX_CHUNKS={self.MAX_CHUNKS}, BOARD_INDEX={self.BOARD_INDEX}")
+                           f"FIFO_COUNT_WIDTH={self.FIFO_COUNT_WIDTH}, "
+                           f"MAX_PACKET_WORDS={self.MAX_PACKET_WORDS}, BOARD_INDEX={self.BOARD_INDEX}")
 
         # FIFO model state and per-cycle feed plan (each entry is the list of words pushed that cycle).
         self.fifo = deque()
@@ -74,28 +72,35 @@ class adc_packetizer_base:
 
     # --- Payload / feed helpers ---------------------------------------------
 
-    def make_chunk(self):
-        chunk = [(self.next_val + i) & self.DATA_MASK for i in range(self.CHUNK_WORDS)]
-        self.next_val += self.CHUNK_WORDS
-        return chunk
+    def make_words(self, n):
+        words = [(self.next_val + i) & self.DATA_MASK for i in range(n)]
+        self.next_val += n
+        return words
 
-    # Preload n whole chunks so they are all resident before draining starts.
-    def preload_chunks(self, n):
-        words = []
-        for _ in range(n):
-            words.extend(self.make_chunk())
+    # Preload n words so they are all resident before draining starts.
+    def preload_words(self, n):
+        words = self.make_words(n)
         self.written.extend(words)
         self.feed_schedule.append(list(words))
 
-    # Feed n chunks one at a time, each separated by `gap` idle cycles, to exercise
-    # single-chunk adaptive packets and the "start only when a whole chunk is present" gate.
-    def trickle_chunks(self, n, gap):
-        for _ in range(n):
-            chunk = self.make_chunk()
-            self.written.extend(chunk)
-            self.feed_schedule.append(list(chunk))
+    # Feed a sequence of read groups (each an int word count), one group per feed cycle,
+    # separated by `gap` idle cycles, so each group drains as its own packet. Mixed 1- and
+    # 4-word groups model single-channel and full ADC reads sharing the lane.
+    def trickle_groups(self, sizes, gap):
+        for sz in sizes:
+            group = self.make_words(sz)
+            self.written.extend(group)
+            self.feed_schedule.append(list(group))
             for _ in range(gap):
                 self.feed_schedule.append([])
+
+    # Feed n words one per cycle -- a slow trickle where the reader keeps pace, so each
+    # word leaves as its own single-word packet.
+    def drip_words(self, n):
+        for _ in range(n):
+            w = self.make_words(1)
+            self.written.extend(w)
+            self.feed_schedule.append(list(w))
 
     # --- FIFO read-port model ------------------------------------------------
 
@@ -140,8 +145,6 @@ class adc_packetizer_base:
                 self.received.append(data)
                 cur.append(data)
                 if last:
-                    assert len(cur) % self.CHUNK_WORDS == 0, \
-                        f"tlast off a chunk boundary: packet len {len(cur)} not a multiple of {self.CHUNK_WORDS}"
                     assert len(cur) <= self.MAX_PACKET_WORDS, \
                         f"packet len {len(cur)} exceeds cap {self.MAX_PACKET_WORDS}"
                     self.packets.append(cur)

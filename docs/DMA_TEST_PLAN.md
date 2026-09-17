@@ -161,14 +161,14 @@ Result: `[ ]`
 
 ---
 
-## Stage 2 -- PL datapath (MCDMA plus routing), mmap path preserved
+## Stage 2 -- PL datapath (MCDMA plus routing), PIO path preserved
 
 Stage 2 is built in sub-steps, each leaving a working, testable tree. Stage 2a
 lands the MCDMA engine, the 64-bit HP0 memory path, and its non-root control
 window, with the 16 streams wired as a per-channel loopback so the engine can be
 brought up byte-exact before the real SPI datapath is rewired onto it (2b) and
 the completion/error interrupts are folded into `hw_manager` (2c). The existing
-mmap FIFO datapath is untouched in 2a.
+PIO FIFO datapath is untouched in 2a.
 
 ### Stage 2a -- MCDMA engine, HP0, control window (loopback bring-up)
 
@@ -217,43 +217,100 @@ Run:
 ```bash
 status
 ```
-Expect: same output as a pre-2a build -- state `Idle`, SPI clock correct, boards present as built. Adding the MCDMA on GP0/HP0 does not disturb the GP1 mmap FIFO path.
+Expect: same output as a pre-2a build -- state `Idle`, SPI clock correct, boards present as built. Adding the MCDMA on GP0/HP0 does not disturb the GP1 PIO FIFO path.
 Result: `[ ]`
 
-**Next step -- on-target Stage 2a bring-up.** The host checks (2a.1, 2a.2) pass
-from the build artifacts, so the design and device tree are correct. The
-remaining Stage 2a work is a boot on the snickerdoodle black to run the three
-target checks, in order: 2a.3 (`/dev/mcdma` binds non-root -- `dmesg | grep -i
-mcdma` and `ls -l /dev/mcdma`), 2a.4 (`mcdma-loopback` byte-exact on all four
-channels, then `mcdma-loopback 1` alone), and 2a.5 (`status` shows the SPI
-datapath unchanged). If 2a.4 round-trips, the MCDMA engine, the HP0 64-bit path,
-the TDEST demux/mux routing, and non-root control are all proven in the rev_d
-context, and Stage 2b (the real per-board datapath: MM2S demux, S2MM
-packet-atomic mux, the new ADC packetizer core, the `axis_fifo_bridge` adapters,
-and the per-board `datapath_mode` mux/gating in `axi_sys_ctrl`, defaulting to
-mmap) can begin. If a channel fails, the `mcdma-loopback` failure dump (per-`dst`
-head bytes, per-channel MCDMA status) tells starvation (all-zero `dst`) apart
-from misrouting (another channel's high byte in `dst`).
+**Next step -- on-target bring-up (Stage 2a checks fold into 2b).** Stage 2b has
+replaced the per-channel loopback with the real per-board datapath, so the
+loopback round-trip (2a.4) no longer applies -- it was scaffolding and was never
+run on hardware (no board was available), and the real datapath's byte-exact test
+supersedes it. The two still-relevant Stage 2a target checks fold into the 2b
+bring-up: 2a.3 (`/dev/mcdma` binds non-root) and 2a.5 (`status` shows the SPI
+datapath unchanged with all boards in the default PIO mode). Both, plus the 2b
+byte-exact datapath test, need a board and the Stage 3 mover software, so on-target
+validation of the datapath rolls into Stage 3.
+
+### Stage 2b -- real per-board datapath (host + core tests)
+
+The datapath rework is in: a TDEST demux feeds each board's DAC command FIFO
+through a write-only `axis_fifo_bridge`, each board's ADC data FIFO drains through
+the new `adc_packetizer` into a packet-atomic TDEST mux, and a per-board
+`datapath_mux` hard-locks the shared FIFO ports to either the PIO `axi_fifo_bridge`
+or the DMA adapters under `axi_sys_ctrl`'s `datapath_mode[i]` bit (reset PIO). The
+DMA-side adapters, the packetizer, and the select all live inside
+`axi_spi_interface`; the top level only wires the demux/mux to the module. `mode_viol`
+reporting and the sixteen `introut` lines fold into `hw_manager` in 2c.
+
+**2b.1 -- The new and changed datapath cores pass their cocotb tests (host).**
+Run (in the cocotb container, no board -- in Docker mode go through make so the script runs inside the container):
+```bash
+make projects/rev_d_shim/cores/shim/adc_packetizer/tests/test_status PROJECT=rev_d_shim
+make projects/rev_d_shim/cores/shim/datapath_mux/tests/test_status PROJECT=rev_d_shim
+# VM mode (cocotb on the host) can call the script directly instead:
+#   ./scripts/make/test_core.sh rev_d_shim shim adc_packetizer
+#   ./scripts/make/test_core.sh rev_d_shim shim datapath_mux
+```
+Expect: `adc_packetizer` passes its 5 word-granular framing tests (reset, cap+tail, mixed 1-/4-word reads, single-word drip, backpressure); `datapath_mux` passes its select/gating tests (PIO selects PIO + gates DMA, DMA selects DMA + gates PIO, wr_en/rd_en gated to the selected owner, randomized model match).
+Result: `[ ]` (ready to run in the cocotb container; no board needed)
+
+**2b.2 -- The block design builds with the real datapath (host).**
+Run (from the built project under `tmp/snickerdoodle_black/1.0/rev_d_shim`), and confirm from the block design / synthesized netlist:
+```bash
+# per-board DMA adapters + select are present; the loopback FIFOs are gone
+grep -c 'datapath_mux_\|adc_data_packetizer_\|dac_cmd_dma_bridge_' <bd or netlist>
+grep -c 'dma_loop_fifo_' <bd or netlist>   # expect 0
+```
+Expect: the build completes; for each board there is a `dac_cmd_dma_bridge_<b>` (`axis_fifo_bridge`, write-only), an `adc_data_packetizer_<b>` (`BOARD_INDEX = b`, `MAX_PACKET_WORDS` at or under the mux `ARB_ON_MAX_XFERS`), and a `datapath_mux_<b>`; no `dma_loop_fifo_*` remain; `axi_sys_ctrl` drives the module's `datapath_mode`. Check the post-synth hierarchical utilization to confirm the datapath still fits (the loopback FIFOs are replaced by the packetizer + bridge + mux; LUT is the binding constraint).
+Result: `[PASS]` 2026-09-15 (host, from artifacts, 4-board build). Per board: `adc_data_packetizer_<b>` 17 LUT / 8 FF, `dac_cmd_dma_bridge_<b>` 2 LUT, `datapath_mux_<b>` 51 LUT (the 32-bit write-data mux); no `dma_loop_fifo_*` remain. Whole design 33,859 LUT (63.6% of 53,200), 89 RAMB36 + 4 RAMB18 -- only +449 LUT over the Stage 2a baseline (33,410), since the loopback FIFOs were traded for the real adapters. The build routing at all confirms the AXIS interface inference, the module AXIS interface pins, the `axis_fifo_bridge` `AXIS_DATA_WIDTH` fix, and the reset/slice wiring.
 
 ### Stage 2b/2c acceptance criteria
 
-To be turned into concrete checks as the real datapath (2b) and the interrupt
-fold (2c) land. From the plan:
+Turned into concrete checks as target validation (needs a board and the Stage 3
+mover) and the interrupt fold (2c) land. From the plan:
 
 - Byte-exact loopback-style transfer on the DMA-driven FIFOs (a known pattern pushed MM2S through the DAC-command FIFO and/or captured S2MM from the ADC-data FIFO comes back identical).
-- The mmap fallback still works with a board's `datapath_mode` bit set to PS -- the same tools, same result, on the un-migrated path.
-- Per-board mode selection: one board on DMA while the rest stay on mmap, each independently.
-- Wrong-mode access (mmap poke at a DMA-mode board, or vice versa) does not crash and does not corrupt: it returns `OKAY`, discards, and raises `mode_viol` into `hw_manager`, which drives the normal coordinated shutdown (status word plus interrupt), not a `SIGBUS`.
-- ADC packetizer framing: packets always close on a 4-word chunk boundary; a momentarily-empty board releases the mux (no head-of-line stall); the run tail self-flushes when the FIFO drains; packet size never exceeds the mux `ARB_ON_MAX_XFERS` backstop.
+- The PIO fallback still works with a board's `datapath_mode` bit set to PIO -- the same tools, same result, on the un-migrated path.
+- Per-board mode selection: one board on DMA while the rest stay on PIO, each independently.
+- Wrong-mode access (PIO poke at a DMA-mode board, or vice versa) does not crash and does not corrupt: it returns `OKAY`, discards, and raises `mode_viol` into `hw_manager`, which drives the normal coordinated shutdown (status word plus interrupt), not a `SIGBUS`.
+- ADC packetizer framing: `tlast` closes a packet when the board's FIFO runs dry or at the `MAX_PACKET_WORDS` cap, on any word boundary (packets carry no sample-set alignment, since a single-channel read writes one word); a momentarily-empty board releases the mux (no head-of-line stall); the run tail self-flushes when the FIFO drains; packet size never exceeds the mux `ARB_ON_MAX_XFERS` backstop.
 - The sixteen MCDMA completion/error lines fold into `hw_manager` and ride its single interrupt -- no separate DMA interrupt path.
 
-Checks: `[ ]` (to be written)
+Checks: the byte-exact DMA-driven FIFO transfer is validated on target -- see the Stage 3 low-level DMA bring-up result below. The remaining criteria (per-board mode independence, `mode_viol`, the introut fold) land with 2c.
 
 ---
 
 ## Stage 3 -- Software
 
-To be filled in as Stage 3 lands. Acceptance criteria from the plan:
+### Stage 3.0 -- low-level DMA bring-up (shim-test)
+
+The `shim-test` DMA commands (`dma_mode`, `dma_status`, `dma_channel_test`) drive the
+datapath directly for bring-up and debugging. `dma_channel_test` runs a single-channel
+round-trip: DMA a `DAC_WR_CH` command through MM2S into the board's DAC command FIFO (the
+DAC drives current through the coil), arm S2MM, trigger a PIO `ADC_RD_CH` on the same
+channel, and capture the sample back through S2MM into DDR. All DMA testing runs at 10 MHz
+SPI (the default), since the ADC data misaligns above that on current hardware.
+
+**3.0.a -- Byte-exact DAC delivery over MM2S (target).**
+Run (`dma_mode 0 1` while off, then `ctrl_on`/`pow_on`):
+```bash
+dma_channel_test 0 1000
+dac_last_received_cmd 0
+```
+Expect: the DAC's last received command is `0x600003e8` = `DAC_WR_CH channel 0 value 1000` -- the exact bytes crossed DDR -> MM2S -> demux -> the DAC.
+Result: `[PASS]` 2026-09-17 -- `dac_last_received_cmd` decoded `DAC_WR_CH (channel=0, value=1000, bits=0x03E8)`, count incrementing per run.
+
+**3.0.b -- Full DMA round-trip through the coil (target).**
+Run:
+```bash
+channel_test 0 1000        # PIO reference first (system off, dma_mode 0 0)
+# then dma_mode 0 1 / ctrl_on / pow_on:
+dma_channel_test 0 1000
+```
+Expect: `dma_channel_test` completes with no descriptor timeout, captures one ADC word through S2MM, and the sample matches the PIO `channel_test` reference within measurement noise.
+Result: `[PASS]` 2026-09-17 (10 MHz) -- PIO `channel_test 0 1000` read 996; `dma_channel_test 0 1000` reported "Captured 1 ADC word(s) via S2MM DMA. First sample: 994". The full path -- MM2S -> DAC -> coil -> ADC -> S2MM -> DDR -> C -- is proven end to end. This required the non-cached `u-dma-buf` mapping (`O_SYNC`, for descriptor/data coherence) and arming S2MM before the ADC read (so the packetizer's continuous drain lands in the capture buffer rather than being dropped toward an idle S2MM).
+
+**Remaining Stage 3 acceptance criteria** (the full waveform integration) are still open. From the plan:
+
 
 - A real waveform plays end to end through the DMA path: prebuffer the `dac_cmd` sequence, reserve the `adc_data` capture region, set each board's `datapath_mode` to DMA, `sync_for_device`, arm, release the trigger, wait on the folded `hw_manager` interrupt, then on a normal end `sync_for_cpu` and read back the ADC data -- the readback matches expectation byte-for-byte.
 - The run-controller wakes once on run-end-or-fault, not by spin-polling; a local abort (SIGINT folded into the eventfd) unblocks the same wait as a hardware fault.

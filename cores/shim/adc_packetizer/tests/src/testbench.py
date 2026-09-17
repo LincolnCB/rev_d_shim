@@ -33,15 +33,16 @@ async def test_preloaded_cap_and_tail(dut):
     await tb.start_clock()
     await tb.reset()
 
-    # 10 chunks resident up front, consumer always ready. With MAX_CHUNKS=4 the first
-    # two packets hit the cap and the tail closes adaptively on the drain.
-    tb.preload_chunks(10)
+    # More words resident than two packet caps, consumer always ready: the first two
+    # packets hit MAX_PACKET_WORDS and the tail closes adaptively as the FIFO drains.
+    n = 2 * tb.MAX_PACKET_WORDS + tb.MAX_PACKET_WORDS // 2
+    tb.preload_words(n)
     model = cocotb.start_soon(tb.fifo_model_task())
     ready = cocotb.start_soon(tb.ready_driver(prob=1.0))
     await tb.axis_scoreboard(len(tb.written))
 
     tb.check_byte_exact()
-    assert tb.packet_lengths() == [tb.MAX_PACKET_WORDS, tb.MAX_PACKET_WORDS, 2 * tb.CHUNK_WORDS], \
+    assert tb.packet_lengths() == [tb.MAX_PACKET_WORDS, tb.MAX_PACKET_WORDS, tb.MAX_PACKET_WORDS // 2], \
         f"unexpected packet lengths {tb.packet_lengths()}"
     assert tb.leftover == [], "stream did not end on a tlast"
 
@@ -51,21 +52,24 @@ async def test_preloaded_cap_and_tail(dut):
 
 
 @cocotb.test()
-async def test_multi_chunk_single_packet(dut):
+async def test_trickle_mixed_reads(dut):
     tb = await setup_testbench(dut)
-    tb.dut._log.info("STARTING TEST: test_multi_chunk_single_packet")
+    tb.dut._log.info("STARTING TEST: test_trickle_mixed_reads")
     await tb.start_clock()
     await tb.reset()
 
-    # Three resident chunks, under the cap, all drain into one adaptive packet.
-    tb.preload_chunks(3)
+    # Full (4-word) and single-channel (1-word) reads share the lane. Each group is fed in
+    # one cycle with idle gaps, so each drains as its own packet: framing follows the data,
+    # not any fixed sample-set boundary. Mixed sizes are exactly what broke 4-word atomicity.
+    sizes = [4, 1, 4, 1, 1]
+    tb.trickle_groups(sizes, gap=8)
     model = cocotb.start_soon(tb.fifo_model_task())
     ready = cocotb.start_soon(tb.ready_driver(prob=1.0))
     await tb.axis_scoreboard(len(tb.written))
 
     tb.check_byte_exact()
-    assert tb.packet_lengths() == [3 * tb.CHUNK_WORDS], \
-        f"expected one packet of 3 chunks, got {tb.packet_lengths()}"
+    assert tb.packet_lengths() == sizes, \
+        f"expected one packet per read group {sizes}, got {tb.packet_lengths()}"
 
     model.cancel()
     ready.cancel()
@@ -73,23 +77,24 @@ async def test_multi_chunk_single_packet(dut):
 
 
 @cocotb.test()
-async def test_single_chunk_trickle(dut):
+async def test_drip_single_word_packets(dut):
     tb = await setup_testbench(dut)
-    tb.dut._log.info("STARTING TEST: test_single_chunk_trickle")
+    tb.dut._log.info("STARTING TEST: test_drip_single_word_packets")
     await tb.start_clock()
     await tb.reset()
 
-    # One chunk at a time with idle gaps: each must leave as its own single-chunk packet,
-    # and the packetizer must never start a chunk before a whole one is resident.
-    n = 5
-    tb.trickle_chunks(n, gap=8)
+    # A word arriving each cycle with the reader keeping pace never lets the FIFO build a
+    # backlog, so every word leaves as its own single-word packet -- the case that broke
+    # the old 4-word-atomic assumption. Software recombines these downstream.
+    n = 6
+    tb.drip_words(n)
     model = cocotb.start_soon(tb.fifo_model_task())
     ready = cocotb.start_soon(tb.ready_driver(prob=1.0))
     await tb.axis_scoreboard(len(tb.written))
 
     tb.check_byte_exact()
-    assert tb.packet_lengths() == [tb.CHUNK_WORDS] * n, \
-        f"expected {n} single-chunk packets, got {tb.packet_lengths()}"
+    assert tb.packet_lengths() == [1] * n, \
+        f"expected {n} single-word packets, got {tb.packet_lengths()}"
 
     model.cancel()
     ready.cancel()
@@ -104,18 +109,19 @@ async def test_backpressure(dut):
     await tb.start_clock()
     await tb.reset()
 
-    # Random consumer stalls must not change the data or the framing (all data resident,
-    # so packet boundaries are fixed: a capped packet then a 2-chunk tail).
-    tb.preload_chunks(6)
+    # Random consumer stalls must not change the data or the framing: with all words
+    # resident, packet boundaries are set by the count-based drain and the cap, which are
+    # unaffected by when tready deasserts.
+    n = 2 * tb.MAX_PACKET_WORDS + tb.MAX_PACKET_WORDS // 2
+    tb.preload_words(n)
     model = cocotb.start_soon(tb.fifo_model_task())
     ready = cocotb.start_soon(tb.ready_driver(prob=0.5))
     await tb.axis_scoreboard(len(tb.written))
 
     tb.check_byte_exact()
     for plen in tb.packet_lengths():
-        assert plen % tb.CHUNK_WORDS == 0, f"packet {plen} not chunk-aligned"
         assert plen <= tb.MAX_PACKET_WORDS, f"packet {plen} exceeds cap"
-    assert tb.packet_lengths() == [tb.MAX_PACKET_WORDS, 2 * tb.CHUNK_WORDS], \
+    assert tb.packet_lengths() == [tb.MAX_PACKET_WORDS, tb.MAX_PACKET_WORDS, tb.MAX_PACKET_WORDS // 2], \
         f"unexpected packet lengths {tb.packet_lengths()}"
 
     model.cancel()

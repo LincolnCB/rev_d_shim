@@ -9,7 +9,8 @@ module axi_sys_ctrl #
   parameter integer BOOT_TEST_SKIP_DEFAULT = 0, // Default to not skipping boot test for all 16 cores
   parameter integer DEBUG = 0, // Default to no debug
   parameter integer DAC_CAL_INIT_DEFAULT = 0,  // Default calibration value for DAC (in 2's complement)
-  parameter integer DO_DAC_PRE_DELAY = 1 // Default to doing the DAC command at the END of the write delay, instead of the START
+  parameter integer DO_DAC_PRE_DELAY = 1, // Default to doing the DAC command at the END of the write delay, instead of the START
+  parameter integer DATAPATH_MODE_DEFAULT = 0 // Per-board high-rate datapath select: bit b 0=PIO, 1=DMA. Resets to all-PIO.
 )
 (
   // System signals
@@ -30,6 +31,7 @@ module axi_sys_ctrl #
   output reg  [15:0]         debug,
   output reg  signed [15:0]  dac_cal_init,
   output reg                 do_dac_pre_delay,
+  output reg  [7:0]          datapath_mode,
 
   // Configuration bounds
   output wire  ctrl_en_oob,
@@ -43,6 +45,7 @@ module axi_sys_ctrl #
   output wire  debug_oob,
   output wire  dac_cal_init_oob,
   output wire  do_dac_pre_delay_oob,
+  output wire  datapath_mode_oob,
   output reg   lock_viol,
 
   // AXI4-Lite subordinate port
@@ -81,6 +84,7 @@ module axi_sys_ctrl #
   localparam integer DEBUG_32_OFFSET                 = 8;
   localparam integer DAC_CAL_INIT_32_OFFSET          = 9;
   localparam integer DO_DAC_PRE_DELAY_32_OFFSET      = 10;
+  localparam integer DATAPATH_MODE_32_OFFSET         = 11;
 
   // Localparams for widths
   localparam integer CTRL_EN_WIDTH = 1;
@@ -94,6 +98,7 @@ module axi_sys_ctrl #
   localparam integer DEBUG_WIDTH = 16;
   localparam integer DAC_CAL_INIT_WIDTH = 16;
   localparam integer DO_DAC_PRE_DELAY_WIDTH = 1;
+  localparam integer DATAPATH_MODE_WIDTH = 8;
 
   // Localparams for MIN/MAX values
   localparam [CTRL_EN_WIDTH-1:0] CTRL_EN_MAX                      = {CTRL_EN_WIDTH{1'b1}};
@@ -110,6 +115,7 @@ module axi_sys_ctrl #
   localparam signed [DAC_CAL_INIT_WIDTH-1:0] DAC_CAL_INIT_MIN     = {1'b1, {(DAC_CAL_INIT_WIDTH-1){1'b0}}}; // Minimum in 2's complement
   localparam signed [DAC_CAL_INIT_WIDTH-1:0] DAC_CAL_INIT_MAX     = {1'b0, {(DAC_CAL_INIT_WIDTH-1){1'b1}}}; // Maximum in 2's complement
   localparam [DO_DAC_PRE_DELAY_WIDTH-1:0] DO_DAC_PRE_DELAY_MAX    = {DO_DAC_PRE_DELAY_WIDTH{1'b1}};
+  localparam [DATAPATH_MODE_WIDTH-1:0] DATAPATH_MODE_MAX          = {DATAPATH_MODE_WIDTH{1'b1}};
 
   // Validate parameters
   initial begin
@@ -127,6 +133,8 @@ module axi_sys_ctrl #
       $error("Invalid value for DAC_CAL_INIT_DEFAULT parameter: %d. Must be between %d and %d.", DAC_CAL_INIT_DEFAULT, DAC_CAL_INIT_MIN, DAC_CAL_INIT_MAX);
     if(DO_DAC_PRE_DELAY < 0 || DO_DAC_PRE_DELAY > DO_DAC_PRE_DELAY_MAX)
       $error("Invalid value for DO_DAC_PRE_DELAY parameter: %d. Must be between 0 and %d.", DO_DAC_PRE_DELAY, DO_DAC_PRE_DELAY_MAX);
+    if(DATAPATH_MODE_DEFAULT < 0 || DATAPATH_MODE_DEFAULT > DATAPATH_MODE_MAX)
+      $error("Invalid value for DATAPATH_MODE_DEFAULT parameter: %d. Must be between 0 and %d.", DATAPATH_MODE_DEFAULT, DATAPATH_MODE_MAX);
   end
 
   // Local default values with explicit widths
@@ -137,6 +145,7 @@ module axi_sys_ctrl #
   localparam [DEBUG_WIDTH-1:0] DEBUG_DEFAULT_W                          = DEBUG;
   localparam signed [DAC_CAL_INIT_WIDTH-1:0] DAC_CAL_INIT_DEFAULT_W     = DAC_CAL_INIT_DEFAULT;
   localparam [DO_DAC_PRE_DELAY_WIDTH-1:0] DO_DAC_PRE_DELAY_DEFAULT_W    = DO_DAC_PRE_DELAY;
+  localparam [DATAPATH_MODE_WIDTH-1:0] DATAPATH_MODE_DEFAULT_W          = DATAPATH_MODE_DEFAULT;
 
   // Local parameters for AXI configuration
   localparam integer CFG_DATA_WIDTH = 1024;
@@ -214,6 +223,7 @@ module axi_sys_ctrl #
   assign int_initial_data_wire[DEBUG_32_OFFSET*32+DEBUG_WIDTH-1-:DEBUG_WIDTH] = DEBUG_DEFAULT_W;
   assign int_initial_data_wire[DAC_CAL_INIT_32_OFFSET*32+DAC_CAL_INIT_WIDTH-1-:DAC_CAL_INIT_WIDTH] = DAC_CAL_INIT_DEFAULT_W;
   assign int_initial_data_wire[DO_DAC_PRE_DELAY_32_OFFSET*32+DO_DAC_PRE_DELAY_WIDTH-1:DO_DAC_PRE_DELAY_32_OFFSET*32] = DO_DAC_PRE_DELAY_DEFAULT_W;
+  assign int_initial_data_wire[DATAPATH_MODE_32_OFFSET*32+DATAPATH_MODE_WIDTH-1-:DATAPATH_MODE_WIDTH] = DATAPATH_MODE_DEFAULT_W;
 
   // Out of bounds checks. Use the whole word for the check to error on truncation
   assign ctrl_en_oob = $unsigned(int_data_wire[CTRL_EN_32_OFFSET*32+CTRL_EN_WIDTH-1:CTRL_EN_32_OFFSET*32]) > CTRL_EN_MAX;
@@ -231,6 +241,8 @@ module axi_sys_ctrl #
   assign dac_cal_init_oob = $signed(int_data_wire[DAC_CAL_INIT_32_OFFSET*32+DAC_CAL_INIT_WIDTH-1-:DAC_CAL_INIT_WIDTH]) < $signed(DAC_CAL_INIT_MIN)
                          || $signed(int_data_wire[DAC_CAL_INIT_32_OFFSET*32+DAC_CAL_INIT_WIDTH-1-:DAC_CAL_INIT_WIDTH]) > $signed(DAC_CAL_INIT_MAX);
   assign do_dac_pre_delay_oob = $unsigned(int_data_wire[DO_DAC_PRE_DELAY_32_OFFSET*32+DO_DAC_PRE_DELAY_WIDTH-1:DO_DAC_PRE_DELAY_32_OFFSET*32]) > DO_DAC_PRE_DELAY_MAX;
+  // Full 32-bit word checked against the mask width so setting any reserved bit [31:8] errors
+  assign datapath_mode_oob = $unsigned(int_data_wire[DATAPATH_MODE_32_OFFSET*32+31:DATAPATH_MODE_32_OFFSET*32]) > DATAPATH_MODE_MAX;
 
   // Address and value bound compliance sent to write response
   // Send SLVERR if there are any violations
@@ -246,6 +258,7 @@ module axi_sys_ctrl #
     (s_axi_awaddr[ADDR_LSB+CFG_WIDTH-1:ADDR_LSB] == DEBUG_32_OFFSET) ? ((locked || debug_oob) ? 2'b10 : 2'b00) :
     (s_axi_awaddr[ADDR_LSB+CFG_WIDTH-1:ADDR_LSB] == DAC_CAL_INIT_32_OFFSET) ? ((locked || dac_cal_init_oob) ? 2'b10 : 2'b00) :
     (s_axi_awaddr[ADDR_LSB+CFG_WIDTH-1:ADDR_LSB] == DO_DAC_PRE_DELAY_32_OFFSET) ? ((locked || do_dac_pre_delay_oob) ? 2'b10 : 2'b00) :
+    (s_axi_awaddr[ADDR_LSB+CFG_WIDTH-1:ADDR_LSB] == DATAPATH_MODE_32_OFFSET) ? ((locked || datapath_mode_oob) ? 2'b10 : 2'b00) :
     2'b10;
 
   assign ctrl_en = int_data_wire[CTRL_EN_32_OFFSET*32];
@@ -261,6 +274,7 @@ module axi_sys_ctrl #
             || debug != int_data_wire[DEBUG_32_OFFSET*32+DEBUG_WIDTH-1:DEBUG_32_OFFSET*32]
             || dac_cal_init != int_data_wire[DAC_CAL_INIT_32_OFFSET*32+DAC_CAL_INIT_WIDTH-1:DAC_CAL_INIT_32_OFFSET*32]
             || do_dac_pre_delay != int_data_wire[DO_DAC_PRE_DELAY_32_OFFSET*32]
+            || datapath_mode != int_data_wire[DATAPATH_MODE_32_OFFSET*32+DATAPATH_MODE_WIDTH-1:DATAPATH_MODE_32_OFFSET*32]
           ;
 
   // Configuration register sanitization logic
@@ -281,6 +295,7 @@ module axi_sys_ctrl #
       debug <= DEBUG_DEFAULT_W;
       dac_cal_init <= DAC_CAL_INIT_DEFAULT_W;
       do_dac_pre_delay <= DO_DAC_PRE_DELAY_DEFAULT_W;
+      datapath_mode <= DATAPATH_MODE_DEFAULT_W;
 
       locked <= 1'b0;
       lock_viol <= 1'b0;
@@ -305,6 +320,7 @@ module axi_sys_ctrl #
         debug <= int_data_wire[DEBUG_32_OFFSET*32+DEBUG_WIDTH-1:DEBUG_32_OFFSET*32];
         dac_cal_init <= int_data_wire[DAC_CAL_INIT_32_OFFSET*32+DAC_CAL_INIT_WIDTH-1:DAC_CAL_INIT_32_OFFSET*32];
         do_dac_pre_delay <= int_data_wire[DO_DAC_PRE_DELAY_32_OFFSET*32];
+        datapath_mode <= int_data_wire[DATAPATH_MODE_32_OFFSET*32+DATAPATH_MODE_WIDTH-1:DATAPATH_MODE_32_OFFSET*32];
       end else if (unlock) begin
         locked <= 1'b0;
         lock_viol <= 1'b0;

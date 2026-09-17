@@ -12,6 +12,7 @@
 #include "dac_ctrl.h"
 #include "trigger_ctrl.h"
 #include "clk_ctrl.h"
+#include "dma_ctrl.h"
 
 #define MAX_ARGS 16     // Maximum command arguments (including command name)
 #define MAX_FLAGS 5     // Maximum command flags
@@ -36,6 +37,7 @@ typedef struct command_context {
   struct dac_ctrl_t* dac_ctrl;
   struct adc_ctrl_t* adc_ctrl;
   struct trigger_ctrl_t* trigger_ctrl;
+  struct dma_ctrl_t* dma_ctrl;
 
   // System state
   bool* verbose;

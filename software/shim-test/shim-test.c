@@ -68,6 +68,7 @@ int main(int argc, char *argv[])
   struct dac_ctrl_t dac_ctrl;         // DAC command FIFOs (all boards)
   struct adc_ctrl_t adc_ctrl;         // ADC command and data FIFOs (all boards)
   struct trigger_ctrl_t trigger_ctrl; // Trigger command and data FIFOs
+  struct dma_ctrl_t dma_ctrl;         // MCDMA mover (DMA datapath)
 
   // Initialize hardware control structures
   printf("Initializing hardware control modules...\n");
@@ -92,6 +93,9 @@ int main(int argc, char *argv[])
   trigger_ctrl = create_trigger_ctrl(verbose);
   printf("Trigger control module initialized\n");
 
+  dma_ctrl = create_dma_ctrl(verbose);
+  printf("DMA mover initialized%s\n", dma_ctrl.ok ? "" : " (unavailable -- DMA commands disabled)");
+
   printf("Hardware initialization complete.\n");
 
   // Print help
@@ -109,6 +113,7 @@ int main(int argc, char *argv[])
     .dac_ctrl = &dac_ctrl,
     .adc_ctrl = &adc_ctrl,
     .trigger_ctrl = &trigger_ctrl,
+    .dma_ctrl = &dma_ctrl,
     .verbose = &verbose,
     .should_exit = &should_exit,
     .adc_data_stream_threads = {0},    // Initialize thread handles to 0

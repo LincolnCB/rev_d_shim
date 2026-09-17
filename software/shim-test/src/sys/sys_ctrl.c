@@ -26,6 +26,7 @@ struct sys_ctrl_t create_sys_ctrl(bool verbose) {
   sys_ctrl.debug               = sys_ctrl_ptr + DEBUG_OFFSET;
   sys_ctrl.dac_cal_init        = sys_ctrl_ptr + DAC_CAL_INIT_OFFSET;
   sys_ctrl.do_dac_pre_delay    = sys_ctrl_ptr + DO_DAC_PRE_DELAY_OFFSET;
+  sys_ctrl.datapath_mode       = sys_ctrl_ptr + DATAPATH_MODE_OFFSET;
 
   return sys_ctrl;
 }
@@ -176,5 +177,17 @@ void sys_ctrl_toggle_dac_pre_delay(struct sys_ctrl_t *sys_ctrl, bool verbose) {
 
   if (verbose) {
     printf("DAC pre-delay bit set to 0x%08" PRIx32 "\n", *(sys_ctrl->do_dac_pre_delay));
+  }
+}
+
+// Set the datapath_mode register to an 8-bit per-board mask (bit b: 0 = PIO, 1 = DMA).
+// Locked by ctrl_en, so it must be set while the system is off (before ctrl_on).
+void sys_ctrl_set_datapath_mode(struct sys_ctrl_t *sys_ctrl, uint8_t mask, bool verbose) {
+  if (verbose) {
+    printf("Setting datapath_mode to 0x%02" PRIx8 "\n", mask);
+  }
+  *(sys_ctrl->datapath_mode) = (uint32_t)mask;
+  if (verbose) {
+    printf("datapath_mode set to 0x%02" PRIx8 "\n", (uint8_t)(*(sys_ctrl->datapath_mode) & 0xFF));
   }
 }

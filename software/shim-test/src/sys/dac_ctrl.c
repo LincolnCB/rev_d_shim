@@ -275,6 +275,30 @@ void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, dac_wait_mode_t tr
   *(dac_ctrl->buffer[board]) = cmd_word;
 }
 
+// Build a DAC_WR command (header word + four channel-data words) into out. Returns the word count (5).
+int dac_encode_dac_wr(int16_t ch_vals[8], dac_wait_mode_t trig, dac_continue_mode_t cont, dac_ldac_mode_t ldac, uint32_t value, uint32_t *out) {
+  out[0] = (DAC_CMD_DAC_WR << DAC_CMD_CMD_LSB ) |
+           ((trig == DAC_TRIGGER_WAIT ? 1 : 0) << DAC_CMD_TRIG_BIT) |
+           ((cont == DAC_CONTINUE ? 1 : 0) << DAC_CMD_CONT_BIT) |
+           ((ldac == DAC_LDAC ? 1 : 0) << DAC_CMD_LDAC_BIT) |
+           (value & 0x1FFFFFF);
+  // Each channel-data word packs two channels: [31:16] = ch N+1, [15:0] = ch N
+  for (int i = 0; i < 8; i += 2) {
+    int16_t val0 = ch_vals[i];
+    int16_t val1 = ch_vals[i + 1];
+    out[1 + i/2] = (((uint32_t)(uint16_t)val1 << 16) & 0xFFFF0000) | (((uint32_t)(uint16_t)val0) & 0x0000FFFF);
+  }
+  return 5;
+}
+
+// Build a single-channel DAC_WR_CH command into out. Returns the word count (1).
+int dac_encode_dac_wr_ch(uint8_t ch, int16_t ch_val, uint32_t *out) {
+  out[0] = (DAC_CMD_DAC_WR_CH << DAC_CMD_CMD_LSB) |
+           ((ch & 0x7) << 16) | // Channel index
+           (ch_val & 0xFFFF);   // Channel value
+  return 1;
+}
+
 void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[8], dac_wait_mode_t trig, dac_continue_mode_t cont, dac_ldac_mode_t ldac, uint32_t value, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
@@ -285,28 +309,24 @@ void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[
     return;
   }
 
-  uint32_t cmd_word = (DAC_CMD_DAC_WR << DAC_CMD_CMD_LSB ) |
-                      ((trig == DAC_TRIGGER_WAIT ? 1 : 0) << DAC_CMD_TRIG_BIT) |
-                      ((cont == DAC_CONTINUE ? 1 : 0) << DAC_CMD_CONT_BIT) |
-                      ((ldac == DAC_LDAC ? 1 : 0) << DAC_CMD_LDAC_BIT) |
-                      (value & 0x1FFFFFF);
+  uint32_t words[5];
+  dac_encode_dac_wr(ch_vals, trig, cont, ldac, value, words);
 
   if (verbose) {
-    printf("DAC[%d] DAC_WR command word: 0x%08X\n", board, cmd_word);
+    printf("DAC[%d] DAC_WR command word: 0x%08X\n", board, words[0]);
   }
-  *(dac_ctrl->buffer[board]) = cmd_word;
+  *(dac_ctrl->buffer[board]) = words[0];
 
   // Write channel values
   for (int i = 0; i < 8; i += 2) {
     // Each word contains two channels: [31:16] = ch N+1, [15:0] = ch N
     int16_t val0 = ch_vals[i];
     int16_t val1 = ch_vals[i + 1];
-    uint32_t word = (((uint32_t)(uint16_t)val1 << 16) & 0xFFFF0000) | (((uint32_t)(uint16_t)val0) & 0x0000FFFF);
     if (verbose) {
       printf("DAC[%d] Channel data word %d: 0x%08X (ch%d=0x%04X, ch%d=0x%04X)\n",
-             board, i/2, word, i, val0, i+1, val1);
+             board, i/2, words[1 + i/2], i, val0, i+1, val1);
     }
-    *(dac_ctrl->buffer[board]) = word;
+    *(dac_ctrl->buffer[board]) = words[1 + i/2];
   }
 }
 
@@ -320,9 +340,8 @@ void dac_cmd_dac_wr_ch(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t ch, i
     return;
   }
 
-  uint32_t cmd_word = (DAC_CMD_DAC_WR_CH << DAC_CMD_CMD_LSB) |
-                      ((ch & 0x7) << 16) | // Channel index
-                      (ch_val & 0xFFFF);   // Channel value
+  uint32_t cmd_word;
+  dac_encode_dac_wr_ch(ch, ch_val, &cmd_word);
 
   if (verbose) {
     printf("DAC[%d] DAC_WR_CH command word: 0x%08X (channel %d, value=%d, bits=0x%04X)\n",

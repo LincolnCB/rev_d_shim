@@ -220,14 +220,20 @@ cell xilinx.com:ip:smartconnect:1.0 sys_cfg_axi_intercon {
 ###############################################################################
 
 ### Configuration register
-## 32-bit offsets (see axi_sys_ctrl.v)
-# +0 System enable (1b cap)
-# +1 Buffer reset (26b)
-# +2 Threshold average (unsigned, 15b, min 1, max 32767)
-# +3 Threshold window (unsigned, 32b, min 2048)
-# +4 Threshold enable (1b cap)
-# +5 Boot test skip (16b cap)
-# Window: 4.5 A (29491) over ~ 250 ms (5000000 at 20 MHz SPI clock)
+## 32-bit word offsets (see axi_sys_ctrl.v)
+# +0  System enable (1b, locks configuration)
+# +1  Power enable (1b)
+# +2  Command buffer reset (17b)
+# +3  Data buffer reset (17b)
+# +4  Threshold average (unsigned, 15b, min 1, max 32767)
+# +5  Threshold window (unsigned, 32b, min 2048)
+# +6  Threshold enable (1b)
+# +7  Boot test skip mask (16b, per-core)
+# +8  Debug mask (16b, per-core)
+# +9  DAC calibration init (signed, 16b)
+# +10 DAC pre-delay select (1b)
+# +11 Datapath mode mask (8b, per-board: 0=PIO, 1=DMA; resets to PIO, locked)
+# Threshold window: 4.5 A (29491) over ~ 250 ms (5000000 at 20 MHz SPI clock)
 cell shim:user:axi_sys_ctrl axi_sys_ctrl {
   THRESHOLD_VALUE_DEFAULT 29491
   THRESHOLD_WINDOW_DEFAULT 5000000
@@ -298,7 +304,7 @@ cell shim:user:shutdown_sense shutdown_sense {} {
 #   of the spi_clk_snoop core below to match the clock wizard configuration.
 # You can find these by looking in Vivado at the block diagram and double 
 #   clicking on the spi_clk_gen core, then going to "MMCM Settings" tab.
-set spi_clk_freq_mhz 30.000
+set spi_clk_freq_mhz 10.000
 # If the default SPI clock frequency is not between 1 and 50 MHz, then error out
 if {$spi_clk_freq_mhz < 1.0 || $spi_clk_freq_mhz > 50.0} {
   puts "Error: spi_clk_freq_mhz must be between 1.0 and 50.0."
@@ -329,10 +335,10 @@ if {$use_ext_clk} {
   cell shim:user:axi_clock_timing_snoop spi_clk_snoop {
     SOURCE_CLK_FREQ_HZ 30000000
     DIVCLK_DIVIDE_DEFAULT 1
-    CLKFBOUT_MULT_DEFAULT 32
-    CLKFBOUT_FRAC_MULT_DEFAULT 500
-    CLKOUT0_DIVIDE_DEFAULT 32
-    CLKOUT0_FRAC_DIVIDE_DEFAULT 500
+    CLKFBOUT_MULT_DEFAULT 29
+    CLKFBOUT_FRAC_MULT_DEFAULT 750
+    CLKOUT0_DIVIDE_DEFAULT 89
+    CLKOUT0_FRAC_DIVIDE_DEFAULT 250
     MAX_CLK_FREQ_HZ 100000000
   } {
     aclk ps/FCLK_CLK0
@@ -496,6 +502,7 @@ module axi_spi_interface axi_spi_interface {
   cmd_buf_reset axi_sys_ctrl/cmd_buf_reset
   data_buf_reset axi_sys_ctrl/data_buf_reset
   spi_clk spi_clk/clk_o
+  datapath_mode axi_sys_ctrl/datapath_mode
   S_AXI ps/M_AXI_GP1
 }
 ## Wire channel pins for the module
@@ -542,18 +549,18 @@ wire axi_spi_interface/trig_data_buf_underflow hw_manager/trig_data_buf_underflo
 
 ###############################################################################
 
-### DMA bring-up (Stage 2a): AXI MCDMA with per-channel loopback
+### DMA datapath (Stage 2b): AXI MCDMA driving the per-board high-rate FIFOs
 #
 # One MCDMA with `board_count` MM2S (PS->PL) and `board_count` S2MM (PL->PS)
-# channels lands the DDR-backed DMA engine into this design ahead of rewiring the
-# real SPI datapath onto it. Each MM2S channel loops straight back to its own
-# S2MM channel through a small AXIS FIFO, so the engine, the 64-bit HP0 memory
-# path, and non-root register control (/dev/mcdma via pl-reg-shim) can be brought
-# up and validated byte-exact without disturbing the existing mmap FIFO datapath.
-# The routing (TDEST demux -> per-channel FIFO -> packet-atomic TDEST mux) and the
-# MCDMA settings are the ones proven in ex05_dma. Later stages replace this
-# loopback with the real per-board datapath and fold the MCDMA completion/error
-# interrupts into hw_manager (the introut lines are left unconnected here).
+# channels moves the two high-rate lanes per board: MM2S feeds each board's DAC
+# command FIFO and S2MM drains its ADC data FIFO, over the 64-bit HP0 memory path,
+# under non-root register control (/dev/mcdma via pl-reg-shim). A TDEST demux fans
+# MM2S out to the boards and a packet-atomic TDEST mux recombines the ADC streams
+# into S2MM; the DMA-side adapters, the ADC packetizer, and the per-board
+# datapath_mode select against the PIO FIFO bridges live inside axi_spi_interface,
+# so a board runs on DMA or the PIO fallback as a unit. The MCDMA and switch
+# settings are the ones proven in ex05_dma. The sixteen completion/error introut
+# lines are folded into hw_manager in a later step (left unconnected here).
 
 ## MCDMA memory masters -> DDR over HP0 (payload out, payload in, descriptor fetch)
 cell xilinx.com:ip:smartconnect:1.0 axi_mem_intercon {
@@ -637,7 +644,9 @@ cell xilinx.com:ip:axis_switch:1.1 s2mm_mux {
   aresetn ps_rst/peripheral_aresetn
 }
 
-## Per-channel loopback: demux MI i -> AXIS FIFO -> mux SI i, all at TDEST == i.
+## Per-channel datapath: demux MI i -> board i DAC-command DMA write; board i ADC-data
+## DMA read -> mux SI i, all at TDEST == i. The DMA-side adapters, the datapath_mode
+## select, and the PIO fallback all live inside axi_spi_interface.
 for {set i 0} {$i < $board_count} {incr i} {
   set mi [format M%02d $i]
   set si [format S%02d $i]
@@ -649,19 +658,10 @@ for {set i 0} {$i < $board_count} {incr i} {
     CONFIG.${mi}_AXIS_BASETDEST [format 0x%08X $i] \
     CONFIG.${mi}_AXIS_HIGHTDEST [format 0x%08X $i]] [get_bd_cells mm2s_demux]
 
-  # Elastic AXIS FIFO carrying channel i's loopback packet (TDEST/TLAST preserved
-  # so S2MM routes each packet back to itself).
-  cell xilinx.com:ip:axis_data_fifo:2.0 dma_loop_fifo_${i} {
-    TDATA_NUM_BYTES 4
-    HAS_TLAST 1
-    TDEST_WIDTH 8
-    FIFO_DEPTH 512
-  } {
-    S_AXIS mm2s_demux/${mi}_AXIS
-    M_AXIS s2mm_mux/${si}_AXIS
-    s_axis_aclk ps/FCLK_CLK0
-    s_axis_aresetn ps_rst/peripheral_aresetn
-  }
+  # MM2S channel i -> board i DAC command FIFO (DMA write side); board i ADC data
+  # FIFO (packetized) -> S2MM channel i. TDEST == i throughout.
+  wire mm2s_demux/${mi}_AXIS axi_spi_interface/dac_ch${i}_dma
+  wire axi_spi_interface/adc_ch${i}_dma s2mm_mux/${si}_AXIS
 }
 
 ###############################################################################

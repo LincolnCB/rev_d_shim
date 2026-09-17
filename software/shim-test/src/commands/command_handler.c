@@ -16,6 +16,7 @@
 #include "dac_commands.h"
 #include "trigger_commands.h"
 #include "experiment_commands.h"
+#include "dma_commands.h"
 #include "rev_c_compat.h"
 
 /**
@@ -150,6 +151,11 @@ static command_entry_t command_table[] = {
   {"log_commands", cmd_log_commands, {1, 1, {-1}, "Start logging commands to file: <file_path>"}},
   {"stop_log", cmd_stop_log, {0, 0, {-1}, "Stop logging commands"}},
   {"load_commands", cmd_load_commands, {1, 1, {-1}, "Load and execute commands from file: <file_path> (0.25s delay between commands, supports * wildcards)"}},
+
+  // ===== DMA COMMANDS (from dma_commands.h) =====
+  {"dma_mode", cmd_dma_mode, {2, 2, {-1}, "Set a board's datapath: dma_mode <board> <0|1> (0=PIO, 1=DMA; set while the system is off)"}},
+  {"dma_status", cmd_dma_status, {0, 1, {-1}, "Show datapath_mode and MCDMA/FIFO status for a board (or all): dma_status [board]"}},
+  {"dma_channel_test", cmd_dma_channel_test, {2, 2, {FLAG_NO_RESET, -1}, "DMA round-trip on a channel: dma_channel_test <channel> <value> (DAC via MM2S -> coil -> ADC via S2MM) [--no_reset]"}},
 
   // Sentinel entry - marks end of table (must be last)
   {NULL, NULL, {0, 0, {-1}, NULL}}

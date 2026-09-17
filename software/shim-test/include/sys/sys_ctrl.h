@@ -22,6 +22,7 @@
 #define DEBUG_OFFSET              (uint32_t) 8
 #define DAC_CAL_INIT_OFFSET       (uint32_t) 9
 #define DO_DAC_PRE_DELAY_OFFSET   (uint32_t) 10
+#define DATAPATH_MODE_OFFSET      (uint32_t) 11
 
 //////////////////////////////////////////////////////////////////
 
@@ -38,6 +39,7 @@ struct sys_ctrl_t {
   volatile uint32_t *debug;            // Debug
   volatile uint32_t *dac_cal_init;     // DAC calibration init
   volatile uint32_t *do_dac_pre_delay; // Do DAC pre-delay
+  volatile uint32_t *datapath_mode;    // Per-board high-rate datapath select (0 = PIO, 1 = DMA)
 };
 
 // Create a system control structure
@@ -66,6 +68,9 @@ void sys_ctrl_set_debug(struct sys_ctrl_t *sys_ctrl, uint16_t value, bool verbos
 void sys_ctrl_set_dac_cal_init(struct sys_ctrl_t *sys_ctrl, int16_t value, bool verbose);
 // Toggle the DAC pre-delay bit in the do_dac_pre_delay register
 void sys_ctrl_toggle_dac_pre_delay(struct sys_ctrl_t *sys_ctrl, bool verbose);
+// Set the datapath_mode register to an 8-bit per-board mask (bit b: 0 = PIO, 1 = DMA).
+// Locked by ctrl_en, so it must be set while the system is off (before ctrl_on).
+void sys_ctrl_set_datapath_mode(struct sys_ctrl_t *sys_ctrl, uint8_t mask, bool verbose);
 
 
 #endif // SYS_CTRL_H

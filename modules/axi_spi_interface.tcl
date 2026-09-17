@@ -38,6 +38,7 @@ create_bd_pin -dir I -type reset aresetn
 create_bd_pin -dir I -from 16 -to 0 cmd_buf_reset
 create_bd_pin -dir I -from 16 -to 0 data_buf_reset
 create_bd_pin -dir I -type clock spi_clk
+create_bd_pin -dir I -from 7 -to 0 datapath_mode
 
 # AXI interface
 create_bd_intf_pin -mode slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_AXI
@@ -69,6 +70,10 @@ for {set i 0} {$i < $board_count} {incr i} {
   create_bd_pin -dir I adc_ch${i}_data_wr_en
   create_bd_pin -dir O adc_ch${i}_data_full
   create_bd_pin -dir O adc_ch${i}_data_almost_full
+
+  # DMA datapath AXIS interfaces (DAC command in from MM2S, ADC data out to S2MM)
+  create_bd_intf_pin -mode slave  -vlnv xilinx.com:interface:axis_rtl:1.0 dac_ch${i}_dma
+  create_bd_intf_pin -mode master -vlnv xilinx.com:interface:axis_rtl:1.0 adc_ch${i}_dma
 }
 
 # Trigger command channel
@@ -97,6 +102,11 @@ cell xilinx.com:ip:xlconstant:1.1 const_0 {
 } {}
 cell xilinx.com:ip:xlconstant:1.1 const_1 {
   CONST_VAL 1
+} {}
+# 32-bit zero for tying off the unused read side of the DMA write bridges
+cell xilinx.com:ip:xlconstant:1.1 const_0_32 {
+  CONST_VAL 0
+  CONST_WIDTH 32
 } {}
 
 #######################################################
@@ -261,9 +271,6 @@ for {set i 0} {$i < $board_count} {incr i} {
     wr_resetn dac_cmd_fifo_${i}_spi_clk_rst/peripheral_aresetn
     rd_resetn dac_data_fifo_${i}_spi_clk_rst/peripheral_aresetn
     S_AXI ch${i}_axi_intercon/M00_AXI
-    fifo_wr_data dac_cmd_fifo_${i}/wr_data
-    fifo_wr_en dac_cmd_fifo_${i}/wr_en
-    fifo_full dac_cmd_fifo_${i}/full
     fifo_rd_data dac_data_fifo_${i}/rd_data
     fifo_rd_en dac_data_fifo_${i}/rd_en
     fifo_empty dac_data_fifo_${i}/empty
@@ -382,9 +389,73 @@ for {set i 0} {$i < $board_count} {incr i} {
     fifo_wr_data adc_cmd_fifo_${i}/wr_data
     fifo_wr_en adc_cmd_fifo_${i}/wr_en
     fifo_full adc_cmd_fifo_${i}/full
-    fifo_rd_data adc_data_fifo_${i}/rd_data
-    fifo_rd_en adc_data_fifo_${i}/rd_en
-    fifo_empty adc_data_fifo_${i}/empty
+  }
+
+  ## DMA datapath: per-board DAC-command write bridge, ADC-data packetizer, and the
+  ## datapath_mode select against the PIO axi_fifo_bridge. datapath_mode[i] chooses the
+  ## owner of the shared dac_cmd write port and adc_data read port (0 = PIO, 1 = DMA) and
+  ## hard-locks the idle owner off the FIFO.
+  cell xilinx.com:ip:xlslice:1.0 datapath_mode_${i}_slice {
+    DIN_WIDTH 8
+    DIN_FROM $i
+    DIN_TO $i
+  } {
+    din datapath_mode
+  }
+  # DAC command DMA write bridge (AXIS from MM2S -> dac_cmd FIFO write). Write-only, so its
+  # read side is tied off; blocking tready (ALWAYS_READY 0) so MM2S backpressures on full.
+  cell base:user:axis_fifo_bridge dac_cmd_dma_bridge_${i} {
+    AXIS_DATA_WIDTH 32
+    ENABLE_WRITE 1
+    ENABLE_READ 0
+    ALWAYS_READY 0
+    ALWAYS_VALID 0
+  } {
+    aclk aclk
+    aresetn dac_cmd_fifo_${i}_aclk_rst/peripheral_aresetn
+    s_axis dac_ch${i}_dma
+    fifo_rd_data const_0_32/dout
+    fifo_empty const_1/dout
+  }
+  # ADC data DMA packetizer (adc_data FIFO read -> AXIS to the S2MM mux). tdest = board index.
+  cell shim:user:adc_packetizer adc_data_packetizer_${i} {
+    DATA_WIDTH 32
+    DEST_WIDTH 8
+    FIFO_COUNT_WIDTH [expr {$adc_data_fifo_addr_width + 1}]
+    MAX_PACKET_WORDS 256
+    BOARD_INDEX $i
+  } {
+    aclk aclk
+    aresetn adc_data_fifo_${i}_aclk_rst/peripheral_aresetn
+    m_axis adc_ch${i}_dma
+  }
+  # Per-board 2:1 select between the PIO bridge and the DMA adapters on the two shared
+  # FIFO ports, hard-locking the idle owner (full/empty forced on the non-owner).
+  cell shim:user:datapath_mux datapath_mux_${i} {
+    DATA_WIDTH 32
+    COUNT_WIDTH [expr {$adc_data_fifo_addr_width + 1}]
+  } {
+    datapath_mode datapath_mode_${i}_slice/dout
+    cmd_wr_data dac_cmd_fifo_${i}/wr_data
+    cmd_wr_en dac_cmd_fifo_${i}/wr_en
+    cmd_full dac_cmd_fifo_${i}/full
+    cmd_pio_wr_data dac_fifo_${i}_axi_bridge/fifo_wr_data
+    cmd_pio_wr_en dac_fifo_${i}_axi_bridge/fifo_wr_en
+    cmd_pio_full dac_fifo_${i}_axi_bridge/fifo_full
+    cmd_dma_wr_data dac_cmd_dma_bridge_${i}/fifo_wr_data
+    cmd_dma_wr_en dac_cmd_dma_bridge_${i}/fifo_wr_en
+    cmd_dma_full dac_cmd_dma_bridge_${i}/fifo_full
+    data_rd_data adc_data_fifo_${i}/rd_data
+    data_empty adc_data_fifo_${i}/empty
+    data_count adc_data_fifo_${i}/fifo_count_rd_clk
+    data_rd_en adc_data_fifo_${i}/rd_en
+    data_pio_rd_data adc_fifo_${i}_axi_bridge/fifo_rd_data
+    data_pio_empty adc_fifo_${i}_axi_bridge/fifo_empty
+    data_pio_rd_en adc_fifo_${i}_axi_bridge/fifo_rd_en
+    data_dma_rd_data adc_data_packetizer_${i}/fifo_rd_data
+    data_dma_empty adc_data_packetizer_${i}/fifo_empty
+    data_dma_count adc_data_packetizer_${i}/fifo_count_rd_clk
+    data_dma_rd_en adc_data_packetizer_${i}/fifo_rd_en
   }
 }
 

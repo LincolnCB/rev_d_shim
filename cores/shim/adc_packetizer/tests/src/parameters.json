@@ -2,7 +2,6 @@
     "DATA_WIDTH": 32,
     "DEST_WIDTH": 8,
     "FIFO_COUNT_WIDTH": 8,
-    "CHUNK_WORDS": 4,
-    "MAX_CHUNKS": 4,
+    "MAX_PACKET_WORDS": 16,
     "BOARD_INDEX": 5
 }
