@@ -4,8 +4,10 @@
 #include <stddef.h>
 #include "commands.h"
 
-// Max length for a single input line (for typical commands like "L filename" or "U 1.0 2.0 ...")
-#define INPUT_LINE_MAX 256
+// Max length for a single input line. Sized large to accommodate long inline
+// 'A' array commands (typical commands like "L filename" or "U 1.0 2.0 ..." are far shorter).
+// Kept below INPUT_ARRAY_DATA_MAX (~289 KB) so full-length 'A' data lines are accepted.
+#define INPUT_LINE_MAX 262144
 
 // Array command ('A') buffer sizing:
 // - INPUT_ARRAY_MAX_LINES: maximum number of data lines in an inline array

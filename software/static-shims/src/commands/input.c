@@ -481,7 +481,8 @@ input_parse_result_t input_parse_line(const char *line,
     return INPUT_PARSE_EMPTY;
   }
 
-  char buffer[INPUT_LINE_MAX];
+  // static (not stack): INPUT_LINE_MAX is large, and this function is single-threaded / non-reentrant.
+  static char buffer[INPUT_LINE_MAX];
   size_t n = strlen(line);
   if (n >= sizeof(buffer)) {
     command_error(error_buf, error_buf_size, "command line too long");

@@ -104,7 +104,7 @@ int main(int argc, char **argv) {
   printf("Configured channels: %u\n", parsed_count);
   printf("Type H for help. Type Q to quit.\n\n");
 
-  char line[INPUT_LINE_MAX];
+  static char line[INPUT_LINE_MAX];  // static (not stack): INPUT_LINE_MAX is large
   char error_buf[128];
 
   state.running = true;
