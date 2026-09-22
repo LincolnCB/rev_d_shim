@@ -520,6 +520,7 @@ async def test_running_per_board_errors(dut):
         ("adc_data_buf_overflow",  "STS_ADC_DATA_BUF_OVERFLOW"),
         ("unexp_adc_trig",         "STS_UNEXP_ADC_TRIG"),
         ("adc_delay_too_short",    "STS_ADC_DELAY_TOO_SHORT"),
+        ("mode_viol",              "STS_MODE_VIOL"),
     ]
 
     for sig_name, sts_name in per_board_cases:
@@ -734,6 +735,51 @@ async def test_output_signals_at_s_running(dut):
     await RisingEdge(dut.clk)
     await ReadWrite()
     assert dut.ps_interrupt.value == 0, "ps_interrupt should clear after one cycle in S_RUNNING"
+
+
+@cocotb.test()
+async def test_running_dma_introut_doorbell(dut):
+    """S_RUNNING: an MCDMA introut event pulses ps_interrupt once and stays running.
+
+    The introut line is level-high until software clears the MCDMA status register, so a
+    held level must doorbell exactly once; clearing and re-raising it doorbells again.
+    """
+    tb = await setup_testbench(dut)
+    tb.dut._log.info("STARTING TEST: test_running_dma_introut_doorbell")
+
+    await tb.reach_s_running()
+    # Consume the entry ps_interrupt pulse.
+    await RisingEdge(dut.clk)
+    await ReadWrite()
+    assert dut.ps_interrupt.value == 0, "ps_interrupt should clear after entering S_RUNNING"
+
+    # Raise an S2MM completion/error interrupt (board 0): the DUT doorbells and stays running.
+    dut.dma_s2mm_introut.value = 1
+    await RisingEdge(dut.clk)
+    await ReadWrite()
+    assert dut.ps_interrupt.value == 1, "ps_interrupt should pulse on a DMA introut event"
+    assert dut.state.value == tb.get_state_value("S_RUNNING"), \
+        "a DMA doorbell must not leave S_RUNNING"
+
+    # The pulse is one cycle; the still-high level must not re-doorbell.
+    await RisingEdge(dut.clk)
+    await ReadWrite()
+    assert dut.ps_interrupt.value == 0, "ps_interrupt should clear one cycle after the doorbell"
+    await RisingEdge(dut.clk)
+    await ReadWrite()
+    assert dut.ps_interrupt.value == 0, "a held introut level must not re-pulse ps_interrupt"
+    assert dut.state.value == tb.get_state_value("S_RUNNING"), "still running after the doorbell"
+
+    # Clear the line, then a new event on the MM2S side doorbells again.
+    dut.dma_s2mm_introut.value = 0
+    await RisingEdge(dut.clk)
+    await ReadWrite()
+    dut.dma_mm2s_introut.value = 1
+    await RisingEdge(dut.clk)
+    await ReadWrite()
+    assert dut.ps_interrupt.value == 1, "a new DMA introut episode should doorbell again"
+    assert dut.state.value == tb.get_state_value("S_RUNNING"), "still running on the second doorbell"
+    dut.dma_mm2s_introut.value = 0
 
 
 @cocotb.test()

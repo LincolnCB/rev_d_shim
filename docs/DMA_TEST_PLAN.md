@@ -239,7 +239,7 @@ the new `adc_packetizer` into a packet-atomic TDEST mux, and a per-board
 or the DMA adapters under `axi_sys_ctrl`'s `datapath_mode[i]` bit (reset PIO). The
 DMA-side adapters, the packetizer, and the select all live inside
 `axi_spi_interface`; the top level only wires the demux/mux to the module. `mode_viol`
-reporting and the sixteen `introut` lines fold into `hw_manager` in 2c.
+reporting and the sixteen `introut` lines fold into `hw_manager` in Stage 2c below.
 
 **2b.1 -- The new and changed datapath cores pass their cocotb tests (host).**
 Run (in the cocotb container, no board -- in Docker mode go through make so the script runs inside the container):
@@ -263,6 +263,35 @@ grep -c 'dma_loop_fifo_' <bd or netlist>   # expect 0
 Expect: the build completes; for each board there is a `dac_cmd_dma_bridge_<b>` (`axis_fifo_bridge`, write-only), an `adc_data_packetizer_<b>` (`BOARD_INDEX = b`, `MAX_PACKET_WORDS` at or under the mux `ARB_ON_MAX_XFERS`), and a `datapath_mux_<b>`; no `dma_loop_fifo_*` remain; `axi_sys_ctrl` drives the module's `datapath_mode`. Check the post-synth hierarchical utilization to confirm the datapath still fits (the loopback FIFOs are replaced by the packetizer + bridge + mux; LUT is the binding constraint).
 Result: `[PASS]` 2026-09-15 (host, from artifacts, 4-board build). Per board: `adc_data_packetizer_<b>` 17 LUT / 8 FF, `dac_cmd_dma_bridge_<b>` 2 LUT, `datapath_mux_<b>` 51 LUT (the 32-bit write-data mux); no `dma_loop_fifo_*` remain. Whole design 33,859 LUT (63.6% of 53,200), 89 RAMB36 + 4 RAMB18 -- only +449 LUT over the Stage 2a baseline (33,410), since the loopback FIFOs were traded for the real adapters. The build routing at all confirms the AXIS interface inference, the module AXIS interface pins, the `axis_fifo_bridge` `AXIS_DATA_WIDTH` fix, and the reset/slice wiring.
 
+### Stage 2c -- mode_viol fault and MCDMA interrupt fold
+
+`mode_viol` reporting and the sixteen MCDMA `introut` lines fold into `hw_manager`. The
+PIO `axi_fifo_bridge` responds `OKAY` on every access (never `SLVERR`), raising
+`fifo_overflow` / `fifo_underflow` on a genuine full/empty of the owned port and `mode_viol`
+when the datapath mode has handed its port to the DMA owner. `axi_spi_interface` OR's the
+two per-board bridges' `mode_viol` into an 8-bit mask that folds into `hw_manager` as a
+per-board fault (`STS_MODE_VIOL`). The MCDMA per-channel `introut` lines pack into two
+8-bit buses and doorbell `hw_manager`'s single `ps_interrupt` during a run without leaving
+`S_RUNNING`.
+
+**2c.1 -- The hw_manager cocotb tests pass, including mode_viol and the DMA doorbell (host).**
+Run (in the cocotb container, no board):
+```bash
+make projects/rev_d_shim/cores/shim/hw_manager/tests/test_status PROJECT=rev_d_shim
+# VM mode: ./scripts/make/test_core.sh rev_d_shim shim hw_manager
+```
+Expect: all hw_manager tests pass. `test_running_per_board_errors` now covers `mode_viol` at every board position (`STS_MODE_VIOL`, correct board number), and `test_running_dma_introut_doorbell` confirms an `introut` event pulses `ps_interrupt` once, stays in `S_RUNNING`, does not re-pulse on the held level, and doorbells again after the line falls and re-raises.
+Result: `[PASS]` 2026-09-21 (host, cocotb container) -- hw_manager `TESTS=59 PASS=59 FAIL=0 SKIP=0`, including `mode_viol[0..7]` and `test_running_dma_introut_doorbell`. `datapath_mux` still passes (unchanged logic). `axi_fifo_bridge` has no cocotb testbench; its always-OKAY / `mode_viol` behavior is covered by the build (2c.2) and the on-target checks.
+
+**2c.2 -- The block design builds with mode_viol and the introut fold wired (host).**
+Run (from the built project under `tmp/snickerdoodle_black/1.0/rev_d_shim`), and confirm from the block design / synthesized netlist:
+```bash
+# mode_viol aggregation into hw_manager and the two introut concats are present
+grep -c 'mode_viol\|dma_mm2s_introut_concat\|dma_s2mm_introut_concat' <bd or netlist>
+```
+Expect: the build completes; `axi_spi_interface` exposes an 8-bit `mode_viol` wired to `hw_manager/mode_viol`; the MCDMA `mm2s_ch<n>_introut` / `s2mm_ch<n>_introut` lines are concatenated (zero-padded for unused boards) into `hw_manager/dma_mm2s_introut` and `hw_manager/dma_s2mm_introut`; utilization stays within budget (the added logic is a handful of LUTs -- an OR per board plus two concats).
+Result: `[PASS]` 2026-09-21 -- full Vivado/PetaLinux build completed cleanly with the new bridge ports (repackaged), the `mode_viol` aggregation, and the two `introut` concats wired to `hw_manager`. No unconnected-input criticals.
+
 ### Stage 2b/2c acceptance criteria
 
 Turned into concrete checks as target validation (needs a board and the Stage 3
@@ -275,7 +304,9 @@ mover) and the interrupt fold (2c) land. From the plan:
 - ADC packetizer framing: `tlast` closes a packet when the board's FIFO runs dry or at the `MAX_PACKET_WORDS` cap, on any word boundary (packets carry no sample-set alignment, since a single-channel read writes one word); a momentarily-empty board releases the mux (no head-of-line stall); the run tail self-flushes when the FIFO drains; packet size never exceeds the mux `ARB_ON_MAX_XFERS` backstop.
 - The sixteen MCDMA completion/error lines fold into `hw_manager` and ride its single interrupt -- no separate DMA interrupt path.
 
-Checks: the byte-exact DMA-driven FIFO transfer is validated on target -- see the Stage 3 low-level DMA bring-up result below. The remaining criteria (per-board mode independence, `mode_viol`, the introut fold) land with 2c.
+Checks: the byte-exact DMA-driven FIFO transfer, the on-target `mode_viol` fault, and the interrupt-driven completion (the `introut` doorbell) are all validated on target -- see the Stage 3.0 low-level bring-up results below (3.0.a-d PASS, 2026-09-22). Host verification (2c.1 cocotb, 2c.2 build) also passed. What remains for the full acceptance set -- per-board mode independence across several boards at once, and the ADC packetizer under a real multi-word waveform -- lands with the Stage 3 waveform integration.
+
+**Stage 2 is complete (2a datapath, 2b real routing, 2c fault/interrupt fold), host- and hardware-validated.**
 
 ---
 
@@ -283,12 +314,14 @@ Checks: the byte-exact DMA-driven FIFO transfer is validated on target -- see th
 
 ### Stage 3.0 -- low-level DMA bring-up (shim-test)
 
-The `shim-test` DMA commands (`dma_mode`, `dma_status`, `dma_channel_test`) drive the
-datapath directly for bring-up and debugging. `dma_channel_test` runs a single-channel
-round-trip: DMA a `DAC_WR_CH` command through MM2S into the board's DAC command FIFO (the
-DAC drives current through the coil), arm S2MM, trigger a PIO `ADC_RD_CH` on the same
-channel, and capture the sample back through S2MM into DDR. All DMA testing runs at 10 MHz
-SPI (the default), since the ADC data misaligns above that on current hardware.
+The `shim-test` DMA commands (`dma_mode`, `dma_status`, `dma_channel_test`, `dma_irq_test`,
+`dma_mode_viol`) drive the datapath directly for bring-up and debugging. `dma_channel_test`
+runs a single-channel round-trip: DMA a `DAC_WR_CH` command through MM2S into the board's DAC
+command FIFO (the DAC drives current through the coil), arm S2MM, trigger a PIO `ADC_RD_CH` on
+the same channel, and capture the sample back through S2MM into DDR. `dma_irq_test` does the
+same round-trip but takes the S2MM completion on the folded `hw_manager` interrupt instead of
+polling, and `dma_mode_viol` deliberately provokes a wrong-mode access. All DMA testing runs
+at 10 MHz SPI (the default), since the ADC data misaligns above that on current hardware.
 
 **3.0.a -- Byte-exact DAC delivery over MM2S (target).**
 Run (`dma_mode 0 1` while off, then `ctrl_on`/`pow_on`):
@@ -309,15 +342,70 @@ dma_channel_test 0 1000
 Expect: `dma_channel_test` completes with no descriptor timeout, captures one ADC word through S2MM, and the sample matches the PIO `channel_test` reference within measurement noise.
 Result: `[PASS]` 2026-09-17 (10 MHz) -- PIO `channel_test 0 1000` read 996; `dma_channel_test 0 1000` reported "Captured 1 ADC word(s) via S2MM DMA. First sample: 994". The full path -- MM2S -> DAC -> coil -> ADC -> S2MM -> DDR -> C -- is proven end to end. This required the non-cached `u-dma-buf` mapping (`O_SYNC`, for descriptor/data coherence) and arming S2MM before the ADC read (so the packetizer's continuous drain lands in the capture buffer rather than being dropped toward an idle S2MM).
 
-**Remaining Stage 3 acceptance criteria** (the full waveform integration) are still open. From the plan:
+**3.0.c -- Interrupt-driven S2MM completion via the folded doorbell (target, Stage 2c).**
+Run (`dma_mode 0 1` while off, then `ctrl_on`/`pow_on`):
+```bash
+dma_irq_test 0 1000
+```
+Expect: the same round-trip as `dma_channel_test`, but the S2MM completion is delivered by the `hw_manager` interrupt (`/dev/hw_manager_irq`, the folded MCDMA `introut`) rather than by polling -- the command reports "Completion delivered by the hw_manager interrupt (1 doorbell)" and captures the ADC word. If it instead reports "no interrupt was observed", the MCDMA per-channel interrupt enable or the `introut` -> `hw_manager` -> `ps_interrupt` fold is not asserting (bisect with `cat /proc/interrupts | grep pl-irq` before and after: a count increment means the line fires and the software wake is suspect; no increment means the fold or the enable bits are).
+Result: `[PASS]` 2026-09-22 (10 MHz) -- `dma_irq_test 0 1000` reported "Completion delivered by the hw_manager interrupt (1 doorbell)" and captured 996. The `pl-irq` count in `/proc/interrupts` incremented across the run (1 -> 3), confirming the MCDMA `introut` reaches the GIC (edge, SPI 61) and wakes userspace via `pl-irq-shim`. The full fold MCDMA `introut` -> `hw_manager` -> single `ps_interrupt` -> `/dev/hw_manager_irq` is proven. (The tool counts its `read()` wakeups, so "1 doorbell" vs the +2 raw edge count is just batching -- the software woke once and found the completion.)
 
+**3.0.d -- Wrong-mode access is graceful, not a crash (target, Stage 2c).**
+Run (board 0 in DMA mode and running):
+```bash
+dma_mode_viol 0
+```
+Expect: the deliberate PIO write to a DMA-mode board returns without a `SIGBUS` (the shell keeps running -- the command prints "PIO write returned without a bus error"), and `hw_manager` halts with `STS_MODE_VIOL` for board 0. The command prints `PASS`. A `SIGBUS`/`Bus error` that kills the process would mean the bridge still returns `SLVERR`; a halt with a different status code would mean `mode_viol` is not wired or a different fault won the priority.
+Result: `[PASS]` 2026-09-22 -- `dma_mode_viol 0` printed "PIO write returned without a bus error (accept-and-discard confirmed)", then `hw_manager` halted with `STS_MODE_VIOL` on board 0 and the command reported `PASS`. No `SIGBUS`. Note: the fault latch clears only on a buffer reset (or global reset), not on `off` -- after `off`/`ctrl_on`/`pow_on` the system re-faults with the same `STS_MODE_VIOL`; `hard_reset` (which pulses `buf_reset`) clears it. This is the Stage 4 coordinated-reset concern, surfaced here.
 
-- A real waveform plays end to end through the DMA path: prebuffer the `dac_cmd` sequence, reserve the `adc_data` capture region, set each board's `datapath_mode` to DMA, `sync_for_device`, arm, release the trigger, wait on the folded `hw_manager` interrupt, then on a normal end `sync_for_cpu` and read back the ADC data -- the readback matches expectation byte-for-byte.
-- The run-controller wakes once on run-end-or-fault, not by spin-polling; a local abort (SIGINT folded into the eventfd) unblocks the same wait as a hardware fault.
-- `shim-test` low-level DMA commands work for bring-up and debugging.
-- Shared MCDMA-mover library is used by both `waveform` and `static-shims`.
+**Stage 3.0 is complete on hardware (3.0.a-d PASS).** The low-level `shim-test` DMA commands
+give a proven, debuggable single-channel datapath -- MM2S DAC delivery, full coil round-trip,
+interrupt-driven completion, and graceful wrong-mode handling. The remaining Stage 3 work is
+the full clean integration into the run programs, sliced below.
 
-Checks: `[ ]` (to be written)
+### Stage 3.1 -- shared MCDMA mover library
+
+Consolidate the low-level mover (`src/sys/dma_ctrl.c`) as the shared library that `waveform`
+and `static-shims` consume through their `src/sys` symlink, and extend it from the single-word
+bring-up shape to a full sequence: a multi-word `dac_cmd` prebuffer per board and a capture
+region sized for the whole `adc_data` readback, still one descriptor per direction (23-bit
+length). No new datapath -- this is the software API the run programs build on.
+
+Checks:
+- `[ ]` `dma_ctrl.c` compiles and links into `waveform` and `static-shims` (not just `shim-test`), via the existing `src/sys` symlink.
+- `[ ]` A multi-word MM2S prebuffer (a real `dac_cmd` sequence, not one word) plays into a board's DAC command FIFO byte-exact, and a multi-word S2MM capture reads back the full `adc_data` stream.
+- `[ ]` Buffer sizing: the `udmabuf0` data region holds the largest intended sequence plus its capture, and the `udmabuf1` descriptor region is sufficient; sizes read from sysfs, not hardcoded.
+
+### Stage 3.2 -- event-driven run-controller
+
+Replace the observe-only `sys_sts` interrupt monitor with an active run-controller: block with
+`poll()` over `/dev/hw_manager_irq` (the folded `hw_manager`/MCDMA interrupt) plus an `eventfd`
+or self-pipe, so a hardware fault and a local abort (SIGINT, or a software-detected error)
+unblock the same wait. On wake, read the sticky status word and dispatch: a normal end proceeds
+to `sync_for_cpu` and readback; a fault drives the coordinated shutdown (`request_stop` plus
+`hw_power_off`). Re-arm the interrupt each cycle; no spin-poll.
+
+Checks:
+- `[ ]` During a prebuffered run the controller blocks on one wait (no busy-polling of the status register); confirmed by CPU usage and by the `pl-irq` count advancing only on real events.
+- `[ ]` A hardware fault (e.g. a `dma_mode_viol`-style violation, or an injected over/underflow) wakes the wait, and the controller reads `STS_*` and runs the coordinated shutdown.
+- `[ ]` A local abort -- SIGINT (Ctrl-C) folded into the `eventfd` -- unblocks the same wait and stops the run cleanly, identically to a hardware fault.
+- `[ ]` The normal end of a run (all channels complete) wakes the wait once and proceeds to readback.
+
+### Stage 3.3 -- waveform and static-shims DMA integration
+
+Wire the mover and the run-controller into the run programs. For a run on DMA-mode boards:
+prebuffer each board's `dac_cmd` sequence and reserve its `adc_data` capture region, set the
+per-board `datapath_mode` to DMA (while the system is off), `sync_for_device`, arm the S2MM
+capture channels, release the trigger, wait on the run-controller for run-end-or-fault, then on
+a normal end `sync_for_cpu` and read back the `adc_data` -- byte-exact against expectation. The
+PIO path stays the fallback for boards left in PIO mode.
+
+Checks:
+- `[ ]` A real waveform plays end to end through the DMA path on at least one board; the `adc_data` readback matches expectation byte-for-byte.
+- `[ ]` Per-board independence: one board runs on DMA while another stays on PIO in the same run, each correct.
+- `[ ]` The ADC packetizer holds under a real multi-word run: the capture stream reassembles by position with no lost or misframed words (validates the adaptive word-granular framing beyond the single-word bring-up).
+- `[ ]` `static-shims` drives its setpoints through the same DMA path and reads back correctly.
+- `[ ]` The PIO fallback still produces the same result for a board left in PIO mode.
 
 ---
 

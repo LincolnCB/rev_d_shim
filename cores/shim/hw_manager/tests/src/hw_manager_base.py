@@ -68,6 +68,7 @@ class hw_manager_base:
         0x0705: "STS_ADC_DATA_BUF_OVERFLOW",
         0x0706: "STS_UNEXP_ADC_TRIG",
         0x0707: "STS_ADC_DELAY_TOO_SHORT",
+        0x0800: "STS_MODE_VIOL",
     }
 
     def __init__(self, dut, clk_period = 4, time_unit = "ns"):
@@ -165,6 +166,11 @@ class hw_manager_base:
         self.dut.adc_data_buf_overflow.value = 0
         self.dut.unexp_adc_trig.value = 0
         self.dut.adc_delay_too_short.value = 0
+
+        # Datapath mode (8-bit per board) and MCDMA completion/error doorbell
+        self.dut.mode_viol.value = 0
+        self.dut.dma_mm2s_introut.value = 0
+        self.dut.dma_s2mm_introut.value = 0
 
     def get_state_name(self, state_value):
         state_int = int(state_value)
@@ -960,6 +966,7 @@ class hw_manager_base:
             prev_adc_data_buf_overflow  = int(self.dut.adc_data_buf_overflow.value)
             prev_unexp_adc_trig        = int(self.dut.unexp_adc_trig.value)
             prev_adc_delay_too_short   = int(self.dut.adc_delay_too_short.value)
+            prev_mode_viol             = int(self.dut.mode_viol.value)
             await ReadOnly()
 
             if prev_ps_interrupt:
@@ -995,6 +1002,7 @@ class hw_manager_base:
                 or prev_adc_data_buf_overflow
                 or prev_unexp_adc_trig
                 or prev_adc_delay_too_short
+                or prev_mode_viol
             ):
                 # Determine expected status code in priority order (matches Verilog if/else if chain)
                 if not prev_ctrl_en or not prev_pow_en:
@@ -1157,6 +1165,12 @@ class hw_manager_base:
                         expected_state=self.get_state_value("S_HALTING"),
                         expected_status_code=self.get_status_value("STS_ADC_DELAY_TOO_SHORT"),
                         expected_board_num=self.extract_board_num(self.dut.adc_delay_too_short.value)
+                    )
+                elif prev_mode_viol:
+                    await self.check_state_and_status(
+                        expected_state=self.get_state_value("S_HALTING"),
+                        expected_status_code=self.get_status_value("STS_MODE_VIOL"),
+                        expected_board_num=self.extract_board_num(self.dut.mode_viol.value)
                     )
                 break
         return

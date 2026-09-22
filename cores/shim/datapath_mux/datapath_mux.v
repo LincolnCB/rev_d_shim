@@ -8,8 +8,9 @@
 // path and its handshake, so it physically cannot touch the FIFO. In DMA mode the PIO
 // side sees full=1 / empty=1 (its wr_en/rd_en fold to 0) and only the DMA side's wr_en /
 // rd_en reach the FIFO; in PIO mode the reverse. So a wrong-mode access can drop data
-// but can never corrupt the FIFO. Graceful wrong-mode reporting (mode_viol) is folded in
-// with the DMA interrupt work in a later stage; here the port is only about the lock.
+// but can never corrupt the FIFO. Reporting a wrong-mode access (mode_viol) lives in the
+// PIO axi_fifo_bridge, which is where the raw access attempt is still visible; this mux
+// only enforces the lock.
 //
 // The write side carries a real 32-bit data mux (the FIFO has one write-data port), so it
 // lives in RTL rather than IPI gates; the read side only muxes the 1-bit read-enable and

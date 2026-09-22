@@ -156,6 +156,8 @@ static command_entry_t command_table[] = {
   {"dma_mode", cmd_dma_mode, {2, 2, {-1}, "Set a board's datapath: dma_mode <board> <0|1> (0=PIO, 1=DMA; set while the system is off)"}},
   {"dma_status", cmd_dma_status, {0, 1, {-1}, "Show datapath_mode and MCDMA/FIFO status for a board (or all): dma_status [board]"}},
   {"dma_channel_test", cmd_dma_channel_test, {2, 2, {FLAG_NO_RESET, -1}, "DMA round-trip on a channel: dma_channel_test <channel> <value> (DAC via MM2S -> coil -> ADC via S2MM) [--no_reset]"}},
+  {"dma_irq_test", cmd_dma_irq_test, {2, 2, {FLAG_NO_RESET, -1}, "DMA round-trip whose S2MM completion arrives on the hw_manager interrupt: dma_irq_test <channel> <value> [--no_reset]"}},
+  {"dma_mode_viol", cmd_dma_mode_viol, {1, 1, {-1}, "Provoke a wrong-mode PIO access on a DMA-mode board: dma_mode_viol <channel> (expect a graceful STS_MODE_VIOL halt, no crash)"}},
 
   // Sentinel entry - marks end of table (must be last)
   {NULL, NULL, {0, 0, {-1}, NULL}}

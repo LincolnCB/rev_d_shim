@@ -47,4 +47,14 @@ int dma_s2mm_wait(struct dma_ctrl_t *dma, int board, uint32_t *out, uint32_t max
 // Print the MCDMA common and per-channel status registers for `board` (debug).
 void dma_dump_status(struct dma_ctrl_t *dma, int board);
 
+// Interrupt-driven S2MM completion, for exercising the MCDMA -> hw_manager doorbell.
+// Enable the S2MM channel's completion/error interrupt after arming so the MCDMA drives
+// introut; classify the channel after a doorbell (1 = complete, -1 = error, 0 = neither);
+// acknowledge (write-1-to-clear) so introut deasserts; and copy out the captured words
+// without polling once completion is seen.
+void dma_s2mm_irq_enable(struct dma_ctrl_t *dma, int board);
+int  dma_s2mm_status(struct dma_ctrl_t *dma, int board);
+void dma_s2mm_irq_ack(struct dma_ctrl_t *dma, int board);
+int  dma_s2mm_collect(struct dma_ctrl_t *dma, uint32_t *out, uint32_t max_words);
+
 #endif // DMA_CTRL_H

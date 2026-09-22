@@ -39,6 +39,13 @@ module axi_fifo_bridge #(
   output wire                       fifo_rd_en,
   input  wire                       fifo_empty,
 
+  // Datapath-mode gating: high on the side this bridge does not own (the datapath_mux
+  // hands the FIFO port to the DMA adapter), so an access here is a wrong-mode poke to
+  // accept-and-discard rather than a real transfer.
+  input  wire                       wr_mode_block,
+  input  wire                       rd_mode_block,
+  output wire                       mode_viol,      // wrong-mode access seen (accepted, discarded)
+
   // Underflow/overflow signals for the AXI side
   output reg                        fifo_underflow,
   output reg                        fifo_overflow
@@ -58,32 +65,38 @@ module axi_fifo_bridge #(
 
   // Response signals
   localparam RESP_OKAY = 2'b00;
-  localparam RESP_SLVERR = 2'b10;
+
+  // Wrong-mode access flags, latched per direction until reset (mirrors overflow/underflow).
+  reg wr_mode_viol;
+  reg rd_mode_viol;
+  assign mode_viol = wr_mode_viol | rd_mode_viol;
 
 
   //// Write logic
-  // Allow write attempts always (no hanging), but send an error response if the FIFO is full or writes are disabled
+  // Always accept the request (no hanging). A write reaches the FIFO only when this side
+  // owns it and the FIFO has room; a wrong-mode or full write is accepted and discarded.
   wire   try_write = s_axi_awvalid && s_axi_wvalid;
-  wire   write_allowed = !fifo_full && ENABLE_WRITE;
+  wire   write_allowed = !fifo_full && !wr_mode_block && ENABLE_WRITE;
   assign s_axi_awready = 1; // Always ready to accept write requests, not allowed to hang
   assign s_axi_wready  = 1; // Always ready to accept write data, not allowed to hang
   assign fifo_wr_en    = try_write && write_allowed;
   assign fifo_wr_data  = s_axi_wdata;
 
-  // Write response
+  // Write response: always OKAY (accept-and-discard, never SLVERR) so a wrong-mode or
+  // full-FIFO access cannot fault the CPU. A wrong-mode write raises wr_mode_viol; a
+  // genuine full write raises fifo_overflow.
   always @(posedge aclk) begin
     if (!wr_resetn) begin
       s_axi_bvalid <= 1'b0;
-      s_axi_bresp  <= 2'b00;
+      s_axi_bresp  <= RESP_OKAY;
       fifo_overflow <= 1'b0; // Reset overflow flag on reset
+      wr_mode_viol  <= 1'b0;
     end else begin
-      if (fifo_wr_en) begin
+      if (try_write) begin
         s_axi_bvalid <= 1'b1;
         s_axi_bresp  <= RESP_OKAY;
-      end else if (try_write && !write_allowed) begin
-        s_axi_bvalid <= 1'b1;
-        s_axi_bresp  <= RESP_SLVERR;
-        if (fifo_full) fifo_overflow <= 1'b1; // Indicate overflow if FIFO was trying to write when full
+        if (wr_mode_block)  wr_mode_viol  <= 1'b1; // wrong-mode poke, discarded
+        else if (fifo_full) fifo_overflow <= 1'b1; // genuine overflow, discarded
       end else if (s_axi_bready && s_axi_bvalid) begin
         s_axi_bvalid <= 1'b0;
       end
@@ -91,29 +104,32 @@ module axi_fifo_bridge #(
   end
 
 
-  //// Read logic:
-  // Allow read attempts always (no hanging), but send an error response if the FIFO is empty or reads are disabled
+  //// Read logic
+  // Always accept the request (no hanging). A read pops the FIFO only when this side owns
+  // it and the FIFO has data; a wrong-mode or empty read returns zero.
   wire   try_read = s_axi_arvalid;
-  wire   read_allowed = !fifo_empty && ENABLE_READ;
+  wire   read_allowed = !fifo_empty && !rd_mode_block && ENABLE_READ;
   assign s_axi_arready = 1; // Always ready to accept read requests, not allowed to hang
   assign fifo_rd_en    = try_read && read_allowed;
 
   always @(posedge aclk) begin
     if (!rd_resetn) begin
       s_axi_rvalid <= 1'b0;
-      s_axi_rresp  <= 2'b00;
+      s_axi_rresp  <= RESP_OKAY;
       s_axi_rdata  <= {AXI_DATA_WIDTH{1'b0}};
       fifo_underflow <= 1'b0; // Reset underflow flag on reset
+      rd_mode_viol   <= 1'b0;
     end else begin
       if (fifo_rd_en) begin
         s_axi_rvalid <= 1'b1;
         s_axi_rdata  <= fifo_rd_data;
         s_axi_rresp  <= RESP_OKAY;
-      end else if (try_read && !read_allowed) begin
+      end else if (try_read) begin
         s_axi_rvalid <= 1'b1;
-        s_axi_rdata  <= {AXI_DATA_WIDTH{1'b0}}; // Return zero data on error
-        s_axi_rresp  <= RESP_SLVERR;
-        if (fifo_empty) fifo_underflow <= 1'b1; // Indicate underflow if FIFO was trying to read when empty
+        s_axi_rdata  <= {AXI_DATA_WIDTH{1'b0}}; // wrong-mode or empty read returns zero
+        s_axi_rresp  <= RESP_OKAY;
+        if (rd_mode_block)   rd_mode_viol   <= 1'b1; // wrong-mode poke, discarded
+        else if (fifo_empty) fifo_underflow <= 1'b1; // genuine underflow, discarded
       end else if (s_axi_rready && s_axi_rvalid) begin
         s_axi_rvalid <= 1'b0;
       end

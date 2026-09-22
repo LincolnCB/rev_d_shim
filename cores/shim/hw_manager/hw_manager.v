@@ -68,6 +68,11 @@ module hw_manager #(
   input   wire  [ 7:0]  adc_data_buf_overflow,   // ADC data buffer overflow
   input   wire  [ 7:0]  unexp_adc_trig,          // Unexpected ADC trigger
   input   wire  [ 7:0]  adc_delay_too_short,     // ADC delay too short
+  // Datapath mode (per board)
+  input   wire  [ 7:0]  mode_viol,               // Datapath-mode violation (wrong-mode FIFO access)
+  // DMA completion/error doorbell (per board, per direction)
+  input   wire  [ 7:0]  dma_mm2s_introut,        // MCDMA MM2S per-channel interrupt (completion or error)
+  input   wire  [ 7:0]  dma_s2mm_introut,        // MCDMA S2MM per-channel interrupt (completion or error)
 
   // Outputs
   output  reg           unlock_cfg,        // Lock configuration
@@ -101,6 +106,10 @@ module hw_manager #(
   reg [31:0] timer;       // Timer for various timeouts
   reg [ 2:0] board_num;   // Status - Board number (if applicable)
   reg [24:0] status_code; // Status - Status code
+  reg        dma_event_seen; // DMA introut level already doorbelled this episode
+
+  // Any pending MCDMA completion/error interrupt (level-high until software clears the SR)
+  wire dma_introut_any = (|dma_mm2s_introut) || (|dma_s2mm_introut);
 
   // Concatenated status word
   assign status_word = {board_num, status_code, state};
@@ -174,6 +183,8 @@ module hw_manager #(
               STS_ADC_DATA_BUF_OVERFLOW   = 25'h0705,
               STS_UNEXP_ADC_TRIG          = 25'h0706,
               STS_ADC_DELAY_TOO_SHORT     = 25'h0707;
+  // Datapath mode / DMA
+  localparam  STS_MODE_VIOL               = 25'h0800;
 
   // Main state machine
   always @(posedge clk) begin
@@ -191,6 +202,7 @@ module hw_manager #(
       status_code <= STS_OK;
       board_num <= 0;
       ps_interrupt <= 0;
+      dma_event_seen <= 0;
     end else begin
 
       // State machine
@@ -399,6 +411,8 @@ module hw_manager #(
 
         // Main running state, check for various error conditions or shutdowns
         S_RUNNING: begin
+          // Track the MCDMA interrupt level so each completion/error episode doorbells once
+          if (!dma_introut_any) dma_event_seen <= 0;
           // Reset the interrupt before doing anything else
           if (ps_interrupt) begin
             ps_interrupt <= 0;
@@ -438,6 +452,8 @@ module hw_manager #(
               || |adc_data_buf_overflow
               || |unexp_adc_trig
               || |adc_delay_too_short
+              // Datapath mode
+              || |mode_viol
           ) begin
             //// Set the status code based on the error condition
             // Basic system
@@ -538,9 +554,20 @@ module hw_manager #(
               status_code <= STS_ADC_DELAY_TOO_SHORT;
               board_num <= extract_board_num(adc_delay_too_short);
             end
+            // Datapath mode
+            else if (|mode_viol) begin
+              status_code <= STS_MODE_VIOL;
+              board_num <= extract_board_num(mode_viol);
+            end
             // Set the status code and halt the system
             state <= S_HALTING;
           end // Error/halt state check
+          // No fault: a new MCDMA completion/error event doorbells the software, which
+          // reads the MCDMA status register to tell completion from error. Stay running.
+          else if (dma_introut_any && !dma_event_seen) begin
+            ps_interrupt   <= 1;
+            dma_event_seen <= 1;
+          end
         end // S_RUNNING
 
         // Go to halt the system, set all signals to the initial state and assert the interrupt

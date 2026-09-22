@@ -128,6 +128,7 @@
 #define STS_ADC_DATA_BUF_OVERFLOW    (uint32_t) 0x0705 // ADC data buffer overflow.
 #define STS_UNEXP_ADC_TRIG           (uint32_t) 0x0706 // Unexpected ADC trigger.
 #define STS_ADC_DELAY_TOO_SHORT      (uint32_t) 0x0707 // ADC delay too short.
+#define STS_MODE_VIOL                (uint32_t) 0x0800 // Datapath-mode violation (wrong-mode FIFO access).
 
 // FIFO status interpretation macros
 #define FIFO_STS_WORD_COUNT(sts)   ((sts) & 0x7FFFFFF)   // Number of words in FIFO

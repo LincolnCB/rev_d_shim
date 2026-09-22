@@ -93,6 +93,7 @@ create_bd_pin -dir O -from 7 -to 0 dac_cmd_buf_overflow
 create_bd_pin -dir O -from 7 -to 0 dac_data_buf_underflow
 create_bd_pin -dir O -from 7 -to 0 adc_cmd_buf_overflow
 create_bd_pin -dir O -from 7 -to 0 adc_data_buf_underflow
+create_bd_pin -dir O -from 7 -to 0 mode_viol
 create_bd_pin -dir O trig_cmd_buf_overflow
 create_bd_pin -dir O trig_data_buf_underflow
 
@@ -457,6 +458,23 @@ for {set i 0} {$i < $board_count} {incr i} {
     data_dma_count adc_data_packetizer_${i}/fifo_count_rd_clk
     data_dma_rd_en adc_data_packetizer_${i}/fifo_rd_en
   }
+
+  ## Datapath-mode gating on the two shared PIO bridge ports. In DMA mode (datapath_mode[i]
+  ## = 1) the DAC-command write and the ADC-data read belong to the DMA adapters, so a PIO
+  ## poke there is a wrong-mode access: the bridge accepts and discards it (no SLVERR) and
+  ## raises mode_viol. The ADC-command write and DAC-data read stay PIO in both modes.
+  wire dac_fifo_${i}_axi_bridge/wr_mode_block datapath_mode_${i}_slice/dout
+  wire dac_fifo_${i}_axi_bridge/rd_mode_block const_0/dout
+  wire adc_fifo_${i}_axi_bridge/wr_mode_block const_0/dout
+  wire adc_fifo_${i}_axi_bridge/rd_mode_block datapath_mode_${i}_slice/dout
+  # Per-board mode violation = either shared port poked in the wrong mode.
+  cell xilinx.com:ip:util_vector_logic mode_viol_${i}_or {
+    C_SIZE 1
+    C_OPERATION or
+  } {
+    Op1 dac_fifo_${i}_axi_bridge/mode_viol
+    Op2 adc_fifo_${i}_axi_bridge/mode_viol
+  }
 }
 
 ## Trigger command FIFO
@@ -575,6 +593,9 @@ cell base:user:axi_fifo_bridge trig_fifo_axi_bridge {
   fifo_rd_en trig_data_fifo/rd_en
   fifo_empty trig_data_fifo/empty
 }
+# The trigger FIFO is PIO in both datapath modes, so it is never mode-blocked.
+wire trig_fifo_axi_bridge/wr_mode_block const_0/dout
+wire trig_fifo_axi_bridge/rd_mode_block const_0/dout
 
 ## Status concatenation out
 # 32-bit padding for unused boards
@@ -672,3 +693,15 @@ for {set i $board_count} {$i < 8} {incr i} {
 # Wire trigger command/data FIFO overflow and underflow signals
 wire trig_cmd_buf_overflow trig_fifo_axi_bridge/fifo_overflow
 wire trig_data_buf_underflow trig_fifo_axi_bridge/fifo_underflow
+# Concatenate per-board datapath-mode violation signals
+cell xilinx.com:ip:xlconcat:2.1 mode_viol_concat {
+  NUM_PORTS 8
+} {
+  dout mode_viol
+}
+for {set i 0} {$i < $board_count} {incr i} {
+  wire mode_viol_concat/In${i} mode_viol_${i}_or/Res
+}
+for {set i $board_count} {$i < 8} {incr i} {
+  wire mode_viol_concat/In${i} const_0/dout
+}

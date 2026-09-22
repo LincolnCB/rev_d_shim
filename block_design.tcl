@@ -546,6 +546,8 @@ wire axi_spi_interface/adc_cmd_buf_overflow hw_manager/adc_cmd_buf_overflow
 wire axi_spi_interface/adc_data_buf_underflow hw_manager/adc_data_buf_underflow
 wire axi_spi_interface/trig_cmd_buf_overflow hw_manager/trig_cmd_buf_overflow
 wire axi_spi_interface/trig_data_buf_underflow hw_manager/trig_data_buf_underflow
+# Datapath-mode violation (wrong-mode FIFO access) folds into hw_manager as a fault
+wire axi_spi_interface/mode_viol hw_manager/mode_viol
 
 ###############################################################################
 
@@ -559,8 +561,9 @@ wire axi_spi_interface/trig_data_buf_underflow hw_manager/trig_data_buf_underflo
 # into S2MM; the DMA-side adapters, the ADC packetizer, and the per-board
 # datapath_mode select against the PIO FIFO bridges live inside axi_spi_interface,
 # so a board runs on DMA or the PIO fallback as a unit. The MCDMA and switch
-# settings are the ones proven in ex05_dma. The sixteen completion/error introut
-# lines are folded into hw_manager in a later step (left unconnected here).
+# settings are the ones proven in ex05_dma. The completion/error introut lines are
+# folded into hw_manager as a doorbell (see below), so DMA events ride hw_manager's
+# single ps_interrupt rather than a separate interrupt.
 
 ## MCDMA memory masters -> DDR over HP0 (payload out, payload in, descriptor fetch)
 cell xilinx.com:ip:smartconnect:1.0 axi_mem_intercon {
@@ -662,6 +665,32 @@ for {set i 0} {$i < $board_count} {incr i} {
   # FIFO (packetized) -> S2MM channel i. TDEST == i throughout.
   wire mm2s_demux/${mi}_AXIS axi_spi_interface/dac_ch${i}_dma
   wire axi_spi_interface/adc_ch${i}_dma s2mm_mux/${si}_AXIS
+}
+
+## Fold the MCDMA completion/error interrupts into hw_manager as a doorbell. Each
+## channel's introut line is level-high while its SR completion/error bits are set;
+## hw_manager pulses its single ps_interrupt on any introut event during a run and the
+## software reads the MCDMA status register to tell completion from error. The per-channel
+## introut pins (mm2s_ch{i}/s2mm_ch{i}, 1-indexed) pack into an 8-bit bus per direction,
+## zero-padded for the unused boards.
+cell xilinx.com:ip:xlconcat:2.1 dma_mm2s_introut_concat {
+  NUM_PORTS 8
+} {
+  dout hw_manager/dma_mm2s_introut
+}
+cell xilinx.com:ip:xlconcat:2.1 dma_s2mm_introut_concat {
+  NUM_PORTS 8
+} {
+  dout hw_manager/dma_s2mm_introut
+}
+for {set i 0} {$i < $board_count} {incr i} {
+  set ch [expr {$i + 1}]
+  wire mcdma/mm2s_ch${ch}_introut dma_mm2s_introut_concat/In${i}
+  wire mcdma/s2mm_ch${ch}_introut dma_s2mm_introut_concat/In${i}
+}
+for {set i $board_count} {$i < 8} {incr i} {
+  wire dma_mm2s_introut_concat/In${i} const_0/dout
+  wire dma_s2mm_introut_concat/In${i} const_0/dout
 }
 
 ###############################################################################

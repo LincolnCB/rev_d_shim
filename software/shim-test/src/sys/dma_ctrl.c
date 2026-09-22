@@ -77,6 +77,14 @@
 #define CR_RESET        0x00000004
 #define SR_HALTED       0x00000001
 
+// MCDMA per-channel interrupt enable (CH_CR) and status (CH_SR) bits. The MCDMA layout
+// puts IOC/DLY/ERR at bits 5/6/7 (not the AXI-DMA 12/13/14); the coalesce threshold in
+// [23:16] must be at least 1 or IOC never fires. Confirmed against xilinx_dma.c (MCDMA).
+#define CH_IRQ_IOC      0x00000020   // bit 5: completion
+#define CH_IRQ_DLY      0x00000040   // bit 6: delay
+#define CH_IRQ_ERR      0x00000080   // bit 7: error
+#define CH_IRQ_THRESH1  0x00010000   // [23:16] = 1 coalesce threshold
+
 #define DESC_CTRL_SOF      0x80000000   // start-of-packet (BIT 31)
 #define DESC_CTRL_EOF      0x40000000   // end-of-packet   (BIT 30)
 #define DESC_CTRL_LEN_MASK 0x03FFFFFF
@@ -372,4 +380,45 @@ void dma_dump_status(struct dma_ctrl_t *dma, int board) {
   printf("  ch%d  MM2S CR=0x%08x SR=0x%08x   S2MM CR=0x%08x SR=0x%08x\n", board,
          reg_r(r, MM2S_CH_BASE(board) + CH_CR), reg_r(r, MM2S_CH_BASE(board) + CH_SR),
          reg_r(r, S2MM_CH_BASE(board) + CH_CR), reg_r(r, S2MM_CH_BASE(board) + CH_SR));
+}
+
+// Enable the S2MM channel's completion/error interrupt so the MCDMA drives its introut
+// line, which hw_manager folds into its single ps_interrupt doorbell. Call after arming.
+void dma_s2mm_irq_enable(struct dma_ctrl_t *dma, int board) {
+  if (!dma || !dma->ok) return;
+  volatile uint8_t *r = dma->reg;
+  uint32_t cb = S2MM_CH_BASE(board);
+  reg_w(r, cb + CH_CR, reg_r(r, cb + CH_CR) | CH_IRQ_IOC | CH_IRQ_ERR | CH_IRQ_THRESH1);
+}
+
+// Classify the S2MM channel after a doorbell: 1 = completed, -1 = error, 0 = neither yet.
+// The channel status register is the source of truth (the introut line cannot tell
+// completion from error); the descriptor completion bit is a secondary confirmation.
+int dma_s2mm_status(struct dma_ctrl_t *dma, int board) {
+  if (!dma || !dma->ok) return -1;
+  volatile uint8_t *r = dma->reg;
+  uint32_t sr = reg_r(r, S2MM_CH_BASE(board) + CH_SR);
+  if ((sr & CH_IRQ_ERR) || (reg_r(r, S2MM_CH_ERR) & (1u << board))) return -1;
+  struct mcdma_desc *d = (struct mcdma_desc *)(dma->desc + S2MM_DESC_OFF);
+  if ((sr & CH_IRQ_IOC) || (d->status & DESC_STAT_CMPLT)) return 1;
+  return 0;
+}
+
+// Clear the S2MM channel's latched interrupt status (write-1-to-clear) so its introut
+// line deasserts and the next completion can doorbell again.
+void dma_s2mm_irq_ack(struct dma_ctrl_t *dma, int board) {
+  if (!dma || !dma->ok) return;
+  volatile uint8_t *r = dma->reg;
+  reg_w(r, S2MM_CH_BASE(board) + CH_SR, CH_IRQ_IOC | CH_IRQ_DLY | CH_IRQ_ERR);
+}
+
+// Copy out the words the last S2MM capture wrote (the descriptor length), without polling.
+// Use after dma_s2mm_status reports completion. Returns the word count copied.
+int dma_s2mm_collect(struct dma_ctrl_t *dma, uint32_t *out, uint32_t max_words) {
+  if (!dma || !dma->ok) return -1;
+  struct mcdma_desc *d = (struct mcdma_desc *)(dma->desc + S2MM_DESC_OFF);
+  uint32_t rx = (d->status & DESC_STAT_LEN_MASK) / 4u;
+  if (rx > max_words) rx = max_words;
+  memcpy(out, dma->data + S2MM_CAPTURE_OFF, (size_t)rx * 4u);
+  return (int)rx;
 }

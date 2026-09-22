@@ -68,6 +68,13 @@ The `hw_manager` module manages the hardware system's startup, operation, and sh
   - `unexp_adc_trig [7:0]`: Unexpected ADC trigger (per board).
   - `adc_delay_too_short [7:0]`: ADC delay too short (per board).
 
+- **Datapath Mode**
+  - `mode_viol [7:0]`: Datapath-mode violation -- a wrong-mode FIFO access (a PIO poke at a board in DMA mode) accepted and discarded by the bridge (per board).
+
+- **DMA (MCDMA completion/error doorbell)**
+  - `dma_mm2s_introut [7:0]`: MCDMA MM2S per-channel interrupt, level-high while the channel's completion or error status bits are set (per board).
+  - `dma_s2mm_introut [7:0]`: MCDMA S2MM per-channel interrupt, same encoding (per board).
+
 ### Outputs
 
 - **System Control**
@@ -96,7 +103,7 @@ The state machine states are encoded as follows:
 - `4'd5`: `S_WAIT_FOR_POW_EN` - Waits for `pow_en` before powering on amplifier boards.
 - `4'd6`: `S_POWER_ON_AMP_BRD` - Pulses `shutdown_rst` high for `SHUTDOWN_RESET_PULSE`.
 - `4'd7`: `S_AMP_POWER_WAIT` - Waits for `SHUTDOWN_RESET_DELAY`, then enables shutdown sense, unblocks buffers, and asserts `ps_interrupt`.
-- `4'd8`: `S_RUNNING` - Normal operation. Continuously monitors for halt conditions. If any error or shutdown condition occurs, transitions to `S_HALTING`.
+- `4'd8`: `S_RUNNING` - Normal operation. Continuously monitors for halt conditions. If any error or shutdown condition occurs, transitions to `S_HALTING`. When there is no fault, a rising MCDMA interrupt (`dma_mm2s_introut` / `dma_s2mm_introut`) pulses `ps_interrupt` once as a doorbell so the software reads the MCDMA status register to tell completion from error; the state stays `S_RUNNING`. The held introut level doorbells once per episode (it must fall before it can doorbell again).
 - `4'd9`: `S_HALTING` - One-cycle transition that drives outputs to the halted state and asserts `ps_interrupt`.
 - `4'd10`: `S_HALTED` - Halted state. All outputs are disabled, and the system waits for both `ctrl_en` and `pow_en` to go low.
 
@@ -111,6 +118,7 @@ The system transitions through `S_HALTING` to `S_HALTED` and sets the appropriat
 - Trigger buffer or command errors
 - DAC/ADC boot failure, buffer or command errors (per board)
 - Unexpected DAC/ADC triggers occur
+- Datapath-mode violation (`mode_viol`) -- a wrong-mode FIFO access
 - SPI subsystem fails to start or initialize within timeout
 
 ### Status Word Format
@@ -169,6 +177,7 @@ Status codes are 25 bits wide and include:
 - `25'h0705`: `STS_ADC_DATA_BUF_OVERFLOW` - ADC data buffer overflow.
 - `25'h0706`: `STS_UNEXP_ADC_TRIG` - Unexpected ADC trigger.
 - `25'h0707`: `STS_ADC_DELAY_TOO_SHORT` - ADC delay too short.
+- `25'h0800`: `STS_MODE_VIOL` - Datapath-mode violation (wrong-mode FIFO access).
 
 ## Board Number Extraction
 

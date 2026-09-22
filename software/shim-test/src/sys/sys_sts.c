@@ -308,6 +308,10 @@ void print_hw_status(uint32_t hw_status, bool verbose) {
         printf("Status: ADC delay too short\n");
         print_board_number = true;
         break;
+      case STS_MODE_VIOL:
+        printf("Status: Datapath-mode violation (wrong-mode FIFO access)\n");
+        print_board_number = true;
+        break;
       default:
         printf("Status: Unknown (0x%07" PRIx32 ")\n", HW_STS_CODE(hw_status));
         break;
