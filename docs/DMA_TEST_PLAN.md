@@ -363,18 +363,27 @@ give a proven, debuggable single-channel datapath -- MM2S DAC delivery, full coi
 interrupt-driven completion, and graceful wrong-mode handling. The remaining Stage 3 work is
 the full clean integration into the run programs, sliced below.
 
-### Stage 3.1 -- shared MCDMA mover library
+### Stage 3.1 -- shared MCDMA mover library (multi-word)
 
-Consolidate the low-level mover (`src/sys/dma_ctrl.c`) as the shared library that `waveform`
-and `static-shims` consume through their `src/sys` symlink, and extend it from the single-word
-bring-up shape to a full sequence: a multi-word `dac_cmd` prebuffer per board and a capture
-region sized for the whole `adc_data` readback, still one descriptor per direction (23-bit
-length). No new datapath -- this is the software API the run programs build on.
+The low-level mover (`src/sys/dma_ctrl.c`) is the shared library that `waveform` and `static-shims` consume through their `src/sys` symlink. Beyond the single-word bring-up calls it provides the multi-word run primitives the run programs build on: `dma_wave_arm` lays out a prebuffered DAC command stream and an ADC capture ring in the `u-dma-buf` regions, copies the DAC words into DDR, and starts both engines without touching the trigger; `dma_wave_avail` / `dma_wave_read` drain the captured `adc_data` incrementally behind a read cursor; and `dma_wave_read_total` / `dma_wave_expected` / `dma_wave_disarm` round out the lifecycle. The mover stays purely low-level -- words moved and FIFO/ring state, with no knowledge of triggers or DAC/ADC execution counts -- while the polling loop, file output, and waveform synthesis live in the command layer, mirroring the `dac_ctrl`/`adc_ctrl` versus `experiment_commands` split.
+
+`shim-test` exercises it with a bench command trio. `dma_waveform_test` synthesizes an 8-channel triangle-times-envelope sequence at the matched DAC/ADC max cadence, writes the intended waveform to `<out>_dac.csv` in amps, prebuffers it, and starts a background collector; `dma_waveform_status` reports the DAC and ADC command counts, FIFO fills, and capture progress; and `dma_waveform_stop` ends a run early. The collector runs independently of the trigger, streams the ADC readback to `<out>_adc.csv` as the PL fills the capture (flushing each pass so data survives a later crash), and finishes on the expected sample count with no timeout -- a run may wait arbitrarily long for its trigger(s), of which there may be several.
+
+Several datapath and command-format facts were pinned here and carry straight into the run-program integration:
+
+- The MCDMA soft-reset (control bit 2) is global -- it resets both MM2S and S2MM. Reset both directions up front and then arm each; a reset issued after the other channel is armed wipes it.
+- A multi-channel `DAC_WR` writes the eight channels to the DAC input registers and latches them to the outputs only on an LDAC pulse, so each `DAC_WR` must set LDAC or no current flows. `DAC_WR_CH` uses the immediate write-and-update SPI command and needs no LDAC, which is why the single-word bring-up drove current without it.
+- Trigger alignment lives in the command stream, not the DMA. The first `DAC_WR` is a trigger-wait, so the DAC applies the t=0 point and continues on the trigger; the ADC stream leads with a trigger-wait `NO_OP`, because the ADC's delay is post-read and its first sample cannot itself be a trigger-wait.
+- The ADC emits exactly four 32-bit words per eight-channel read, and an `ADC_RD` with `REPEAT = R` performs `1 + R` reads, so the capture length is exactly `4 * n_reads` words with `R = n_reads - 1`.
+- Matched DAC/ADC cadence uses `delay = max(dac_min_delay, adc_min_delay)` read from the status register, so the two chips step together and the capture lines up with the command-stream index.
+- S2MM capture uses a descriptor ring of one one-word descriptor per captured word, laid out contiguously, so a k-word packet spans k descriptors and the capture region is the `adc_data` word stream in order; each completed descriptor is one captured word.
 
 Checks:
-- `[ ]` `dma_ctrl.c` compiles and links into `waveform` and `static-shims` (not just `shim-test`), via the existing `src/sys` symlink.
-- `[ ]` A multi-word MM2S prebuffer (a real `dac_cmd` sequence, not one word) plays into a board's DAC command FIFO byte-exact, and a multi-word S2MM capture reads back the full `adc_data` stream.
-- `[ ]` Buffer sizing: the `udmabuf0` data region holds the largest intended sequence plus its capture, and the `udmabuf1` descriptor region is sufficient; sizes read from sysfs, not hardcoded.
+- `[PASS]` 2026-09-22 -- `dma_ctrl.c` compiles and links into `waveform` and `static-shims` via the `src/sys` symlink (the mover is standalone; the bench commands stay `shim-test`-only).
+- `[PASS]` 2026-09-22 (4-board, 10 MHz) -- a 128 KB DAC stream (6553 `DAC_WR` updates) prebuffered into the DAC FIFO and played on the trigger (all 6553 executed, current on the supply), and the matched ADC capture (6600 reads, 26400 words) streamed back to `<out>_adc.csv` in amps with the triangle-times-envelope shape (full amplitude ch0-3, half ch4-7). The LDAC-latch and global-reset facts above were the two that closed it.
+- `[PASS]` 2026-09-22 -- sizes are read from sysfs and an oversized run is rejected with a clear message (a 512 KB DAC run needs 6.7 MB of descriptors against the 4 MB `udmabuf1`). See the descriptor-region note below for the current cap and the larger-buffer goal.
+
+The descriptor region (`udmabuf1`) is the capacity bottleneck, not the data region. One 64-byte descriptor per captured 4-byte word is a 16x overhead, so the 4 MB region caps a single capture near 256 KB of `adc_data` (about a 320 KB DAC run), while the 64 MB data region (`udmabuf0`) has ample room. Reaching the 10 MB-each goal for prebuffered commands and captured data (see the Reserved memory note in `DMA_PLAN.md`) needs a larger descriptor region, coarser packetization so each descriptor covers more words, or larger per-descriptor buffers with software compaction on readback -- a design pass deferred until the run-program integration lands.
 
 ### Stage 3.2 -- event-driven run-controller
 

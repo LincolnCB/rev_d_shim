@@ -17,6 +17,7 @@
 #include "trigger_commands.h"
 #include "experiment_commands.h"
 #include "dma_commands.h"
+#include "dma_waveform_commands.h"
 #include "rev_c_compat.h"
 
 /**
@@ -158,6 +159,9 @@ static command_entry_t command_table[] = {
   {"dma_channel_test", cmd_dma_channel_test, {2, 2, {FLAG_NO_RESET, -1}, "DMA round-trip on a channel: dma_channel_test <channel> <value> (DAC via MM2S -> coil -> ADC via S2MM) [--no_reset]"}},
   {"dma_irq_test", cmd_dma_irq_test, {2, 2, {FLAG_NO_RESET, -1}, "DMA round-trip whose S2MM completion arrives on the hw_manager interrupt: dma_irq_test <channel> <value> [--no_reset]"}},
   {"dma_mode_viol", cmd_dma_mode_viol, {1, 1, {-1}, "Provoke a wrong-mode PIO access on a DMA-mode board: dma_mode_viol <channel> (expect a graceful STS_MODE_VIOL halt, no crash)"}},
+  {"dma_waveform_test", cmd_dma_waveform_test, {0, 7, {FLAG_DEF, FLAG_NO_RESET, -1}, "Load a multi-word DMA waveform (8-ch triangle*envelope) and start collecting: dma_waveform_test [board] [buf_KB] [carrier_Hz] [env_Hz] [amp_A] [extra_ms] [outfile] [--def] [--no_reset] -- then force_trig"}},
+  {"dma_waveform_status", cmd_dma_waveform_status, {0, 0, {-1}, "Show DMA waveform command counts and capture progress (samples read / expected)"}},
+  {"dma_waveform_stop", cmd_dma_waveform_stop, {0, 0, {-1}, "Stop the DMA waveform collector (writing whatever was captured) and disarm"}},
 
   // Sentinel entry - marks end of table (must be last)
   {NULL, NULL, {0, 0, {-1}, NULL}}
@@ -549,6 +553,8 @@ int parse_command_line(const char* line, const char** args, int* arg_count, comm
         flags[(*flag_count)++] = FLAG_NO_RESET;
       } else if (strcmp(token, "--no_cal") == 0) {
         flags[(*flag_count)++] = FLAG_NO_CAL;
+      } else if (strcmp(token, "--def") == 0) {
+        flags[(*flag_count)++] = FLAG_DEF;
       } else {
         // Unknown flag - return error
         printf("Error: Unknown flag '%s'\n", token);
@@ -626,6 +632,7 @@ int execute_command(const char* line, command_context_t* ctx) {
         case FLAG_BIN: flag_name = "--bin"; break;
         case FLAG_NO_RESET: flag_name = "--no_reset"; break;
         case FLAG_NO_CAL: flag_name = "--no_cal"; break;
+        case FLAG_DEF: flag_name = "--def"; break;
       }
       printf("Error: Command '%s' does not accept flag '%s'\n", args[0], flag_name);
       printf("\n");
