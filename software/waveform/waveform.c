@@ -225,7 +225,7 @@ static int run_dma_path(hw_t *hw, config_t *cfg, waveform_file_info_t *input_inf
   for (uint32_t b = 0; b < board_count; b++) dac_word_buf_free(&dac_bufs[b]);
   if (rc_arm != 0) {
     fprintf(stderr, "Error: [DMA] failed to arm the run (see the message above)\n");
-    dma_wave_disarm_all(&dma);
+    dma_wave_halt(&dma, verbose);
     g_run_ctrl = NULL;
     run_ctrl_destroy(&rc);
     destroy_dma_ctrl(&dma);
@@ -245,7 +245,7 @@ static int run_dma_path(hw_t *hw, config_t *cfg, waveform_file_info_t *input_inf
       if (adc_csv[b] == NULL) {
         fprintf(stderr, "Error: [DMA] could not open '%s': %s\n", path, strerror(errno));
         for (uint32_t k = 0; k < b; k++) if (adc_csv[k]) fclose(adc_csv[k]);
-        dma_wave_disarm_all(&dma);
+        dma_wave_halt(&dma, verbose);
         g_run_ctrl = NULL;
         run_ctrl_destroy(&rc);
         destroy_dma_ctrl(&dma);
@@ -395,7 +395,12 @@ static int run_dma_path(hw_t *hw, config_t *cfg, waveform_file_info_t *input_inf
     }
   }
 
-  dma_wave_disarm_all(&dma);
+  // Coordinated shutdown (Stage 4): halt the MCDMA channels first, then clear the DMA-driven
+  // FIFOs -- so the engine is never mid-transfer when the FIFOs reset, any DAC commands left
+  // stranded in a paused FIFO are dropped, and a latched bridge fault clears before the next
+  // run. The descriptor rings are reinitialized by the next run's dma_wave_begin.
+  dma_wave_halt(&dma, verbose);
+  hw_reset_dma_buffers(hw);
   g_run_ctrl = NULL;
   run_ctrl_destroy(&rc);
   destroy_dma_ctrl(&dma);

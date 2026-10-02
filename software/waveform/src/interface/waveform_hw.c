@@ -195,6 +195,29 @@ int hw_clear_trigger_buffers(hw_t *hw) {
   return 0;
 }
 
+// Pulse buf_reset on the DMA-driven FIFOs (dac_cmd + adc_data) across active boards. The DAC
+// command FIFO reset uses the even per-board bit, the ADC data FIFO reset the odd one (the
+// same bit assignment hw_clear_dac_buffers / hw_clear_adc_buffers use). This clears data left
+// in the DAC FIFO when a run is halted mid-sequence and the latched bridge faults (mode_viol,
+// over/underflow) that live in the FIFO reset domain. Assert only after the MCDMA is halted.
+int hw_reset_dma_buffers(hw_t *hw) {
+  if (hw == NULL) {
+    return -1;
+  }
+  uint32_t cmd_mask = 0, data_mask = 0;
+  for (uint32_t board = 0; board < hw->board_count; board++) {
+    cmd_mask  |= (0x1u << (2 * board));  // dac_cmd FIFO (the MM2S sink)
+    data_mask |= (0x2u << (2 * board));  // adc_data FIFO (the S2MM source)
+  }
+  sys_ctrl_set_cmd_buf_reset(&hw->sys_ctrl, cmd_mask, hw->verbose);
+  sys_ctrl_set_data_buf_reset(&hw->sys_ctrl, data_mask, hw->verbose);
+  HW_SLEEP;
+  sys_ctrl_set_cmd_buf_reset(&hw->sys_ctrl, 0, hw->verbose);
+  sys_ctrl_set_data_buf_reset(&hw->sys_ctrl, 0, hw->verbose);
+  HW_SLEEP;
+  return 0;
+}
+
 // Set the SPI clock frequency to the specified value in MHz. Returns 0 on success, non-zero on failure
 int hw_set_spi_clock(hw_t *hw, double clk_MHz) {
   if (hw == NULL) {

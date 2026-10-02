@@ -54,6 +54,11 @@ int hw_clear_adc_buffers(hw_t *hw);
 // Clear trigger buffers
 int hw_clear_trigger_buffers(hw_t *hw);
 
+// Pulse buf_reset on the DMA-driven FIFOs (dac_cmd + adc_data) across active boards, clearing
+// any stranded prebuffered data and latched bridge faults. Part of the coordinated DMA
+// shutdown -- assert it only after the MCDMA is halted (dma_wave_halt).
+int hw_reset_dma_buffers(hw_t *hw);
+
 // Power on the hardware.
 int hw_power_on(hw_t *hw);
 

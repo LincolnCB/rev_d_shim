@@ -457,6 +457,21 @@ int dma_wave_begin(struct dma_ctrl_t *dma, bool verbose) {
   return 0;
 }
 
+// Halt the MCDMA for a coordinated shutdown: soft-reset both directions (CR bit 2 is global,
+// so this stops every channel and drains the S2MM downstream path), then clear the software
+// run state. Assert FIFO buf_reset only after this, so the engine is not mid-transfer when the
+// FIFOs reset (the ex05 halt-reset lesson).
+void dma_wave_halt(struct dma_ctrl_t *dma, bool verbose) {
+  if (!dma || !dma->ok) return;
+  reset_direction(dma->reg, MM2S_CTRL);
+  reset_direction(dma->reg, S2MM_CTRL);
+  for (int b = 0; b < MAX_BOARDS; b++) dma->wave[b].armed = false;
+  dma->wave_data_cursor = 0;
+  dma->wave_desc_cursor = 0;
+  dma->wave_single_board = -1;
+  if (verbose) printf("DMA wave: MCDMA halted (both directions soft-reset); run state cleared.\n");
+}
+
 // Carve a region slice for `board`, build its MM2S descriptor and S2MM capture ring, and
 // arm+run+trigger both of its channels. Does not reset the directions (dma_wave_begin did).
 int dma_wave_add(struct dma_ctrl_t *dma, int board,

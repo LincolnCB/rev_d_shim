@@ -409,7 +409,7 @@ Checks:
 - `[ ]` The normal end of a run (all channels complete) wakes the wait once and proceeds to readback.
 - `[PASS]` 2026-10-01 (host) -- `run_ctrl.c` compiles clean (`gcc -std=gnu11 -Wall -Wextra`) and links into `shim-test`, `waveform`, and `static-shims` via the shared `src/sys` symlink. On-target checks await the `waveform --dma` run below.
 
-### Stage 3.3 -- waveform and static-shims DMA integration
+### Stage 3.3 -- waveform DMA integration
 
 Wire the mover and the run-controller into the run programs. For a run on DMA-mode boards:
 prebuffer each board's `dac_cmd` sequence and reserve its `adc_data` capture region, set the
@@ -449,13 +449,27 @@ Checks:
 
 ## Stage 4 -- Fault and reset coordination
 
-To be filled in as Stage 4 lands. Acceptance criteria from the plan:
+The DMA run teardown is a coordinated sequence rather than a bare power-off. On every exit from
+a `waveform --dma` run -- normal completion, hardware fault, or local abort -- the MCDMA is
+halted before the FIFOs are touched, then the DMA-driven FIFOs are cleared, in that order.
+`dma_wave_halt` soft-resets both MCDMA directions (the global CR bit-2 reset stops every channel
+and drains the S2MM downstream path), and `hw_reset_dma_buffers` then pulses `buf_reset` on the
+`dac_cmd` and `adc_data` FIFOs across the active boards, dropping any DAC commands stranded in a
+paused FIFO and clearing the latched bridge faults (`mode_viol`, over/underflow) that live in the
+FIFO reset domain. The descriptor rings reinit on the next run's `dma_wave_begin`. This is all
+software -- the `buf_reset` masks are the existing `sys_ctrl` ones -- so Stage 4 needs only a
+rootfs rebuild, not a bitstream rebuild. It mirrors the ex05 halt-reset result: the S2MM
+soft-reset drains what is pending downstream, so `buf_reset` is uniquely needed for data stranded
+upstream in the DAC FIFO. No PS-side timeout is added -- a channel waiting arbitrarily long on a
+trigger is normal, and faults are still detected in the DAC/ADC cores and reported through
+`hw_manager`. The interactive `shim-test` low-level `off` is unchanged; its latched-fault recovery
+is still `hard_reset` (see Stage 3.0.d).
 
-- A clean halt: on fault, MCDMA channels halt, then `buf_reset` asserts on the DMA-driven FIFOs, then the descriptor rings reinit -- in that order.
-- A recoverable restart after an injected fault: the next run starts from the beginning and produces correct output, with no residue from the aborted run (nothing stranded upstream in a paused DAC FIFO).
-- No false faults: a channel waiting arbitrarily long on a trigger is not treated as an error (no PS-side timeout).
-
-Checks: `[ ]` (to be written)
+Checks:
+- `[ ]` A clean halt: on a fault (or Ctrl-C) during a `waveform --dma` run, the MCDMA halts, then `buf_reset` clears the DMA FIFOs, and the tool powers off with the engine no longer running (MM2S/S2MM `SR` show halted).
+- `[ ]` A recoverable restart after an injected fault: a second `waveform --dma` run starts clean and produces correct output, with no residue from the aborted run and no re-fault from a still-latched bridge fault (the Stage 3.0.d off-doesn't-clear symptom is gone on the DMA run path).
+- `[ ]` No false faults: a run whose triggers are withheld waits indefinitely without the run-controller declaring a fault or timing out.
+- `[PASS]` 2026-10-01 (host) -- `dma_wave_halt`, `hw_reset_dma_buffers`, and the coordinated teardown in `run_dma_path` compile clean and link into the `waveform` program.
 
 ---
 

@@ -133,6 +133,12 @@ bool     dma_wave_board_armed(const struct dma_ctrl_t *dma, int board);
 // buffer reset).
 void dma_wave_disarm_all(struct dma_ctrl_t *dma);
 
+// Halt the MCDMA: soft-reset both directions (stopping all channels and draining the S2MM
+// downstream path), then clear all per-board run state and the region allocator. The
+// coordinated-shutdown counterpart to dma_wave_begin -- call it before asserting FIFO
+// buf_reset so the engine is not mid-transfer when the FIFOs reset.
+void dma_wave_halt(struct dma_ctrl_t *dma, bool verbose);
+
 // Words captured into DDR but not yet read out (contiguous completed descriptors past the
 // read cursor). Cheap to poll.
 uint32_t dma_wave_avail(struct dma_ctrl_t *dma);
