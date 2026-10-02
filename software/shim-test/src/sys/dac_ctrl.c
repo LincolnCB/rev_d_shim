@@ -263,16 +263,23 @@ void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, dac_wait_mode_t tr
     fprintf(stderr, "Invalid command value: %u. Must be 0 to 33554431 (25-bit value).\n", value);
     return;
   }
-  uint32_t cmd_word = (DAC_CMD_NO_OP  << DAC_CMD_CMD_LSB ) |
-                      ((ldac == DAC_LDAC ? 1 : 0) << DAC_CMD_LDAC_BIT) |
-                      ((trig == DAC_TRIGGER_WAIT ? 1 : 0) << DAC_CMD_TRIG_BIT) |
-                      ((cont == DAC_CONTINUE ? 1 : 0) << DAC_CMD_CONT_BIT) |
-                      (value & 0x1FFFFFF);
+  uint32_t cmd_word;
+  dac_encode_noop(trig, cont, ldac, value, &cmd_word);
 
   if (verbose) {
     printf("DAC[%d] NO_OP command word: 0x%08X\n", board, cmd_word);
   }
   *(dac_ctrl->buffer[board]) = cmd_word;
+}
+
+// Build a NO_OP command word into out[0]. Returns the word count (1).
+int dac_encode_noop(dac_wait_mode_t trig, dac_continue_mode_t cont, dac_ldac_mode_t ldac, uint32_t value, uint32_t *out) {
+  out[0] = (DAC_CMD_NO_OP  << DAC_CMD_CMD_LSB ) |
+           ((ldac == DAC_LDAC ? 1 : 0) << DAC_CMD_LDAC_BIT) |
+           ((trig == DAC_TRIGGER_WAIT ? 1 : 0) << DAC_CMD_TRIG_BIT) |
+           ((cont == DAC_CONTINUE ? 1 : 0) << DAC_CMD_CONT_BIT) |
+           (value & 0x1FFFFFF);
+  return 1;
 }
 
 // Build a DAC_WR command (header word + four channel-data words) into out. Returns the word count (5).

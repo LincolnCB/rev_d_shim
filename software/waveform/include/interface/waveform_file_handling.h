@@ -217,4 +217,24 @@ void *adc_cmd_stream_thread(void *arg);
 void *adc_data_stream_thread(void *arg);
 void *trigger_stream_thread(void *arg);
 
+// --- DAC prebuffer synthesis for the DMA datapath ---------------------
+//
+// A growable buffer of DAC command words for one board's prebuffered MM2S stream.
+typedef struct {
+  uint32_t *words;
+  size_t count;
+  size_t cap;
+} dac_word_buf_t;
+
+// Synthesize the per-board DAC command word streams for a prebuffered (DMA) run from the
+// validated input file -- exactly as dac_stream_thread would feed them to the DAC command
+// FIFOs (same commands, timing, trigger-waits, oversized-delay no-ops, LDAC and
+// continue/last flags), but captured into per-board buffers for MM2S prebuffering rather than
+// written to the FIFO. The per-board streams share structure and differ only in the channel
+// data words. Fills bufs[0 .. info->hw->board_count-1]; the caller provides an array of at
+// least HW_MAX_CHANNELS/8 entries and frees each with dac_word_buf_free. info->iters sets the
+// number of replays. Returns 0 on success, negative on error (all buffers freed on failure).
+int waveform_build_dac_dma(const waveform_file_info_t *info, dac_word_buf_t *bufs);
+void dac_word_buf_free(dac_word_buf_t *buf);
+
 #endif // WAVEFORM_FILE_HANDLING_H

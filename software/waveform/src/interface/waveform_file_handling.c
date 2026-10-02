@@ -1201,3 +1201,168 @@ void *trigger_stream_thread(void *arg) {
                                             : STREAM_THREAD_COMPLETED);
   return NULL;
 }
+
+// --- DAC prebuffer synthesis for the DMA datapath ---------------------
+//
+// These build the per-board MM2S payload that, in the PIO path, dac_stream_thread would feed
+// into the DAC command FIFOs. The row iteration, trigger-point detection, oversized-delay
+// splitting, and continue/last flagging mirror dac_stream_thread / dac_stream_send exactly,
+// so the prebuffered stream is byte-identical -- only the sink differs (a growable buffer
+// instead of a FIFO write).
+
+static int dwb_push(dac_word_buf_t *b, uint32_t word) {
+  if (b->count == b->cap) {
+    size_t ncap = b->cap ? b->cap * 2 : 1024;
+    uint32_t *p = realloc(b->words, ncap * sizeof(uint32_t));
+    if (p == NULL) return -1;
+    b->words = p;
+    b->cap = ncap;
+  }
+  b->words[b->count++] = word;
+  return 0;
+}
+
+void dac_word_buf_free(dac_word_buf_t *buf) {
+  if (buf == NULL) return;
+  free(buf->words);
+  buf->words = NULL;
+  buf->count = 0;
+  buf->cap = 0;
+}
+
+// Emit one synthesized DAC command to every board's buffer: an optional leading trigger-wait
+// no-op, then any oversized-delay no-ops, then the DAC_WR write carrying the residual delay
+// and the per-board channel data. Mirrors dac_stream_send's emission order. Returns 0, or -1
+// on allocation failure.
+static int dac_dma_emit(dac_word_buf_t *bufs, uint32_t board_count, uint32_t channel_count,
+                        uint32_t dac_min_delay, bool noop_first, bool is_trig,
+                        uint32_t delay_clks, const double *amps, bool last) {
+  uint32_t word;
+  if (noop_first) {
+    dac_encode_noop(DAC_TRIGGER_WAIT, DAC_CONTINUE, DAC_NO_LDAC, 1, &word);
+    for (uint32_t b = 0; b < board_count; b++)
+      if (dwb_push(&bufs[b], word) != 0) return -1;
+  }
+
+  uint32_t residual = is_trig ? 0u : delay_clks;
+  if (!is_trig) {
+    uint32_t remaining = delay_clks;
+    while (remaining > HW_MAX_DELAY_CLKS) {
+      uint32_t chunk = delay_next_chunk(remaining, dac_min_delay);
+      dac_encode_noop(DAC_DELAY_WAIT, DAC_CONTINUE, DAC_NO_LDAC, chunk, &word);
+      for (uint32_t b = 0; b < board_count; b++)
+        if (dwb_push(&bufs[b], word) != 0) return -1;
+      remaining -= chunk;
+    }
+    residual = remaining;
+  }
+
+  dac_wait_mode_t trig_mode = is_trig ? DAC_TRIGGER_WAIT : DAC_DELAY_WAIT;
+  dac_continue_mode_t cont_mode = last ? DAC_NO_CONTINUE : DAC_CONTINUE;
+  uint32_t value = is_trig ? 1u : residual;
+  for (uint32_t b = 0; b < board_count; b++) {
+    int16_t ch_vals[8] = {0};
+    for (uint32_t c = 0; c < 8; c++) {
+      uint32_t ch = b * 8u + c;
+      if (ch < channel_count) {
+        double a = amps[ch];
+        if (a < -HW_MAX_ABS_AMPS) a = -HW_MAX_ABS_AMPS;
+        if (a >  HW_MAX_ABS_AMPS) a =  HW_MAX_ABS_AMPS;
+        ch_vals[c] = (int16_t)((a / HW_MAX_ABS_AMPS) * 32767.0);
+      }
+    }
+    uint32_t words[5];
+    dac_encode_dac_wr(ch_vals, trig_mode, cont_mode, DAC_LDAC, value, words);
+    for (int w = 0; w < 5; w++)
+      if (dwb_push(&bufs[b], words[w]) != 0) return -1;
+  }
+  return 0;
+}
+
+int waveform_build_dac_dma(const waveform_file_info_t *info, dac_word_buf_t *bufs) {
+  if (info == NULL || info->hw == NULL || bufs == NULL) return -1;
+  uint32_t board_count   = info->hw->board_count;
+  uint32_t channel_count = info->hw->channel_count;
+  uint32_t dac_min_delay = info->hw->dac_min_delay;
+  uint32_t spi_clk_hz    = info->hw->spi_clk_hz;
+  int iters = info->iters;
+
+  for (uint32_t b = 0; b < board_count; b++) {
+    bufs[b].words = NULL;
+    bufs[b].count = 0;
+    bufs[b].cap = 0;
+  }
+
+  // Mirror dac_stream_thread's pending/flush row iteration, emitting to buffers rather than
+  // the FIFO.
+  bool     have_pending = false;
+  bool     pending_noop_first = false;
+  bool     pending_is_trig = false;
+  uint32_t pending_delay_clks = 0;
+  double   pending_amps[HW_MAX_CHANNELS] = {0.0};
+  bool     has_prev = false;
+  double   prev_timestamp = 0.0;
+  uint32_t prev_clks = 0;
+  int rc = 0;
+
+  for (int iter = 0; iter < iters && rc == 0; iter++) {
+    FILE *fp = fopen(info->path, "r");
+    if (fp == NULL) {
+      fprintf(stderr, "Error: [DAC-DMA] could not reopen '%s': %s\n", info->path, strerror(errno));
+      rc = -1;
+      break;
+    }
+    char line[MAX_LINE_LEN];
+    while (fgets(line, sizeof(line), fp) != NULL) {
+      strip_comments_and_trim(line);
+      if (line[0] == '\0') continue;
+
+      char *cursor = line;
+      double timestamp;
+      if (next_double(&cursor, &timestamp) != 0) {
+        fprintf(stderr, "Error: [DAC-DMA] broken line that should have been caught earlier.\n");
+        rc = -1;
+        break;
+      }
+
+      if (have_pending) {
+        if (dac_dma_emit(bufs, board_count, channel_count, dac_min_delay,
+                         pending_noop_first, pending_is_trig, pending_delay_clks,
+                         pending_amps, false) != 0) { rc = -1; break; }
+        have_pending = false;
+      }
+
+      uint32_t t_clks = (uint32_t)((timestamp * (double)spi_clk_hz) + 0.5);
+      if (!has_prev || timestamp < prev_timestamp) {
+        if (t_clks == 0) {
+          pending_noop_first = false; pending_is_trig = true; pending_delay_clks = 0;
+        } else {
+          pending_noop_first = true; pending_is_trig = false; pending_delay_clks = t_clks;
+        }
+      } else {
+        pending_noop_first = false; pending_is_trig = false; pending_delay_clks = t_clks - prev_clks;
+      }
+      prev_timestamp = timestamp;
+      prev_clks = t_clks;
+      has_prev = true;
+
+      for (int c = 0; c < info->num_channels; c++) {
+        double value;
+        if (next_double(&cursor, &value) != 0) value = 0.0;
+        pending_amps[c] = value;
+      }
+      have_pending = true;
+    }
+    fclose(fp);
+  }
+
+  if (rc == 0 && have_pending) {
+    rc = dac_dma_emit(bufs, board_count, channel_count, dac_min_delay,
+                      pending_noop_first, pending_is_trig, pending_delay_clks,
+                      pending_amps, true);
+  }
+  if (rc != 0) {
+    for (uint32_t b = 0; b < board_count; b++) dac_word_buf_free(&bufs[b]);
+  }
+  return rc;
+}

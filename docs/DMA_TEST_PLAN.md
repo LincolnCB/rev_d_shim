@@ -394,11 +394,20 @@ unblock the same wait. On wake, read the sticky status word and dispatch: a norm
 to `sync_for_cpu` and readback; a fault drives the coordinated shutdown (`request_stop` plus
 `hw_power_off`). Re-arm the interrupt each cycle; no spin-poll.
 
+This lands as a shared `src/sys/run_ctrl.c` module (`run_ctrl_create` / `run_ctrl_wait` /
+`run_ctrl_request_abort` / `run_ctrl_destroy`), consumed by the run programs and symlinked into
+`waveform` / `static-shims` alongside the other `sys` sources. `run_ctrl_wait` returns an event
+classification -- `RUN_CTRL_FAULT`, `RUN_CTRL_ABORT`, `RUN_CTRL_EVENT` (a benign doorbell), or
+`RUN_CTRL_TIMEOUT` -- and the caller loops it, draining captures and checking its own completion
+each wake. The controller reports events; normal end is a software fact (all expected capture
+words read back), so it is not itself an interrupt.
+
 Checks:
 - `[ ]` During a prebuffered run the controller blocks on one wait (no busy-polling of the status register); confirmed by CPU usage and by the `pl-irq` count advancing only on real events.
 - `[ ]` A hardware fault (e.g. a `dma_mode_viol`-style violation, or an injected over/underflow) wakes the wait, and the controller reads `STS_*` and runs the coordinated shutdown.
 - `[ ]` A local abort -- SIGINT (Ctrl-C) folded into the `eventfd` -- unblocks the same wait and stops the run cleanly, identically to a hardware fault.
 - `[ ]` The normal end of a run (all channels complete) wakes the wait once and proceeds to readback.
+- `[PASS]` 2026-10-01 (host) -- `run_ctrl.c` compiles clean (`gcc -std=gnu11 -Wall -Wextra`) and links into `shim-test`, `waveform`, and `static-shims` via the shared `src/sys` symlink. On-target checks await the `waveform --dma` run below.
 
 ### Stage 3.3 -- waveform and static-shims DMA integration
 
@@ -409,12 +418,32 @@ capture channels, release the trigger, wait on the run-controller for run-end-or
 a normal end `sync_for_cpu` and read back the `adc_data` -- byte-exact against expectation. The
 PIO path stays the fallback for boards left in PIO mode.
 
+`waveform` takes a `--dma` / `-d` flag. With it set, every active board runs the prebuffered
+MCDMA path: `waveform` sets `datapath_mode` to DMA for boards `0..N-1` before power-on (where it
+is still unlocked), synthesizes each board's DAC command stream with `waveform_build_dac_dma`
+(byte-identical to the PIO `dac_stream_thread` feed, differing only in the per-board channel data
+words), and prebuffers them with `dma_wave_begin` / `dma_wave_add` across all boards at once (the
+mover now holds a per-board run and a region bump-allocator rather than a single run). The ADC
+command lane stays PIO -- its existing stream thread is reused unchanged -- but the ADC data lane
+is captured through S2MM into DDR instead of the PIO drain, one capture ring per board. The run
+loop is the run-controller: it releases the triggers, then on each wake drains every board's S2MM
+capture into `<stem>.adc_out_A.board<b>.csv` and stops on fault/abort or when every board has
+captured its full `4 * rows * iters` words. A DAC-only run (`--dma` without `--adc`) prebuffers
+the DAC stream with no capture ring and finishes when the trigger count is reached and the DAC
+FIFOs have drained.
+
+`static-shims` stays on the PIO path by design: it drives static (DC) setpoints interactively, so
+its update rate never approaches the FIFO-drain floor that motivates DMA, and the prebuffered
+model buys it nothing. The DMA datapath applies to the high-rate `waveform` runs.
+
 Checks:
-- `[ ]` A real waveform plays end to end through the DMA path on at least one board; the `adc_data` readback matches expectation byte-for-byte.
-- `[ ]` Per-board independence: one board runs on DMA while another stays on PIO in the same run, each correct.
+- `[ ]` A real waveform plays end to end through the DMA path on at least one board; the `adc_data` readback matches expectation.
+- `[ ]` All active boards run the DMA path together in one run (the mover's per-board region slices), each board's capture correct.
 - `[ ]` The ADC packetizer holds under a real multi-word run: the capture stream reassembles by position with no lost or misframed words (validates the adaptive word-granular framing beyond the single-word bring-up).
-- `[ ]` `static-shims` drives its setpoints through the same DMA path and reads back correctly.
-- `[ ]` The PIO fallback still produces the same result for a board left in PIO mode.
+- `[ ]` A DAC-only `--dma` run (no `--adc`) drives current and finishes cleanly on the trigger count with no capture ring.
+- `[ ]` A fault during the run (e.g. an injected over/underflow) is caught by the run-controller, which runs the coordinated shutdown; Ctrl-C aborts the same way.
+- `[ ]` The PIO fallback still produces the same result for a run without `--dma`.
+- `[PASS]` 2026-10-01 (host) -- `waveform.c`, `waveform_build_dac_dma`, and the extended mover compile clean and link into the `waveform` program; `dma_wave_begin` / `dma_wave_add` / per-board accessors and the DAC-only (`cap_words == 0`) path syntax-check across `shim-test` / `waveform` / `static-shims`.
 
 ---
 

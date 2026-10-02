@@ -281,6 +281,7 @@ struct dma_ctrl_t create_dma_ctrl(bool verbose) {
   struct dma_ctrl_t dma;
   memset(&dma, 0, sizeof(dma));
   dma.reg_fd = dma.desc_fd = dma.data_fd = -1;
+  dma.wave_single_board = -1;
   dma.ok = false;
 
   dma.reg = map_control_window(&dma.reg_fd, verbose);
@@ -441,35 +442,56 @@ int dma_s2mm_collect(struct dma_ctrl_t *dma, uint32_t *out, uint32_t max_words) 
 
 // ------------------------------------------------- multi-word waveform run --
 
-int dma_wave_arm(struct dma_ctrl_t *dma, int board,
+// Reset both directions and clear the region allocator / per-board run state. The MCDMA
+// soft-reset (CR bit 2) is global, so resetting here -- before any channel is armed -- avoids
+// a later reset wiping an already-armed channel.
+int dma_wave_begin(struct dma_ctrl_t *dma, bool verbose) {
+  if (!dma || !dma->ok) { fprintf(stderr, "DMA not available.\n"); return -1; }
+  reset_direction(dma->reg, MM2S_CTRL);
+  reset_direction(dma->reg, S2MM_CTRL);
+  for (int b = 0; b < MAX_BOARDS; b++) dma->wave[b].armed = false;
+  dma->wave_data_cursor = 0;
+  dma->wave_desc_cursor = 0;
+  dma->wave_single_board = -1;
+  if (verbose) printf("DMA wave: reset both directions; region allocator cleared.\n");
+  return 0;
+}
+
+// Carve a region slice for `board`, build its MM2S descriptor and S2MM capture ring, and
+// arm+run+trigger both of its channels. Does not reset the directions (dma_wave_begin did).
+int dma_wave_add(struct dma_ctrl_t *dma, int board,
                  const uint32_t *dac_words, uint32_t dac_n_words,
                  uint32_t cap_words, bool verbose) {
   if (!dma || !dma->ok) { fprintf(stderr, "DMA not available.\n"); return -1; }
-  if (board < 0)        { fprintf(stderr, "DMA wave: bad board %d.\n", board); return -1; }
-  if (dac_n_words == 0 || cap_words == 0) { fprintf(stderr, "DMA wave: empty run.\n"); return -1; }
+  if (board < 0 || board >= MAX_BOARDS) { fprintf(stderr, "DMA wave: bad board %d.\n", board); return -1; }
+  if (dac_n_words == 0) { fprintf(stderr, "DMA wave: empty DAC stream on board %d.\n", board); return -1; }
+  if (dma->wave[board].armed) { fprintf(stderr, "DMA wave: board %d already armed this run.\n", board); return -1; }
 
-  // Descriptor region layout: MM2S descriptor first, then the S2MM ring.
-  uint32_t mm2s_desc_off = 0;
-  uint32_t ring_desc_off = DESC_ALIGN;
-  uint64_t desc_need = (uint64_t)ring_desc_off + (uint64_t)cap_words * DESC_ALIGN;
-  if (desc_need > dma->desc_size) {
+  // cap_words == 0 means DAC-only (no ADC capture): the MM2S stream is prebuffered but no
+  // S2MM ring is built or armed. The data/descriptor capture slices then have zero length.
+
+  // Data region slice: DAC payload 64-byte aligned, ADC capture 64-byte aligned after it.
+  uint32_t mm2s_off = align_up_u32(dma->wave_data_cursor, DESC_ALIGN);
+  uint32_t mm2s_len = dac_n_words * 4u;
+  uint32_t cap_off  = align_up_u32(mm2s_off + mm2s_len, DESC_ALIGN);
+  uint64_t data_end = (uint64_t)cap_off + (uint64_t)cap_words * 4u;
+  if (data_end > dma->data_size) {
     fprintf(stderr,
-      "DMA wave: capture needs %" PRIu64 " descriptor bytes (%u words x %u), but %s is %" PRIu64 " bytes.\n"
-      "  Reduce the byte length (fewer ADC words) or enlarge the %s region.\n",
-      desc_need, cap_words, DESC_ALIGN, DESC_UDMABUF, dma->desc_size, DESC_UDMABUF);
+      "DMA wave: board %d needs data up to %" PRIu64 " B (DAC %u + capture %u), but %s is %" PRIu64 " B.\n"
+      "  Reduce the run length or enlarge the %s region.\n",
+      board, data_end, mm2s_len, cap_words * 4u, DATA_UDMABUF, dma->data_size, DATA_UDMABUF);
     return -1;
   }
 
-  // Data region layout: DAC payload first, ADC capture 64-byte aligned after it.
-  uint32_t mm2s_off = 0;
-  uint32_t mm2s_len = dac_n_words * 4u;
-  uint32_t cap_off  = align_up_u32(mm2s_len, DESC_ALIGN);
-  uint64_t data_need = (uint64_t)cap_off + (uint64_t)cap_words * 4u;
-  if (data_need > dma->data_size) {
+  // Descriptor region slice: one MM2S descriptor, then the S2MM ring.
+  uint32_t mm2s_desc_off = align_up_u32(dma->wave_desc_cursor, DESC_ALIGN);
+  uint32_t ring_desc_off = mm2s_desc_off + DESC_ALIGN;
+  uint64_t desc_end = (uint64_t)ring_desc_off + (uint64_t)cap_words * DESC_ALIGN;
+  if (desc_end > dma->desc_size) {
     fprintf(stderr,
-      "DMA wave: run needs %" PRIu64 " data bytes (DAC %u + capture %u), but %s is %" PRIu64 " bytes.\n"
-      "  Reduce the byte length or enlarge the %s region.\n",
-      data_need, mm2s_len, cap_words * 4u, DATA_UDMABUF, dma->data_size, DATA_UDMABUF);
+      "DMA wave: board %d capture needs descriptors up to %" PRIu64 " B (%u words x %u), but %s is %" PRIu64 " B.\n"
+      "  Reduce the ADC word count or enlarge the %s region.\n",
+      board, desc_end, cap_words, DESC_ALIGN, DESC_UDMABUF, dma->desc_size, DESC_UDMABUF);
     return -1;
   }
 
@@ -483,58 +505,70 @@ int dma_wave_arm(struct dma_ctrl_t *dma, int board,
   uint64_t mm2s_desc_phys = dma->desc_phys + mm2s_desc_off;
   build_desc(md, mm2s_desc_phys, dma->data_phys + mm2s_off, mm2s_len);
 
-  // S2MM ring: one one-word receive descriptor per ADC word, buffers laid out contiguously
-  // so the capture is the ADC word stream in order (a k-word packet simply spans k
-  // descriptors). Linked into a ring; the engine stops at TAILDESC, so the wrap link is
-  // never followed but keeps the ring well-formed.
-  memset(dma->data + cap_off, 0, (size_t)cap_words * 4u);
-  for (uint32_t k = 0; k < cap_words; k++) {
-    struct mcdma_desc *rd = (struct mcdma_desc *)(dma->desc + ring_desc_off + (uint64_t)k * DESC_ALIGN);
-    uint64_t next_phys = dma->desc_phys + ring_desc_off + (uint64_t)((k + 1u) % cap_words) * DESC_ALIGN;
-    build_rx_desc(rd, next_phys, dma->data_phys + cap_off + (uint64_t)k * 4u, 4u);
+  // S2MM ring: one one-word receive descriptor per ADC word, contiguous buffers laid out in
+  // order, linked into a ring whose wrap link is never followed (the engine stops at
+  // TAILDESC) but keeps the ring well-formed. Skipped entirely for a DAC-only run.
+  if (cap_words > 0) {
+    memset(dma->data + cap_off, 0, (size_t)cap_words * 4u);
+    for (uint32_t k = 0; k < cap_words; k++) {
+      struct mcdma_desc *rd = (struct mcdma_desc *)(dma->desc + ring_desc_off + (uint64_t)k * DESC_ALIGN);
+      uint64_t next_phys = dma->desc_phys + ring_desc_off + (uint64_t)((k + 1u) % cap_words) * DESC_ALIGN;
+      build_rx_desc(rd, next_phys, dma->data_phys + cap_off + (uint64_t)k * 4u, 4u);
+    }
   }
   __sync_synchronize(); // payload + all descriptors resident before the engines read them
 
-  uint64_t ring_first_phys = dma->desc_phys + ring_desc_off;
-  uint64_t ring_last_phys  = dma->desc_phys + ring_desc_off + (uint64_t)(cap_words - 1u) * DESC_ALIGN;
-
-  // Reset both directions up front. The MCDMA soft-reset (CR bit 2) is global, so a reset
-  // issued after the other channel is armed would wipe it; doing both resets before arming
-  // either avoids that regardless of arm order.
-  reset_direction(r, MM2S_CTRL);
-  reset_direction(r, S2MM_CTRL);
-
-  // MM2S: prebuffer the DAC stream into the DAC FIFO. It fills the FIFO to depth and
-  // backpressures; no poll -- the DAC drains it once its leading trigger-wait releases.
+  // MM2S: prebuffer the DAC stream into the DAC FIFO (stalls behind the DAC's leading
+  // trigger-wait command; no poll).
   arm_channel(r, MM2S_CH_BASE(board), MM2S_CHEN, board, mm2s_desc_phys);
   run_direction(r, MM2S_CTRL);
   trigger_channel(r, MM2S_CH_BASE(board), mm2s_desc_phys);
 
-  // S2MM capture ring.
-  arm_channel(r, S2MM_CH_BASE(board), S2MM_CHEN, board, ring_first_phys);
-  run_direction(r, S2MM_CTRL);
-  trigger_channel(r, S2MM_CH_BASE(board), ring_last_phys);
+  // S2MM capture ring (only when capturing).
+  if (cap_words > 0) {
+    uint64_t ring_first_phys = dma->desc_phys + ring_desc_off;
+    uint64_t ring_last_phys  = dma->desc_phys + ring_desc_off + (uint64_t)(cap_words - 1u) * DESC_ALIGN;
+    arm_channel(r, S2MM_CH_BASE(board), S2MM_CHEN, board, ring_first_phys);
+    run_direction(r, S2MM_CTRL);
+    trigger_channel(r, S2MM_CH_BASE(board), ring_last_phys);
+  }
 
-  dma->wave.armed         = true;
-  dma->wave.board         = board;
-  dma->wave.mm2s_off      = mm2s_off;
-  dma->wave.mm2s_len      = mm2s_len;
-  dma->wave.cap_off       = cap_off;
-  dma->wave.cap_words     = cap_words;
-  dma->wave.cap_read      = 0;
-  dma->wave.mm2s_desc_off = mm2s_desc_off;
-  dma->wave.ring_desc_off = ring_desc_off;
+  struct dma_wave_run *w = &dma->wave[board];
+  w->armed         = true;
+  w->board         = board;
+  w->mm2s_off      = mm2s_off;
+  w->mm2s_len      = mm2s_len;
+  w->cap_off       = cap_off;
+  w->cap_words     = cap_words;
+  w->cap_read      = 0;
+  w->mm2s_desc_off = mm2s_desc_off;
+  w->ring_desc_off = ring_desc_off;
+
+  dma->wave_data_cursor = (uint32_t)data_end;
+  dma->wave_desc_cursor = (uint32_t)desc_end;
 
   if (verbose)
-    printf("DMA wave ch%d armed: DAC %u words (%u B) prebuffered, S2MM ring %u words.\n",
+    printf("DMA wave board %d armed: DAC %u words (%u B) prebuffered, S2MM ring %u words.\n",
            board, dac_n_words, mm2s_len, cap_words);
   return 0;
 }
 
-// Contiguous completed capture words past the read cursor (the S2MM ring fills in order).
-uint32_t dma_wave_avail(struct dma_ctrl_t *dma) {
-  if (!dma || !dma->ok || !dma->wave.armed) return 0;
-  struct dma_wave_run *w = &dma->wave;
+// Single-board wrapper: one begin + one add, remembering the board for the no-board
+// accessors. Behaviour matches the former one-run-at-a-time dma_wave_arm.
+int dma_wave_arm(struct dma_ctrl_t *dma, int board,
+                 const uint32_t *dac_words, uint32_t dac_n_words,
+                 uint32_t cap_words, bool verbose) {
+  if (dma_wave_begin(dma, verbose) < 0) return -1;
+  int rc = dma_wave_add(dma, board, dac_words, dac_n_words, cap_words, verbose);
+  if (rc == 0) dma->wave_single_board = board;
+  return rc;
+}
+
+// Contiguous completed capture words past the read cursor, for one board (the S2MM ring
+// fills in order).
+uint32_t dma_wave_avail_board(struct dma_ctrl_t *dma, int board) {
+  if (!dma || !dma->ok || board < 0 || board >= MAX_BOARDS || !dma->wave[board].armed) return 0;
+  struct dma_wave_run *w = &dma->wave[board];
   uint32_t k = w->cap_read;
   while (k < w->cap_words) {
     struct mcdma_desc *rd = (struct mcdma_desc *)(dma->desc + w->ring_desc_off + (uint64_t)k * DESC_ALIGN);
@@ -544,10 +578,10 @@ uint32_t dma_wave_avail(struct dma_ctrl_t *dma) {
   return k - w->cap_read;
 }
 
-int dma_wave_read(struct dma_ctrl_t *dma, uint32_t *out, uint32_t max_words) {
-  if (!dma || !dma->ok || !dma->wave.armed) return -1;
-  struct dma_wave_run *w = &dma->wave;
-  uint32_t avail = dma_wave_avail(dma);
+int dma_wave_read_board(struct dma_ctrl_t *dma, int board, uint32_t *out, uint32_t max_words) {
+  if (!dma || !dma->ok || board < 0 || board >= MAX_BOARDS || !dma->wave[board].armed) return -1;
+  struct dma_wave_run *w = &dma->wave[board];
+  uint32_t avail = dma_wave_avail_board(dma, board);
   uint32_t n = (avail < max_words) ? avail : max_words;
   if (n) {
     memcpy(out, dma->data + w->cap_off + (uint64_t)w->cap_read * 4u, (size_t)n * 4u);
@@ -556,19 +590,54 @@ int dma_wave_read(struct dma_ctrl_t *dma, uint32_t *out, uint32_t max_words) {
   return (int)n;
 }
 
+uint32_t dma_wave_read_total_board(const struct dma_ctrl_t *dma, int board) {
+  if (!dma || !dma->ok || board < 0 || board >= MAX_BOARDS || !dma->wave[board].armed) return 0;
+  return dma->wave[board].cap_read;
+}
+
+uint32_t dma_wave_expected_board(const struct dma_ctrl_t *dma, int board) {
+  if (!dma || !dma->ok || board < 0 || board >= MAX_BOARDS || !dma->wave[board].armed) return 0;
+  return dma->wave[board].cap_words;
+}
+
+bool dma_wave_board_armed(const struct dma_ctrl_t *dma, int board) {
+  return dma && dma->ok && board >= 0 && board < MAX_BOARDS && dma->wave[board].armed;
+}
+
+void dma_wave_disarm_all(struct dma_ctrl_t *dma) {
+  if (!dma) return;
+  for (int b = 0; b < MAX_BOARDS; b++) dma->wave[b].armed = false;
+  dma->wave_single_board = -1;
+}
+
+// --- Single-run wrappers over the per-board accessors (the remembered board) ---
+
+uint32_t dma_wave_avail(struct dma_ctrl_t *dma) {
+  if (!dma || dma->wave_single_board < 0) return 0;
+  return dma_wave_avail_board(dma, dma->wave_single_board);
+}
+
+int dma_wave_read(struct dma_ctrl_t *dma, uint32_t *out, uint32_t max_words) {
+  if (!dma || dma->wave_single_board < 0) return -1;
+  return dma_wave_read_board(dma, dma->wave_single_board, out, max_words);
+}
+
 uint32_t dma_wave_read_total(const struct dma_ctrl_t *dma) {
-  return (dma && dma->ok && dma->wave.armed) ? dma->wave.cap_read : 0;
+  if (!dma || dma->wave_single_board < 0) return 0;
+  return dma_wave_read_total_board(dma, dma->wave_single_board);
 }
 
 uint32_t dma_wave_expected(const struct dma_ctrl_t *dma) {
-  return (dma && dma->ok && dma->wave.armed) ? dma->wave.cap_words : 0;
+  if (!dma || dma->wave_single_board < 0) return 0;
+  return dma_wave_expected_board(dma, dma->wave_single_board);
 }
 
 void dma_wave_disarm(struct dma_ctrl_t *dma) {
-  if (dma) dma->wave.armed = false;
+  dma_wave_disarm_all(dma);
 }
 
 bool dma_wave_is_armed(const struct dma_ctrl_t *dma) {
-  return dma && dma->ok && dma->wave.armed;
+  return dma && dma->wave_single_board >= 0 && dma_wave_board_armed(dma, dma->wave_single_board);
 }
+
 

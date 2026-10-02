@@ -4,12 +4,15 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-// A live, multi-word waveform run, recorded between arming and teardown. One run at a time.
-// The layout offsets index into the udmabuf regions: the DAC payload and the ADC capture
-// share the data region (udmabuf0), the MM2S descriptor and the S2MM ring share the
-// descriptor region (udmabuf1). cap_words is both the capture length and the number of
-// one-word descriptors in the S2MM ring; cap_read is how many words have been read out so
-// far (the read cursor for incremental draining).
+#include "map_memory.h"   // MAX_BOARDS
+
+// A live, multi-word waveform run for one board, recorded between arming and teardown. The
+// layout offsets index into the udmabuf regions: the DAC payload and the ADC capture share
+// the data region (udmabuf0), the MM2S descriptor and the S2MM ring share the descriptor
+// region (udmabuf1). cap_words is both the capture length and the number of one-word
+// descriptors in the S2MM ring; cap_read is how many words have been read out so far (the
+// read cursor for incremental draining). A concurrent run holds one of these per active
+// board (see dma_wave_begin / dma_wave_add), each with its own region slice.
 struct dma_wave_run {
   bool armed;
   int board;
@@ -36,7 +39,10 @@ struct dma_ctrl_t {
   uint64_t  data_phys;
   uint64_t  data_size;
   int data_fd;
-  struct dma_wave_run wave; // active multi-word run (see dma_wave_arm / dma_wave_read)
+  struct dma_wave_run wave[MAX_BOARDS]; // per-board run state (see dma_wave_begin / _add)
+  uint32_t wave_data_cursor; // bump allocator over the data region, reset by dma_wave_begin
+  uint32_t wave_desc_cursor; // bump allocator over the descriptor region, reset likewise
+  int wave_single_board;     // board targeted by the no-board single-run wrappers (-1 = none)
   bool ok;                 // true only if every mapping succeeded
 };
 
@@ -89,9 +95,43 @@ int  dma_s2mm_collect(struct dma_ctrl_t *dma, uint32_t *out, uint32_t max_words)
 // has data, across any number of triggers. cap_words is the exact expected capture length
 // (4 words per 8-channel read). Returns 0 on success, negative on error (with a clear
 // message if the run does not fit the udmabuf regions).
+//
+// This is the single-board wrapper (one run at a time): it runs dma_wave_begin then one
+// dma_wave_add for `board`, and the no-board accessors below (dma_wave_avail / _read /
+// _read_total / _expected) operate on that board. For a concurrent multi-board run use
+// dma_wave_begin / dma_wave_add plus the per-board accessors directly.
 int dma_wave_arm(struct dma_ctrl_t *dma, int board,
                  const uint32_t *dac_words, uint32_t dac_n_words,
                  uint32_t cap_words, bool verbose);
+
+// --- Concurrent multi-board waveform run ---
+//
+// A real run drives every active board at once, so the run programs partition the udmabuf
+// regions per board: dma_wave_begin resets both MCDMA directions once (the soft-reset is
+// global) and clears the region allocator; dma_wave_add then carves a region slice for each
+// board, builds its MM2S descriptor and S2MM ring, and arms+runs+triggers both of that
+// board's channels (MM2S prebuffers the DAC FIFO behind the leading trigger-wait; S2MM
+// starts capturing). No trigger is fired and nothing is waited on -- the caller releases the
+// trigger system and drains each board's capture with the per-board accessors.
+//
+// dma_wave_begin returns 0 on success, negative on error. dma_wave_add returns 0 on success,
+// negative on error (with a clear message if the board's slice does not fit). cap_words == 0
+// means DAC-only: the MM2S stream is prebuffered but no S2MM capture ring is built or armed.
+int dma_wave_begin(struct dma_ctrl_t *dma, bool verbose);
+int dma_wave_add(struct dma_ctrl_t *dma, int board,
+                 const uint32_t *dac_words, uint32_t dac_n_words,
+                 uint32_t cap_words, bool verbose);
+
+// Per-board capture accessors (mirror the single-run ones below, indexed by board).
+uint32_t dma_wave_avail_board(struct dma_ctrl_t *dma, int board);
+int      dma_wave_read_board(struct dma_ctrl_t *dma, int board, uint32_t *out, uint32_t max_words);
+uint32_t dma_wave_read_total_board(const struct dma_ctrl_t *dma, int board);
+uint32_t dma_wave_expected_board(const struct dma_ctrl_t *dma, int board);
+bool     dma_wave_board_armed(const struct dma_ctrl_t *dma, int board);
+
+// Disarm every board (software teardown; the hardware rings are left for the next begin or a
+// buffer reset).
+void dma_wave_disarm_all(struct dma_ctrl_t *dma);
 
 // Words captured into DDR but not yet read out (contiguous completed descriptors past the
 // read cursor). Cheap to poll.
