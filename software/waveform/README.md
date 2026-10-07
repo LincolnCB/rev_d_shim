@@ -56,6 +56,8 @@ A plain list of read timestamps in **seconds**, one per line, no header and no c
 
 The same trigger-point rule applies, and the ADC file's trigger count **must match** the DAC file's trigger count.
 
+The ADC command stream is run-length-encoded before it reaches the hardware. The ADC read and no-op commands each carry a repeat counter, so a run of identical commands -- most commonly a uniform sample rate, which produces many reads with the same delay -- is sent as a single command plus a count word that re-executes it, instead of one buffer entry per sample. This is transparent to the captured data (the hardware still performs one read per sample) and lets a uniform sweep fit entirely in the ADC command buffer, so it is prebuffered ahead of the trigger rather than fed under it.
+
 ## Output files
 
 Written next to the input file:
@@ -63,8 +65,8 @@ Written next to the input file:
 | File | When | Contents |
 |---|---|---|
 | `<input>.trig_t_sec.csv` | always | one hardware trigger time (seconds) per line |
-| `<input>.adc_out_A.csv` | PIO with `--adc` | active-channel readback amps, one sample per line |
-| `<input>.adc_out_A.board<b>.csv` | DMA with `--adc` | per-board readback amps (ch0..ch7), one sample per line |
+| `<input>.waveform_adc_out_A.csv` | PIO with `--adc` | active-channel readback amps, one sample per line |
+| `<input>.waveform_adc_out_A.board<b>.csv` | DMA with `--adc` | per-board readback amps (ch0..ch7), one sample per line |
 
 Press `Ctrl+C` to stop early; the hardware is powered off before exit.
 

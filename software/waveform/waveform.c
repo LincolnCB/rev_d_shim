@@ -173,6 +173,10 @@ static int run_dma_path(hw_t *hw, config_t *cfg, waveform_file_info_t *input_inf
     return -1;
   }
 
+  // The synthesis reads board/channel counts, clock, and min delays from the hardware handle;
+  // the PIO path sets this later, but the DMA path runs first.
+  input_info->hw = hw;
+
   // Synthesize the per-board DAC command streams (byte-identical to the PIO feed).
   dac_word_buf_t dac_bufs[HW_MAX_CHANNELS / 8];
   if (waveform_build_dac_dma(input_info, dac_bufs) != 0) {
@@ -240,7 +244,7 @@ static int run_dma_path(hw_t *hw, config_t *cfg, waveform_file_info_t *input_inf
   if (has_adc) {
     for (uint32_t b = 0; b < board_count; b++) {
       char path[PATH_MAX];
-      snprintf(path, sizeof(path), "%s.adc_out_A.board%u.csv", input_stem, b);
+      snprintf(path, sizeof(path), "%s.waveform_adc_out_A.board%u.csv", input_stem, b);
       adc_csv[b] = fopen(path, "w");
       if (adc_csv[b] == NULL) {
         fprintf(stderr, "Error: [DMA] could not open '%s': %s\n", path, strerror(errno));
@@ -390,7 +394,7 @@ static int run_dma_path(hw_t *hw, config_t *cfg, waveform_file_info_t *input_inf
     for (uint32_t b = 0; b < board_count; b++) {
       if (adc_csv[b] == NULL) continue;
       fclose(adc_csv[b]);
-      printf("[DMA] board %u: wrote %u ADC sample(s) to %s.adc_out_A.board%u.csv\n",
+      printf("[DMA] board %u: wrote %u ADC sample(s) to %s.waveform_adc_out_A.board%u.csv\n",
              b, sample_index[b], input_stem, b);
     }
   }
@@ -546,16 +550,29 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  // --- Validate timing using the min dt values gathered earlier ----
-  if (!hw_dac_timing_valid(&hw, input_info.min_dt)) {
-    fprintf(stderr, "Error: DAC timing is invalid for min dt = %g\n", input_info.min_dt);
+  // --- Validate timing in SPI clock cycles against the hardware minimums ----
+  // Each timestamp is converted to cycles (round-to-nearest, actual clock) exactly as the
+  // command synthesis does, so the smallest delay checked here is the one the hardware will
+  // see -- and the hardware minimum is frequency-dependent, read fresh after power-on.
+  uint32_t dac_min_delay_cycles;
+  if (!timestamp_file_min_delay_cycles(cfg.input_file, hw.spi_clk_hz, &dac_min_delay_cycles)) {
     hw_power_off(&hw);
     return EXIT_FAILURE;
   }
-  if (has_adc_info && !hw_adc_timing_valid(&hw, adc_info.min_dt)) {
-    fprintf(stderr, "Error: ADC timing is invalid for min dt = %g\n", adc_info.min_dt);
+  if (!hw_dac_timing_valid(&hw, dac_min_delay_cycles)) {
     hw_power_off(&hw);
     return EXIT_FAILURE;
+  }
+  if (has_adc_info) {
+    uint32_t adc_min_delay_cycles;
+    if (!timestamp_file_min_delay_cycles(cfg.adc_file, hw.spi_clk_hz, &adc_min_delay_cycles)) {
+      hw_power_off(&hw);
+      return EXIT_FAILURE;
+    }
+    if (!hw_adc_timing_valid(&hw, adc_min_delay_cycles)) {
+      hw_power_off(&hw);
+      return EXIT_FAILURE;
+    }
   }
 
   // --- DMA datapath: prebuffer the DAC stream and run via MCDMA ----
@@ -608,7 +625,7 @@ int main(int argc, char *argv[]) {
     // active-channel amps (comma-separated) as one line per sample.
     adc_data_file_info_init(&adc_data_info, adc_info.num_rows, cfg.iters);
     adc_data_info.hw = &hw;
-    snprintf(adc_out_path, sizeof(adc_out_path), "%s.adc_out_A.csv", input_stem);
+    snprintf(adc_out_path, sizeof(adc_out_path), "%s.waveform_adc_out_A.csv", input_stem);
     adc_data_info.path = adc_out_path;
   }
 

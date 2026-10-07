@@ -156,6 +156,15 @@ int validate_input_file(const char *path, waveform_file_info_t *info);
 
 int validate_adc_file(const char *path, long expected_trigs, adc_cmd_file_info_t *info);
 
+// Smallest within-sweep delay in a timestamp CSV (the DAC or ADC file), in SPI clock cycles.
+// Column 0 is the timestamp in seconds; a row that starts a new sweep (the first row, or a
+// timestamp below the previous) is a trigger point, not a delay from the previous row. Each
+// timestamp is converted to cycles with hw_time_to_cycles (round-to-nearest, same as the
+// command synthesis), so the cycle deltas here are exactly those the hardware will see. On
+// success returns true and sets *min_cycles (UINT32_MAX when the file has no within-sweep gap
+// to constrain); on a file error prints a message and returns false.
+bool timestamp_file_min_delay_cycles(const char *path, uint32_t spi_clk_hz, uint32_t *min_cycles);
+
 // Initialize an adc_data_file_info_t. num_samples should match the ADC file's
 // row count; iters is the number of times the whole run will be replayed. The
 // caller must set ->hw and ->path before starting adc_data_stream_thread.

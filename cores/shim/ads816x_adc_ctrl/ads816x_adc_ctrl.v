@@ -293,7 +293,7 @@ module ads816x_adc_ctrl (
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) start_repeat <= 1'b0;
     else if (start_repeat) start_repeat <= 1'b0; // Clear start_repeat after using it
-    else if (do_next_cmd && ((command == CMD_ADC_RD) || (command == CMD_ADC_RD_CH)))
+    else if (do_next_cmd && ((command == CMD_ADC_RD) || (command == CMD_ADC_RD_CH) || (command == CMD_NO_OP)))
       start_repeat <= (cancel_repeat || start_repeat) ? 1'b0 : cmd_word[REPEAT_BIT];
   end
   always @(posedge clk) begin

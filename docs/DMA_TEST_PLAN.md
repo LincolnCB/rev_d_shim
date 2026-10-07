@@ -367,7 +367,7 @@ the full clean integration into the run programs, sliced below.
 
 The low-level mover (`src/sys/dma_ctrl.c`) is the shared library that `waveform` and `static-shims` consume through their `src/sys` symlink. Beyond the single-word bring-up calls it provides the multi-word run primitives the run programs build on: `dma_wave_arm` lays out a prebuffered DAC command stream and an ADC capture ring in the `u-dma-buf` regions, copies the DAC words into DDR, and starts both engines without touching the trigger; `dma_wave_avail` / `dma_wave_read` drain the captured `adc_data` incrementally behind a read cursor; and `dma_wave_read_total` / `dma_wave_expected` / `dma_wave_disarm` round out the lifecycle. The mover stays purely low-level -- words moved and FIFO/ring state, with no knowledge of triggers or DAC/ADC execution counts -- while the polling loop, file output, and waveform synthesis live in the command layer, mirroring the `dac_ctrl`/`adc_ctrl` versus `experiment_commands` split.
 
-`shim-test` exercises it with a bench command trio. `dma_waveform_test` synthesizes an 8-channel triangle-times-envelope sequence at the matched DAC/ADC max cadence, writes the intended waveform to `<out>_dac.csv` in amps, prebuffers it, and starts a background collector; `dma_waveform_status` reports the DAC and ADC command counts, FIFO fills, and capture progress; and `dma_waveform_stop` ends a run early. The collector runs independently of the trigger, streams the ADC readback to `<out>_adc.csv` as the PL fills the capture (flushing each pass so data survives a later crash), and finishes on the expected sample count with no timeout -- a run may wait arbitrarily long for its trigger(s), of which there may be several.
+`shim-test` exercises it with a bench command trio. `dma_waveform_test` synthesizes an 8-channel triangle-times-envelope sequence at the matched DAC/ADC max cadence, writes the intended waveform to `<out>.dac_in_A.csv` in amps and the ADC sample schedule to `<out>.adc_in_t_sec.csv` (the single-column timestamp format `waveform --adc` replays), prebuffers the DAC stream, and starts a background collector; `dma_waveform_status` reports the DAC and ADC command counts, FIFO fills, and capture progress; and `dma_waveform_stop` ends a run early. The collector runs independently of the trigger, streams the ADC readback to `<out>.shim-test_adc_out_A.csv` as the PL fills the capture (flushing each pass so data survives a later crash), and finishes on the expected sample count with no timeout -- a run may wait arbitrarily long for its trigger(s), of which there may be several.
 
 Several datapath and command-format facts were pinned here and carry straight into the run-program integration:
 
@@ -380,7 +380,7 @@ Several datapath and command-format facts were pinned here and carry straight in
 
 Checks:
 - `[PASS]` 2026-09-22 -- `dma_ctrl.c` compiles and links into `waveform` and `static-shims` via the `src/sys` symlink (the mover is standalone; the bench commands stay `shim-test`-only).
-- `[PASS]` 2026-09-22 (4-board, 10 MHz) -- a 128 KB DAC stream (6553 `DAC_WR` updates) prebuffered into the DAC FIFO and played on the trigger (all 6553 executed, current on the supply), and the matched ADC capture (6600 reads, 26400 words) streamed back to `<out>_adc.csv` in amps with the triangle-times-envelope shape (full amplitude ch0-3, half ch4-7). The LDAC-latch and global-reset facts above were the two that closed it.
+- `[PASS]` 2026-09-22 (4-board, 10 MHz) -- a 128 KB DAC stream (6553 `DAC_WR` updates) prebuffered into the DAC FIFO and played on the trigger (all 6553 executed, current on the supply), and the matched ADC capture (6600 reads, 26400 words) streamed back to `<out>.shim-test_adc_out_A.csv` in amps with the triangle-times-envelope shape (full amplitude ch0-3, half ch4-7). The LDAC-latch and global-reset facts above were the two that closed it.
 - `[PASS]` 2026-09-22 -- sizes are read from sysfs and an oversized run is rejected with a clear message (a 512 KB DAC run needs 6.7 MB of descriptors against the 4 MB `udmabuf1`). See the descriptor-region note below for the current cap and the larger-buffer goal.
 
 The descriptor region (`udmabuf1`) is the capacity bottleneck, not the data region. One 64-byte descriptor per captured 4-byte word is a 16x overhead, so the 4 MB region caps a single capture near 256 KB of `adc_data` (about a 320 KB DAC run), while the 64 MB data region (`udmabuf0`) has ample room. Reaching the 10 MB-each goal for prebuffered commands and captured data (see the Reserved memory note in `DMA_PLAN.md`) needs a larger descriptor region, coarser packetization so each descriptor covers more words, or larger per-descriptor buffers with software compaction on readback -- a design pass deferred until the run-program integration lands.
@@ -427,7 +427,7 @@ mover now holds a per-board run and a region bump-allocator rather than a single
 command lane stays PIO -- its existing stream thread is reused unchanged -- but the ADC data lane
 is captured through S2MM into DDR instead of the PIO drain, one capture ring per board. The run
 loop is the run-controller: it releases the triggers, then on each wake drains every board's S2MM
-capture into `<stem>.adc_out_A.board<b>.csv` and stops on fault/abort or when every board has
+capture into `<stem>.waveform_adc_out_A.board<b>.csv` and stops on fault/abort or when every board has
 captured its full `4 * rows * iters` words. A DAC-only run (`--dma` without `--adc`) prebuffers
 the DAC stream with no capture ring and finishes when the trigger count is reached and the DAC
 FIFOs have drained.
@@ -438,12 +438,14 @@ model buys it nothing. The DMA datapath applies to the high-rate `waveform` runs
 
 Checks:
 - `[ ]` A real waveform plays end to end through the DMA path on at least one board; the `adc_data` readback matches expectation.
+- `[ ]` The `shim-test` -> `waveform` round-trip: run `dma_waveform_test` to generate `<out>_dac.csv`, exit `shim-test`, then replay it with `waveform <out>_dac.csv --dma -c 10`. The generated CSV passes timing validation (the nanosecond-precision timestamps plus the cycle-native, round-to-nearest check recover the matched cadence rather than rejecting it one cycle short) and plays the same waveform through DMA.
 - `[ ]` All active boards run the DMA path together in one run (the mover's per-board region slices), each board's capture correct.
 - `[ ]` The ADC packetizer holds under a real multi-word run: the capture stream reassembles by position with no lost or misframed words (validates the adaptive word-granular framing beyond the single-word bring-up).
 - `[ ]` A DAC-only `--dma` run (no `--adc`) drives current and finishes cleanly on the trigger count with no capture ring.
 - `[ ]` A fault during the run (e.g. an injected over/underflow) is caught by the run-controller, which runs the coordinated shutdown; Ctrl-C aborts the same way.
 - `[ ]` The PIO fallback still produces the same result for a run without `--dma`.
 - `[PASS]` 2026-10-01 (host) -- `waveform.c`, `waveform_build_dac_dma`, and the extended mover compile clean and link into the `waveform` program; `dma_wave_begin` / `dma_wave_add` / per-board accessors and the DAC-only (`cap_words == 0`) path syntax-check across `shim-test` / `waveform` / `static-shims`.
+- `[PASS]` 2026-10-06 (host) -- timing round-trip fix: `shim-test` writes the DAC CSV at nanosecond precision, and `waveform` validates timing in SPI cycles using the same round-to-nearest timestamp->cycle conversion as the command synthesis (against the frequency-dependent hardware minimum). A simulated round-trip recovers the exact cadence (e.g. 216 cycles at 10 MHz) across clocks instead of truncating to 215; all touched files compile `-Wall -Wextra` clean.
 
 ---
 

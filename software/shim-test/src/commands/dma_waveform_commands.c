@@ -164,7 +164,7 @@ static void* wave_collector_thread(void* arg) {
       sample_ch[filled * 2u + 1u] = (int16_t)((word >> 16) & 0xFFFF);
       filled++;
       if (filled == 4u) {
-        fprintf(f, "%.6f", (double)sample_index * period_s);
+        fprintf(f, "%.9f", (double)sample_index * period_s);
         for (int ch = 0; ch < 8; ch++) fprintf(f, ",%.4f", dac_to_amps(sample_ch[ch]));
         fprintf(f, "\n");
         sample_index++;
@@ -319,15 +319,15 @@ int cmd_dma_waveform_test(const char** args, int arg_count, const command_flag_t
     usleep(10000);
   }
 
-  // Synthesize the DAC command stream and write the intended waveform to <outfile>_dac.csv
+  // Synthesize the DAC command stream and write the intended waveform to <base>.dac_in_A.csv
   // in amps. The first update (t=0) is a trigger-wait so the run releases on the trigger;
   // the rest step at the matched cadence. The last update is all-zero and without CONTINUE,
   // so the DAC returns to idle at a clean zero rather than underflowing.
   char base[512];
   clean_and_expand_path(outfile, base, sizeof base);
   char dac_path[600], adc_path[600];
-  snprintf(dac_path, sizeof dac_path, "%s_dac.csv", base);
-  snprintf(adc_path, sizeof adc_path, "%s_adc.csv", base);
+  snprintf(dac_path, sizeof dac_path, "%s.dac_in_A.csv", base);
+  snprintf(adc_path, sizeof adc_path, "%s.shim-test_adc_out_A.csv", base);
 
   uint32_t total_words = n_dac * 5u;
   uint32_t* dac = malloc((size_t)total_words * sizeof(uint32_t));
@@ -366,12 +366,35 @@ int cmd_dma_waveform_test(const char** args, int arg_count, const command_flag_t
     uint32_t value       = (i == 0) ? 1u : common_delay;
     dac_encode_dac_wr(ch_vals, trig, cont, DAC_LDAC, value, &dac[i * 5u]);
 
-    fprintf(fdac, "%.6f", t);
+    // Nanosecond precision keeps the per-row cadence exact so the CSV replays cleanly through
+    // the waveform command (microsecond rounding would corrupt a sub-microsecond delay).
+    fprintf(fdac, "%.9f", t);
     for (int ch = 0; ch < 8; ch++) fprintf(fdac, ",%.4f", dac_to_amps(ch_vals[ch]));
     fprintf(fdac, "\n");
   }
   fclose(fdac);
   set_file_permissions(dac_path, verbose);
+
+  // Write the ADC sample schedule to <base>.adc_in_t_sec.csv: one timestamp per line (seconds)
+  // at the matched cadence, which is the single-column format the waveform command replays
+  // via --adc. The first sample (t=0) is the trigger point and the rest step by the cadence,
+  // matching the n_reads reads the ADC performs. This is separate from the <base>.shim-test_adc_out_A.csv
+  // readback the collector writes (that one carries the captured amps, not a replayable schedule).
+  char adc_times_path[600];
+  snprintf(adc_times_path, sizeof adc_times_path, "%s.adc_in_t_sec.csv", base);
+  FILE* fadct = fopen(adc_times_path, "w");
+  if (!fadct) {
+    fprintf(stderr, "Could not open '%s': %s\n", adc_times_path, strerror(errno));
+    free(dac);
+    return -1;
+  }
+  fprintf(fadct, "# DMA waveform ADC sample schedule (seconds). cadence=%u cyc @ %u Hz\n", common_delay, clk_hz);
+  for (uint32_t i = 0; i < n_reads; i++) {
+    fprintf(fadct, "%.9f\n", (double)i * period_s);
+  }
+  fclose(fadct);
+  set_file_permissions(adc_times_path, verbose);
+  printf("Wrote ADC sample schedule (%u timestamps) to %s.\n", n_reads, adc_times_path);
 
   // Prebuffer into DDR and arm both engines (no trigger, no wait); time the load.
   int64_t t0 = wave_now_us();
@@ -390,7 +413,7 @@ int cmd_dma_waveform_test(const char** args, int arg_count, const command_flag_t
   adc_cmd_noop(ctx->adc_ctrl, (uint8_t)board, ADC_TRIGGER_WAIT, ADC_CONTINUE, 1, verbose);
   adc_cmd_adc_rd(ctx->adc_ctrl, (uint8_t)board, ADC_DELAY_WAIT, ADC_NO_CONTINUE, common_delay, n_reads - 1u, verbose);
 
-  // Start the background collector: it drains the capture into <base>_adc.csv as the PL
+  // Start the background collector: it drains the capture into <base>.shim-test_adc_out_A.csv as the PL
   // fills it, until it has cap_words words (n_reads samples) or is stopped.
   g_wave.board          = board;
   g_wave.expected_words = cap_words;

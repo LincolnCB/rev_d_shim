@@ -71,9 +71,17 @@ bool hw_halted(hw_t *hw);
 // Run calibration routine for connected channels.
 int hw_calibrate(hw_t *hw);
 
-// Validate the timing for DAC and ADC delays (calculated after power-on).
-bool hw_dac_timing_valid(hw_t *hw, double min_dt);
-bool hw_adc_timing_valid(hw_t *hw, double min_dt);
+// Convert a timestamp in seconds to SPI clock cycles, rounding to nearest. This is the one
+// conversion shared by command synthesis and timing validation, so a file that validates is
+// exactly the one that gets played -- and the pre-run check predicts the hardware's own
+// minimum-delay (frequency-dependent) enforcement.
+uint32_t hw_time_to_cycles(double t_sec, uint32_t spi_clk_hz);
+
+// Validate a run's smallest within-sweep delay (in SPI clock cycles) against the hardware's
+// frequency-dependent minimum DAC/ADC delay (recomputed at power-on). Prints a clear message
+// on failure.
+bool hw_dac_timing_valid(hw_t *hw, uint32_t min_delay_cycles);
+bool hw_adc_timing_valid(hw_t *hw, uint32_t min_delay_cycles);
 
 // Set the lockout for the triggers
 int hw_set_trigger_lockout(hw_t *hw, double lockout_ms);
@@ -128,19 +136,24 @@ int hw_set_dacs_delay(hw_t *hw, const double *amps, uint32_t delay_clks, bool la
 // Indicate whether this is the last DAC command in a sequence to control the continue flag
 int hw_set_dacs_trig(hw_t *hw, const double *amps, bool last);
 
+// Each of these sends one ADC command to every active board. repeat_count > 0 sets the
+// command's repeat bit and appends a count word, so the hardware re-executes the command
+// repeat_count more times (1 + repeat_count total) -- the command stream uses this to
+// run-length-encode consecutive identical commands into a single buffer entry.
+
 // Send an ADC no-op single trigger wait to start to all active boards (assumes not last)
-int hw_adc_noop_trig(hw_t *hw);
+int hw_adc_noop_trig(hw_t *hw, uint32_t repeat_count);
 
 // Send an ADC no-op delay command to all active boards (assumes not last)
-int hw_adc_noop_delay(hw_t *hw, uint32_t delay_clks);
+int hw_adc_noop_delay(hw_t *hw, uint32_t delay_clks, uint32_t repeat_count);
 
 // Send an ADC read command with a single trigger wait afterwards to all active boards
 // Indicate whether this is the last ADC read command in a sequence to control the continue flag
-int hw_adc_read_trig(hw_t *hw, bool last);
+int hw_adc_read_trig(hw_t *hw, bool last, uint32_t repeat_count);
 
 // Send an ADC read command with a delay wait afterwards to all active boards
 // Indicate whether this is the last ADC read command in a sequence to control the continue flag
-int hw_adc_read_delay(hw_t* hw, uint32_t delay_clks, bool last);
+int hw_adc_read_delay(hw_t* hw, uint32_t delay_clks, bool last, uint32_t repeat_count);
 
 // Read a single sample of 8 ADC channels (4 ADC data words) from all active boards, convert to amps
 // Fill these into the provided buffer indexed by channel number (HW_MAX_CHANNELS in length)

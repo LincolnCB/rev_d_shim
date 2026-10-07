@@ -130,6 +130,80 @@ async def test_noop_delay(dut):
     miso_transition_monitor_task.cancel()
 
 @cocotb.test()
+async def test_noop_delay_repeating(dut):
+    tb = await setup_testbench(dut)
+    tb.dut._log.info("STARTING TEST: test_noop_delay_repeating")
+
+    await tb.reset()
+    # Start the transition monitor
+    transition_monitor_task = cocotb.start_soon(tb.transition_monitor())
+    miso_transition_monitor_task = cocotb.start_soon(tb.miso_transition_monitor())
+    await tb.reset()
+
+    # A delay NO_OP repeated: one initial + 3 repeats = 4 delay waits of 20 cycles.
+    cmd_word_list = []
+    cmd_word_list.append(tb.build_noop(trig_wait=0, cont=0, value=20, repeat=1))
+    cmd_word_list.append(tb.build_repeat_count(3))
+
+    # Start the command buffer model and scoreboard
+    await RisingEdge(dut.clk)
+    cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(cmd_word_list))
+
+    # Send commands and wait for completion
+    await tb.send_commands(cmd_word_list)
+    await scoreboard_task
+
+    # Give time before ending the test and ensure we don't collide with other tests
+    await RisingEdge(dut.clk)
+    await RisingEdge(dut.clk)
+    await RisingEdge(dut.clk)
+    await RisingEdge(dut.clk)
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
+    miso_transition_monitor_task.cancel()
+
+@cocotb.test()
+async def test_noop_trig_repeating(dut):
+    tb = await setup_testbench(dut)
+    tb.dut._log.info("STARTING TEST: test_noop_trig_repeating")
+
+    await tb.reset()
+    # Start the transition monitor
+    transition_monitor_task = cocotb.start_soon(tb.transition_monitor())
+    miso_transition_monitor_task = cocotb.start_soon(tb.miso_transition_monitor())
+    await tb.reset()
+
+    # A trigger-wait NO_OP repeated: one initial + 2 repeats = 3 single-trigger waits.
+    cmd_word_list = []
+    cmd_word_list.append(tb.build_noop(trig_wait=1, cont=0, value=1, repeat=1))
+    cmd_word_list.append(tb.build_repeat_count(2))
+
+    # Start the command buffer model and scoreboard
+    await RisingEdge(dut.clk)
+    cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
+    scoreboard_task = cocotb.start_soon(tb.executing_command_scoreboard(cmd_word_list))
+
+    # Start the random trigger driver (waits for setup_done before firing)
+    trigger_driver_task = cocotb.start_soon(tb.random_trigger_driver())
+
+    # Send commands and wait for completion
+    await tb.send_commands(cmd_word_list)
+    await scoreboard_task
+
+    # Give time before ending the test and ensure we don't collide with other tests
+    await RisingEdge(dut.clk)
+    await RisingEdge(dut.clk)
+    await RisingEdge(dut.clk)
+    await RisingEdge(dut.clk)
+    cmd_buf_task.cancel()
+    scoreboard_task.cancel()
+    transition_monitor_task.cancel()
+    trigger_driver_task.cancel()
+    miso_transition_monitor_task.cancel()
+
+@cocotb.test()
 async def test_bad_cmd(dut):
     tb = await setup_testbench(dut)
     tb.dut._log.info("STARTING TEST: test_bad_cmd")

@@ -288,6 +288,10 @@ char* adc_format_command(uint32_t cmd_word, bool verbose) {
 
 // ADC command word functions
 void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, adc_wait_mode_t trig, adc_continue_mode_t cont, uint32_t value, bool verbose) {
+  adc_cmd_noop_repeat(adc_ctrl, board, trig, cont, value, 0, verbose);
+}
+
+void adc_cmd_noop_repeat(struct adc_ctrl_t *adc_ctrl, uint8_t board, adc_wait_mode_t trig, adc_continue_mode_t cont, uint32_t value, uint32_t repeat_count, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
     return;
@@ -299,12 +303,20 @@ void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, adc_wait_mode_t tr
   uint32_t cmd_word = (ADC_CMD_NO_OP  << ADC_CMD_CMD_LSB ) |
                       ((trig == ADC_TRIGGER_WAIT ? 1 : 0) << ADC_CMD_TRIG_BIT) |
                       ((cont == ADC_CONTINUE ? 1 : 0) << ADC_CMD_CONT_BIT) |
+                      (((repeat_count > 0) ? 1 : 0) << ADC_CMD_REPEAT_BIT) |
                       (value & 0x1FFFFFF);
 
   if (verbose) {
     printf("ADC[%d] NO_OP command word: 0x%08X\n", board, cmd_word);
   }
   *(adc_ctrl->buffer[board]) = cmd_word;
+
+  if (repeat_count > 0) {
+    if (verbose) {
+      printf("ADC[%d] REPEAT count: 0x%08X (repeat count: %u)\n", board, repeat_count, repeat_count);
+    }
+    *(adc_ctrl->buffer[board]) = repeat_count;
+  }
 }
 
 void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, adc_wait_mode_t trig, adc_continue_mode_t cont, uint32_t value, uint32_t repeat_count, bool verbose) {

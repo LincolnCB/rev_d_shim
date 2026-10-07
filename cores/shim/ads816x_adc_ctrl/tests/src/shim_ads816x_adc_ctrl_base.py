@@ -245,14 +245,15 @@ class shim_ads816x_adc_ctrl_base:
     # Command builders / decoder
     # ---------------------------
 
-    def build_noop(self, *, trig_wait: int, cont: int, value: int) -> int:
+    def build_noop(self, *, trig_wait: int, cont: int, value: int, repeat: int = 0) -> int:
         """
         NO_OP: [31:29]=0
-        [28]=TRIG_WAIT, [27]=CONT, [24:0]=Value (Delay or Trigger Count)
+        [28]=TRIG_WAIT, [27]=CONT, [26]=REPEAT, [24:0]=Value (Delay or Trigger Count)
         """
         cmd_word = (self.CMD_ENCODING['NO_OP'] & 0x7) << 29
         cmd_word |= (1 if trig_wait else 0) << self.TRIG_BIT
         cmd_word |= (1 if cont else 0) << self.CONT_BIT
+        cmd_word |= (1 if repeat else 0) << self.REPEAT_BIT
         cmd_word |= (value & 0x1FFFFFF)
         return cmd_word
 
@@ -313,6 +314,7 @@ class shim_ads816x_adc_ctrl_base:
             info.update({
                 "trig": (cmd_word >> self.TRIG_BIT) & 1,
                 "cont": (cmd_word >> self.CONT_BIT) & 1,
+                "repeat": (cmd_word >> self.REPEAT_BIT) & 1,
                 "value": cmd_word & 0x1FFFFFF,
             })
         elif cmd_value == self.CMD_ENCODING['SET_ORD']:
@@ -381,6 +383,18 @@ class shim_ads816x_adc_ctrl_base:
 
             if decoded["cmd"] == self.CMD_ENCODING['NO_OP']:
                 forked.append(cocotb.start_soon(self._sb_noop(decoded, idx)))
+                # A repeating NO_OP is followed by a count word; consume it and model the repeats.
+                if decoded["repeat"] == 1:
+                    while True:
+                        await RisingEdge(self.dut.clk)
+                        await ReadOnly()
+                        if len(self.executing_cmd_queue) > 0:
+                            break
+                    expected_repeat_count_word = self.executing_cmd_queue.popleft()
+                    repeat_count_word = int(self.dut.cmd_buf_word.value)
+                    assert repeat_count_word == expected_repeat_count_word, f"Repeat count mismatch: expected {expected_repeat_count_word} got {repeat_count_word}"
+                    processed += 1
+                    forked.append(cocotb.start_soon(self._sb_noop_repeating(repeat_count_word)))
 
             elif decoded["cmd"] == self.CMD_ENCODING['SET_ORD']:
                 forked.append(cocotb.start_soon(self._sb_set_ord(decoded, idx)))
@@ -519,6 +533,11 @@ class shim_ads816x_adc_ctrl_base:
                         f"[{i}] NO_OP: trig_wait_done should be asserted when final trigger is received"
                     assert int(self.dut.cmd_done.value) == 1, \
                         f"[{i}] NO_OP: cmd_done should be asserted when final trigger is received"
+                    # A repeating NO_OP reloads trigger_counter for the next iteration on this same
+                    # cycle rather than settling at 0, so hand off here -- the transition_monitor and
+                    # _sb_noop_repeating validate the remaining iterations.
+                    if info.get('repeat', 0) == 1:
+                        return
 
                 # When an external trigger is received, the trigger_counter should decrement
                 if previous_external_trigger == 1:
@@ -564,6 +583,26 @@ class shim_ads816x_adc_ctrl_base:
             assert int(self.dut.cmd_done.value) == 1, \
                 f"[{i}] NO_OP: cmd_done should be asserted after completing delay"
             return
+
+    async def _sb_noop_repeating(self, repeat_count: int):
+        """Advance through a repeating NO_OP's extra iterations so the test stays aligned while the
+        transition_monitor validates the repeat FSM cycle-accurately. The initial NO_OP is covered
+        by _sb_noop; this covers the repeat_count additional executions, each ending in a cmd_done."""
+        self.dut._log.info(f"NO_OP Repeating command: repeat_count={repeat_count}")
+        # Wait for the initial command to complete.
+        while True:
+            await RisingEdge(self.dut.clk)
+            await ReadOnly()
+            if int(self.dut.cmd_done.value) == 1:
+                break
+        # Each repeat iteration ends in its own cmd_done pulse.
+        for repeat_idx in range(repeat_count):
+            self.dut._log.info(f"NO_OP Repeating iteration {repeat_idx + 1} of {repeat_count}")
+            while True:
+                await RisingEdge(self.dut.clk)
+                await ReadOnly()
+                if int(self.dut.cmd_done.value) == 1:
+                    break
 
     async def _sb_set_ord(self, info: dict, i: int):
         """Verify SET_ORD command execution."""
@@ -1211,7 +1250,7 @@ class shim_ads816x_adc_ctrl_base:
             elif prev_start_repeat:
                 # Clear start_repeat after using it
                 exp_start_repeat = 0
-            elif prev_do_next_cmd and (prev_command_val == self.CMD_ENCODING['ADC_RD'] or prev_command_val == self.CMD_ENCODING['ADC_RD_CH']):
+            elif prev_do_next_cmd and (prev_command_val == self.CMD_ENCODING['ADC_RD'] or prev_command_val == self.CMD_ENCODING['ADC_RD_CH'] or prev_command_val == self.CMD_ENCODING['NO_OP']):
                 # (cancel_repeat || start_repeat) ? 1'b0 : cmd_word[REPEAT_BIT]
                 # Note: prev_start_repeat is known 0 here due to previous elif
                 exp_start_repeat = (prev_cmd_word_val >> self.REPEAT_BIT) & 1

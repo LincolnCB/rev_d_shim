@@ -965,6 +965,7 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
   // }
 
   double lockout_ms;
+  char *lockout_end = NULL;
   printf("Enter trigger lockout time (milliseconds): ");
   fflush(stdout);
 
@@ -979,14 +980,18 @@ int cmd_waveform_test(const char** args, int arg_count, const command_flag_t* fl
     input_buffer[len - 1] = '\0';
   }
 
-  lockout_ms = atof(input_buffer);
+  lockout_ms = strtod(input_buffer, &lockout_end);
+  if (lockout_end == input_buffer) {
+    fprintf(stderr, "Invalid trigger lockout time: '%s' is not a number.\n", input_buffer);
+    return -1;
+  }
   if (lockout_ms <= 0) {
-    fprintf(stderr, "Invalid trigger lockout time. Must be > 0 milliseconds.\n");
+    fprintf(stderr, "Invalid trigger lockout time: parsed %.6f. Must be > 0 milliseconds.\n", lockout_ms);
     return -1;
   }
 
-  // Calculate lockout cycles from milliseconds and SPI frequency
-  uint32_t lockout_time = (uint32_t)(lockout_ms * spi_freq_mhz * 1000.0);
+  // Calculate lockout cycles from milliseconds and SPI frequency (round to nearest)
+  uint32_t lockout_time = (uint32_t)(lockout_ms * spi_freq_mhz * 1000.0 + 0.5);
   printf("Calculated lockout: %u cycles (%.3f ms at %.3f MHz)\n",
          lockout_time, lockout_ms, spi_freq_mhz);
 
@@ -1820,9 +1825,14 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
     fprintf(stderr, "Failed to read delay.\n");
     return -1;
   }
-  delay_ms = atof(input_buffer);
+  char *delay_end = NULL;
+  delay_ms = strtod(input_buffer, &delay_end);
+  if (delay_end == input_buffer) {
+    fprintf(stderr, "Invalid delay: '%s' is not a number.\n", input_buffer);
+    return -1;
+  }
   if (delay_ms < 0.0) {
-    fprintf(stderr, "Invalid delay. Must be >= 0.0 ms.\n");
+    fprintf(stderr, "Invalid delay: parsed %.6f. Must be >= 0.0 ms.\n", delay_ms);
     return -1;
   }
 
@@ -1848,17 +1858,22 @@ int cmd_fieldmap(const char** args, int arg_count, const command_flag_t* flags, 
     fprintf(stderr, "Failed to read lockout time.\n");
     return -1;
   }
-  lockout_ms = atof(input_buffer);
+  char *lockout_end = NULL;
+  lockout_ms = strtod(input_buffer, &lockout_end);
+  if (lockout_end == input_buffer) {
+    fprintf(stderr, "Invalid lockout time: '%s' is not a number.\n", input_buffer);
+    return -1;
+  }
   if (lockout_ms <= 0.0) {
-    fprintf(stderr, "Invalid lockout time. Must be > 0 milliseconds.\n");
+    fprintf(stderr, "Invalid lockout time: parsed %.6f. Must be > 0 milliseconds.\n", lockout_ms);
     return -1;
   }
 
-  // Calculate delay cycles from milliseconds and SPI frequency
-  uint32_t delay_cycles = (uint32_t)(delay_ms * spi_freq_mhz * 1000.0);
+  // Calculate delay cycles from milliseconds and SPI frequency (round to nearest)
+  uint32_t delay_cycles = (uint32_t)(delay_ms * spi_freq_mhz * 1000.0 + 0.5);
 
-  // Calculate lockout cycles from milliseconds and SPI frequency
-  uint32_t lockout_cycles = (uint32_t)(lockout_ms * spi_freq_mhz * 1000.0);
+  // Calculate lockout cycles from milliseconds and SPI frequency (round to nearest)
+  uint32_t lockout_cycles = (uint32_t)(lockout_ms * spi_freq_mhz * 1000.0 + 0.5);
 
   char log_filename[1024];
   printf("Enter log file name: ");

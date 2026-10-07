@@ -661,43 +661,43 @@ int hw_set_trigger_lockout(hw_t *hw, double trigger_lockout_ms) {
 }
 
 // Validate the minimum file delay against minimum DAC delay.
-bool hw_dac_timing_valid(hw_t *hw, double min_dt) {
+bool hw_dac_timing_valid(hw_t *hw, uint32_t min_delay_cycles) {
   if (hw == NULL) {
     return false;
   }
-  uint32_t spi_clk_freq_hz = sys_sts_get_clk_freq_hz(&hw->sys_sts, hw->verbose);
-  // Round down to nearest integer number of SPI clock cycles for minimum DAC delay
-  uint32_t min_dac_delay_cycles = (uint32_t)(min_dt * (double)spi_clk_freq_hz);
-  // Get the minimum DAC delay from hardware (in SPI clock cycles)
+  // Read the hardware minimum fresh: it is frequency-dependent and recomputed at power-on.
   uint32_t min_dac_delay_hw = sys_sts_get_dac_min_delay_time(&hw->sys_sts, hw->verbose);
-  if (min_dac_delay_cycles < min_dac_delay_hw) {
-    if (hw->verbose) {
-      fprintf(stderr, "Error: minimum DAC delay %.6f s (%.0f SPI clock cycles) is less than hardware minimum DAC delay %.6f s (%u SPI clock cycles).\n",
-             min_dt, (double)min_dac_delay_cycles, (double)min_dac_delay_hw / (double)spi_clk_freq_hz, min_dac_delay_hw);
-    }
+  if (min_delay_cycles < min_dac_delay_hw) {
+    fprintf(stderr,
+      "Error: DAC timing invalid -- smallest delay %u SPI cycles is below the hardware minimum %u cycles at %u Hz.\n",
+      min_delay_cycles, min_dac_delay_hw, hw->spi_clk_hz);
     return false;
   }
   return true;
 }
 
 // Validate the minimum file delay against minimum ADC delay.
-bool hw_adc_timing_valid(hw_t *hw, double min_dt) {
+bool hw_adc_timing_valid(hw_t *hw, uint32_t min_delay_cycles) {
   if (hw == NULL) {
     return false;
   }
-  uint32_t spi_clk_freq_hz = sys_sts_get_clk_freq_hz(&hw->sys_sts, hw->verbose);
-  // Round down to nearest integer number of SPI clock cycles for minimum ADC delay
-  uint32_t min_adc_delay_cycles = (uint32_t)(min_dt * (double)spi_clk_freq_hz);
-  // Get the minimum ADC delay from hardware (in SPI clock cycles)
+  // Read the hardware minimum fresh: it is frequency-dependent and recomputed at power-on.
   uint32_t min_adc_delay_hw = sys_sts_get_adc_min_delay_time(&hw->sys_sts, hw->verbose);
-  if (min_adc_delay_cycles < min_adc_delay_hw) {
-    if (hw->verbose) {
-      fprintf(stderr, "Error: minimum ADC delay %.6f s (%.0f SPI clock cycles) is less than hardware minimum ADC delay %.6f s (%u SPI clock cycles).\n",
-             min_dt, (double)min_adc_delay_cycles, (double)min_adc_delay_hw / (double)spi_clk_freq_hz, min_adc_delay_hw);
-    }
+  if (min_delay_cycles < min_adc_delay_hw) {
+    fprintf(stderr,
+      "Error: ADC timing invalid -- smallest delay %u SPI cycles is below the hardware minimum %u cycles at %u Hz.\n",
+      min_delay_cycles, min_adc_delay_hw, hw->spi_clk_hz);
     return false;
   }
   return true;
+}
+
+// Convert a timestamp in seconds to SPI clock cycles, rounding to nearest.
+uint32_t hw_time_to_cycles(double t_sec, uint32_t spi_clk_hz) {
+  if (t_sec <= 0.0) {
+    return 0;
+  }
+  return (uint32_t)(t_sec * (double)spi_clk_hz + 0.5);
 }
 
 // Start the expected count of triggers.
@@ -915,25 +915,25 @@ int hw_set_dacs_trig(hw_t *hw, const double *amps, bool last) {
 }
 
 // Send an ADC no-op single trigger wait to all active boards (assumes not last)
-int hw_adc_noop_trig(hw_t *hw) {
+int hw_adc_noop_trig(hw_t *hw, uint32_t repeat_count) {
   if (hw == NULL) {
     return -1;
   }
   uint32_t board_count = hw->board_count;
   for (uint8_t board = 0; board < board_count; board++) {
-    adc_cmd_noop(&hw->adc_ctrl, board, ADC_TRIGGER_WAIT, ADC_CONTINUE, 1, hw->verbose);
+    adc_cmd_noop_repeat(&hw->adc_ctrl, board, ADC_TRIGGER_WAIT, ADC_CONTINUE, 1, repeat_count, hw->verbose);
   }
   return 0;
 }
 
 // Send an ADC no-op delay command to all active boards (assumes not last)
-int hw_adc_noop_delay(hw_t *hw, uint32_t delay_clks) {
+int hw_adc_noop_delay(hw_t *hw, uint32_t delay_clks, uint32_t repeat_count) {
   if (hw == NULL) {
     return -1;
   }
   uint32_t board_count = hw->board_count;
   for (uint8_t board = 0; board < board_count; board++) {
-    adc_cmd_noop(&hw->adc_ctrl, board, ADC_DELAY_WAIT, ADC_CONTINUE, delay_clks, hw->verbose);
+    adc_cmd_noop_repeat(&hw->adc_ctrl, board, ADC_DELAY_WAIT, ADC_CONTINUE, delay_clks, repeat_count, hw->verbose);
   }
   return 0;
 }
@@ -941,26 +941,26 @@ int hw_adc_noop_delay(hw_t *hw, uint32_t delay_clks) {
 // Send an ADC read command with a single trigger wait afterwards to all active boards
 // Indicate whether this is the last ADC read command in a sequence to control the continue flag
 // If last is true, the trigger value will be 0 instead of 1 to immediately finish once read
-int hw_adc_read_trig(hw_t *hw, bool last) {
+int hw_adc_read_trig(hw_t *hw, bool last, uint32_t repeat_count) {
   if (hw == NULL) {
     return -1;
   }
   uint32_t board_count = hw->board_count;
   for (uint8_t board = 0; board < board_count; board++) {
-    adc_cmd_adc_rd(&hw->adc_ctrl, board, ADC_TRIGGER_WAIT, !last, last ? 0 : 1, 0, hw->verbose);
+    adc_cmd_adc_rd(&hw->adc_ctrl, board, ADC_TRIGGER_WAIT, !last, last ? 0 : 1, repeat_count, hw->verbose);
   }
   return 0;
 }
 
 // Send an ADC read command with a delay wait afterwards to all active boards
 // Indicate whether this is the last ADC read command in a sequence to control the continue flag
-int hw_adc_read_delay(hw_t *hw, uint32_t delay_clks, bool last) {
+int hw_adc_read_delay(hw_t *hw, uint32_t delay_clks, bool last, uint32_t repeat_count) {
   if (hw == NULL) {
     return -1;
   }
   uint32_t board_count = hw->board_count;
   for (uint8_t board = 0; board < board_count; board++) {
-    adc_cmd_adc_rd(&hw->adc_ctrl, board, ADC_DELAY_WAIT, !last, delay_clks, 0, hw->verbose);
+    adc_cmd_adc_rd(&hw->adc_ctrl, board, ADC_DELAY_WAIT, !last, delay_clks, repeat_count, hw->verbose);
   }
   return 0;
 }

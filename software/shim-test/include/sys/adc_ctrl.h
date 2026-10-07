@@ -88,6 +88,9 @@ char* adc_format_single(uint32_t data_word, bool verbose);
 
 // ADC command word functions
 void adc_cmd_noop(struct adc_ctrl_t *adc_ctrl, uint8_t board, adc_wait_mode_t trig, adc_continue_mode_t cont, uint32_t value, bool verbose);
+// Same as adc_cmd_noop, but with a repeat count: repeat_count > 0 sets the repeat bit and
+// appends a count word, so the hardware re-executes the no-op repeat_count more times.
+void adc_cmd_noop_repeat(struct adc_ctrl_t *adc_ctrl, uint8_t board, adc_wait_mode_t trig, adc_continue_mode_t cont, uint32_t value, uint32_t repeat_count, bool verbose);
 void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, adc_wait_mode_t trig, adc_continue_mode_t cont, uint32_t value, uint32_t repeat_count, bool verbose);
 void adc_cmd_adc_rd_ch(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t ch, uint32_t repeat_count, bool verbose);
 void adc_cmd_set_ord(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t channel_order[8], bool verbose);
