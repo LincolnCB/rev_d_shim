@@ -37,17 +37,43 @@ uint32_t *map_pl_reg(const char *dev_path, bool verbose) {
   return (uint32_t *)mapped;
 }
 
+// Map a per-board FIFO node's two-page window, offset into it (see map_memory.h)
+uint32_t *map_board_fifo(const char *dev_path, size_t word_offset, bool verbose) {
+
+  if (verbose) printf("Mapping board FIFO window [%s]...\n", dev_path);
+
+  int fd = open(dev_path, O_RDWR);
+  if (fd < 0) {
+    fprintf(stderr, "Failed to open %s: %s\n", dev_path, strerror(errno));
+    return NULL;
+  }
+
+  // Two pages: DAC half at offset 0, ADC half at 0x1000
+  size_t map_size = 2 * (size_t)sysconf(_SC_PAGESIZE);
+  void *mapped = mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  if (mapped == MAP_FAILED) {
+    fprintf(stderr, "mmap of %s failed: %s\n", dev_path, strerror(errno));
+    close(fd);
+    return NULL;
+  }
+
+  close(fd);
+
+  if (verbose) printf("Board FIFO window %s mapped\n", dev_path);
+  return (uint32_t *)mapped + word_offset;
+}
+
 // Discover how many boards are present in the running bitstream (see map_memory.h)
 int board_count(void) {
   static int cached = -1;
   if (cached >= 0) return cached;
 
   int count = 0;
-  // The first absent dac_fifo node ends the count. This path must track
-  // DAC_FIFO_DEV_FMT in dac_ctrl.h.
+  // The first absent board_fifo node ends the count. This path must track
+  // BOARD_FIFO_DEV_FMT in map_memory.h.
   for (int board = 0; board < MAX_BOARDS; board++) {
     char dev_path[32];
-    snprintf(dev_path, sizeof(dev_path), "/dev/dac_fifo_%d", board);
+    snprintf(dev_path, sizeof(dev_path), "/dev/board_fifo_%d", board);
     if (access(dev_path, F_OK) != 0) break;
     count++;
   }

@@ -40,8 +40,12 @@ create_bd_pin -dir I -from 16 -to 0 data_buf_reset
 create_bd_pin -dir I -type clock spi_clk
 create_bd_pin -dir I -from 7 -to 0 datapath_mode
 
-# AXI interface
-create_bd_intf_pin -mode slave -vlnv xilinx.com:interface:aximm_rtl:1.0 S_AXI
+# Per-board combined DAC/ADC FIFO AXI slaves + trigger FIFO slave, fanned to by the top-level
+# register SmartConnect (one subordinate per board, plus the trigger bridge)
+for {set i 0} {$i < $board_count} {incr i} {
+  create_bd_intf_pin -mode slave -vlnv xilinx.com:interface:aximm_rtl:1.0 board_fifo_${i}_axi
+}
+create_bd_intf_pin -mode slave -vlnv xilinx.com:interface:aximm_rtl:1.0 trig_axi
 
 # Status concatenated out
 create_bd_pin -dir O -from 543 -to 0 cmd_fifo_sts
@@ -112,16 +116,6 @@ cell xilinx.com:ip:xlconstant:1.1 const_0_32 {
 
 #######################################################
 
-# DAC/ADC AXI smart connect
-#  (one per board channel, one for the trigger FIFO pair)
-cell xilinx.com:ip:smartconnect:1.0 board_ch_axi_intercon {
-  NUM_SI 1
-  NUM_MI [expr {$board_count + 1}]
-} {
-  aclk aclk
-  S00_AXI S_AXI
-  aresetn aresetn
-}
 # Status word padding for making 32-bit status words
 cell xilinx.com:ip:xlconstant:1.1 dac_cmd_sts_word_padding {
   CONST_VAL 0
@@ -152,16 +146,6 @@ cell xilinx.com:ip:xlconstant:1.1 trig_data_sts_word_padding {
 ## FIFO declarations
 # Each FIFO has a 32-bit data width and 10-bit address width
 for {set i 0} {$i < $board_count} {incr i} {
-
-  ## DAC/ADC channel smart connect
-  cell xilinx.com:ip:smartconnect:1.0 ch${i}_axi_intercon {
-    NUM_SI 1
-    NUM_MI 2
-  } {
-    aclk aclk
-    S00_AXI board_ch_axi_intercon/M0${i}_AXI
-    aresetn aresetn
-  }
 
   ## DAC command FIFO
   # DAC command FIFO resetn
@@ -261,20 +245,6 @@ for {set i 0} {$i < $board_count} {incr i} {
     In4 dac_data_fifo_${i}/empty
     In5 dac_data_fifo_${i}/almost_empty
     In6 const_1/dout
-  }
-
-  ## DAC FIFO AXI interface
-  cell base:user:axi_fifo_bridge dac_fifo_${i}_axi_bridge {
-    AXI_ADDR_WIDTH 32
-    AXI_DATA_WIDTH 32
-  } {
-    aclk aclk
-    wr_resetn dac_cmd_fifo_${i}_spi_clk_rst/peripheral_aresetn
-    rd_resetn dac_data_fifo_${i}_spi_clk_rst/peripheral_aresetn
-    S_AXI ch${i}_axi_intercon/M00_AXI
-    fifo_rd_data dac_data_fifo_${i}/rd_data
-    fifo_rd_en dac_data_fifo_${i}/rd_en
-    fifo_empty dac_data_fifo_${i}/empty
   }
 
 
@@ -378,18 +348,28 @@ for {set i 0} {$i < $board_count} {incr i} {
     In6 const_1/dout
   }
 
-  ## ADC FIFO AXI interface
-  cell base:user:axi_fifo_bridge adc_fifo_${i}_axi_bridge {
+  ## Combined per-board DAC/ADC FIFO AXI bridge. One window (addr[12]: 0 = DAC half, 1 = ADC
+  ## half) fronts all four FIFOs. The DAC command write and ADC data read go through the
+  ## datapath_mux (wired in the mux cell below); the DAC data read and ADC command write are
+  ## direct. The two DMA-owned ports' mode_block wires are added after the datapath_mode slice.
+  cell base:user:axi_board_fifo_bridge board_fifo_${i}_bridge {
     AXI_ADDR_WIDTH 32
     AXI_DATA_WIDTH 32
+    SEL_BIT 12
   } {
     aclk aclk
-    wr_resetn adc_cmd_fifo_${i}_spi_clk_rst/peripheral_aresetn
-    rd_resetn adc_data_fifo_${i}_spi_clk_rst/peripheral_aresetn
-    S_AXI ch${i}_axi_intercon/M01_AXI
-    fifo_wr_data adc_cmd_fifo_${i}/wr_data
-    fifo_wr_en adc_cmd_fifo_${i}/wr_en
-    fifo_full adc_cmd_fifo_${i}/full
+    aresetn aresetn
+    dac_cmd_resetn dac_cmd_fifo_${i}_spi_clk_rst/peripheral_aresetn
+    dac_data_resetn dac_data_fifo_${i}_spi_clk_rst/peripheral_aresetn
+    adc_cmd_resetn adc_cmd_fifo_${i}_spi_clk_rst/peripheral_aresetn
+    adc_data_resetn adc_data_fifo_${i}_spi_clk_rst/peripheral_aresetn
+    S_AXI board_fifo_${i}_axi
+    dac_data_rd_data dac_data_fifo_${i}/rd_data
+    dac_data_rd_en dac_data_fifo_${i}/rd_en
+    dac_data_empty dac_data_fifo_${i}/empty
+    adc_cmd_wr_data adc_cmd_fifo_${i}/wr_data
+    adc_cmd_wr_en adc_cmd_fifo_${i}/wr_en
+    adc_cmd_full adc_cmd_fifo_${i}/full
   }
 
   ## DMA datapath: per-board DAC-command write bridge, ADC-data packetizer, and the
@@ -440,9 +420,9 @@ for {set i 0} {$i < $board_count} {incr i} {
     cmd_wr_data dac_cmd_fifo_${i}/wr_data
     cmd_wr_en dac_cmd_fifo_${i}/wr_en
     cmd_full dac_cmd_fifo_${i}/full
-    cmd_pio_wr_data dac_fifo_${i}_axi_bridge/fifo_wr_data
-    cmd_pio_wr_en dac_fifo_${i}_axi_bridge/fifo_wr_en
-    cmd_pio_full dac_fifo_${i}_axi_bridge/fifo_full
+    cmd_pio_wr_data board_fifo_${i}_bridge/dac_cmd_wr_data
+    cmd_pio_wr_en board_fifo_${i}_bridge/dac_cmd_wr_en
+    cmd_pio_full board_fifo_${i}_bridge/dac_cmd_full
     cmd_dma_wr_data dac_cmd_dma_bridge_${i}/fifo_wr_data
     cmd_dma_wr_en dac_cmd_dma_bridge_${i}/fifo_wr_en
     cmd_dma_full dac_cmd_dma_bridge_${i}/fifo_full
@@ -450,9 +430,9 @@ for {set i 0} {$i < $board_count} {incr i} {
     data_empty adc_data_fifo_${i}/empty
     data_count adc_data_fifo_${i}/fifo_count_rd_clk
     data_rd_en adc_data_fifo_${i}/rd_en
-    data_pio_rd_data adc_fifo_${i}_axi_bridge/fifo_rd_data
-    data_pio_empty adc_fifo_${i}_axi_bridge/fifo_empty
-    data_pio_rd_en adc_fifo_${i}_axi_bridge/fifo_rd_en
+    data_pio_rd_data board_fifo_${i}_bridge/adc_data_rd_data
+    data_pio_empty board_fifo_${i}_bridge/adc_data_empty
+    data_pio_rd_en board_fifo_${i}_bridge/adc_data_rd_en
     data_dma_rd_data adc_data_packetizer_${i}/fifo_rd_data
     data_dma_empty adc_data_packetizer_${i}/fifo_empty
     data_dma_count adc_data_packetizer_${i}/fifo_count_rd_clk
@@ -463,18 +443,8 @@ for {set i 0} {$i < $board_count} {incr i} {
   ## = 1) the DAC-command write and the ADC-data read belong to the DMA adapters, so a PIO
   ## poke there is a wrong-mode access: the bridge accepts and discards it (no SLVERR) and
   ## raises mode_viol. The ADC-command write and DAC-data read stay PIO in both modes.
-  wire dac_fifo_${i}_axi_bridge/wr_mode_block datapath_mode_${i}_slice/dout
-  wire dac_fifo_${i}_axi_bridge/rd_mode_block const_0/dout
-  wire adc_fifo_${i}_axi_bridge/wr_mode_block const_0/dout
-  wire adc_fifo_${i}_axi_bridge/rd_mode_block datapath_mode_${i}_slice/dout
-  # Per-board mode violation = either shared port poked in the wrong mode.
-  cell xilinx.com:ip:util_vector_logic mode_viol_${i}_or {
-    C_SIZE 1
-    C_OPERATION or
-  } {
-    Op1 dac_fifo_${i}_axi_bridge/mode_viol
-    Op2 adc_fifo_${i}_axi_bridge/mode_viol
-  }
+  wire board_fifo_${i}_bridge/dac_wr_mode_block datapath_mode_${i}_slice/dout
+  wire board_fifo_${i}_bridge/adc_rd_mode_block datapath_mode_${i}_slice/dout
 }
 
 ## Trigger command FIFO
@@ -585,7 +555,7 @@ cell base:user:axi_fifo_bridge trig_fifo_axi_bridge {
   aclk aclk
   wr_resetn trig_cmd_fifo_spi_clk_rst/peripheral_aresetn
   rd_resetn trig_data_fifo_spi_clk_rst/peripheral_aresetn
-  S_AXI board_ch_axi_intercon/M0${board_count}_AXI
+  S_AXI trig_axi
   fifo_wr_data trig_cmd_fifo/wr_data
   fifo_wr_en trig_cmd_fifo/wr_en
   fifo_full trig_cmd_fifo/full
@@ -649,7 +619,7 @@ cell xilinx.com:ip:xlconcat:2.1 dac_cmd_buf_overflow_concat {
   dout dac_cmd_buf_overflow
 }
 for {set i 0} {$i < $board_count} {incr i} {
-  wire dac_cmd_buf_overflow_concat/In${i} dac_fifo_${i}_axi_bridge/fifo_overflow
+  wire dac_cmd_buf_overflow_concat/In${i} board_fifo_${i}_bridge/dac_cmd_overflow
 }
 for {set i $board_count} {$i < 8} {incr i} {
   wire dac_cmd_buf_overflow_concat/In${i} const_0/dout
@@ -661,7 +631,7 @@ cell xilinx.com:ip:xlconcat:2.1 dac_data_buf_underflow_concat {
   dout dac_data_buf_underflow
 }
 for {set i 0} {$i < $board_count} {incr i} {
-  wire dac_data_buf_underflow_concat/In${i} dac_fifo_${i}_axi_bridge/fifo_underflow
+  wire dac_data_buf_underflow_concat/In${i} board_fifo_${i}_bridge/dac_data_underflow
 }
 for {set i $board_count} {$i < 8} {incr i} {
   wire dac_data_buf_underflow_concat/In${i} const_0/dout
@@ -673,7 +643,7 @@ cell xilinx.com:ip:xlconcat:2.1 adc_cmd_buf_overflow_concat {
   dout adc_cmd_buf_overflow
 }
 for {set i 0} {$i < $board_count} {incr i} {
-  wire adc_cmd_buf_overflow_concat/In${i} adc_fifo_${i}_axi_bridge/fifo_overflow
+  wire adc_cmd_buf_overflow_concat/In${i} board_fifo_${i}_bridge/adc_cmd_overflow
 }
 for {set i $board_count} {$i < 8} {incr i} {
   wire adc_cmd_buf_overflow_concat/In${i} const_0/dout
@@ -685,7 +655,7 @@ cell xilinx.com:ip:xlconcat:2.1 adc_data_buf_underflow_concat {
   dout adc_data_buf_underflow
 }
 for {set i 0} {$i < $board_count} {incr i} {
-  wire adc_data_buf_underflow_concat/In${i} adc_fifo_${i}_axi_bridge/fifo_underflow
+  wire adc_data_buf_underflow_concat/In${i} board_fifo_${i}_bridge/adc_data_underflow
 }
 for {set i $board_count} {$i < 8} {incr i} {
   wire adc_data_buf_underflow_concat/In${i} const_0/dout
@@ -700,7 +670,7 @@ cell xilinx.com:ip:xlconcat:2.1 mode_viol_concat {
   dout mode_viol
 }
 for {set i 0} {$i < $board_count} {incr i} {
-  wire mode_viol_concat/In${i} mode_viol_${i}_or/Res
+  wire mode_viol_concat/In${i} board_fifo_${i}_bridge/mode_viol
 }
 for {set i $board_count} {$i < 8} {incr i} {
   wire mode_viol_concat/In${i} const_0/dout

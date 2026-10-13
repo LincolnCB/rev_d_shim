@@ -56,3 +56,7 @@ The `axi_sys_ctrl` module provides a configurable interface for managing system 
 - The `unlock` signal can be used to clear the lock and allow modifications to the configuration registers if `sys_en` has been set low.
 - The module supports AXI4-Lite read and write operations for accessing and modifying configuration values. Write responses include error codes to indicate out-of-bounds violations or lock violations.
 
+## Datapath-mode software note
+
+`datapath_mode` is locked by `ctrl_en` and keeps its value across a run, so a controller must write the intended mode while the system is off (before power-on) on every run -- it is not implicitly reset when a tool starts. Selecting PIO means writing 0 explicitly, not leaving the register alone: if a prior DMA run left a board's bit set and the next run does not clear it, the first PIO FIFO access on that board is a wrong-mode access and the hardware halts with a datapath-mode violation (`STS_MODE_VIOL`). Set the whole mask each run -- the DMA mask for the boards that should use the MCDMA, zero for the rest.
+

@@ -540,7 +540,7 @@ int hw_calibrate(hw_t *hw) {
         if (division_by_zero) {
           printf("%+.3f A ( inf.) | ", offset_amps);
         } else if (slope < -9.99) {
-          printf("%+.3f A (neg.) | ", offset_amps);
+          printf("%+.3f A ( neg.) | ", offset_amps);
         } else if (slope < 0) {
           printf("%+.3f A (%.2f) | ", offset_amps, slope);
         } else if (slope > 9.99) {
@@ -562,7 +562,7 @@ int hw_calibrate(hw_t *hw) {
     // Print spaces for skipped iterations to maintain column alignment
     for (int i = completed_iterations; i < calibration_iterations; i++) {
       if (hw->verbose) printf("  -- Skipped iteration number %d", i + 1);
-      else printf("----------------- | "); // 18 spaces to match the format above
+      else printf("---------------- | "); // dashes match the "+x.xxx A (x.xxx)" field width
     }
 
     // Check hardware status when calibration fails - if system is halted, abort calibration
@@ -706,7 +706,9 @@ int hw_start_triggers(hw_t *hw, uint32_t expected_triggers) {
     return -1;
   }
   if (!hw_running(hw)) {
-    fprintf(stderr, "Error: cannot start triggers because hardware is not running.\n");
+    uint32_t hw_status = sys_sts_get_hw_status(&hw->sys_sts, hw->verbose);
+    fprintf(stderr, "Error: cannot start triggers because hardware is not running. Status: 0x%08X\n", hw_status);
+    print_hw_status(hw_status, true);
     return -1;
   }
   // Clear, not reset, to keep trigger count
@@ -1008,5 +1010,13 @@ int hw_read_trigger_data(hw_t *hw, double *trigger_time) {
 
   uint64_t trigger_data = trigger_read(&hw->trigger_ctrl);
   *trigger_time = ((double)trigger_data) / (double)hw->spi_clk_hz;
+  return 0;
+}
+
+int hw_read_trigger_cycles(hw_t *hw, uint64_t *cycles) {
+  if (hw == NULL || cycles == NULL) {
+    return -1;
+  }
+  *cycles = trigger_read(&hw->trigger_ctrl);
   return 0;
 }

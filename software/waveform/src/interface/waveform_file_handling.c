@@ -123,8 +123,10 @@ bool timestamp_file_min_delay_cycles(const char *path, uint32_t spi_clk_hz, uint
       continue; // malformed row -- structural validation already rejected these
     }
     uint32_t cyc = hw_time_to_cycles(ts, spi_clk_hz);
-    // A timestamp below the previous one is a sweep reset (trigger point), not a delay.
-    if (has_prev && ts >= prev_ts) {
+    // A timestamp below the previous one -- or any timestamp of 0 -- is a sweep
+    // reset (trigger point), not a delay. Sequential 0-timestamp rows are each
+    // their own single-trigger line, so none of them counts as a zero-length gap.
+    if (has_prev && ts >= prev_ts && ts != 0.0) {
       uint32_t delta = cyc - prev_cyc;
       if (delta < min_delta) {
         min_delta = delta;
@@ -273,11 +275,13 @@ int validate_input_file(const char *path, waveform_file_info_t *info) {
       return -1;
     }
 
-    // A row is a trigger point if it's the first row, or if time has reset
-    // (this row's timestamp is lower than the previous row's)
+    // A row is a trigger point if it's the first row, if time has reset (this
+    // row's timestamp is lower than the previous row's), or if its timestamp is
+    // 0 -- a 0 always starts a new sweep, so sequential 0-timestamp rows are
+    // individual single-trigger lines rather than zero-length delays.
     if (!has_prev) {
       num_trigs++;
-    } else if (timestamp < prev_timestamp) {
+    } else if (timestamp < prev_timestamp || timestamp == 0.0) {
       num_trigs++;
     } else {
       double dt = timestamp - prev_timestamp;
@@ -399,11 +403,11 @@ int validate_adc_file(const char *path, long expected_trigs, adc_cmd_file_info_t
       return -1;
     }
 
-    // Same trigger-point rule as the input file: first line, or a time reset,
-    // marks the start of a new sweep.
+    // Same trigger-point rule as the input file: first line, a time reset, or a
+    // 0 timestamp marks the start of a new sweep.
     if (!has_prev) {
       num_trigs++;
-    } else if (timestamp < prev_timestamp) {
+    } else if (timestamp < prev_timestamp || timestamp == 0.0) {
       num_trigs++;
     } else {
       double dt = timestamp - prev_timestamp;
@@ -442,6 +446,136 @@ int validate_adc_file(const char *path, long expected_trigs, adc_cmd_file_info_t
   return 0;
 }
 
+// --- Trigger-time log (see header) -------------------------------------
+
+int trig_time_log_init(trig_time_log_t *log, long cap) {
+  if (log == NULL) return -1;
+  log->cyc = malloc((size_t)(cap > 0 ? cap : 1) * sizeof(uint64_t));
+  if (log->cyc == NULL) return -1;
+  log->cap = cap;
+  log->produced = 0;
+  log->aborted = false;
+  pthread_mutex_init(&log->lock, NULL);
+  return 0;
+}
+
+void trig_time_log_destroy(trig_time_log_t *log) {
+  if (log == NULL) return;
+  pthread_mutex_destroy(&log->lock);
+  free(log->cyc);
+  log->cyc = NULL;
+}
+
+void trig_time_log_push(trig_time_log_t *log, uint64_t cyc) {
+  if (log == NULL) return;
+  pthread_mutex_lock(&log->lock);
+  if (log->produced < log->cap) {
+    log->cyc[log->produced++] = cyc;
+  }
+  pthread_mutex_unlock(&log->lock);
+}
+
+void trig_time_log_abort(trig_time_log_t *log) {
+  if (log == NULL) return;
+  pthread_mutex_lock(&log->lock);
+  log->aborted = true;
+  pthread_mutex_unlock(&log->lock);
+}
+
+int trig_time_log_get(trig_time_log_t *log, long k, uint64_t *out) {
+  if (log == NULL || out == NULL) return -1;
+  for (;;) {
+    pthread_mutex_lock(&log->lock);
+    bool have = (k < log->produced);
+    uint64_t v = have ? log->cyc[k] : 0;
+    bool aborted = log->aborted;
+    pthread_mutex_unlock(&log->lock);
+    if (have) {
+      *out = v;
+      return 0;
+    }
+    if (aborted) return -1;
+    // The trigger is logged before its sweep's first sample is read, so this waits briefly if at all.
+    usleep(TRIGGER_DATA_STREAM_NO_DATA_SLEEP_US);
+  }
+}
+
+// --- ADC timepoint walker (see header) ---------------------------------
+
+int adc_tp_walker_init(adc_tp_walker_t *w, const char *adc_path, long num_rows, long num_trigs,
+                       int iters, uint32_t spi_clk_hz, trig_time_log_t *tlog) {
+  if (w == NULL) return -1;
+  w->path = adc_path;
+  w->num_rows = num_rows;
+  w->num_trigs = num_trigs;
+  w->iters = iters;
+  w->spi_clk_hz = spi_clk_hz;
+  w->tlog = tlog;
+  w->fp = NULL;
+  w->iter = 0;
+  w->has_prev = false;
+  w->prev_ts = 0.0;
+  w->trig_index = 0;
+  w->base_cyc = 0;
+  w->sample_no = 0;
+  return 0;
+}
+
+void adc_tp_walker_destroy(adc_tp_walker_t *w) {
+  if (w == NULL) return;
+  if (w->fp != NULL) {
+    fclose(w->fp);
+    w->fp = NULL;
+  }
+}
+
+int adc_tp_walker_next(adc_tp_walker_t *w, double *t_sec) {
+  if (w == NULL || t_sec == NULL) return -1;
+  for (;;) {
+    if (w->fp == NULL) {
+      if (w->iter >= w->iters) return -1;  // whole stream consumed
+      w->fp = fopen(w->path, "r");
+      if (w->fp == NULL) {
+        fprintf(stderr, "Error: [timepoint] could not reopen '%s': %s\n", w->path, strerror(errno));
+        return -1;
+      }
+      w->has_prev = false;  // the first row of each iteration starts a new sweep
+    }
+    char line[MAX_LINE_LEN];
+    while (fgets(line, sizeof(line), w->fp) != NULL) {
+      strip_comments_and_trim(line);
+      if (line[0] == '\0') {
+        continue;
+      }
+      char *cursor = line;
+      double ts;
+      if (next_double(&cursor, &ts) != 0) {
+        continue;  // structurally validated already
+      }
+      // Trigger point (first row of the sweep, a time reset, or a 0 timestamp): consume the next
+      // trigger cycle as this sweep's base.
+      if (!w->has_prev || ts < w->prev_ts || ts == 0.0) {
+        uint64_t base;
+        if (trig_time_log_get(w->tlog, w->trig_index, &base) != 0) {
+          return -1;  // aborted before the trigger arrived
+        }
+        w->base_cyc = base;
+        w->trig_index++;
+      }
+      w->prev_ts = ts;
+      w->has_prev = true;
+      uint32_t delay = hw_time_to_cycles(ts, w->spi_clk_hz);
+      *t_sec = (double)(w->base_cyc + (uint64_t)delay) / (double)w->spi_clk_hz;
+      w->sample_no++;
+      return 0;
+    }
+    // End of this iteration's rows; advance to the next iteration.
+    fclose(w->fp);
+    w->fp = NULL;
+    w->iter++;
+  }
+}
+
 void adc_data_file_info_init(adc_data_file_info_t *info, long num_samples, int iters) {
   if (info == NULL) {
     return;
@@ -450,6 +584,9 @@ void adc_data_file_info_init(adc_data_file_info_t *info, long num_samples, int i
   info->num_samples = num_samples;
   info->iters = iters;
   info->hw = NULL;
+  info->adc_path = NULL;
+  info->num_trigs = 0;
+  info->tlog = NULL;
   stream_ctrl_init(&info->ctrl);
 }
 
@@ -462,6 +599,7 @@ void trigger_file_info_init(trigger_file_info_t *info, const char *label, long n
   info->num_trigs = num_trigs;
   info->iters = iters;
   info->hw = NULL;
+  info->tlog = NULL;
   stream_ctrl_init(&info->ctrl);
 }
 
@@ -767,10 +905,11 @@ void *dac_stream_thread(void *arg) {
       // drift.
       uint32_t t_clks = hw_time_to_cycles(timestamp, info->hw->spi_clk_hz);
 
-      // A trigger point is the first row of the whole stream or a time reset
-      // (this timestamp is below the previous one). Within a sweep, the command
-      // is just a delay of dt cycles from the previous row.
-      if (!has_prev || timestamp < prev_timestamp) {
+      // A trigger point is the first row of the whole stream, a time reset
+      // (this timestamp is below the previous one), or a 0 timestamp (each 0
+      // row is its own single-trigger line). Within a sweep, the command is
+      // just a delay of dt cycles from the previous row.
+      if (!has_prev || timestamp < prev_timestamp || timestamp == 0.0) {
         if (t_clks == 0) {
           // Wait for a trigger, then apply this row immediately.
           pending_noop_first = false;
@@ -1093,9 +1232,10 @@ void *adc_cmd_stream_thread(void *arg) {
       // drift.
       uint32_t t_clks = hw_time_to_cycles(timestamp, info->hw->spi_clk_hz);
 
-      // A trigger point is the first row of the whole stream or a time reset
-      // (this timestamp is below the previous one).
-      bool is_trig_point = (!has_prev) || (timestamp < prev_timestamp);
+      // A trigger point is the first row of the whole stream, a time reset
+      // (this timestamp is below the previous one), or a 0 timestamp (each 0
+      // row is its own single-trigger line).
+      bool is_trig_point = (!has_prev) || (timestamp < prev_timestamp) || (timestamp == 0.0);
 
       // Flush the buffered read: its trailing wait is determined by this row.
       // If this row starts a new sweep, the previous read waits for a trigger;
@@ -1186,6 +1326,8 @@ void *adc_data_stream_thread(void *arg) {
   // Open the output file if a path was provided. When it's unset (the path is
   // wired up later) samples are still drained from the buffer but discarded.
   FILE *out = NULL;
+  adc_tp_walker_t walker;
+  bool have_walker = false;
   if (info->path != NULL) {
     out = fopen(info->path, "w");
     if (out == NULL) {
@@ -1193,6 +1335,13 @@ void *adc_data_stream_thread(void *arg) {
       adc_data_file_info_set_state(info, STREAM_THREAD_STOPPED);
       return NULL;
     }
+    // Each row is one read: its time (trigger cycle + programmed delay) plus the active channels.
+    fprintf(out, "# PIO ADC capture (amps). Columns: t_sec");
+    for (uint32_t c = 0; c < info->hw->channel_count; c++) fprintf(out, ",ch%u", c);
+    fprintf(out, "\n");
+    adc_tp_walker_init(&walker, info->adc_path, info->num_samples, info->num_trigs,
+                       info->iters, info->hw->spi_clk_hz, info->tlog);
+    have_walker = true;
   }
 
   long total = info->num_samples * (long)info->iters;
@@ -1224,13 +1373,24 @@ void *adc_data_stream_thread(void *arg) {
         break;
       }
       read_count++;
-      // Write the active-channel amps as one comma-separated line per sample.
-      // The amps buffer is indexed by channel number, so the active channels are
-      // just indices 0 .. channel_count-1. When there's no output file the
-      // sample is still read above, draining the buffer, and simply discarded.
+      // Write one row per sample: its timepoint (from the walker, which walks the ADC command
+      // file in tandem) then the active-channel amps (indices 0 .. channel_count-1). Without an
+      // output file the sample is still drained above and simply discarded.
       if (out != NULL) {
+        double t_sec;
+        if (adc_tp_walker_next(&walker, &t_sec) != 0) {
+          fprintf(stderr, "Error: [ADC data] timepoint stream ended early or was aborted\n");
+          stopped = true;
+          break;
+        }
+        if (fprintf(out, "%.6g", t_sec) < 0) {
+          fprintf(stderr, "Error: [ADC data] failed to write to '%s': %s\n",
+                  info->path, strerror(errno));
+          stopped = true;
+          break;
+        }
         for (uint32_t c = 0; c < info->hw->channel_count; c++) {
-          if (fprintf(out, "%s%.6g", (c == 0) ? "" : ",", amps[c]) < 0) {
+          if (fprintf(out, ",%.6g", amps[c]) < 0) {
             fprintf(stderr, "Error: [ADC data] failed to write to '%s': %s\n",
                     info->path, strerror(errno));
             stopped = true;
@@ -1249,6 +1409,9 @@ void *adc_data_stream_thread(void *arg) {
     }
   }
 
+  if (have_walker) {
+    adc_tp_walker_destroy(&walker);
+  }
   if (out != NULL) {
     fclose(out);
   }
@@ -1305,18 +1468,21 @@ void *trigger_stream_thread(void *arg) {
     }
 
     for (int i = 0; i < available && read_count < total; i++) {
-      double trigger_time;
-      if (hw_read_trigger_data(info->hw, &trigger_time) != 0) {
+      uint64_t trig_cyc;
+      if (hw_read_trigger_cycles(info->hw, &trig_cyc) != 0) {
         fprintf(stderr, "Error: [%s] failed to read trigger sample\n", label);
         stopped = true;
         break;
       }
       read_count++;
-      // Write one trigger time (in seconds) per line. When there's no output
-      // file the timepoint is still read above, draining the buffer, and simply
-      // discarded.
+      // Log the raw trigger cycle for the ADC timepoint walker (when a log is attached), and
+      // write one trigger time (in seconds) per line to the output file. Without an output file
+      // the sample is still drained and only logged.
+      if (info->tlog != NULL) {
+        trig_time_log_push(info->tlog, trig_cyc);
+      }
       if (out != NULL) {
-        if (fprintf(out, "%.9g\n", trigger_time) < 0) {
+        if (fprintf(out, "%.9g\n", (double)trig_cyc / (double)info->hw->spi_clk_hz) < 0) {
           fprintf(stderr, "Error: [%s] failed to write to '%s': %s\n",
                   label, info->path, strerror(errno));
           stopped = true;
@@ -1466,7 +1632,7 @@ int waveform_build_dac_dma(const waveform_file_info_t *info, dac_word_buf_t *buf
       }
 
       uint32_t t_clks = hw_time_to_cycles(timestamp, spi_clk_hz);
-      if (!has_prev || timestamp < prev_timestamp) {
+      if (!has_prev || timestamp < prev_timestamp || timestamp == 0.0) {
         if (t_clks == 0) {
           pending_noop_first = false; pending_is_trig = true; pending_delay_clks = 0;
         } else {

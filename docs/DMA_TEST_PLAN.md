@@ -86,10 +86,10 @@ Note: `pl-reg` and `pl-irq` load here but bind nothing yet -- no node carries th
 **1.3.a -- Each register window appears as a short-named /dev node (target).**
 Run:
 ```bash
-ls -l /dev/sys_ctrl /dev/sys_sts /dev/spi_clk /dev/trig_fifo /dev/dac_fifo_* /dev/adc_fifo_*
+ls -l /dev/sys_ctrl /dev/sys_sts /dev/spi_clk /dev/trig_fifo /dev/board_fifo_*
 dmesg | grep pl-reg-shim
 ```
-Expect: every node present, mode `crw-rw-rw-` (0666). `dmesg` shows one `/dev/<name> ready (mode 0666): 0x... size 0x..., compatible "xlnx,..."` line per bound window -- `sys_ctrl` (`xlnx,axi-sys-ctrl-1.0`), `sys_sts` (`axi-sts-register`), `spi_clk` (`axi-clock-timing-snoop`), and one `dac_fifo_<b>` / `adc_fifo_<b>` per board plus `trig_fifo` (all `axi-fifo-bridge`). The count of `dac_fifo_*` / `adc_fifo_*` equals the board count in the bitstream.
+Expect: every node present, mode `crw-rw-rw-` (0666). `dmesg` shows one `/dev/<name> ready (mode 0666): 0x... size 0x..., compatible "xlnx,..."` line per bound window -- `sys_ctrl` (`xlnx,axi-sys-ctrl-1.0`), `sys_sts` (`axi-sts-register`), `spi_clk` (`axi-clock-timing-snoop`), and one `board_fifo_<b>` per board (`axi-board-fifo-bridge`) plus `trig_fifo` (`axi-fifo-bridge`). The count of `board_fifo_*` equals the board count in the bitstream.
 Result: `[PASS]` 2026-09-04 -- all 12 windows bound at 0666 with the intended base/size/compatible; this was a 4-board bitstream, so `dac_fifo_0..3` / `adc_fifo_0..3` + the 3 singletons + `trig_fifo`.
 
 **1.3.b -- The tools run fully non-root (target).**
@@ -108,7 +108,7 @@ status
 Expect: the values read back through the `pl-reg-shim` nodes match a known-good `/dev/mem` build -- a valid hardware-state code, a reported SPI clock near the configured frequency, sane FIFO status -- i.e. the datapath reads identically, just through named nodes.
 Result: `[PASS]` 2026-09-04 -- state `Idle`, SPI clock reads 30.000 MHz (matches `spi_clk_freq_mhz` in the block design), boards 0-3 `Present: Yes` / 4-7 `Present: No` (matches the 4-board bitstream). The `spi_clk` window (0x800) reading the right frequency confirms the mapping is byte-correct.
 
-Note: `status` reads per-board FIFO state through the `sys_sts` register, so it does not open the per-board `dac_fifo_<b>` / `adc_fifo_<b>` nodes and runs fine on a partial-board bitstream. The tools that do map those nodes (`shim-test`'s DAC/ADC commands, `waveform`) will fail loudly at `open()` for an absent board, given the hardcoded `board < 8` loop.
+Note: `status` reads per-board FIFO state through the `sys_sts` register, so it does not open the per-board `board_fifo_<b>` nodes and runs fine on a partial-board bitstream. The tools that do map those nodes (`shim-test`'s DAC/ADC commands, `waveform`) will fail loudly at `open()` for an absent board, given the hardcoded `board < 8` loop.
 
 Note: `pl-irq-shim` still binds nothing at this step -- the `hw_manager_irq` node is `generic-uio` until step 4 -- so `/dev/hw_manager_irq` does not exist yet and the interrupt still arrives on `/dev/uio0`. That is expected here, not a failure.
 

@@ -1,0 +1,1 @@
+../../static-shims/include/commands/static_hardware.h

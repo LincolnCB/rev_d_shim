@@ -73,8 +73,11 @@ int hw_reset_triggers(hw_t *hw);
 // Set trigger lockout in ms
 int hw_set_trigger_lockout(hw_t *hw, double trigger_lockout_ms);
 
-// Run channel calibration routine
+// Run channel calibration routine (4 iterations)
 int hw_calibrate(hw_t *hw);
+
+// Run channel calibration with a caller-chosen iteration count (hw_calibrate uses 4)
+int hw_calibrate_iters(hw_t *hw, int iterations);
 
 // Get trigger count
 uint32_t hw_get_trigger_count(hw_t *hw);

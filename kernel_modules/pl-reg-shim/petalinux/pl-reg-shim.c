@@ -64,8 +64,7 @@
 //   sys ctrl  0x40000000   axi_sys_ctrl                                sys_ctrl
 //   status    0x40100000   status_reg                                 sys_sts
 //   SPI clk   0x40200000   spi_clk_snoop                              spi_clk
-//   DAC FIFO  board b       axi_spi_interface_dac_fifo_<b>_axi_bridge   dac_fifo_<b>
-//   ADC FIFO  board b       axi_spi_interface_adc_fifo_<b>_axi_bridge   adc_fifo_<b>
+//   board FIFO board b      axi_spi_interface_board_fifo_<b>_bridge     board_fifo_<b>
 //   trigger   0x80100000   axi_spi_interface_trig_fifo_axi_bridge     trig_fifo
 //
 // Keep this in sync with the shim programs' src/sys/*.h device-name macros.
@@ -75,7 +74,8 @@ static const struct { const char *label, *dev; } pl_reg_name_exact[] = {
 	{ "spi_clk_snoop", "spi_clk"  },
 };
 static const struct { const char *prefix, *suffix; } pl_reg_name_affix[] = {
-	{ "axi_spi_interface_", "_axi_bridge" },   // -> dac_fifo_<b> / adc_fifo_<b> / trig_fifo
+	{ "axi_spi_interface_", "_axi_bridge" },   // -> trig_fifo  (trig_fifo_axi_bridge)
+	{ "axi_spi_interface_", "_bridge" },       // -> board_fifo_<b>  (board_fifo_<b>_bridge)
 };
 
 // Convert a Vivado instance label to the short /dev name, writing at most outlen
@@ -266,14 +266,16 @@ static int pl_reg_remove(struct platform_device *pdev)
 
 // Bind to the compatibles PetaLinux auto-generates for this project's register
 // cores, of the form "xlnx,<core-name-dashed>-<version>" (the generator always
-// rewrites the vendor to "xlnx"). One entry per core type; the FIFO bridge line
-// covers every per-board dac/adc/trigger bridge instance. Add a line here for
-// any other addressed core you want to expose non-root.
+// rewrites the vendor to "xlnx"). One entry per core type; the board FIFO bridge
+// line covers every per-board combined dac/adc bridge, and the plain FIFO bridge
+// line covers the trigger bridge. Add a line here for any other addressed core
+// you want to expose non-root.
 static const struct of_device_id pl_reg_of_match[] = {
 	{ .compatible = "xlnx,axi-sys-ctrl-1.0" },            // axi_sys_ctrl @0x40000000
 	{ .compatible = "xlnx,axi-sts-register-1.0" },       // status_reg   @0x40100000
 	{ .compatible = "xlnx,axi-clock-timing-snoop-1.0" }, // spi_clk_snoop @0x40200000
-	{ .compatible = "xlnx,axi-fifo-bridge-1.0" },        // dac/adc/trig FIFO bridges
+	{ .compatible = "xlnx,axi-board-fifo-bridge-1.0" },  // per-board dac/adc FIFO bridges
+	{ .compatible = "xlnx,axi-fifo-bridge-1.0" },        // trigger FIFO bridge
 	// The project's device_tree.dtsi retags the MCDMA control window with this
 	// private compatible so no in-kernel driver claims it, letting pl-reg-shim
 	// bind it and publish /dev/mcdma

@@ -461,6 +461,12 @@ int hw_set_trigger_lockout(hw_t *hw, double trigger_lockout_ms) {
 
 // Run channel calibration routine
 int hw_calibrate(hw_t *hw) {
+  return hw_calibrate_iters(hw, 4);
+}
+
+// Channel calibration with a caller-chosen iteration count. hw_calibrate uses 4; channel-check
+// passes 1 for a single-pass check. The per-channel output format is identical.
+int hw_calibrate_iters(hw_t *hw, int calibration_iterations) {
   if (hw == NULL) {
     return -1;
   }
@@ -477,7 +483,6 @@ int hw_calibrate(hw_t *hw) {
   const int num_dac_values = 5;
   const int average_count = 15;
   const double frac_step = 0.9;
-  const int calibration_iterations = 4;
   const int delay_ms = 0.3; // 0.3 ms delay
   
   // Overall calibration status
@@ -668,7 +673,7 @@ int hw_calibrate(hw_t *hw) {
         if (division_by_zero) {
           printf("%+.3f A ( inf.) | ", offset_amps);
         } else if (slope < -9.99) {
-          printf("%+.3f A (neg.) | ", offset_amps);
+          printf("%+.3f A ( neg.) | ", offset_amps);
         } else if (slope < 0) {
           printf("%+.3f A (%.2f) | ", offset_amps, slope);
         } else if (slope > 9.99) {
@@ -690,7 +695,7 @@ int hw_calibrate(hw_t *hw) {
     // Print spaces for skipped iterations to maintain column alignment
     for (int i = completed_iterations; i < calibration_iterations; i++) {
       if (hw->verbose) printf("  -- Skipped iteration number %d", i + 1);
-      else printf("----------------- | "); // 18 spaces to match the format above
+      else printf("---------------- | "); // dashes match the "+x.xxx A (x.xxx)" field width
     }
 
     // Check hardware status when calibration fails - if system is halted, abort calibration

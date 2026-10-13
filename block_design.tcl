@@ -29,10 +29,10 @@ set use_ext_clk 1
 # If you change these, MAKE SURE to also change the corresponding parameters in
 #   the adc/dac/tri_ctrl .h files in software to prevent unclear AXI crashes
 # ----------------------------!!!!!!!!!!!!!!!!!!-------------------------------
-set dac_cmd_fifo_addr_width 13
-set dac_data_fifo_addr_width 12
+set dac_cmd_fifo_addr_width 10
+set dac_data_fifo_addr_width 10
 set adc_cmd_fifo_addr_width 10
-set adc_data_fifo_addr_width 13
+set adc_data_fifo_addr_width 10
 set trig_cmd_fifo_addr_width 10
 set trig_data_fifo_addr_width 10
 
@@ -163,7 +163,7 @@ cell xilinx.com:ip:xlconstant:1.1 const_1 {
 ###############################################################################
 
 ### Create processing system
-# Enable M_AXI_GP0 and M_AXI_GP1
+# Enable M_AXI_GP0 (the whole register map rides one GP port; GP1 is unused)
 # Enable S_AXI_HP0 as the 64-bit memory path to DDR for the MCDMA
 # Enable UART1 on the correct MIO pins
 # UART1 baud rate 921600
@@ -177,7 +177,7 @@ cell xilinx.com:ip:xlconstant:1.1 const_1 {
   # PCW_ENET0_ENET0_IO {MIO 16 .. 27}
 init_ps ps {
   PCW_USE_M_AXI_GP0 1
-  PCW_USE_M_AXI_GP1 1
+  PCW_USE_M_AXI_GP1 0
   PCW_USE_S_AXI_ACP 0
   PCW_USE_S_AXI_HP0 1
   PCW_UART1_PERIPHERAL_ENABLE 1
@@ -196,7 +196,6 @@ init_ps ps {
   PCW_EN_RST3_PORT 0
 } {
   M_AXI_GP0_ACLK ps/FCLK_CLK0
-  M_AXI_GP1_ACLK ps/FCLK_CLK0
   S_AXI_HP0_ACLK ps/FCLK_CLK0
 }
 
@@ -207,10 +206,13 @@ cell xilinx.com:ip:proc_sys_reset:5.0 ps_rst {} {
   slowest_sync_clk ps/FCLK_CLK0
 }
 
-### AXI Smart Connect
+### Unified register SmartConnect on GP0. Carries the four control windows (sys_ctrl, status,
+### spi_clk, mcdma) on M00-M03 plus every per-board FIFO bridge and the trigger bridge on M04+,
+### so the whole register map rides one GP port (GP1 is unused). GP0 reaches 0x4000_0000 --
+### 0x7FFF_FFFF, so the FIFO windows live there rather than at 0x8000_0000.
 cell xilinx.com:ip:smartconnect:1.0 sys_cfg_axi_intercon {
   NUM_SI 1
-  NUM_MI 4
+  NUM_MI [expr {$board_count + 5}]
 } {
   aclk ps/FCLK_CLK0
   S00_AXI ps/M_AXI_GP0
@@ -503,8 +505,13 @@ module axi_spi_interface axi_spi_interface {
   data_buf_reset axi_sys_ctrl/data_buf_reset
   spi_clk spi_clk/clk_o
   datapath_mode axi_sys_ctrl/datapath_mode
-  S_AXI ps/M_AXI_GP1
 }
+# Fan the unified register SmartConnect to the module's per-board + trigger AXI slaves
+# (control windows take M00-M03; boards take M04+, the trigger bridge the last MI).
+for {set i 0} {$i < $board_count} {incr i} {
+  wire axi_spi_interface/board_fifo_${i}_axi sys_cfg_axi_intercon/[format "M%02d_AXI" [expr {4 + $i}]]
+}
+wire axi_spi_interface/trig_axi sys_cfg_axi_intercon/[format "M%02d_AXI" [expr {4 + $board_count}]]
 ## Wire channel pins for the module
 # DAC and ADC FIFOs
 for {set i 0} {$i < $board_count} {incr i} {
@@ -531,13 +538,13 @@ wire axi_spi_interface/trig_data_wr_en spi_clk_domain/trig_data_wr_en
 wire axi_spi_interface/trig_data_full spi_clk_domain/trig_data_full
 wire axi_spi_interface/trig_data_almost_full spi_clk_domain/trig_data_almost_full
 ## Address assignment
-# DAC and ADC FIFOs
+# DAC/ADC FIFOs: one 8KB window per board at 0x410b_0000 (GP0 range; addr[12] selects
+# DAC @ +0x0000 / ADC @ +0x1000)
 for {set i 0} {$i < $board_count} {incr i} {
-  addr 0x800${i}0000 128 axi_spi_interface/dac_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
-  addr 0x800${i}1000 128 axi_spi_interface/adc_fifo_${i}_axi_bridge/S_AXI ps/M_AXI_GP1
+  addr 0x410${i}0000 8K axi_spi_interface/board_fifo_${i}_bridge/S_AXI ps/M_AXI_GP0
 }
 # Trigger command and data FIFOs
-addr 0x80100000 128 axi_spi_interface/trig_fifo_axi_bridge/S_AXI ps/M_AXI_GP1
+addr 0x42000000 128 axi_spi_interface/trig_fifo_axi_bridge/S_AXI ps/M_AXI_GP0
 
 ## AXI-domain over/underflow detection
 wire axi_spi_interface/dac_cmd_buf_overflow hw_manager/dac_cmd_buf_overflow

@@ -166,4 +166,8 @@ int hw_read_adc_data(hw_t *hw, double *amps);
 // Assume sample is available before running
 int hw_read_trigger_data(hw_t *hw, double *trigger_time);
 
+// Read the next trigger timestamp as raw 64-bit SPI clock cycles (no conversion to seconds).
+// Used to label ADC samples by trigger cycle + programmed delay. Assume a sample is available.
+int hw_read_trigger_cycles(hw_t *hw, uint64_t *cycles);
+
 #endif // WAVEFORM_HW_H

@@ -15,8 +15,8 @@ struct adc_ctrl_t create_adc_ctrl(bool verbose) {
   // Map each present board's ADC FIFO by its pl-reg /dev node
   for (int board = 0; board < board_count(); board++) {
     char dev_path[32];
-    snprintf(dev_path, sizeof(dev_path), ADC_FIFO_DEV_FMT, board);
-    adc_ctrl.buffer[board] = map_pl_reg(dev_path, verbose);
+    snprintf(dev_path, sizeof(dev_path), BOARD_FIFO_DEV_FMT, board);
+    adc_ctrl.buffer[board] = map_board_fifo(dev_path, BOARD_FIFO_ADC_WORD_OFFSET, verbose);
     if (adc_ctrl.buffer[board] == NULL) {
       fprintf(stderr, "Failed to map ADC FIFO access for board %d\n", board);
       exit(EXIT_FAILURE);

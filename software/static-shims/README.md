@@ -5,11 +5,12 @@ Interactive command-line tool for driving the Rev D shim amplifier with **static
 ## Usage
 
 ```bash
-static-shims [--verbose] <channel_count>
+static-shims [--verbose] [--dma] <channel_count>
 ```
 
 - `channel_count` — number of active shim channels (1–64).
 - `--verbose` — enable detailed logging.
+- `--dma` -- route active boards through the MCDMA datapath instead of the default PIO (set at power-on).
 
 On start it initializes hardware, configures the clock, and drops into a `static-shims>` prompt. `Ctrl+C` (or `Q`) powers the system off safely before exiting.
 

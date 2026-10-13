@@ -1,0 +1,5 @@
+{
+  "AXI_ADDR_WIDTH": 13,
+  "AXI_DATA_WIDTH": 32,
+  "SEL_BIT": 12
+}

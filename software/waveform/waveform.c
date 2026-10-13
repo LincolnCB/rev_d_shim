@@ -34,7 +34,9 @@ typedef struct {
   double lockout;          // --lockout, default: 10.0
   double clk_MHz;          // --clk_MHz, default: 30.0
   int iters;               // --iters, default: 1
-  bool use_dma;            // --dma, default: false (prebuffered MCDMA datapath)
+  bool use_dma;            // default: true (prebuffered MCDMA datapath); --pio selects PIO instead
+  bool verbose;            // --verbose, default: false (detailed hardware status logging)
+  bool no_cal;             // --no-cal, default: false (channel cal runs before a PIO run)
 } config_t;
 
 // Set from the signal handler (async-signal-safe) and polled by the main
@@ -59,7 +61,9 @@ static void print_usage(const char *prog) {
     "  -l, --lockout <float>     Lockout value in ms (default: 10.0)\n"
     "  -c, --clk_MHz <float>     Clock value (MHz, default: 30.0)\n"
     "  -i, --iters <int>         Number of iterations (default: 1)\n"
-    "  -d, --dma                 Use the prebuffered MCDMA datapath on all active boards\n"
+    "  -p, --pio                 Use the PIO datapath instead of the default prebuffered MCDMA\n"
+    "  -v, --verbose             Enable detailed hardware status logging\n"
+    "      --no-cal              Skip the pre-run channel calibration (PIO runs calibrate by default)\n"
     "  -h, --help                Show this help message\n",
     prog);
 }
@@ -151,6 +155,46 @@ static int start_adc_streams(adc_cmd_file_info_t *cmd_info, adc_data_file_info_t
   return 0;
 }
 
+// --- DMA per-board ADC sample realignment -----------------------------
+//
+// Each board's S2MM capture drains independently, so the boards can sit a few samples apart at
+// any moment. A small per-board FIFO ring holds decoded 8-channel samples until every board has
+// the next one, at which point one combined row is emitted. Depth covers normal inter-board skew
+// (bounded by one drain pass); an overflow means a board stalled badly, which the run faults on.
+#define DMA_SAMPLE_RING_CAP 8192u
+typedef struct {
+  int16_t ch[DMA_SAMPLE_RING_CAP][8];
+  uint32_t head;   // next sample to pop
+  uint32_t count;  // samples queued
+} dma_samp_ring_t;
+
+// Pop and write every row for which all boards have a queued sample. Each row is the walker's
+// timepoint (trigger cycle + programmed delay) then channels 0..channel_count-1, where global
+// channel g comes from board g/8's local channel g%8. Returns 0, or -1 on a walker/write error.
+static int dma_emit_aligned_rows(FILE *out, adc_tp_walker_t *walker, dma_samp_ring_t *rings,
+                                 uint32_t board_count, uint32_t channel_count) {
+  for (;;) {
+    for (uint32_t b = 0; b < board_count; b++)
+      if (rings[b].count == 0) return 0;   // not all boards ready yet
+    double t_sec;
+    if (adc_tp_walker_next(walker, &t_sec) != 0) {
+      fprintf(stderr, "Error: [DMA] timepoint walker ended early or was aborted\n");
+      return -1;
+    }
+    if (fprintf(out, "%.6g", t_sec) < 0) return -1;
+    for (uint32_t c = 0; c < channel_count; c++) {
+      dma_samp_ring_t *r = &rings[c / 8];
+      int16_t raw = r->ch[r->head][c % 8];
+      if (fprintf(out, ",%.6g", HW_MAX_ABS_AMPS * (double)raw / 32767.0) < 0) return -1;
+    }
+    if (fputc('\n', out) == EOF) return -1;
+    for (uint32_t b = 0; b < board_count; b++) {
+      rings[b].head = (rings[b].head + 1) % DMA_SAMPLE_RING_CAP;
+      rings[b].count--;
+    }
+  }
+}
+
 // --- DMA datapath run --------------------------------------------------
 //
 // The prebuffered MCDMA run. The DAC command stream is synthesized per board and prebuffered
@@ -236,28 +280,44 @@ static int run_dma_path(hw_t *hw, config_t *cfg, waveform_file_info_t *input_inf
     return -1;
   }
 
-  // Open per-board ADC capture files and per-board sample-staging state.
-  FILE *adc_csv[HW_MAX_CHANNELS / 8] = {0};
+  // ADC capture -> one combined CSV, streamed. Per board, a small FIFO ring absorbs inter-board
+  // skew; when every board has a sample ready, one combined row is emitted. The timepoint walker
+  // labels each row (trigger cycle + programmed delay) from the trigger-cycle log the trigger
+  // thread fills. Nothing buffers the whole capture.
   int16_t sample_ch[HW_MAX_CHANNELS / 8][8];
   uint32_t filled[HW_MAX_CHANNELS / 8] = {0};
-  uint32_t sample_index[HW_MAX_CHANNELS / 8] = {0};
+  uint32_t channel_count = hw->channel_count;
+  dma_samp_ring_t *rings = NULL;
+  trig_time_log_t tlog;
+  bool have_tlog = false;
+  adc_tp_walker_t walker;
+  bool have_walker = false;
+  FILE *adc_csv = NULL;
   if (has_adc) {
-    for (uint32_t b = 0; b < board_count; b++) {
-      char path[PATH_MAX];
-      snprintf(path, sizeof(path), "%s.waveform_adc_out_A.board%u.csv", input_stem, b);
-      adc_csv[b] = fopen(path, "w");
-      if (adc_csv[b] == NULL) {
-        fprintf(stderr, "Error: [DMA] could not open '%s': %s\n", path, strerror(errno));
-        for (uint32_t k = 0; k < b; k++) if (adc_csv[k]) fclose(adc_csv[k]);
-        dma_wave_halt(&dma, verbose);
-        g_run_ctrl = NULL;
-        run_ctrl_destroy(&rc);
-        destroy_dma_ctrl(&dma);
-        return -1;
-      }
-      fprintf(adc_csv[b], "# DMA ADC capture (amps), board %u. ch0..ch7 per 8-channel read.\n", b);
-      fprintf(adc_csv[b], "# sample,ch0,ch1,ch2,ch3,ch4,ch5,ch6,ch7\n");
+    if (trig_time_log_init(&tlog, (long)adc_info->num_trigs * (long)cfg->iters) != 0) {
+      fprintf(stderr, "Error: [DMA] could not allocate trigger-time log\n");
+      dma_wave_halt(&dma, verbose); g_run_ctrl = NULL; run_ctrl_destroy(&rc); destroy_dma_ctrl(&dma);
+      return -1;
     }
+    have_tlog = true;
+    rings = calloc(board_count, sizeof(dma_samp_ring_t));
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s.waveform_adc_out_A.DMA.csv", input_stem);
+    adc_csv = (rings != NULL) ? fopen(path, "w") : NULL;
+    if (rings == NULL || adc_csv == NULL) {
+      fprintf(stderr, "Error: [DMA] could not set up ADC capture output\n");
+      if (adc_csv) fclose(adc_csv);
+      free(rings);
+      trig_time_log_destroy(&tlog);
+      dma_wave_halt(&dma, verbose); g_run_ctrl = NULL; run_ctrl_destroy(&rc); destroy_dma_ctrl(&dma);
+      return -1;
+    }
+    fprintf(adc_csv, "# DMA ADC capture (amps). Columns: t_sec");
+    for (uint32_t c = 0; c < channel_count; c++) fprintf(adc_csv, ",ch%u", c);
+    fprintf(adc_csv, "\n");
+    adc_tp_walker_init(&walker, cfg->adc_file, adc_info->num_rows, adc_info->num_trigs,
+                       cfg->iters, hw->spi_clk_hz, &tlog);
+    have_walker = true;
   }
 
   // Start the PIO command/trigger streams. Block the stop signals while spawning so they are
@@ -275,8 +335,9 @@ static int run_dma_path(hw_t *hw, config_t *cfg, waveform_file_info_t *input_inf
   char trig_path[PATH_MAX];
   trigger_file_info_init(&trig_info, "Trigger", input_info->num_trigs, cfg->iters);
   trig_info.hw = hw;
-  snprintf(trig_path, sizeof(trig_path), "%s.trig_t_sec.csv", input_stem);
+  snprintf(trig_path, sizeof(trig_path), "%s.trig_t_sec.DMA.csv", input_stem);
   trig_info.path = trig_path;
+  trig_info.tlog = has_adc ? &tlog : NULL;
 
   int setup_rc = 0;
   if (has_adc) {
@@ -332,30 +393,39 @@ static int run_dma_path(hw_t *hw, config_t *cfg, waveform_file_info_t *input_inf
       // Drain each board's capture into its CSV (on both EVENT and TIMEOUT wakes).
       if (has_adc) {
         uint32_t buf[1024];
-        for (uint32_t b = 0; b < board_count; b++) {
+        for (uint32_t b = 0; b < board_count && result == 0; b++) {
           int got;
           while ((got = dma_wave_read_board(&dma, (int)b, buf,
                                             (uint32_t)(sizeof buf / sizeof buf[0]))) > 0) {
             for (int i = 0; i < got; i++) {
               uint32_t word = buf[i];
-              int16_t lo = (int16_t)(word & 0xFFFF);
-              int16_t hi = (int16_t)((word >> 16) & 0xFFFF);
-              sample_ch[b][filled[b] * 2u]      = lo;
-              sample_ch[b][filled[b] * 2u + 1u] = hi;
+              sample_ch[b][filled[b] * 2u]      = (int16_t)(word & 0xFFFF);
+              sample_ch[b][filled[b] * 2u + 1u] = (int16_t)((word >> 16) & 0xFFFF);
               filled[b]++;
               if (filled[b] == 4u) {
-                fprintf(adc_csv[b], "%u", sample_index[b]);
-                for (int ch = 0; ch < 8; ch++)
-                  fprintf(adc_csv[b], ",%.4f", HW_MAX_ABS_AMPS * (double)sample_ch[b][ch] / 32767.0);
-                fprintf(adc_csv[b], "\n");
-                sample_index[b]++;
+                // One full 8-channel read for this board: enqueue it for realignment.
+                dma_samp_ring_t *r = &rings[b];
+                if (r->count >= DMA_SAMPLE_RING_CAP) {
+                  fprintf(stderr, "Error: [DMA] board %u capture ring overflow (board skew too large)\n", b);
+                  result = -1;
+                  break;
+                }
+                uint32_t tail = (r->head + r->count) % DMA_SAMPLE_RING_CAP;
+                for (int ch = 0; ch < 8; ch++) r->ch[tail][ch] = sample_ch[b][ch];
+                r->count++;
                 filled[b] = 0;
               }
             }
+            if (result != 0) break;
           }
-          fflush(adc_csv[b]);
+        }
+        // Emit every row for which all boards now have a sample queued.
+        if (result == 0 && dma_emit_aligned_rows(adc_csv, &walker, rings, board_count,
+                                                 channel_count) != 0) {
+          result = -1;
         }
       }
+      if (result != 0) break;
 
       // Progress line on each new trigger.
       uint32_t tcount = hw_get_trigger_count(hw);
@@ -391,13 +461,18 @@ static int run_dma_path(hw_t *hw, config_t *cfg, waveform_file_info_t *input_inf
   trigger_file_info_destroy(&trig_info);
 
   if (has_adc) {
-    for (uint32_t b = 0; b < board_count; b++) {
-      if (adc_csv[b] == NULL) continue;
-      fclose(adc_csv[b]);
-      printf("[DMA] board %u: wrote %u ADC sample(s) to %s.waveform_adc_out_A.board%u.csv\n",
-             b, sample_index[b], input_stem, b);
-    }
+    // The trigger thread has joined, so the trigger-cycle log is complete. Aborting it only
+    // matters on a faulted run -- it lets the walker stop waiting for a trigger that never fired.
+    trig_time_log_abort(&tlog);
+    // Flush any rows still aligned in the rings (the last drain pass may have left a few).
+    (void)dma_emit_aligned_rows(adc_csv, &walker, rings, board_count, channel_count);
+    fclose(adc_csv);
+    printf("[DMA] wrote %ld ADC sample(s) x %u channel(s) to %s.waveform_adc_out_A.DMA.csv\n",
+           walker.sample_no, channel_count, input_stem);
   }
+  if (have_walker) adc_tp_walker_destroy(&walker);
+  if (have_tlog) trig_time_log_destroy(&tlog);
+  free(rings);
 
   // Coordinated shutdown (Stage 4): halt the MCDMA channels first, then clear the DMA-driven
   // FIFOs -- so the engine is never mid-transfer when the FIFOs reset, any DAC commands left
@@ -418,7 +493,9 @@ int main(int argc, char *argv[]) {
     .lockout    = 10.0,
     .clk_MHz    = 30.0,
     .iters      = 1,
-    .use_dma    = false
+    .use_dma    = true,
+    .verbose    = false,
+    .no_cal     = false
   };
 
   static struct option long_options[] = {
@@ -426,7 +503,9 @@ int main(int argc, char *argv[]) {
     {"lockout", required_argument, 0, 'l'},
     {"clk_MHz", required_argument, 0, 'c'},
     {"iters",   required_argument, 0, 'i'},
-    {"dma",     no_argument,       0, 'd'},
+    {"pio",     no_argument,       0, 'p'},
+    {"verbose", no_argument,       0, 'v'},
+    {"no-cal",  no_argument,       0, 'n'},
     {"help",    no_argument,       0, 'h'},
     {0, 0, 0, 0}
   };
@@ -437,7 +516,7 @@ int main(int argc, char *argv[]) {
   // Default (permute) mode: getopt_long reorders argv so all flags are
   //  handled here, leaving any positional arguments at the end for us
   //  to read via optind below.
-  while ((opt = getopt_long(argc, argv, "ha:l:c:i:d", long_options, &option_index)) != -1) {
+  while ((opt = getopt_long(argc, argv, "ha:l:c:i:pv", long_options, &option_index)) != -1) {
     switch (opt) {
       case 'a':
       cfg.adc_file = optarg;
@@ -451,8 +530,14 @@ int main(int argc, char *argv[]) {
       case 'i':
       cfg.iters = parse_int_arg("--iters", optarg);
       break;
-      case 'd':
-      cfg.use_dma = true;
+      case 'p':
+      cfg.use_dma = false;
+      break;
+      case 'v':
+      cfg.verbose = true;
+      break;
+      case 'n':
+      cfg.no_cal = true;
       break;
       case 'h':
       print_usage(argv[0]);
@@ -488,6 +573,8 @@ int main(int argc, char *argv[]) {
   printf("clk_MHz    = %g\n", cfg.clk_MHz);
   printf("iters      = %d\n", cfg.iters);
   printf("datapath   = %s\n", cfg.use_dma ? "DMA (prebuffered MCDMA)" : "PIO");
+  printf("verbose    = %s\n", cfg.verbose ? "on" : "off");
+  printf("calibrate  = %s\n", cfg.no_cal ? "off" : "on");
 
   // --- Validate the input (DAC) file ------------------------------
   waveform_file_info_t input_info;
@@ -500,7 +587,7 @@ int main(int argc, char *argv[]) {
   input_info.iters = cfg.iters;
 
   // --- Initialize hardware pointers and check that enough boards/FIFOs are present
-  hw_t hw = hw_init(input_info.num_channels, cfg.clk_MHz, false);
+  hw_t hw = hw_init(input_info.num_channels, cfg.clk_MHz, cfg.verbose);
 
   // --- Validate the ADC file, if provided -------------------------
   adc_cmd_file_info_t adc_info;
@@ -523,12 +610,16 @@ int main(int argc, char *argv[]) {
   sigaction(SIGTERM, &sa, NULL);
 
   // --- Select the datapath before power-on -------------------------
-  // datapath_mode is locked by ctrl_en, so it must be set while the system is off. In DMA
-  // mode every active board uses the prebuffered MCDMA path (mask covers boards 0..N-1).
+  // datapath_mode is locked by ctrl_en, so it must be set while the system is off. Set it
+  // explicitly for both paths -- clearing it for PIO so a prior DMA run doesn't leave a board
+  // in DMA, which would fault a PIO DAC write as a wrong-mode (mode_viol) access.
   if (cfg.use_dma) {
     uint8_t dma_mask = (uint8_t)((hw.board_count >= 8) ? 0xFFu : ((1u << hw.board_count) - 1u));
     sys_ctrl_set_datapath_mode(&hw.sys_ctrl, dma_mask, hw.verbose);
     printf("[HW] datapath_mode set to DMA for %u board(s) (mask 0x%02X)\n", hw.board_count, dma_mask);
+  } else {
+    sys_ctrl_set_datapath_mode(&hw.sys_ctrl, 0, hw.verbose);
+    printf("[HW] datapath_mode set to PIO for all boards (mask 0x00)\n");
   }
 
   // --- Bring up the hardware ---------------------------------------
@@ -543,6 +634,23 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
+  // --- Channel calibration (PIO only) ------------------------------
+  // Cal drives the DACs and reads the ADCs over the PIO FIFO bridge, which is mode-gated in DMA,
+  // so it runs only on a PIO run. It is lost on power-off, so it happens here -- the same power
+  // session as the run, before the waveform is buffered. DMA-mode cal is future work (DMA_PLAN).
+  if (!cfg.no_cal) {
+    if (cfg.use_dma) {
+      printf("[HW] skipping channel calibration (not supported in DMA mode yet; use --pio to calibrate)\n");
+    } else {
+      printf("[HW] calibrating channels...\n");
+      if (hw_calibrate(&hw) != 0) {
+        fprintf(stderr, "Error: channel calibration failed\n");
+        hw_power_off(&hw);
+        return EXIT_FAILURE;
+      }
+      printf("\n");
+    }
+  }
 
   if (hw_set_trigger_lockout(&hw, cfg.lockout) != 0) {
     fprintf(stderr, "Error: failed to set trigger lockout to %g ns\n", cfg.lockout);
@@ -605,27 +713,46 @@ int main(int argc, char *argv[]) {
   bool has_adc_data_thread = false;
 
   // Output CSV paths, derived from the input file name with its extension
-  // trimmed (so "test.csv" yields "test.trig_t_sec.csv", not
-  // "test.csv.trig_t_sec.csv").
+  // trimmed (so "test.csv" yields "test.trig_t_sec.PIO.csv", not
+  // "test.csv.trig_t_sec.PIO.csv").
   char input_stem[PATH_MAX];
   char adc_out_path[PATH_MAX];
   char trig_out_path[PATH_MAX];
   strip_extension(input_stem, sizeof(input_stem), cfg.input_file);
+
+  // Trigger-cycle log shared by the trigger thread (producer) and the ADC data thread's
+  // timepoint walker (consumer), so each PIO sample is labeled with trigger cycle + delay.
+  trig_time_log_t pio_tlog;
+  bool have_pio_tlog = false;
+  if (has_adc_info) {
+    if (trig_time_log_init(&pio_tlog, (long)input_info.num_trigs * (long)cfg.iters) != 0) {
+      fprintf(stderr, "Error: could not allocate trigger-time log\n");
+      waveform_file_info_destroy(&input_info);
+      adc_cmd_file_info_destroy(&adc_info);
+      hw_power_off(&hw);
+      return EXIT_FAILURE;
+    }
+    have_pio_tlog = true;
+  }
 
   trigger_file_info_init(&trigger_arg, "Trigger", input_info.num_trigs, cfg.iters);
 
   input_info.hw = &hw;
   trigger_arg.hw = &hw;
   // The trigger data stream writes one trigger time (in seconds) per line.
-  snprintf(trig_out_path, sizeof(trig_out_path), "%s.trig_t_sec.csv", input_stem);
+  snprintf(trig_out_path, sizeof(trig_out_path), "%s.trig_t_sec.PIO.csv", input_stem);
   trigger_arg.path = trig_out_path;
+  trigger_arg.tlog = have_pio_tlog ? &pio_tlog : NULL;
   if (has_adc_info) {
     adc_info.hw = &hw;
     // The ADC data stream drains one sample per ADC read command and writes the
     // active-channel amps (comma-separated) as one line per sample.
     adc_data_file_info_init(&adc_data_info, adc_info.num_rows, cfg.iters);
     adc_data_info.hw = &hw;
-    snprintf(adc_out_path, sizeof(adc_out_path), "%s.waveform_adc_out_A.csv", input_stem);
+    adc_data_info.adc_path = cfg.adc_file;
+    adc_data_info.num_trigs = adc_info.num_trigs;
+    adc_data_info.tlog = &pio_tlog;
+    snprintf(adc_out_path, sizeof(adc_out_path), "%s.waveform_adc_out_A.PIO.csv", input_stem);
     adc_data_info.path = adc_out_path;
   }
 
@@ -692,7 +819,20 @@ int main(int argc, char *argv[]) {
 
   // --- Start the expected number of triggers ------------------------
   long expected_triggers = (long)cfg.iters * input_info.num_trigs;
-  hw_start_triggers(&hw, expected_triggers);
+  if (hw_start_triggers(&hw, expected_triggers) != 0) {
+    // Triggers did not arm -- most often the hardware left the RUNNING state while the
+    // DAC/ADC streams were primed. Decode the current status for diagnostics, then ask
+    // every stream thread to stop so the monitor loop below joins them and powers off
+    // cleanly instead of blocking forever on a trigger that will never fire.
+    uint32_t hw_status = sys_sts_get_hw_status(&hw.sys_sts, hw.verbose);
+    fprintf(stderr, "Error: triggers failed to start; hardware status 0x%08X\n", hw_status);
+    print_hw_status(hw_status, true);
+    waveform_file_info_request_stop(&input_info);
+    if (has_adc_thread) adc_cmd_file_info_request_stop(&adc_info);
+    if (has_adc_data_thread) adc_data_file_info_request_stop(&adc_data_info);
+    trigger_file_info_request_stop(&trigger_arg);
+    if (have_pio_tlog) trig_time_log_abort(&pio_tlog);
+  }
 
   // --- Monitor progress ----------------------------------------------
   // Poll the hardware trigger counter while the stream threads are running.
@@ -708,6 +848,8 @@ int main(int argc, char *argv[]) {
   bool trigger_done = false;
   bool any_stopped_early = false;
   bool stop_all_requested = false;
+  int post_trigger_polls = 0;          // consecutive polls after all triggers fired, run not done
+  const int stall_poll_limit = 10;     // ~5 s at the 500 ms poll interval before declaring a stall
   while (!dac_done || (has_adc_thread && !adc_done) ||
          (has_adc_data_thread && !adc_data_done) || !trigger_done) {
     // A stop signal (CTRL+C / SIGTERM): stop polling and fall through to the
@@ -715,6 +857,23 @@ int main(int argc, char *argv[]) {
     if (g_stop_requested) {
       break;
     }
+
+    // The PIO path has no completion interrupt, so poll the hw_manager status directly: a hardware
+    // fault halts the controllers, and without this the run hangs forever waiting on a stream that
+    // can no longer drain. On a halt, decode the status and stop the run.
+    uint32_t loop_hw_status = sys_sts_get_hw_status(&hw.sys_sts, false);
+    if (HW_STS_STATE(loop_hw_status) == S_HALTED) {
+      fprintf(stderr, "Error: hardware halted during the run (status 0x%08X):\n", loop_hw_status);
+      print_hw_status(loop_hw_status, true);
+      waveform_file_info_request_stop(&input_info);
+      if (has_adc_thread) adc_cmd_file_info_request_stop(&adc_info);
+      if (has_adc_data_thread) adc_data_file_info_request_stop(&adc_data_info);
+      trigger_file_info_request_stop(&trigger_arg);
+      if (have_pio_tlog) trig_time_log_abort(&pio_tlog);
+      any_stopped_early = true;
+      break;
+    }
+
     if (!dac_done && waveform_file_info_is_finished(&input_info)) {
       dac_done = true;
       bool early = waveform_file_info_stopped_early(&input_info);
@@ -761,6 +920,7 @@ int main(int argc, char *argv[]) {
         adc_data_file_info_request_stop(&adc_data_info);
       }
       trigger_file_info_request_stop(&trigger_arg);
+      if (have_pio_tlog) trig_time_log_abort(&pio_tlog);
       stop_all_requested = true;
     }
 
@@ -779,6 +939,33 @@ int main(int argc, char *argv[]) {
              iteration + 1, cfg.iters, trigger_in_iteration + 1, input_info.num_trigs);
       fflush(stdout);
       last_trigger_count = current_trigger_count;
+    }
+
+    // Stall watchdog: once every expected trigger has fired, the run should finish promptly. If it
+    // does not, a controller wedged without halting -- dump the status and per-board command-FIFO
+    // fills so the stuck stage is visible, then abort instead of hanging.
+    bool run_done = dac_done && (!has_adc_thread || adc_done) &&
+                    (!has_adc_data_thread || adc_data_done) && trigger_done;
+    if (!run_done && (long)last_trigger_count >= expected_triggers) {
+      if (++post_trigger_polls >= stall_poll_limit) {
+        fprintf(stderr, "Error: run stalled after all %ld trigger(s) fired. Hardware status:\n",
+                expected_triggers);
+        print_hw_status(sys_sts_get_hw_status(&hw.sys_sts, false), true);
+        for (uint32_t b = 0; b < hw.board_count; b++) {
+          fprintf(stderr, "  board %u: DAC cmd FIFO %u words, ADC cmd FIFO %u words\n", b,
+                  FIFO_STS_WORD_COUNT(sys_sts_get_dac_cmd_fifo_status(&hw.sys_sts, (uint8_t)b, false)),
+                  FIFO_STS_WORD_COUNT(sys_sts_get_adc_cmd_fifo_status(&hw.sys_sts, (uint8_t)b, false)));
+        }
+        waveform_file_info_request_stop(&input_info);
+        if (has_adc_thread) adc_cmd_file_info_request_stop(&adc_info);
+        if (has_adc_data_thread) adc_data_file_info_request_stop(&adc_data_info);
+        trigger_file_info_request_stop(&trigger_arg);
+        if (have_pio_tlog) trig_time_log_abort(&pio_tlog);
+        any_stopped_early = true;
+        break;
+      }
+    } else {
+      post_trigger_polls = 0;
     }
 
     if (!dac_done || (has_adc_thread && !adc_done) ||
@@ -800,6 +987,10 @@ int main(int argc, char *argv[]) {
     trigger_file_info_request_stop(&trigger_arg);
   }
 
+  // Unblock the ADC data thread's timepoint walker if it is still waiting on a trigger that will
+  // not arrive (stop/fault). Harmless on a clean run -- every trigger is already logged.
+  if (have_pio_tlog) trig_time_log_abort(&pio_tlog);
+
   // --- Join stream threads now that each has reported finished ------
   pthread_join(dac_tid, NULL);
   if (has_adc_thread) {
@@ -817,6 +1008,7 @@ int main(int argc, char *argv[]) {
     adc_data_file_info_destroy(&adc_data_info);
   }
   trigger_file_info_destroy(&trigger_arg);
+  if (have_pio_tlog) trig_time_log_destroy(&pio_tlog);
   hw_power_off(&hw);
 
   if (g_stop_requested) {

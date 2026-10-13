@@ -15,8 +15,8 @@ struct dac_ctrl_t create_dac_ctrl(bool verbose) {
   // Map each present board's DAC FIFO by its pl-reg /dev node
   for (int board = 0; board < board_count(); board++) {
     char dev_path[32];
-    snprintf(dev_path, sizeof(dev_path), DAC_FIFO_DEV_FMT, board);
-    dac_ctrl.buffer[board] = map_pl_reg(dev_path, verbose);
+    snprintf(dev_path, sizeof(dev_path), BOARD_FIFO_DEV_FMT, board);
+    dac_ctrl.buffer[board] = map_board_fifo(dev_path, 0, verbose);
     if (dac_ctrl.buffer[board] == NULL) {
       fprintf(stderr, "Failed to map DAC FIFO access for board %d\n", board);
       exit(EXIT_FAILURE);

@@ -2,6 +2,8 @@
 #define WAVEFORM_FILE_HANDLING_H
 
 #include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <pthread.h>
 
 #include "waveform_hw.h"
@@ -51,6 +53,53 @@ typedef struct {
   stream_thread_state_t state;
 } stream_ctrl_t;
 
+// Trigger-time log: a tiny single-producer / single-consumer FIFO of trigger timestamps in SPI
+// clock cycles. The trigger stream thread pushes one entry per trigger fired; an ADC capture
+// consumer pops them in order (each trigger point in the command stream consumes the next). The
+// producer runs ahead of the consumer -- a trigger is logged before its sweep's first sample is
+// read -- so the consumer rarely waits. Entries are write-once; only the counts are locked.
+typedef struct {
+  pthread_mutex_t lock;
+  uint64_t *cyc;     // cap entries, filled in order
+  long cap;
+  long produced;     // number pushed so far
+  bool aborted;      // set by the owner on stop/fault so a waiting consumer can bail
+} trig_time_log_t;
+
+int  trig_time_log_init(trig_time_log_t *log, long cap);
+void trig_time_log_destroy(trig_time_log_t *log);
+void trig_time_log_push(trig_time_log_t *log, uint64_t cyc);   // producer (trigger thread)
+void trig_time_log_abort(trig_time_log_t *log);                // owner: unblock a waiting consumer
+// Consumer: fetch trigger index k's cycle count, waiting until it is logged. Returns 0, or -1 if
+// the log was aborted before entry k arrived.
+int  trig_time_log_get(trig_time_log_t *log, long k, uint64_t *out);
+
+// Timepoint walker: streams through the ADC command file (replayed `iters` times) one sample at
+// a time, assigning each an absolute time. A trigger point (first row of a sweep, a time reset,
+// or a 0 timestamp) consumes the next trigger cycle from the log; the row's own timestamp is the
+// programmed delay since that trigger. Sample time (s) = (trigger_cyc + delay_cyc) / spi_clk_hz.
+typedef struct {
+  const char *path;        // ADC command file (read timestamps)
+  long num_rows;           // rows per iteration
+  long num_trigs;          // trigger points per iteration
+  int iters;
+  uint32_t spi_clk_hz;
+  trig_time_log_t *tlog;   // trigger cycle source
+  FILE *fp;                // current iteration's open file (NULL between iterations)
+  int iter;                // current iteration index
+  bool has_prev;           // seen a row in this iteration yet
+  double prev_ts;          // previous row's timestamp (for trigger-point detection)
+  long trig_index;         // next trigger log index to consume
+  uint64_t base_cyc;       // current sweep's trigger cycle
+  long sample_no;          // total samples emitted so far
+} adc_tp_walker_t;
+
+int  adc_tp_walker_init(adc_tp_walker_t *w, const char *adc_path, long num_rows, long num_trigs,
+                        int iters, uint32_t spi_clk_hz, trig_time_log_t *tlog);
+// Advance one sample and compute its time in seconds. Returns 0, or -1 at end-of-stream / abort.
+int  adc_tp_walker_next(adc_tp_walker_t *w, double *t_sec);
+void adc_tp_walker_destroy(adc_tp_walker_t *w);
+
 // Summary info gathered while validating the input (DAC) waveform CSV file.
 // Also used to drive the DAC stream thread once validation succeeds.
 typedef struct {
@@ -94,6 +143,9 @@ typedef struct {
   long num_samples;    // samples expected per iteration (matches the ADC file rows)
   int iters;           // number of times the run is replayed
   hw_t *hw;            // hardware handle used to read samples; set by caller before streaming
+  const char *adc_path;  // ADC command file, for timepoint labeling; set by caller
+  long num_trigs;        // trigger points per iteration; set by caller
+  trig_time_log_t *tlog; // trigger-cycle source for the timepoint walker; set by caller
   stream_ctrl_t ctrl;
 } adc_data_file_info_t;
 
@@ -109,6 +161,7 @@ typedef struct {
   long num_trigs;      // trigger points per iteration (matches the DAC file)
   int iters;            // number of times to replay
   hw_t *hw;            // hardware handle used to read samples; set by caller before streaming
+  trig_time_log_t *tlog; // trigger-cycle log to push into (NULL to skip); set by caller
   stream_ctrl_t ctrl;
 } trigger_file_info_t;
 

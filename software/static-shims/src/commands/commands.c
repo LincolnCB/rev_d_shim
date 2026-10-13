@@ -299,6 +299,14 @@ static bool run_power_on(shim_runtime_state_t *state) {
     fprintf(stderr, "P: failed to clear trigger hardware buffers.\n");
     return false;
   }
+  // Select the datapath before power-on (datapath_mode is locked once ctrl_en is set). Clearing
+  // it for PIO matters: a stale DMA bit from a prior run would fault the first PIO FIFO access.
+  {
+    uint32_t boards = (state->hw->channel_count - 1u) / 8u + 1u;
+    uint8_t mask = state->use_dma ? (uint8_t)((boards >= 8u) ? 0xFFu : ((1u << boards) - 1u)) : 0u;
+    sys_ctrl_set_datapath_mode(&state->hw->sys_ctrl, mask, state->verbose);
+    printf("Datapath: %s (datapath_mode 0x%02X).\n", state->use_dma ? "DMA" : "PIO", mask);
+  }
   // Power on hardware
   printf("Powering amplifier system on.\n");
   if (hw_power_on(state->hw) != 0) {

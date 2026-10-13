@@ -18,12 +18,9 @@ typedef enum {
 } adc_continue_mode_t;
 
 //////////////////// ADC Control Definitions ////////////////////
-// ADC FIFO device node (pl-reg-shim, one per board)
-#define ADC_FIFO_DEV_FMT   "/dev/adc_fifo_%d"
-
 // ADC FIFO depths
 #define ADC_CMD_FIFO_WORDCOUNT   (uint32_t)(1 << 10) // 1024 words (2^10)
-#define ADC_DATA_FIFO_WORDCOUNT  (uint32_t)(1 << 13) // 8192 words (2^13)
+#define ADC_DATA_FIFO_WORDCOUNT  (uint32_t)(1 << 10) // 1024 words (2^10)
 
 // ADC state codes
 #define ADC_STATE_RESET      0

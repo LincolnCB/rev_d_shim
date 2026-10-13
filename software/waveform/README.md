@@ -15,7 +15,7 @@ waveform <file.csv> [OPTIONS]
 | `-l`, `--lockout <float>` | ms | `10.0` | Trigger lockout time in milliseconds |
 | `-c`, `--clk_MHz <float>` | MHz | `30.0` | SPI clock frequency |
 | `-i`, `--iters <int>` | int | `1` | Number of times to replay the file(s) |
-| `-d`, `--dma` | — | off | Run the prebuffered MCDMA datapath on all active boards (see [DMA datapath](#dma-datapath)) |
+| `-p`, `--pio` | — | off | Use the PIO datapath instead of the default prebuffered MCDMA (see [DMA datapath](#dma-datapath)) |
 | `-h`, `--help` | — | — | Show usage |
 
 > Note: all timestamps **inside the CSV files are in seconds**. The `--lockout` flag is the one exception and is given in milliseconds.
@@ -64,15 +64,16 @@ Written next to the input file:
 
 | File | When | Contents |
 |---|---|---|
-| `<input>.trig_t_sec.csv` | always | one hardware trigger time (seconds) per line |
-| `<input>.waveform_adc_out_A.csv` | PIO with `--adc` | active-channel readback amps, one sample per line |
-| `<input>.waveform_adc_out_A.board<b>.csv` | DMA with `--adc` | per-board readback amps (ch0..ch7), one sample per line |
+| `<input>.trig_t_sec.PIO.csv` | PIO | one hardware trigger time (seconds) per line |
+| `<input>.trig_t_sec.DMA.csv` | DMA | one hardware trigger time (seconds) per line |
+| `<input>.waveform_adc_out_A.PIO.csv` | PIO with `--adc` | active-channel readback amps, one sample per line |
+| `<input>.waveform_adc_out_A.DMA.csv` | DMA with `--adc` | `t_sec` plus every active channel (`ch0..chN-1`), one read per line |
 
 Press `Ctrl+C` to stop early; the hardware is powered off before exit.
 
 ## DMA datapath
 
-With `--dma`, every active board runs the prebuffered MCDMA datapath instead of streaming DAC commands word-by-word from software. The tool sets each board's `datapath_mode` to DMA before power-on (the register is locked once the system is running), synthesizes each board's full DAC command stream, and prebuffers it into DDR so the MCDMA fills the DAC FIFO behind the leading trigger-wait -- no software feeds the DAC during the run. The ADC command and trigger lanes stay on the programmed-I/O path; the ADC *data* lane is captured through the MCDMA into DDR and drained to one CSV per board.
+By default every active board runs the prebuffered MCDMA datapath; pass `--pio` to stream DAC commands word-by-word from software instead. In DMA mode the tool sets each board's `datapath_mode` to DMA before power-on (the register is locked once the system is running), synthesizes each board's full DAC command stream, and prebuffers it into DDR so the MCDMA fills the DAC FIFO behind the leading trigger-wait -- no software feeds the DAC during the run. The ADC command and trigger lanes stay on the programmed-I/O path; the ADC *data* lane is captured through the MCDMA into DDR and written to one combined CSV across all boards.
 
 During the run the tool waits on the `hw_manager` interrupt (via a `poll()` over `/dev/hw_manager_irq` plus a local-abort path), so a hardware fault or `Ctrl+C` stops the run through the same wait, with no busy-polling. A run finishes when every board has captured its expected sample count (or, with no `--adc` file, when the trigger count is reached and the DAC FIFOs have drained). On any exit the MCDMA is halted and the DMA-driven FIFOs are cleared before power-off, so a later run starts from a clean state.
 

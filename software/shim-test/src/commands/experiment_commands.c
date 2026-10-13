@@ -639,15 +639,15 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
       // If NOT verbose, print this iteration's results with special slope formatting
       if (!*(ctx->verbose)) {
         if (division_by_zero) {
-          printf("%+.4f A ( inf.) | ", offset_amps);
+          printf("%+.3f A ( inf.) | ", offset_amps);
         } else if (slope < -9.99) {
-          printf("%+.4f A (neg.) | ", offset_amps);
+          printf("%+.3f A ( neg.) | ", offset_amps);
         } else if (slope < 0) {
-          printf("%+.4f A (%.2f) | ", offset_amps, slope);
+          printf("%+.3f A (%.2f) | ", offset_amps, slope);
         } else if (slope > 9.99) {
-          printf("%+.4f A (10.0+) | ", offset_amps);
+          printf("%+.3f A (10.0+) | ", offset_amps);
         } else {
-          printf("%+.4f A (%.3f) | ", offset_amps, slope);
+          printf("%+.3f A (%.3f) | ", offset_amps, slope);
         }
       }
 
@@ -663,7 +663,7 @@ int cmd_channel_cal(const char** args, int arg_count, const command_flag_t* flag
     // Print spaces for skipped iterations to maintain column alignment
     for (int i = completed_iterations; i < calibration_iterations; i++) {
       if (*(ctx->verbose)) printf("  -- Skipped iteration number %d", i + 1);
-      else printf("----------------- | "); // 18 spaces to match the format above
+      else printf("---------------- | "); // dashes match the "+x.xxx A (x.xxx)" field width
     }
 
     // Check hardware status when calibration fails - if system is halted, abort calibration
