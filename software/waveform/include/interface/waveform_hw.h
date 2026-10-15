@@ -13,10 +13,10 @@
 #include "clk_ctrl.h"
 #include "sys_sts.h"
 #include "trigger_ctrl.h"
+#include "channel_cal.h"
+#include "hw_config.h"
 
 #define HW_SLEEP usleep(1000) // 1 ms sleep for hardware timing
-#define HW_MAX_CHANNELS 64 // Maximum number of channels supported by hardware
-#define HW_MAX_ABS_AMPS 5.0 // Maximum absolute current in amps for DAC channels
 // The DAC/ADC command delay field is 25 bits, so a single command can encode at
 // most this many SPI clock cycles of delay. Larger gaps must be broken up into a
 // run of no-op delay commands (see the stream code in waveform_file_handling.c).
@@ -68,8 +68,11 @@ bool hw_running(hw_t *hw);
 // Check if the hardware is halted.
 bool hw_halted(hw_t *hw);
 
-// Run calibration routine for connected channels.
+// Run calibration routine for connected channels (PIO transport).
 int hw_calibrate(hw_t *hw);
+
+// Build a channel_cal context from this hw_t (PIO transport; no DMA mover).
+channel_cal_ctx_t hw_channel_cal_ctx(hw_t *hw);
 
 // Convert a timestamp in seconds to SPI clock cycles, rounding to nearest. This is the one
 // conversion shared by command synthesis and timing validation, so a file that validates is

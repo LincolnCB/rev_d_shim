@@ -10,21 +10,22 @@
 #include <pthread.h>
 #include <glob.h>
 #include "command_helper.h"
+#include "hw_config.h"
 
 // Helper function to convert Amps to signed DAC units
 // Maps -5.0A -> -32767, 0A -> 0, 5.0A -> 32767
 int16_t amps_to_dac(double amps) {
   // Clamp to valid range
-  if (amps < -5.0) amps = -5.0;
-  if (amps > 5.0) amps = 5.0;
-  // Convert: dac = amps * (32767 / 5.0)
-  int16_t dac_value = (int16_t)(amps * (32767.0 / 5.0));
+  if (amps < -HW_MAX_ABS_AMPS) amps = -HW_MAX_ABS_AMPS;
+  if (amps > HW_MAX_ABS_AMPS) amps = HW_MAX_ABS_AMPS;
+  // Convert: dac = amps * (32767 / HW_MAX_ABS_AMPS)
+  int16_t dac_value = (int16_t)(amps * (32767.0 / HW_MAX_ABS_AMPS));
   return dac_value;
 }
 // Helper function to convert signed DAC units to Amps
 // Maps -32767 -> -5.0A, 0 -> 0A, 32767 -> 5.0A
 double dac_to_amps(int16_t dac_value) {
-  double amps = ((double)dac_value) * (5.0 / 32767.0);
+  double amps = ((double)dac_value) * (HW_MAX_ABS_AMPS / 32767.0);
   return amps;
 }
 // Parse numeric value from string, supporting decimal, hex (0x), octal (0), binary (0b)

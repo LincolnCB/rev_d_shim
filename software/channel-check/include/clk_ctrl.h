@@ -1,1 +1,1 @@
-../../static-shims/include/sys/clk_ctrl.h
+../../../libraries/include/sys/clk_ctrl.h

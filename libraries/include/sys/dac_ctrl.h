@@ -105,6 +105,7 @@ void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, dac_wait_mode_t tr
 int dac_encode_noop(dac_wait_mode_t trig, dac_continue_mode_t cont, dac_ldac_mode_t ldac, uint32_t value, uint32_t *out);
 int dac_encode_dac_wr(int16_t ch_vals[8], dac_wait_mode_t trig, dac_continue_mode_t cont, dac_ldac_mode_t ldac, uint32_t value, uint32_t *out);
 int dac_encode_dac_wr_ch(uint8_t ch, int16_t ch_val, uint32_t *out);
+int dac_encode_set_cal(uint8_t ch, int16_t cal_val, uint32_t *out);
 void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[8], dac_wait_mode_t trig, dac_continue_mode_t cont, dac_ldac_mode_t ldac, uint32_t value, bool verbose);
 void dac_cmd_dac_wr_ch(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t ch, int16_t ch_val, bool verbose);
 void dac_cmd_set_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel, int16_t cal_val, bool verbose);

@@ -227,8 +227,10 @@ static int run_dma_path(hw_t *hw, config_t *cfg, waveform_file_info_t *input_inf
     fprintf(stderr, "Error: [DMA] failed to synthesize DAC command streams\n");
     return -1;
   }
-  printf("[DMA] synthesized %zu DAC command words per board for %u board(s)\n",
-         dac_bufs[0].count, board_count);
+  size_t total_dac_words = 0;
+  for (uint32_t b = 0; b < board_count; b++) total_dac_words += dac_bufs[b].count;
+  printf("[DMA] synthesized %zu DAC command words per board for %u board(s) (~%zu MB total in host memory)\n",
+         dac_bufs[0].count, board_count, (total_dac_words * sizeof(uint32_t)) / (1024u * 1024u));
 
   // Capture length: four 32-bit words per 8-channel ADC read, one read per ADC file row,
   // replayed `iters` times. Zero when there is no ADC file (DAC-only run, no S2MM capture).
@@ -279,6 +281,28 @@ static int run_dma_path(hw_t *hw, config_t *cfg, waveform_file_info_t *input_inf
     destroy_dma_ctrl(&dma);
     return -1;
   }
+  printf("[DMA] armed; region usage: data %u/%llu bytes, descriptors %u/%llu bytes\n",
+         dma.wave_data_cursor, (unsigned long long)dma.data_size,
+         dma.wave_desc_cursor, (unsigned long long)dma.desc_size);
+
+  // Start every board's channels together (common Run/Stop once) so the MCDMA interleaves them.
+  if (dma_wave_start(&dma, verbose) != 0) {
+    fprintf(stderr, "Error: [DMA] failed to start the armed channels\n");
+    dma_wave_halt(&dma, verbose);
+    g_run_ctrl = NULL;
+    run_ctrl_destroy(&rc);
+    destroy_dma_ctrl(&dma);
+    return -1;
+  }
+  // Give MM2S a moment to prebuffer, then snapshot each board's DAC command FIFO fill and the
+  // MCDMA channel status, so an uneven multi-board run is visible before the trigger.
+  usleep(5000);
+  printf("[DMA] prebuffer snapshot (pre-trigger):\n");
+  for (uint32_t b = 0; b < board_count; b++) {
+    printf("  board %u: DAC cmd FIFO %u words\n", b,
+           FIFO_STS_WORD_COUNT(sys_sts_get_dac_cmd_fifo_status(&hw->sys_sts, (uint8_t)b, false)));
+  }
+  dma_wave_print_channels(&dma);
 
   // ADC capture -> one combined CSV, streamed. Per board, a small FIFO ring absorbs inter-board
   // skew; when every board has a sample ready, one combined row is emitted. The timepoint walker
@@ -386,6 +410,16 @@ static int run_dma_path(hw_t *hw, config_t *cfg, waveform_file_info_t *input_inf
       }
       if (ev == RUN_CTRL_ERROR) {
         fprintf(stderr, "[DMA] run-controller error.\n");
+        result = -1;
+        break;
+      }
+
+      // Backstop: the doorbell is edge-triggered, so re-read the sticky status on every wake and
+      // stop on a halt/fault even if its doorbell was never delivered to the poll.
+      uint32_t hw_status = sys_sts_get_hw_status(&hw->sys_sts, false);
+      if (run_ctrl_status_is_fault(hw_status)) {
+        fprintf(stderr, "[DMA] hardware stopped during run (status 0x%08X):\n", hw_status);
+        print_hw_status(hw_status, verbose);
         result = -1;
         break;
       }
@@ -589,6 +623,10 @@ int main(int argc, char *argv[]) {
   // --- Initialize hardware pointers and check that enough boards/FIFOs are present
   hw_t hw = hw_init(input_info.num_channels, cfg.clk_MHz, cfg.verbose);
 
+  // Clear any lingering halt from a prior run (e.g. one that exited while halted for diagnostics)
+  // so this run can power on; the off signal returns a halted system to idle.
+  sys_ctrl_turn_off(&hw.sys_ctrl, cfg.verbose);
+
   // --- Validate the ADC file, if provided -------------------------
   adc_cmd_file_info_t adc_info;
   bool has_adc_info = false;
@@ -599,6 +637,14 @@ int main(int argc, char *argv[]) {
     has_adc_info = true;
     adc_info.iters = cfg.iters;
     printf("ADC file OK: %ld trigger point(s) match the input file\n", adc_info.num_trigs);
+    // ADC readback is unreliable above 10 MHz (known hardware limitation), so warn when an ADC
+    // capture is requested at a higher clock -- the DAC playback is fine, but the captured data
+    // may be corrupt.
+    if (cfg.clk_MHz > 10.0) {
+      fprintf(stderr, "Warning: SPI clock is %g MHz (> 10 MHz). ADC readback is unreliable above "
+                      "10 MHz -- captured ADC data may be corrupt. Use -c 10 for valid ADC capture.\n",
+              cfg.clk_MHz);
+    }
   }
 
   // --- Catch SIGINT/SIGTERM so we can power off the hardware before exiting -

@@ -1,1 +1,1 @@
-../../static-shims/include/commands/static_hardware.h
+../../../libraries/include/static_hardware.h

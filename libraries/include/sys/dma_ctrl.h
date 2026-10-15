@@ -19,7 +19,8 @@ struct dma_wave_run {
   uint32_t mm2s_off, mm2s_len;   // DAC payload in the data region (bytes)
   uint32_t cap_off, cap_words;   // ADC capture in the data region; cap_words = ring length
   uint32_t cap_read;             // words already read out (read cursor)
-  uint32_t mm2s_desc_off;        // MM2S descriptor in the descriptor region
+  uint32_t mm2s_desc_off;        // first MM2S descriptor in the descriptor region (CURDESC)
+  uint32_t mm2s_tail_desc_off;   // last MM2S descriptor in the chain (TAILDESC)
   uint32_t ring_desc_off;        // S2MM descriptor ring base in the descriptor region
 };
 
@@ -109,18 +110,26 @@ int dma_wave_arm(struct dma_ctrl_t *dma, int board,
 // A real run drives every active board at once, so the run programs partition the udmabuf
 // regions per board: dma_wave_begin resets both MCDMA directions once (the soft-reset is
 // global) and clears the region allocator; dma_wave_add then carves a region slice for each
-// board, builds its MM2S descriptor and S2MM ring, and arms+runs+triggers both of that
-// board's channels (MM2S prebuffers the DAC FIFO behind the leading trigger-wait; S2MM
-// starts capturing). No trigger is fired and nothing is waited on -- the caller releases the
-// trigger system and drains each board's capture with the per-board accessors.
+// board, builds its MM2S descriptor and S2MM ring, and enables (but does not start) both of
+// that board's channels. dma_wave_start then asserts each direction's common Run/Stop ONCE, so
+// the MCDMA arbiter engages every enabled channel together and interleaves them (the per-board
+// DAC FIFOs prebuffer behind the leading trigger-wait, staying roughly aligned). No trigger is
+// fired and nothing is waited on -- the caller releases the trigger system and drains each
+// board's capture with the per-board accessors.
 //
-// dma_wave_begin returns 0 on success, negative on error. dma_wave_add returns 0 on success,
-// negative on error (with a clear message if the board's slice does not fit). cap_words == 0
-// means DAC-only: the MM2S stream is prebuffered but no S2MM capture ring is built or armed.
+// dma_wave_begin / dma_wave_add / dma_wave_start return 0 on success, negative on error (add
+// gives a clear message if the board's slice does not fit). cap_words == 0 means DAC-only: the
+// MM2S stream is prebuffered but no S2MM capture ring is built or armed.
 int dma_wave_begin(struct dma_ctrl_t *dma, bool verbose);
 int dma_wave_add(struct dma_ctrl_t *dma, int board,
                  const uint32_t *dac_words, uint32_t dac_n_words,
                  uint32_t cap_words, bool verbose);
+// Start every armed board's channels at once (common Run/Stop asserted a single time). Call
+// after all dma_wave_add calls, before releasing the trigger.
+int dma_wave_start(struct dma_ctrl_t *dma, bool verbose);
+// Print per-board MCDMA channel status (CHEN membership + per-channel status register) for every
+// armed board -- pairs with a FIFO-fill print to show where a multi-board run is delivering.
+void dma_wave_print_channels(struct dma_ctrl_t *dma);
 
 // Per-board capture accessors (mirror the single-run ones below, indexed by board).
 uint32_t dma_wave_avail_board(struct dma_ctrl_t *dma, int board);

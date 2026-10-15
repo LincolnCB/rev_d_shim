@@ -1513,7 +1513,12 @@ static int dwb_push(dac_word_buf_t *b, uint32_t word) {
   if (b->count == b->cap) {
     size_t ncap = b->cap ? b->cap * 2 : 1024;
     uint32_t *p = realloc(b->words, ncap * sizeof(uint32_t));
-    if (p == NULL) return -1;
+    if (p == NULL) {
+      fprintf(stderr, "Error: [DAC-DMA] out of memory growing DAC stream buffer at %zu words "
+                      "(~%zu MB); the waveform may be too long for this build.\n",
+              b->count, (b->count * sizeof(uint32_t)) / (1024u * 1024u));
+      return -1;
+    }
     b->words = p;
     b->cap = ncap;
   }
@@ -1592,6 +1597,10 @@ int waveform_build_dac_dma(const waveform_file_info_t *info, dac_word_buf_t *buf
     bufs[b].cap = 0;
   }
 
+  printf("[DAC-DMA] synthesizing DAC stream from '%s' (%d iteration(s), %u board(s))...\n",
+         info->path, iters, board_count);
+  long rows_done = 0;
+
   // Mirror dac_stream_thread's pending/flush row iteration, emitting to buffers rather than
   // the FIFO.
   bool     have_pending = false;
@@ -1651,6 +1660,14 @@ int waveform_build_dac_dma(const waveform_file_info_t *info, dac_word_buf_t *buf
         pending_amps[c] = value;
       }
       have_pending = true;
+
+      // Periodic progress so a long or stuck synthesis is visible (it prints nothing otherwise
+      // until it finishes), and so runaway growth shows up.
+      if ((++rows_done % 100000) == 0) {
+        printf("[DAC-DMA] ... %ld rows processed, %zu words/board (~%zu MB/board)\n",
+               rows_done, bufs[0].count, (bufs[0].count * sizeof(uint32_t)) / (1024u * 1024u));
+        fflush(stdout);
+      }
     }
     fclose(fp);
   }

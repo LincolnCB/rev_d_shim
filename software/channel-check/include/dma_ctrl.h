@@ -1,1 +1,1 @@
-../../static-shims/include/sys/dma_ctrl.h
+../../../libraries/include/sys/dma_ctrl.h

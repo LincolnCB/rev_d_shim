@@ -1,1 +1,1 @@
-../../static-shims/src/sys/trigger_ctrl.c
+../../../libraries/src/sys/trigger_ctrl.c

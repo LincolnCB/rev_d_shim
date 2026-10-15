@@ -3,13 +3,6 @@
 
 #include "waveform_hw.h"
 
-// Linearity status for channel calibration
-typedef enum {
-  LINEARITY_LINEAR = 0,     // Good linearity, calibration successful
-  LINEARITY_ZERO = 1,       // Slope is constant near zero (likely disconnected)
-  LINEARITY_NONLINEAR = 2   // Slope outside acceptable range (likely oscillations)
-} linearity_status_t;
-
 // Initialize and validate hardware control structure for a given channel count. Exits on failure
 hw_t hw_init(uint32_t channel_count, double clk_MHz, bool verbose) {
   hw_t hw;
@@ -325,7 +318,19 @@ bool hw_halted(hw_t *hw) {
   return HW_STS_STATE(hw_status) == S_HALTED;
 }
 
-// Run channel calibration routine
+// Build a channel_cal context from the hw_t handles (PIO transport; no DMA mover attached).
+channel_cal_ctx_t hw_channel_cal_ctx(hw_t *hw) {
+  channel_cal_ctx_t ctx = {
+    .dac = &hw->dac_ctrl,
+    .adc = &hw->adc_ctrl,
+    .sts = &hw->sys_sts,
+    .dma = NULL,
+  };
+  return ctx;
+}
+
+// Run channel calibration over the PIO FIFO bridge. Calibration needs clean ADC reads, so it is
+// skipped above 10 MHz.
 int hw_calibrate(hw_t *hw) {
   if (hw == NULL) {
     return -1;
@@ -335,298 +340,15 @@ int hw_calibrate(hw_t *hw) {
     return -1;
   }
   uint32_t clk_freq = sys_sts_get_clk_freq_hz(&hw->sys_sts, hw->verbose);
-  double clk_MHz = (double)clk_freq / 1e6;
   if (clk_freq > 10e6) {
-    printf("Skipping calibration because SPI clock frequency is too high (%.3f Hz). Calibration requires <= 10 MHz.\n", clk_MHz);
+    printf("Skipping calibration because SPI clock frequency is too high (%.3f Hz). Calibration requires <= 10 MHz.\n", (double)clk_freq / 1e6);
     return 0;
   }
   hw_clear_dac_buffers(hw);
   hw_clear_adc_buffers(hw);
   hw_reset_triggers(hw);
-
-  // Calibration constants
-  const int dac_values[] = {-3000, -1500, 0, 1500, 3000};
-  const int num_dac_values = 5;
-  const int average_count = 15;
-  const double frac_step = 0.9;
-  const int calibration_iterations = 4;
-  const int delay_ms = 0.3; // 0.3 ms delay
-  
-  // Overall calibration status
-  bool any_calibration_failed = false;
-
-  // Iterate through all channels to calibrate
-  for (int ch = 0; ch < (int)hw->channel_count; ch++) {
-    int board, channel;
-    int16_t current_cal_value = 0;
-    board = ch / 8;
-    channel = ch % 8;
-
-    printf("Ch %02d : ", ch);
-    fflush(stdout);
-
-    if (hw->verbose) {
-      printf("\n  Starting calibration for channel %d (board %d, channel %d)\n", ch, board, channel);
-    }
-
-    // Perform calibration iterations
-    bool calibration_failed = false;
-    linearity_status_t cal_sts = LINEARITY_LINEAR;
-    int completed_iterations = 0;
-
-    for (int iter = 0; iter < calibration_iterations && !calibration_failed && (cal_sts == LINEARITY_LINEAR); iter++) {
-      // Arrays to store DAC values and corresponding averaged ADC readings
-      double dac_vals[num_dac_values];
-      double avg_adc_vals[num_dac_values];
-
-      // Test each DAC value
-      for (int i = 0; i < num_dac_values; i++) {
-        int16_t dac_val = dac_values[i];
-        dac_vals[i] = (double)dac_val;
-
-        if (hw->verbose) {
-          printf("    Testing DAC value %d (%d/%d), averaging %d samples...\n", dac_val, i+1, num_dac_values, average_count);
-        }
-
-        // Write DAC value
-        dac_cmd_dac_wr_ch(&hw->dac_ctrl, (uint8_t)board, (uint8_t)channel, dac_val, hw->verbose);
-
-        // Perform multiple reads and average them
-        double sum_adc = 0.0;
-
-        for (int avg = 0; avg < average_count; avg++) {
-          usleep(delay_ms * 1000); // Wait fixed delay
-
-          // Read ADC value
-          adc_cmd_adc_rd_ch(&hw->adc_ctrl, (uint8_t)board, (uint8_t)channel, 0, hw->verbose);
-
-          // Wait for ADC data to be available
-          int adc_tries = 0;
-          uint32_t adc_data_fifo_status;
-          while (adc_tries < 100) {
-            adc_data_fifo_status = sys_sts_get_adc_data_fifo_status(&hw->sys_sts, (uint8_t)board, false);
-            if (FIFO_STS_WORD_COUNT(adc_data_fifo_status) > 0) break;
-            usleep(100); // 0.1ms
-            adc_tries++;
-          }
-
-          if (FIFO_STS_WORD_COUNT(adc_data_fifo_status) == 0) {
-            if (hw->verbose) {
-              printf("      ADC data timeout (no data in FIFO after %d tries)\n", adc_tries);
-            }
-            calibration_failed = true;
-            break;
-          }
-
-          uint32_t adc_word = adc_read_word(&hw->adc_ctrl, (uint8_t)board);
-          uint16_t adc_reading_raw = (uint16_t)(adc_word & 0xFFFF);
-          int16_t adc_reading = adc_reading_raw < 32768 ? adc_reading_raw : adc_reading_raw - 65536; // Convert to signed
-          double adc_value = (double)adc_reading;
-
-          if (hw->verbose && avg < 3) {  // Only show first few readings to avoid spam
-            printf("      Sample %d: ADC raw=0x%08X, signed=%d, double=%.1f\n",
-                   avg+1, adc_word, adc_reading, adc_value);
-          }
-
-          sum_adc += adc_value;
-        }
-
-        if (calibration_failed) break;
-
-        avg_adc_vals[i] = sum_adc / average_count;
-
-        if (hw->verbose) {
-          printf("    DAC=%d -> ADC_avg=%.2f\n", dac_val, avg_adc_vals[i]);
-        }
-      }
-
-      if (calibration_failed) break;
-
-      // Perform linear regression: y = mx + b
-      // Calculate slope (m) and intercept (b)
-      double sum_x = 0, sum_y = 0, sum_xy = 0, sum_x2 = 0;
-      for (int i = 0; i < num_dac_values; i++) {
-        sum_x += dac_vals[i];
-        sum_y += avg_adc_vals[i];
-        sum_xy += dac_vals[i] * avg_adc_vals[i];
-        sum_x2 += dac_vals[i] * dac_vals[i];
-      }
-
-      // Calculate the variance in y samples (averaged) to detect oscillations even with 0 slope
-      double mean_y = sum_y / num_dac_values;
-      double variance_y = 0.0;
-      for (int i = 0; i < num_dac_values; i++) {
-        double diff = avg_adc_vals[i] - mean_y;
-        variance_y += diff * diff;
-      }
-      variance_y /= num_dac_values;
-
-      // Check for division by zero before calculating slope
-      double denominator = num_dac_values * sum_x2 - sum_x * sum_x;
-      double slope, intercept;
-      bool division_by_zero = false;
-
-      if (denominator == 0) {
-        division_by_zero = true;
-        slope = 0; // Set to 0 to avoid using uninitialized value
-        intercept = sum_y / num_dac_values; // Simple average for intercept
-      } else {
-        slope = (num_dac_values * sum_xy - sum_x * sum_y) / denominator;
-        intercept = (sum_y - slope * sum_x) / num_dac_values;
-      }
-
-      // Check for division by zero (infinite slope)
-      if (division_by_zero) {
-        cal_sts = LINEARITY_NONLINEAR;
-      }
-      // Check if the slope is close to zero AND variance is low (disconnected)
-      else if (slope > -0.02 && slope < 0.02 && variance_y < 10000.0) {
-        cal_sts = LINEARITY_ZERO;
-      }
-      // Check if slope is inside acceptable range
-      else if (slope > 0.95 && slope < 1.05) {
-        cal_sts = LINEARITY_LINEAR;
-      }
-      // Otherwise, non-linear (likely oscillations)
-      else {
-        cal_sts = LINEARITY_NONLINEAR;
-      }
-
-      // If verbose, print the updates to the calibration value
-      if (hw->verbose) {
-        printf("  Iteration %d: Current cal=%d, Slope=%.3f, Intercept=%.2f, Variance=%.2f\n",
-               iter + 1, current_cal_value, slope, intercept, variance_y);
-        fflush(stdout);
-      }
-
-      // Update calibration value: subtract frac_step * intercept from current cal value
-      current_cal_value = current_cal_value - (int16_t)(frac_step * (intercept >= 0 ? intercept + 0.5 : intercept - 0.5));
-
-      // Print update info if verbose
-      if (hw->verbose) {
-        printf("    Updated cal value to %d\n", current_cal_value);
-        fflush(stdout);
-      }
-
-      // Clamp calibration value to valid range
-      if (current_cal_value < -4095) {
-        if (hw->verbose) {
-          printf("    Calibration value clamped to -4095\n");
-          fflush(stdout);
-        }
-        current_cal_value = -4095;
-      }
-      if (current_cal_value > 4095) {
-        if (hw->verbose) {
-          printf("    Calibration value clamped to 4095\n");
-          fflush(stdout);
-        }
-        current_cal_value = 4095;
-      }
-
-      // Set new calibration value if linearity is still linear
-      if (cal_sts == LINEARITY_LINEAR) {
-        dac_cmd_set_cal(&hw->dac_ctrl, (uint8_t)board, (uint8_t)channel, current_cal_value, hw->verbose);
-      } else if (hw->verbose) {
-        printf("    Skipping DAC calibration update due to non-linear or zero slope\n");
-        fflush(stdout);
-      }
-
-      // Convert offset and slope to amps (range ±HW_MAX_ABS_AMPS for ±32767)
-      double offset_amps = intercept / 32767.0 * HW_MAX_ABS_AMPS;
-
-      // If NOT verbose, print this iteration's results with special slope formatting
-      if (!hw->verbose) {
-        if (division_by_zero) {
-          printf("%+.3f A ( inf.) | ", offset_amps);
-        } else if (slope < -9.99) {
-          printf("%+.3f A ( neg.) | ", offset_amps);
-        } else if (slope < 0) {
-          printf("%+.3f A (%.2f) | ", offset_amps, slope);
-        } else if (slope > 9.99) {
-          printf("%+.3f A (10.0+) | ", offset_amps);
-        } else {
-          printf("%+.3f A (%.3f) | ", offset_amps, slope);
-        }
-      }
-
-      completed_iterations++;
-
-      fflush(stdout);
-    }
-
-    // Zero the channel to finalize
-    dac_cmd_dac_wr_ch(&hw->dac_ctrl, (uint8_t)board, (uint8_t)channel, 0, hw->verbose);
-    usleep(1000); // 1ms to let DAC settle
-
-    // Print spaces for skipped iterations to maintain column alignment
-    for (int i = completed_iterations; i < calibration_iterations; i++) {
-      if (hw->verbose) printf("  -- Skipped iteration number %d", i + 1);
-      else printf("---------------- | "); // dashes match the "+x.xxx A (x.xxx)" field width
-    }
-
-    // Check hardware status when calibration fails - if system is halted, abort calibration
-    if (calibration_failed) {
-      printf("Reading hardware status register...\n");
-      uint32_t hw_status = sys_sts_get_hw_status(&hw->sys_sts, hw->verbose);
-      if (HW_STS_STATE(hw_status) == S_HALTED) {
-        printf("Hardware status shows system is HALTED. Aborting channel calibration.\n");
-        print_hw_status(hw_status, hw->verbose);
-        return -1;
-      }
-    }
-
-    // Print final status
-    if (hw->verbose) {
-      if (calibration_failed) {
-        printf(" Calibration FAILED (code bug)");
-      } else {
-        switch (cal_sts) {
-          case LINEARITY_LINEAR:
-            printf(" Calibration OK");
-            break;
-          case LINEARITY_ZERO:
-            printf(" Poor linearity (check connections)");
-            break;
-          case LINEARITY_NONLINEAR:
-            printf(" Nonlinear (possible oscillations)");
-            break;
-          default:
-            printf(" Unknown calibration status");
-            break;
-        }
-      }
-    }
-    else {
-      if (calibration_failed) {
-        any_calibration_failed = true;
-        printf("-F- |");
-      } else {
-        switch (cal_sts) {
-          case LINEARITY_LINEAR:
-            printf("--- |");
-            break;
-          case LINEARITY_ZERO:
-            printf("-X- |");
-            break;
-          case LINEARITY_NONLINEAR:
-            printf("~E~ |");
-            break;
-          default:
-            printf("??? |");
-            break;
-        }
-      }
-    }
-
-    printf("\n");
-  }
-
-  if (any_calibration_failed) {
-    fprintf(stderr, "Error: One or more channels failed calibration.\n");
-    return -1;
-  }
-  return 0;
+  channel_cal_ctx_t ctx = hw_channel_cal_ctx(hw);
+  return channel_cal_run_default(&ctx, CAL_XPORT_PIO, 0, (int)hw->channel_count, hw->verbose);
 }
 
 // Set trigger lockout in ms
@@ -759,9 +481,15 @@ int hw_reset_triggers(hw_t *hw) {
   return 0;
 }
 
-// Power off hardware
+// Power off hardware. waveform is one-shot, so on exit a halted system is left halted -- its
+// fault diagnostics stay visible to `status`, and the next run's startup off clears it. A
+// running system is still turned off so the tool never exits while driving.
 void hw_power_off(hw_t *hw) {
   if (hw == NULL) {
+    return;
+  }
+  if (hw_halted(hw)) {
+    printf("Hardware is halted; leaving it halted so the fault stays visible to `status`.\n");
     return;
   }
   if (hw->verbose) {

@@ -1,1 +1,1 @@
-../../static-shims/include/sys/adc_ctrl.h
+../../../libraries/include/sys/adc_ctrl.h

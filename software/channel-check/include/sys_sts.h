@@ -1,1 +1,1 @@
-../../static-shims/include/sys/sys_sts.h
+../../../libraries/include/sys/sys_sts.h

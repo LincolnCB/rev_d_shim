@@ -34,6 +34,10 @@
 #define DESC_SYS        "/sys/class/u-dma-buf/" DESC_UDMABUF
 
 #define DESC_ALIGN      64u             // MCDMA SG descriptor size/alignment
+// DAC payload split into this many words per MM2S packet descriptor, so the MCDMA completes one
+// board's packet then arbitrates to the next board's channel -- the per-board FIFOs fill in
+// lockstep instead of board 0 monopolizing the shared MM2S output.
+#define MM2S_PACKET_WORDS 64u
 
 // Fixed slots in the payload region: one MM2S payload and one S2MM capture buffer. Only
 // one transfer runs at a time in the low-level test path, so fixed offsets suffice.
@@ -204,12 +208,13 @@ static uint8_t *map_udmabuf(const char *dev, const char *sysdir, const char *nam
 
 // ------------------------------------------------------------- descriptors --
 
-// One single-buffer, self-looping descriptor covering [buf_phys, buf_phys+len), marked
-// start- and end-of-packet. MM2S drives tdest from the channel, so no tdest field here.
-static void build_desc(struct mcdma_desc *d, uint64_t self_phys, uint64_t buf_phys, uint32_t len) {
+// One single-buffer, single-packet descriptor covering [buf_phys, buf_phys+len), marked start-
+// and end-of-packet, linking to next_phys (pass the descriptor's own phys to self-loop a lone
+// descriptor). MM2S drives tdest from the channel, so no tdest field here.
+static void build_desc(struct mcdma_desc *d, uint64_t next_phys, uint64_t buf_phys, uint32_t len) {
   memset(d, 0, sizeof(*d));
-  d->nxtdesc         = (uint32_t)self_phys;
-  d->nxtdesc_msb     = (uint32_t)(self_phys >> 32);
+  d->nxtdesc         = (uint32_t)next_phys;
+  d->nxtdesc_msb     = (uint32_t)(next_phys >> 32);
   d->buffer_addr     = (uint32_t)buf_phys;
   d->buffer_addr_msb = (uint32_t)(buf_phys >> 32);
   d->control         = DESC_CTRL_SOF | DESC_CTRL_EOF | (len & DESC_CTRL_LEN_MASK);
@@ -473,7 +478,8 @@ void dma_wave_halt(struct dma_ctrl_t *dma, bool verbose) {
 }
 
 // Carve a region slice for `board`, build its MM2S descriptor and S2MM capture ring, and
-// arm+run+trigger both of its channels. Does not reset the directions (dma_wave_begin did).
+// enable (but do not start) both of its channels. dma_wave_start starts every armed board at
+// once. Does not reset the directions (dma_wave_begin did).
 int dma_wave_add(struct dma_ctrl_t *dma, int board,
                  const uint32_t *dac_words, uint32_t dac_n_words,
                  uint32_t cap_words, bool verbose) {
@@ -498,15 +504,16 @@ int dma_wave_add(struct dma_ctrl_t *dma, int board,
     return -1;
   }
 
-  // Descriptor region slice: one MM2S descriptor, then the S2MM ring.
+  // Descriptor region slice: a chain of MM2S packet descriptors, then the S2MM ring after them.
   uint32_t mm2s_desc_off = align_up_u32(dma->wave_desc_cursor, DESC_ALIGN);
-  uint32_t ring_desc_off = mm2s_desc_off + DESC_ALIGN;
+  uint32_t n_mm2s_desc = (dac_n_words + MM2S_PACKET_WORDS - 1u) / MM2S_PACKET_WORDS;
+  uint32_t ring_desc_off = mm2s_desc_off + n_mm2s_desc * DESC_ALIGN;
   uint64_t desc_end = (uint64_t)ring_desc_off + (uint64_t)cap_words * DESC_ALIGN;
   if (desc_end > dma->desc_size) {
     fprintf(stderr,
-      "DMA wave: board %d capture needs descriptors up to %" PRIu64 " B (%u words x %u), but %s is %" PRIu64 " B.\n"
-      "  Reduce the ADC word count or enlarge the %s region.\n",
-      board, desc_end, cap_words, DESC_ALIGN, DESC_UDMABUF, dma->desc_size, DESC_UDMABUF);
+      "DMA wave: board %d needs descriptors up to %" PRIu64 " B (MM2S %u + capture %u words), but %s is %" PRIu64 " B.\n"
+      "  Reduce the run length or enlarge the %s region.\n",
+      board, desc_end, n_mm2s_desc, cap_words, DESC_UDMABUF, dma->desc_size, DESC_UDMABUF);
     return -1;
   }
 
@@ -515,10 +522,18 @@ int dma_wave_add(struct dma_ctrl_t *dma, int board,
   // DAC payload into DDR.
   memcpy(dma->data + mm2s_off, dac_words, mm2s_len);
 
-  // MM2S descriptor: one packet covering the whole payload (the DAC side ignores tlast).
-  struct mcdma_desc *md = (struct mcdma_desc *)(dma->desc + mm2s_desc_off);
-  uint64_t mm2s_desc_phys = dma->desc_phys + mm2s_desc_off;
-  build_desc(md, mm2s_desc_phys, dma->data_phys + mm2s_off, mm2s_len);
+  // MM2S descriptor chain: split the payload into MM2S_PACKET_WORDS-word packets (each its own
+  // SOF|EOF packet), linked head to tail. The MCDMA completes one board's packet then arbitrates
+  // to the next board's channel, so the per-board DAC FIFOs fill in lockstep. The DAC FIFO is a
+  // plain word stream, so a packet boundary splitting a multi-word command is harmless.
+  uint64_t mm2s_desc_phys = dma->desc_phys + mm2s_desc_off;  // first descriptor (CURDESC)
+  for (uint32_t k = 0, words_left = dac_n_words; k < n_mm2s_desc; k++) {
+    struct mcdma_desc *md = (struct mcdma_desc *)(dma->desc + mm2s_desc_off + (uint64_t)k * DESC_ALIGN);
+    uint32_t pkt_words = (words_left < MM2S_PACKET_WORDS) ? words_left : MM2S_PACKET_WORDS;
+    uint64_t next_phys = dma->desc_phys + mm2s_desc_off + (uint64_t)((k + 1u) % n_mm2s_desc) * DESC_ALIGN;
+    build_desc(md, next_phys, dma->data_phys + mm2s_off + (uint64_t)k * MM2S_PACKET_WORDS * 4u, pkt_words * 4u);
+    words_left -= pkt_words;
+  }
 
   // S2MM ring: one one-word receive descriptor per ADC word, contiguous buffers laid out in
   // order, linked into a ring whose wrap link is never followed (the engine stops at
@@ -533,19 +548,17 @@ int dma_wave_add(struct dma_ctrl_t *dma, int board,
   }
   __sync_synchronize(); // payload + all descriptors resident before the engines read them
 
-  // MM2S: prebuffer the DAC stream into the DAC FIFO (stalls behind the DAC's leading
-  // trigger-wait command; no poll).
+  // MM2S: enable the channel and point it at its descriptor. The transfer does not start until
+  // dma_wave_start asserts the common Run/Stop once, after every board is enabled, so the MCDMA
+  // arbiter engages all channels together and interleaves them (keeping the per-board DAC FIFOs
+  // roughly aligned as they prebuffer behind the leading trigger-wait).
   arm_channel(r, MM2S_CH_BASE(board), MM2S_CHEN, board, mm2s_desc_phys);
-  run_direction(r, MM2S_CTRL);
-  trigger_channel(r, MM2S_CH_BASE(board), mm2s_desc_phys);
 
-  // S2MM capture ring (only when capturing).
+  // S2MM capture ring (only when capturing): enable + point at the ring head; started together
+  // with the rest in dma_wave_start.
   if (cap_words > 0) {
     uint64_t ring_first_phys = dma->desc_phys + ring_desc_off;
-    uint64_t ring_last_phys  = dma->desc_phys + ring_desc_off + (uint64_t)(cap_words - 1u) * DESC_ALIGN;
     arm_channel(r, S2MM_CH_BASE(board), S2MM_CHEN, board, ring_first_phys);
-    run_direction(r, S2MM_CTRL);
-    trigger_channel(r, S2MM_CH_BASE(board), ring_last_phys);
   }
 
   struct dma_wave_run *w = &dma->wave[board];
@@ -557,6 +570,7 @@ int dma_wave_add(struct dma_ctrl_t *dma, int board,
   w->cap_words     = cap_words;
   w->cap_read      = 0;
   w->mm2s_desc_off = mm2s_desc_off;
+  w->mm2s_tail_desc_off = mm2s_desc_off + (n_mm2s_desc - 1u) * DESC_ALIGN;
   w->ring_desc_off = ring_desc_off;
 
   dma->wave_data_cursor = (uint32_t)data_end;
@@ -568,15 +582,73 @@ int dma_wave_add(struct dma_ctrl_t *dma, int board,
   return 0;
 }
 
-// Single-board wrapper: one begin + one add, remembering the board for the no-board
+// Start every armed channel at once: assert each direction's common Run/Stop a single time (so
+// the MCDMA arbiter engages all enabled channels together and interleaves them), then kick each
+// channel's tail descriptor. Call once after all dma_wave_add calls, before releasing the
+// trigger. S2MM is started before MM2S so the capture channels run before any data arrives.
+int dma_wave_start(struct dma_ctrl_t *dma, bool verbose) {
+  if (!dma || !dma->ok) { fprintf(stderr, "DMA not available.\n"); return -1; }
+  volatile uint8_t *r = dma->reg;
+  bool any_mm2s = false, any_s2mm = false;
+  for (int b = 0; b < MAX_BOARDS; b++) {
+    if (!dma->wave[b].armed) continue;
+    any_mm2s = true;
+    if (dma->wave[b].cap_words > 0) any_s2mm = true;
+  }
+  if (!any_mm2s) { fprintf(stderr, "DMA wave: no boards armed to start.\n"); return -1; }
+
+  if (any_s2mm) {
+    run_direction(r, S2MM_CTRL);
+    for (int b = 0; b < MAX_BOARDS; b++) {
+      struct dma_wave_run *w = &dma->wave[b];
+      if (!w->armed || w->cap_words == 0) continue;
+      uint64_t ring_last = dma->desc_phys + w->ring_desc_off + (uint64_t)(w->cap_words - 1u) * DESC_ALIGN;
+      trigger_channel(r, S2MM_CH_BASE(b), ring_last);
+    }
+  }
+  run_direction(r, MM2S_CTRL);
+  for (int b = 0; b < MAX_BOARDS; b++) {
+    struct dma_wave_run *w = &dma->wave[b];
+    if (!w->armed) continue;
+    trigger_channel(r, MM2S_CH_BASE(b), dma->desc_phys + w->mm2s_tail_desc_off);
+  }
+  if (verbose) printf("DMA wave: started all armed channels (common Run/Stop asserted once).\n");
+  return 0;
+}
+
+// Print per-board MCDMA channel status for every armed board: CHEN membership and the
+// per-channel status register, for both MM2S and (when capturing) S2MM. Pairs with the caller's
+// per-board FIFO-fill print to show where a multi-board run is or is not delivering.
+void dma_wave_print_channels(struct dma_ctrl_t *dma) {
+  if (!dma || !dma->ok) return;
+  volatile uint8_t *r = dma->reg;
+  uint32_t mm2s_chen = reg_r(r, MM2S_CHEN);
+  uint32_t s2mm_chen = reg_r(r, S2MM_CHEN);
+  printf("  MCDMA MM2S CHEN=0x%08X, S2MM CHEN=0x%08X\n", mm2s_chen, s2mm_chen);
+  for (int b = 0; b < MAX_BOARDS; b++) {
+    struct dma_wave_run *w = &dma->wave[b];
+    if (!w->armed) continue;
+    uint32_t mm2s_sr = reg_r(r, MM2S_CH_BASE(b) + CH_SR);
+    if (w->cap_words > 0) {
+      uint32_t s2mm_sr = reg_r(r, S2MM_CH_BASE(b) + CH_SR);
+      printf("  board %d: MM2S en=%u SR=0x%08X | S2MM en=%u SR=0x%08X\n",
+             b, (mm2s_chen >> b) & 1u, mm2s_sr, (s2mm_chen >> b) & 1u, s2mm_sr);
+    } else {
+      printf("  board %d: MM2S en=%u SR=0x%08X\n", b, (mm2s_chen >> b) & 1u, mm2s_sr);
+    }
+  }
+}
+
+// Single-board wrapper: one begin + one add + start, remembering the board for the no-board
 // accessors. Behaviour matches the former one-run-at-a-time dma_wave_arm.
 int dma_wave_arm(struct dma_ctrl_t *dma, int board,
                  const uint32_t *dac_words, uint32_t dac_n_words,
                  uint32_t cap_words, bool verbose) {
   if (dma_wave_begin(dma, verbose) < 0) return -1;
   int rc = dma_wave_add(dma, board, dac_words, dac_n_words, cap_words, verbose);
-  if (rc == 0) dma->wave_single_board = board;
-  return rc;
+  if (rc != 0) return rc;
+  dma->wave_single_board = board;
+  return dma_wave_start(dma, verbose);
 }
 
 // Contiguous completed capture words past the read cursor, for one board (the S2MM ring

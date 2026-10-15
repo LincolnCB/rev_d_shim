@@ -306,6 +306,14 @@ int dac_encode_dac_wr_ch(uint8_t ch, int16_t ch_val, uint32_t *out) {
   return 1;
 }
 
+// Build a SET_CAL command into out. Returns the word count (1).
+int dac_encode_set_cal(uint8_t ch, int16_t cal_val, uint32_t *out) {
+  out[0] = (DAC_CMD_SET_CAL << DAC_CMD_CMD_LSB) |
+           ((ch & 0x7) << 16) | // Channel index
+           (cal_val & 0xFFFF);  // Calibration value
+  return 1;
+}
+
 void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[8], dac_wait_mode_t trig, dac_continue_mode_t cont, dac_ldac_mode_t ldac, uint32_t value, bool verbose) {
   if (board > 7) {
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
@@ -367,9 +375,8 @@ void dac_cmd_set_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t ch, int
     return;
   }
 
-  uint32_t cmd_word = (DAC_CMD_SET_CAL << DAC_CMD_CMD_LSB) |
-                      ((ch & 0x7) << 16) | // Channel index
-                      (cal & 0xFFFF);      // Calibration value
+  uint32_t cmd_word;
+  dac_encode_set_cal(ch, cal, &cmd_word);
 
   if (verbose) {
     printf("DAC[%d] SET_CAL command word: 0x%08X (channel %d, cal=%d, bits=0x%04X)\n",

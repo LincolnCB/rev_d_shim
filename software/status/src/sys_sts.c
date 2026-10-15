@@ -1,1 +1,1 @@
-../../shim-test/src/sys/sys_sts.c
+../../../libraries/src/sys/sys_sts.c

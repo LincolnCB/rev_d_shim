@@ -42,7 +42,7 @@ static void handle_sigint(int sig) {
   (void)sig;
   printf("\nCaught SIGINT -- powering off...\n");
   if (g_hw != NULL) {
-    hw_power_off(g_hw);
+    hw_power_off_unless_halted(g_hw);
   }
   exit(1);
 }
@@ -87,9 +87,13 @@ int main(int argc, char **argv) {
   hw_t hw = hw_init(parsed_count, verbose);
   g_hw = &hw;
 
+  // Clear any lingering halt from a prior run so power-on can proceed; a fresh boot is already
+  // idle, so this is harmless there.
+  sys_ctrl_turn_off(&hw.sys_ctrl, verbose);
+
   if (hw_set_clk(&hw) != 0) {
     fprintf(stderr, "Error: clock configuration failed.\n");
-    hw_power_off(&hw);
+    hw_power_off_unless_halted(&hw);
     return 1;
   }
 
@@ -99,19 +103,19 @@ int main(int argc, char **argv) {
 
   if (hw_power_on(&hw) != 0) {
     fprintf(stderr, "Error: failed to power on hardware.\n");
-    hw_power_off(&hw);
+    hw_power_off_unless_halted(&hw);
     return 1;
   }
   if (!hw_running(&hw)) {
     fprintf(stderr, "Error: hardware is not running after power-on.\n");
-    hw_power_off(&hw);
+    hw_power_off_unless_halted(&hw);
     return 1;
   }
 
   printf("Channel check: one calibration pass over %u channel(s).\n\n", parsed_count);
   int rc = hw_calibrate_iters(&hw, 1);
 
-  hw_power_off(&hw);
+  hw_power_off_unless_halted(&hw);
 
   if (rc != 0) {
     fprintf(stderr, "\nChannel check reported a failure (see status above).\n");
