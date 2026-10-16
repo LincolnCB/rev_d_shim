@@ -68,8 +68,9 @@ bool hw_running(hw_t *hw);
 // Check if the hardware is halted.
 bool hw_halted(hw_t *hw);
 
-// Run calibration routine for connected channels (PIO transport).
-int hw_calibrate(hw_t *hw);
+// Run calibration routine for connected channels, over MCDMA when use_dma (boards in DMA mode)
+// or the PIO FIFO bridge otherwise.
+int hw_calibrate(hw_t *hw, bool use_dma);
 
 // Build a channel_cal context from this hw_t (PIO transport; no DMA mover).
 channel_cal_ctx_t hw_channel_cal_ctx(hw_t *hw);

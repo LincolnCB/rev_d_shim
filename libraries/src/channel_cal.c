@@ -16,6 +16,9 @@
 #define CAL_PIO_POLL_TRIES 100
 #define CAL_PIO_POLL_US    100
 
+// S2MM capture buffer for one single-channel read (expects exactly one word back).
+#define CAL_DMA_CAP_WORDS 8u
+
 // Linearity verdict for a channel's fitted ramp.
 typedef enum {
   LINEARITY_LINEAR = 0,     // Good linearity, calibration successful
@@ -23,24 +26,54 @@ typedef enum {
   LINEARITY_NONLINEAR = 2   // Slope outside acceptable range (likely oscillations)
 } linearity_status_t;
 
-// ---- PIO transport primitives. The DMA split is scaffolded behind cal_transport_t in the
-// public API but not implemented yet; its primitives will slot in alongside these. ----
+// ---- Transport primitives. PIO writes/reads the FIFO bridge directly; DMA sends each DAC word
+// through MM2S and captures each ADC word through S2MM, while the ADC command still goes over
+// PIO (that lane is never DMA-gated). ----
 
 // Write a DAC code to (board, channel). Returns 0 on success, negative on error.
-static int xport_dac_write(const channel_cal_ctx_t *ctx, int board, int channel, int16_t val, bool verbose) {
+static int xport_dac_write(const channel_cal_ctx_t *ctx, cal_transport_t xport, int board, int channel, int16_t val, bool verbose) {
+  if (xport == CAL_XPORT_DMA) {
+    uint32_t word;
+    dac_encode_dac_wr_ch((uint8_t)channel, val, &word);
+    return dma_mm2s_send(ctx->dma, board, &word, 1, verbose);
+  }
   dac_cmd_dac_wr_ch(ctx->dac, (uint8_t)board, (uint8_t)channel, val, verbose);
   return 0;
 }
 
 // Set the calibration value for (board, channel). Returns 0 on success, negative on error.
-static int xport_set_cal(const channel_cal_ctx_t *ctx, int board, int channel, int16_t cal, bool verbose) {
+static int xport_set_cal(const channel_cal_ctx_t *ctx, cal_transport_t xport, int board, int channel, int16_t cal, bool verbose) {
+  if (xport == CAL_XPORT_DMA) {
+    uint32_t word;
+    dac_encode_set_cal((uint8_t)channel, cal, &word);
+    return dma_mm2s_send(ctx->dma, board, &word, 1, verbose);
+  }
   dac_cmd_set_cal(ctx->dac, (uint8_t)board, (uint8_t)channel, cal, verbose);
+  return 0;
+}
+
+// One single-channel ADC read over DMA: arm S2MM before issuing the read (the packetizer drops a
+// packet sent toward an idle channel), then wait for the one-word capture.
+static int xport_adc_read_dma(const channel_cal_ctx_t *ctx, int board, int channel, int16_t *out, bool verbose) {
+  uint32_t cap[CAL_DMA_CAP_WORDS];
+  if (dma_s2mm_arm(ctx->dma, board, CAL_DMA_CAP_WORDS, verbose) != 0) return -1;
+  adc_cmd_adc_rd_ch(ctx->adc, (uint8_t)board, (uint8_t)channel, 0, verbose);
+  int rx = dma_s2mm_wait(ctx->dma, board, cap, CAL_DMA_CAP_WORDS, verbose);
+  if (rx <= 0) return -1;
+  // Report the read so adc_rate_ctrl's backlog stays low and the packetizer stays eager.
+  dma_rate_report_read(ctx->dma, board, (uint32_t)rx);
+  if (rx != 1) {
+    fprintf(stderr, "Error: DMA ADC read on board %d returned %d words, expected 1.\n", board, rx);
+    return -1;
+  }
+  *out = (int16_t)(cap[0] & 0xFFFF);
   return 0;
 }
 
 // Issue one single-channel ADC read on (board, channel) and return the signed sample in *out.
 // Returns 0 on success, negative on timeout.
-static int xport_adc_read(const channel_cal_ctx_t *ctx, int board, int channel, int16_t *out, bool verbose) {
+static int xport_adc_read(const channel_cal_ctx_t *ctx, cal_transport_t xport, int board, int channel, int16_t *out, bool verbose) {
+  if (xport == CAL_XPORT_DMA) return xport_adc_read_dma(ctx, board, channel, out, verbose);
   adc_cmd_adc_rd_ch(ctx->adc, (uint8_t)board, (uint8_t)channel, 0, verbose);
   for (int tries = 0; tries < CAL_PIO_POLL_TRIES; tries++) {
     if (FIFO_STS_WORD_COUNT(sys_sts_get_adc_data_fifo_status(ctx->sts, (uint8_t)board, false)) > 0) {
@@ -76,8 +109,8 @@ int channel_cal_run(const channel_cal_ctx_t *ctx, cal_transport_t xport,
     fprintf(stderr, "Error: channel_cal_run called with an incomplete context.\n");
     return -1;
   }
-  if (xport == CAL_XPORT_DMA) {
-    fprintf(stderr, "Error: DMA calibration transport is not implemented yet (use PIO).\n");
+  if (xport == CAL_XPORT_DMA && (ctx->dma == NULL || !ctx->dma->ok)) {
+    fprintf(stderr, "Error: DMA calibration needs a mapped MCDMA handle.\n");
     return -1;
   }
   const int n_points = params.samples_per_ramp;
@@ -137,7 +170,7 @@ int channel_cal_run(const channel_cal_ctx_t *ctx, cal_transport_t xport,
                  dac_val, i + 1, n_points, params.averages_per_sample);
         }
 
-        if (xport_dac_write(ctx, board, channel, dac_val, verbose) != 0) {
+        if (xport_dac_write(ctx, xport, board, channel, dac_val, verbose) != 0) {
           calibration_failed = true;
           break;
         }
@@ -147,7 +180,7 @@ int channel_cal_run(const channel_cal_ctx_t *ctx, cal_transport_t xport,
         double sum_adc = 0.0;
         for (int avg = 0; avg < params.averages_per_sample; avg++) {
           int16_t adc_reading;
-          if (xport_adc_read(ctx, board, channel, &adc_reading, verbose) != 0) {
+          if (xport_adc_read(ctx, xport, board, channel, &adc_reading, verbose) != 0) {
             if (verbose) printf("      ADC read failed (no data)\n");
             calibration_failed = true;
             break;
@@ -229,7 +262,7 @@ int channel_cal_run(const channel_cal_ctx_t *ctx, cal_transport_t xport,
       }
 
       if (cal_sts == LINEARITY_LINEAR) {
-        if (xport_set_cal(ctx, board, channel, current_cal_value, verbose) != 0) {
+        if (xport_set_cal(ctx, xport, board, channel, current_cal_value, verbose) != 0) {
           calibration_failed = true;
           break;
         }
@@ -258,7 +291,7 @@ int channel_cal_run(const channel_cal_ctx_t *ctx, cal_transport_t xport,
     }
 
     // Zero the channel to finalize, then let the DAC settle.
-    xport_dac_write(ctx, board, channel, 0, verbose);
+    xport_dac_write(ctx, xport, board, channel, 0, verbose);
     usleep(1000);
 
     // Pad skipped iterations so the per-channel columns stay aligned.

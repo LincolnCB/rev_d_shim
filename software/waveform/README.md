@@ -10,13 +10,15 @@ waveform <file.csv> [OPTIONS]
 
 | Argument / flag | Type | Default | Meaning |
 |---|---|---|---|
-| `<file.csv>` | path | — (required) | DAC waveform input file |
+| `<file.csv>` | path | (required) | DAC waveform input file |
 | `-a`, `--adc <path>` | path | none | ADC read-timestamp file (enables readback) |
 | `-l`, `--lockout <float>` | ms | `10.0` | Trigger lockout time in milliseconds |
-| `-c`, `--clk_MHz <float>` | MHz | `30.0` | SPI clock frequency |
+| `-c`, `--clk_MHz <float>` | MHz | `10.0` | SPI clock frequency |
 | `-i`, `--iters <int>` | int | `1` | Number of times to replay the file(s) |
-| `-p`, `--pio` | — | off | Use the PIO datapath instead of the default prebuffered MCDMA (see [DMA datapath](#dma-datapath)) |
-| `-h`, `--help` | — | — | Show usage |
+| `-p`, `--pio` | | off | Use the PIO datapath instead of the default prebuffered MCDMA (see [DMA datapath](#dma-datapath)) |
+| `-v`, `--verbose` | | off | Detailed hardware status logging |
+| `--no-cal` | | off | Skip the pre-run channel calibration |
+| `-h`, `--help` | | | Show usage |
 
 > Note: all timestamps **inside the CSV files are in seconds**. The `--lockout` flag is the one exception and is given in milliseconds.
 
@@ -33,16 +35,14 @@ One data row per line: the first column is a timestamp in **seconds**, and each 
 ```
 
 - Fields may be separated by commas, spaces, or tabs.
-- There is **no text header row** — a header must be commented out (`#`) or it
-  will fail to parse as numbers.
-- Channel count is `fields - 1` and must be between `1` and `64`. Channels map
-  onto 8-channel boards; unused channels on an active board are driven to 0.
+- There is **no text header row** -- a header must be commented out (`#`) or it will fail to parse as numbers.
+- Channel count is `fields - 1` and must be between `1` and `64`. Channels map onto 8-channel boards; unused channels on an active board are driven to 0.
 - Currents must be within `[-3.0, 3.0]` A or validation fails.
 - Timestamps must be non-negative.
 
 ### Trigger points
 
-A row is a **trigger point** (the start of a new sweep) if it is the first row, or if its timestamp is *lower* than the previous row's (time has reset). Within a sweep, each row is applied as a delay from the previous row. The smallest gap between consecutive rows in a sweep must be at least the hardware's minimum DAC/ADC delay for the selected clock, or the run is rejected.
+A row is a **trigger point** (the start of a new sweep) if it is the first row, or if its timestamp is *lower* than the previous row's (time has reset). Within a sweep, each row is applied as a delay from the previous row. The smallest gap between consecutive rows in a sweep must be at least the hardware's minimum DAC/ADC delay for the selected clock, or the run is rejected. The tool checks this before powering on, using a software model of the hardware's timing calculation, and again against the hardware's own values after power-on. On a rejection it also reports the slowest SPI clock, rounded up to the next 0.1 MHz, that the files would play at -- with a 1% margin in case the clock generator lands slightly low -- and warns when that clock is above 10 MHz, where calibration is skipped (and, with an ADC file, readback is unreliable).
 
 ## ADC (readback) CSV format
 
@@ -75,8 +75,10 @@ Press `Ctrl+C` to stop early; the hardware is powered off before exit.
 
 By default every active board runs the prebuffered MCDMA datapath; pass `--pio` to stream DAC commands word-by-word from software instead. In DMA mode the tool sets each board's `datapath_mode` to DMA before power-on (the register is locked once the system is running), synthesizes each board's full DAC command stream, and prebuffers it into DDR so the MCDMA fills the DAC FIFO behind the leading trigger-wait -- no software feeds the DAC during the run. The ADC command and trigger lanes stay on the programmed-I/O path; the ADC *data* lane is captured through the MCDMA into DDR and written to one combined CSV across all boards.
 
+Before the run the tool calibrates every channel over the same DMA path (`--no-cal` to skip): each DAC write and `SET_CAL` goes through MM2S, and each single-channel ADC read is issued on the ADC command lane and captured back through S2MM. Calibration needs clean ADC reads, so above 10 MHz it is skipped with a warning (the default clock is 10 MHz).
+
 During the run the tool waits on the `hw_manager` interrupt (via a `poll()` over `/dev/hw_manager_irq` plus a local-abort path), so a hardware fault or `Ctrl+C` stops the run through the same wait, with no busy-polling. A run finishes when every board has captured its expected sample count (or, with no `--adc` file, when the trigger count is reached and the DAC FIFOs have drained). On any exit the MCDMA is halted and the DMA-driven FIFOs are cleared before power-off, so a later run starts from a clean state.
 
-The DMA path requires a DMA-enabled bitstream (the MCDMA block design) with `u-dma-buf` loaded; without them the tool reports the missing device and exits. The non-DMA (default) path is unchanged. `static-shims` has no DMA mode -- its static setpoint rate never approaches the FIFO-drain floor that motivates DMA.
+The DMA path requires a DMA-enabled bitstream (the MCDMA block design) with `u-dma-buf` loaded; without them the tool reports the missing device and exits. The PIO path (`--pio`) is unchanged and needs neither. `static-shims` has no DMA mode -- its static setpoint rate never approaches the FIFO-drain floor that motivates DMA.
 
 The ADC capture packs into DDR through the capture rate-control core. Each board tracks a backlog -- the packetized capture words sitting unread in DDR -- and packs dense (accumulating a full packet per descriptor) once that backlog reaches one packet, and drains eagerly (low latency, thin packets) below it. Dense packing is what lets a long capture fill the data region without exhausting descriptors when software falls behind; eager packing keeps latency low when it keeps pace. The packet size is fixed at 256 words, so a board switches to dense as soon as a full packet is backlogged: a capture that outruns software packs efficiently, while small or fast-drained captures stay eager, and the final sub-packet tail always flushes. The run prints each board's peak backlog at the end, which is useful for seeing how far behind software fell on the bench.

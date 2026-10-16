@@ -54,7 +54,6 @@ typedef struct {
   double trigger_lockout_ms;
   file_loader_t loader;
   bool array_loaded; // true if the active/most-recent load came from 'A' rather than 'L'
-  bool use_dma;      // datapath: false = PIO (default), true = MCDMA; set from --dma at startup
 } shim_runtime_state_t;
 
 shim_runtime_state_t commands_init_state(hw_t *hw, bool verbose);

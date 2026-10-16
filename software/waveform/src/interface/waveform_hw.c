@@ -329,9 +329,9 @@ channel_cal_ctx_t hw_channel_cal_ctx(hw_t *hw) {
   return ctx;
 }
 
-// Run channel calibration over the PIO FIFO bridge. Calibration needs clean ADC reads, so it is
-// skipped above 10 MHz.
-int hw_calibrate(hw_t *hw) {
+// Run channel calibration over the PIO FIFO bridge, or over the MCDMA when the boards are in DMA
+// mode. Calibration needs clean ADC reads, so it is skipped above 10 MHz.
+int hw_calibrate(hw_t *hw, bool use_dma) {
   if (hw == NULL) {
     return -1;
   }
@@ -340,15 +340,36 @@ int hw_calibrate(hw_t *hw) {
     return -1;
   }
   uint32_t clk_freq = sys_sts_get_clk_freq_hz(&hw->sys_sts, hw->verbose);
-  if (clk_freq > 10e6) {
-    printf("Skipping calibration because SPI clock frequency is too high (%.3f Hz). Calibration requires <= 10 MHz.\n", (double)clk_freq / 1e6);
+  // 1% margin so a requested 10 MHz that measures slightly high still calibrates
+  if (clk_freq > 10.1e6) {
+    fprintf(stderr, "Warning: skipping channel calibration -- SPI clock is %.3f MHz, and calibration needs the clean ADC reads only available at <= 10 MHz.\n", (double)clk_freq / 1e6);
     return 0;
   }
-  hw_clear_dac_buffers(hw);
+  channel_cal_ctx_t ctx = hw_channel_cal_ctx(hw);
+  if (!use_dma) {
+    hw_clear_dac_buffers(hw);
+    hw_clear_adc_buffers(hw);
+    hw_reset_triggers(hw);
+    return channel_cal_run_default(&ctx, CAL_XPORT_PIO, 0, (int)hw->channel_count, hw->verbose);
+  }
+
+  struct dma_ctrl_t dma = create_dma_ctrl(hw->verbose);
+  if (!dma.ok) {
+    fprintf(stderr, "Error: MCDMA/u-dma-buf unavailable for DMA calibration.\n");
+    return -1;
+  }
+  // hw_clear_dac_buffers would send a PIO cancel into the DMA-owned DAC FIFO (a mode_viol), so
+  // reset the DMA-driven FIFOs by buf_reset instead; the ADC command lane stays PIO.
+  hw_reset_dma_buffers(hw);
   hw_clear_adc_buffers(hw);
   hw_reset_triggers(hw);
-  channel_cal_ctx_t ctx = hw_channel_cal_ctx(hw);
-  return channel_cal_run_default(&ctx, CAL_XPORT_PIO, 0, (int)hw->channel_count, hw->verbose);
+  ctx.dma = &dma;
+  int rc = channel_cal_run_default(&ctx, CAL_XPORT_DMA, 0, (int)hw->channel_count, hw->verbose);
+  // Leave the MCDMA idle and the FIFOs clean for the run that follows.
+  dma_wave_halt(&dma, hw->verbose);
+  hw_reset_dma_buffers(hw);
+  destroy_dma_ctrl(&dma);
+  return rc;
 }
 
 // Set trigger lockout in ms

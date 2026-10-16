@@ -2,14 +2,18 @@
 //
 //  Usage:
 //    waveform <file.csv> [--adc <path> | -a <path>] [--lockout <float> | -l <float>]
-//    [--clk_MHz <float> | -c <float>] [--iters <int> | -i <int>] [--help | -h]
+//    [--clk_MHz <float> | -c <float>] [--iters <int> | -i <int>] [--pio | -p]
+//    [--verbose | -v] [--no-cal] [--help | -h]
 //
 //  <file.csv> is a required positional argument.
 //  All flags are optional and have defaults:
 //    --adc, -a      (string)  default: none (unset)
 //    --lockout, -l  (double)  default: 10.0
-//    --clk_MHz, -c  (double)  default: 30.0
+//    --clk_MHz, -c  (double)  default: 10.0
 //    --iters, -i    (int)     default: 1
+//    --pio, -p                default: off (prebuffered MCDMA datapath)
+//    --verbose, -v            default: off
+//    --no-cal                 default: off (calibrate before the run)
 //    --help, -h     
 
 #include <stdio.h>
@@ -27,16 +31,17 @@
 #include "waveform_hw.h"
 #include "dma_ctrl.h"
 #include "run_ctrl.h"
+#include "timing.h"
 
 typedef struct {
   const char *input_file;  // required positional argument
   const char *adc_file;    // --adc, default: NULL (none)
   double lockout;          // --lockout, default: 10.0
-  double clk_MHz;          // --clk_MHz, default: 30.0
+  double clk_MHz;          // --clk_MHz, default: 10.0
   int iters;               // --iters, default: 1
   bool use_dma;            // default: true (prebuffered MCDMA datapath); --pio selects PIO instead
   bool verbose;            // --verbose, default: false (detailed hardware status logging)
-  bool no_cal;             // --no-cal, default: false (channel cal runs before a PIO run)
+  bool no_cal;             // --no-cal, default: false (channel cal runs before the run)
 } config_t;
 
 // Set from the signal handler (async-signal-safe) and polled by the main
@@ -59,11 +64,11 @@ static void print_usage(const char *prog) {
     "Options:\n"
     "  -a, --adc <path>          ADC file path (default: none)\n"
     "  -l, --lockout <float>     Lockout value in ms (default: 10.0)\n"
-    "  -c, --clk_MHz <float>     Clock value (MHz, default: 30.0)\n"
+    "  -c, --clk_MHz <float>     Clock value (MHz, default: 10.0)\n"
     "  -i, --iters <int>         Number of iterations (default: 1)\n"
     "  -p, --pio                 Use the PIO datapath instead of the default prebuffered MCDMA\n"
     "  -v, --verbose             Enable detailed hardware status logging\n"
-    "      --no-cal              Skip the pre-run channel calibration (PIO runs calibrate by default)\n"
+    "      --no-cal              Skip the pre-run channel calibration\n"
     "  -h, --help                Show this help message\n",
     prog);
 }
@@ -148,6 +153,69 @@ static bool confirm_continue(const char *prompt) {
   int c = first;
   while (c != '\n' && c != EOF) c = getchar();   // drain the rest of the line
   return (first == 'y' || first == 'Y');
+}
+
+// --- Minimum SPI clock suggestion --------------------------------------
+
+typedef struct {
+  const char *dac_path;
+  const char *adc_path;  // NULL when there is no ADC file
+  bool read_ok;
+} clk_fit_arg_t;
+
+// True if both files' shortest delays meet the software-predicted hardware minimums at clk_hz.
+static bool timing_fits_at(uint32_t clk_hz, void *p) {
+  clk_fit_arg_t *a = p;
+  uint32_t cycles;
+  if (!timestamp_file_min_delay_cycles(a->dac_path, clk_hz, &cycles)) { a->read_ok = false; return false; }
+  if (cycles < timing_dac_min_delay_cycles(clk_hz)) return false;
+  if (a->adc_path == NULL) return true;
+  if (!timestamp_file_min_delay_cycles(a->adc_path, clk_hz, &cycles)) { a->read_ok = false; return false; }
+  return cycles >= timing_adc_min_delay_cycles(clk_hz);
+}
+
+// After a timing rejection, report the slowest SPI clock (next 0.1 MHz up) the files can play at.
+static void suggest_min_clock(const char *dac_path, const char *adc_path) {
+  clk_fit_arg_t a = { dac_path, adc_path, true };
+  uint32_t hz = timing_find_min_clk_hz(timing_fits_at, &a);
+  if (!a.read_ok) return;
+  if (hz == 0) {
+    fprintf(stderr, "No SPI clock up to %.1f MHz is fast enough for this timing -- widen the shortest sample spacing.\n",
+            TIMING_CLK_MAX_HZ / 1e6);
+    return;
+  }
+  fprintf(stderr, "Minimum SPI clock for this timing: %.1f MHz (rerun with -c %.1f).\n", hz / 1e6, hz / 1e6);
+  if (hz > 10000000u) {
+    fprintf(stderr, "Warning: that is above 10 MHz, so channel calibration will be skipped.\n");
+    if (adc_path != NULL) {
+      fprintf(stderr, "Warning: ADC readback is unreliable above 10 MHz -- captured ADC data may be corrupt.\n");
+    }
+  }
+}
+
+// Check both files' shortest delays against the software model of the hardware minimums at
+// clk_hz, before power-on. Reports each failure, then suggests a clock. Returns true if they fit.
+static bool precheck_timing(const config_t *cfg, uint32_t clk_hz) {
+  uint32_t cycles, need;
+  bool ok = true;
+  if (!timestamp_file_min_delay_cycles(cfg->input_file, clk_hz, &cycles)) return false;
+  need = timing_dac_min_delay_cycles(clk_hz);
+  if (cycles < need) {
+    fprintf(stderr, "Error: DAC timing invalid -- smallest delay %u SPI cycles is below the minimum %u cycles at %u Hz.\n",
+            cycles, need, clk_hz);
+    ok = false;
+  }
+  if (cfg->adc_file != NULL) {
+    if (!timestamp_file_min_delay_cycles(cfg->adc_file, clk_hz, &cycles)) return false;
+    need = timing_adc_min_delay_cycles(clk_hz);
+    if (cycles < need) {
+      fprintf(stderr, "Error: ADC timing invalid -- smallest delay %u SPI cycles is below the minimum %u cycles at %u Hz.\n",
+              cycles, need, clk_hz);
+      ok = false;
+    }
+  }
+  if (!ok) suggest_min_clock(cfg->input_file, cfg->adc_file);
+  return ok;
 }
 
 // Start both ADC streams -- the command stream and the data (output) stream --
@@ -611,7 +679,7 @@ int main(int argc, char *argv[]) {
     .input_file = NULL,
     .adc_file   = NULL,
     .lockout    = 10.0,
-    .clk_MHz    = 30.0,
+    .clk_MHz    = 10.0,
     .iters      = 1,
     .use_dma    = true,
     .verbose    = false,
@@ -735,6 +803,13 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  // --- Check timing before power-on --------------------------------
+  // Uses the software model at the measured clock, so a too-tight file fails before the boot and
+  // calibration; the hardware's own minimums are still checked after power-on.
+  if (!precheck_timing(&cfg, hw.spi_clk_hz)) {
+    return EXIT_FAILURE;
+  }
+
   // --- Catch SIGINT/SIGTERM so we can power off the hardware before exiting -
   struct sigaction sa;
   memset(&sa, 0, sizeof(sa));
@@ -768,22 +843,17 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  // --- Channel calibration (PIO only) ------------------------------
-  // Cal drives the DACs and reads the ADCs over the PIO FIFO bridge, which is mode-gated in DMA,
-  // so it runs only on a PIO run. It is lost on power-off, so it happens here -- the same power
-  // session as the run, before the waveform is buffered. DMA-mode cal is future work (DMA_PLAN).
+  // --- Channel calibration -----------------------------------------
+  // Cal is lost on power-off, so it runs here -- the same power session as the run, before the
+  // waveform is buffered. It uses the transport matching datapath_mode (MCDMA in DMA mode).
   if (!cfg.no_cal) {
-    if (cfg.use_dma) {
-      printf("[HW] skipping channel calibration (not supported in DMA mode yet; use --pio to calibrate)\n");
-    } else {
-      printf("[HW] calibrating channels...\n");
-      if (hw_calibrate(&hw) != 0) {
-        fprintf(stderr, "Error: channel calibration failed\n");
-        hw_power_off(&hw);
-        return EXIT_FAILURE;
-      }
-      printf("\n");
+    printf("[HW] calibrating channels%s...\n", cfg.use_dma ? " (DMA)" : "");
+    if (hw_calibrate(&hw, cfg.use_dma) != 0) {
+      fprintf(stderr, "Error: channel calibration failed\n");
+      hw_power_off(&hw);
+      return EXIT_FAILURE;
     }
+    printf("\n");
   }
 
   if (hw_set_trigger_lockout(&hw, cfg.lockout) != 0) {
@@ -793,7 +863,7 @@ int main(int argc, char *argv[]) {
   }
 
   // --- Validate timing in SPI clock cycles against the hardware minimums ----
-  // Each timestamp is converted to cycles (round-to-nearest, actual clock) exactly as the
+  // The authoritative check behind precheck_timing: each timestamp is converted to cycles (round-to-nearest, actual clock) exactly as the
   // command synthesis does, so the smallest delay checked here is the one the hardware will
   // see -- and the hardware minimum is frequency-dependent, read fresh after power-on.
   uint32_t dac_min_delay_cycles;
@@ -802,6 +872,7 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
   if (!hw_dac_timing_valid(&hw, dac_min_delay_cycles)) {
+    suggest_min_clock(cfg.input_file, cfg.adc_file);
     hw_power_off(&hw);
     return EXIT_FAILURE;
   }
@@ -812,6 +883,7 @@ int main(int argc, char *argv[]) {
       return EXIT_FAILURE;
     }
     if (!hw_adc_timing_valid(&hw, adc_min_delay_cycles)) {
+      suggest_min_clock(cfg.input_file, cfg.adc_file);
       hw_power_off(&hw);
       return EXIT_FAILURE;
     }

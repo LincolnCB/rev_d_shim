@@ -5,14 +5,15 @@ Interactive command-line tool for driving the Rev D shim amplifier with **static
 ## Usage
 
 ```bash
-static-shims [--verbose] [--dma] <channel_count>
+static-shims [--verbose] <channel_count>
 ```
 
-- `channel_count` — number of active shim channels (1–64).
-- `--verbose` — enable detailed logging.
-- `--dma` -- route active boards through the MCDMA datapath instead of the default PIO (set at power-on).
+- `channel_count` -- number of active shim channels (1-64).
+- `--verbose` -- enable detailed logging.
 
 On start it initializes hardware, configures the clock, and drops into a `static-shims>` prompt. `Ctrl+C` (or `Q`) powers the system off safely before exiting.
+
+The tool always runs the programmed-I/O datapath: static setpoints never approach the rate that motivates the DMA path `waveform` uses. Power-on clears `datapath_mode`, so a board left in DMA mode by an earlier `waveform` run doesn't fault the first FIFO access.
 
 ## Commands
 
@@ -48,7 +49,7 @@ On start it initializes hardware, configures the clock, and drops into a `static
 
 ## Layout
 
-- `static-shims.c` — entry point / REPL loop and boot sequence.
-- `src/`, `include/` — `commands/` (command parsing + execution), `input/` (line parsing), `file_handling/` (shim block files), and `static_hardware/` (`hw_*` hardware control API, wrapping the FPGA `sys`/`clk`/`dac`/`adc`/`trigger` controllers).
+- `static-shims.c` -- entry point / REPL loop and boot sequence.
+- `src/`, `include/` -- `commands/` (command parsing + execution), `input/` (line parsing), `file_handling/` (shim block files), and `static_hardware/` (`hw_*` hardware control API, wrapping the FPGA `sys`/`clk`/`dac`/`adc`/`trigger` controllers).
 
 Max 64 channels; currents limited to ±5.0 A.

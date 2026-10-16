@@ -418,7 +418,8 @@ capture channels, release the trigger, wait on the run-controller for run-end-or
 a normal end `sync_for_cpu` and read back the `adc_data` -- byte-exact against expectation. The
 PIO path stays the fallback for boards left in PIO mode.
 
-`waveform` takes a `--dma` / `-d` flag. With it set, every active board runs the prebuffered
+`waveform` runs the prebuffered MCDMA path by default (`--pio` selects PIO). In a DMA run every
+active board runs the prebuffered
 MCDMA path: `waveform` sets `datapath_mode` to DMA for boards `0..N-1` before power-on (where it
 is still unlocked), synthesizes each board's DAC command stream with `waveform_build_dac_dma`
 (byte-identical to the PIO `dac_stream_thread` feed, differing only in the per-board channel data
@@ -427,8 +428,8 @@ mover now holds a per-board run and a region bump-allocator rather than a single
 command lane stays PIO -- its existing stream thread is reused unchanged -- but the ADC data lane
 is captured through S2MM into DDR instead of the PIO drain, one capture ring per board. The run
 loop is the run-controller: it releases the triggers, then on each wake drains every board's S2MM
-capture into `<stem>.waveform_adc_out_A.board<b>.csv` and stops on fault/abort or when every board has
-captured its full `4 * rows * iters` words. A DAC-only run (`--dma` without `--adc`) prebuffers
+capture into one combined `<stem>.waveform_adc_out_A.DMA.csv` and stops on fault/abort or when every board has
+captured its full `4 * rows * iters` words. A DAC-only DMA run (no `--adc`) prebuffers
 the DAC stream with no capture ring and finishes when the trigger count is reached and the DAC
 FIFOs have drained.
 
@@ -438,12 +439,12 @@ model buys it nothing. The DMA datapath applies to the high-rate `waveform` runs
 
 Checks:
 - `[ ]` A real waveform plays end to end through the DMA path on at least one board; the `adc_data` readback matches expectation.
-- `[ ]` The `shim-test` -> `waveform` round-trip: run `dma_waveform_test` to generate `<out>_dac.csv`, exit `shim-test`, then replay it with `waveform <out>_dac.csv --dma -c 10`. The generated CSV passes timing validation (the nanosecond-precision timestamps plus the cycle-native, round-to-nearest check recover the matched cadence rather than rejecting it one cycle short) and plays the same waveform through DMA.
+- `[ ]` The `shim-test` -> `waveform` round-trip: run `dma_waveform_test` to generate `<out>_dac.csv`, exit `shim-test`, then replay it with `waveform <out>_dac.csv -c 10`. The generated CSV passes timing validation (the nanosecond-precision timestamps plus the cycle-native, round-to-nearest check recover the matched cadence rather than rejecting it one cycle short) and plays the same waveform through DMA.
 - `[ ]` All active boards run the DMA path together in one run (the mover's per-board region slices), each board's capture correct.
 - `[ ]` The ADC packetizer holds under a real multi-word run: the capture stream reassembles by position with no lost or misframed words (validates the adaptive word-granular framing beyond the single-word bring-up).
-- `[ ]` A DAC-only `--dma` run (no `--adc`) drives current and finishes cleanly on the trigger count with no capture ring.
+- `[ ]` A DAC-only DMA run (no `--adc`) drives current and finishes cleanly on the trigger count with no capture ring.
 - `[ ]` A fault during the run (e.g. an injected over/underflow) is caught by the run-controller, which runs the coordinated shutdown; Ctrl-C aborts the same way.
-- `[ ]` The PIO fallback still produces the same result for a run without `--dma`.
+- `[ ]` The PIO fallback still produces the same result for a `--pio` run.
 - `[PASS]` 2026-10-01 (host) -- `waveform.c`, `waveform_build_dac_dma`, and the extended mover compile clean and link into the `waveform` program; `dma_wave_begin` / `dma_wave_add` / per-board accessors and the DAC-only (`cap_words == 0`) path syntax-check across `shim-test` / `waveform` / `static-shims`.
 - `[PASS]` 2026-10-06 (host) -- timing round-trip fix: `shim-test` writes the DAC CSV at nanosecond precision, and `waveform` validates timing in SPI cycles using the same round-to-nearest timestamp->cycle conversion as the command synthesis (against the frequency-dependent hardware minimum). A simulated round-trip recovers the exact cadence (e.g. 216 cycles at 10 MHz) across clocks instead of truncating to 215; all touched files compile `-Wall -Wextra` clean.
 
@@ -452,7 +453,7 @@ Checks:
 ## Stage 4 -- Fault and reset coordination
 
 The DMA run teardown is a coordinated sequence rather than a bare power-off. On every exit from
-a `waveform --dma` run -- normal completion, hardware fault, or local abort -- the MCDMA is
+a `waveform` DMA run -- normal completion, hardware fault, or local abort -- the MCDMA is
 halted before the FIFOs are touched, then the DMA-driven FIFOs are cleared, in that order.
 `dma_wave_halt` soft-resets both MCDMA directions (the global CR bit-2 reset stops every channel
 and drains the S2MM downstream path), and `hw_reset_dma_buffers` then pulses `buf_reset` on the
@@ -468,8 +469,8 @@ trigger is normal, and faults are still detected in the DAC/ADC cores and report
 is still `hard_reset` (see Stage 3.0.d).
 
 Checks:
-- `[ ]` A clean halt: on a fault (or Ctrl-C) during a `waveform --dma` run, the MCDMA halts, then `buf_reset` clears the DMA FIFOs, and the tool powers off with the engine no longer running (MM2S/S2MM `SR` show halted).
-- `[ ]` A recoverable restart after an injected fault: a second `waveform --dma` run starts clean and produces correct output, with no residue from the aborted run and no re-fault from a still-latched bridge fault (the Stage 3.0.d off-doesn't-clear symptom is gone on the DMA run path).
+- `[ ]` A clean halt: on a fault (or Ctrl-C) during a `waveform` DMA run, the MCDMA halts, then `buf_reset` clears the DMA FIFOs, and the tool powers off with the engine no longer running (MM2S/S2MM `SR` show halted).
+- `[ ]` A recoverable restart after an injected fault: a second `waveform` DMA run starts clean and produces correct output, with no residue from the aborted run and no re-fault from a still-latched bridge fault (the Stage 3.0.d off-doesn't-clear symptom is gone on the DMA run path).
 - `[ ]` No false faults: a run whose triggers are withheld waits indefinitely without the run-controller declaring a fault or timing out.
 - `[PASS]` 2026-10-01 (host) -- `dma_wave_halt`, `hw_reset_dma_buffers`, and the coordinated teardown in `run_dma_path` compile clean and link into the `waveform` program.
 

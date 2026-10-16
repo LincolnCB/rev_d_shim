@@ -25,7 +25,6 @@ static void print_usage(const char *prog) {
   printf("\n");
   printf("Options:\n");
   printf("  --verbose        Enable detailed logging.\n");
-  printf("  --dma            Use the MCDMA datapath on active boards (default: PIO).\n");
   printf("  -h, --help       Show this help and exit.\n");
   printf("\n");
   printf("On start it initializes hardware, configures the clock, and drops into\n");
@@ -49,7 +48,6 @@ static void handle_sigint(int sig) {
 // Entry point for interactive static-shims command interface
 int main(int argc, char **argv) {
   bool verbose = false;
-  bool use_dma = false;
   const char *channel_count_arg = NULL;
 
   // Capture verbose flag and channel count argument
@@ -59,8 +57,6 @@ int main(int argc, char **argv) {
       return 0;
     } else if (strcmp(argv[i], "--verbose") == 0) {
       verbose = true;
-    } else if (strcmp(argv[i], "--dma") == 0) {
-      use_dma = true;
     } else if (channel_count_arg == NULL) {
       channel_count_arg = argv[i];
     } else {
@@ -103,7 +99,6 @@ int main(int argc, char **argv) {
   }
 
   shim_runtime_state_t state = commands_init_state(&hw, verbose);
-  state.use_dma = use_dma;
 
   printf("Static shims command interface\n");
   printf("Configured channels: %u\n", parsed_count);
