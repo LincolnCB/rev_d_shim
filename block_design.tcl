@@ -207,12 +207,12 @@ cell xilinx.com:ip:proc_sys_reset:5.0 ps_rst {} {
 }
 
 ### Unified register SmartConnect on GP0. Carries the four control windows (sys_ctrl, status,
-### spi_clk, mcdma) on M00-M03 plus every per-board FIFO bridge and the trigger bridge on M04+,
-### so the whole register map rides one GP port (GP1 is unused). GP0 reaches 0x4000_0000 --
-### 0x7FFF_FFFF, so the FIFO windows live there rather than at 0x8000_0000.
+### spi_clk, mcdma) on M00-M03 plus every per-board FIFO bridge, the trigger bridge, and the ADC
+### rate-control registers on M04+, so the whole register map rides one GP port (GP1 is unused).
+### GP0 reaches 0x4000_0000 -- 0x7FFF_FFFF, so the FIFO windows live there rather than at 0x8000_0000.
 cell xilinx.com:ip:smartconnect:1.0 sys_cfg_axi_intercon {
   NUM_SI 1
-  NUM_MI [expr {$board_count + 5}]
+  NUM_MI [expr {$board_count + 6}]
 } {
   aclk ps/FCLK_CLK0
   S00_AXI ps/M_AXI_GP0
@@ -507,11 +507,13 @@ module axi_spi_interface axi_spi_interface {
   datapath_mode axi_sys_ctrl/datapath_mode
 }
 # Fan the unified register SmartConnect to the module's per-board + trigger AXI slaves
-# (control windows take M00-M03; boards take M04+, the trigger bridge the last MI).
+# (control windows take M00-M03; boards take M04+, the trigger bridge then the rate-control block
+# take the last two MIs).
 for {set i 0} {$i < $board_count} {incr i} {
   wire axi_spi_interface/board_fifo_${i}_axi sys_cfg_axi_intercon/[format "M%02d_AXI" [expr {4 + $i}]]
 }
 wire axi_spi_interface/trig_axi sys_cfg_axi_intercon/[format "M%02d_AXI" [expr {4 + $board_count}]]
+wire axi_spi_interface/rate_ctrl_axi sys_cfg_axi_intercon/[format "M%02d_AXI" [expr {5 + $board_count}]]
 ## Wire channel pins for the module
 # DAC and ADC FIFOs
 for {set i 0} {$i < $board_count} {incr i} {
@@ -545,6 +547,9 @@ for {set i 0} {$i < $board_count} {incr i} {
 }
 # Trigger command and data FIFOs
 addr 0x42000000 128 axi_spi_interface/trig_fifo_axi_bridge/S_AXI ps/M_AXI_GP0
+# ADC capture rate-control registers (threshold + per-board backlog), in the free control slot
+# between spi_clk (0x40200000) and mcdma (0x40400000)
+addr 0x40300000 4K axi_spi_interface/adc_rate_ctrl/S_AXI ps/M_AXI_GP0
 
 ## AXI-domain over/underflow detection
 wire axi_spi_interface/dac_cmd_buf_overflow hw_manager/dac_cmd_buf_overflow

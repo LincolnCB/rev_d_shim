@@ -16,7 +16,9 @@ The framing rests on the FIFO's read-side fill count, `fifo_count_rd_clk`, which
 
 The packetizer reads the FIFO with first-word-fall-through timing and forwards a word on every accepted beat. It counts the words committed to the current packet and asserts `tlast` when either this is the last resident word (`fifo_count_rd_clk <= 1`, the board ran dry) or the packet has reached `MAX_PACKET_WORDS`. Because the count can lag but never over-reports, the "last resident" test at worst closes a packet one word early; a new packet then carries whatever arrives next.
 
-`MAX_PACKET_WORDS` has one hard ceiling: it must stay at or under the mux's `ARB_ON_MAX_XFERS` backstop (1024 beats in the reference design), or the mux re-arbitrates mid-packet and breaks packet-atomicity. Within that ceiling a generous cap gives large, descriptor-cheap packets under load at no real fairness cost.
+Packing density is set by `accumulate`, driven by `adc_rate_ctrl` from the board's capture backlog. With `accumulate` low the packetizer drains eagerly -- it forwards whatever is resident and closes on the FIFO running dry -- which is the behavior from before rate control existed and the default while the backlog is below the threshold. With `accumulate` high it packs dense: it holds `tvalid` low until a full packet's worth has accumulated in the FIFO (`fifo_count_rd_clk >= MAX_PACKET_WORDS`), then drains that dense packet, which is what lets the capture fill the whole data region without exhausting descriptors when software is behind. Only the *start* of a packet is gated -- once a packet is mid-flight (`words_in_packet != 0`) it drains to its close in either mode -- so a mode flip never strands an open packet, and holding not-yet-packetized data in the FIFO never blocks software from reading already-completed descriptors. `word_emitted` pulses once per emitted word; `adc_rate_ctrl` sums it as the write side of the backlog.
+
+`MAX_PACKET_WORDS` has one hard ceiling: it must stay at or under the mux's `ARB_ON_MAX_XFERS` backstop (1024 beats in the reference design), or the mux re-arbitrates mid-packet and breaks packet-atomicity. It must also stay below the FIFO depth so a dense packet can actually accumulate. Within those bounds a generous cap gives large, descriptor-cheap packets under load at no real fairness cost.
 
 ## Parameters
 
@@ -32,6 +34,11 @@ The packetizer reads the FIFO with first-word-fall-through timing and forwards a
 
 - `aclk` (input): clock (the FIFO read-side / 100 MHz AXI domain).
 - `aresetn` (input): active-low reset.
+
+### Packing control
+
+- `accumulate` (input): packing density select from `adc_rate_ctrl` -- 1 packs dense (accumulate toward the cap), 0 drains eagerly.
+- `word_emitted` (output): pulses on each emitted word, summed by `adc_rate_ctrl` as the write side of the board's backlog.
 
 ### FIFO Read Side
 

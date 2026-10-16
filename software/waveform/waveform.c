@@ -134,6 +134,22 @@ static void print_stream_finished(const char *name, bool stopped_early) {
   fflush(stdout);
 }
 
+// Prompt on stderr for a yes/no confirmation, returning true only on an explicit yes. A
+// non-interactive stdin (not a TTY, or EOF) is treated as "no", so an unattended run never
+// proceeds past a capacity warning on its own.
+static bool confirm_continue(const char *prompt) {
+  if (!isatty(STDIN_FILENO)) {
+    fprintf(stderr, "%s [y/N] -- stdin is not interactive, assuming no.\n", prompt);
+    return false;
+  }
+  fprintf(stderr, "%s [y/N]: ", prompt);
+  fflush(stderr);
+  int first = getchar();
+  int c = first;
+  while (c != '\n' && c != EOF) c = getchar();   // drain the rest of the line
+  return (first == 'y' || first == 'Y');
+}
+
 // Start both ADC streams -- the command stream and the data (output) stream --
 // together, since the data stream only runs while the command stream does. On
 // success both threads are running and *cmd_tid / *data_tid are set, and it
@@ -260,14 +276,64 @@ static int run_dma_path(hw_t *hw, config_t *cfg, waveform_file_info_t *input_inf
   }
   g_run_ctrl = &rc;
 
+  // --- Capacity: size each board's ADC descriptor budget and warn if the capture won't fit ----
+  // The DAC takes its slice of each region first; the ADC capture gets the rest, split evenly
+  // across boards. At the packing threshold a capture needs far fewer descriptors than one per
+  // word, so estimate what fits and, if the file wants more, report the numbers and confirm.
+  uint32_t cap_ndesc_cap = 0;
+  if (has_adc) {
+    uint64_t total_dac_data = 0, total_dac_desc = 0;
+    for (uint32_t b = 0; b < board_count; b++) {
+      total_dac_data += dma_wave_dac_footprint_data((uint32_t)dac_bufs[b].count);
+      total_dac_desc += dma_wave_dac_footprint_desc((uint32_t)dac_bufs[b].count);
+    }
+    if (total_dac_data >= dma.data_size || total_dac_desc >= dma.desc_size) {
+      fprintf(stderr, "Error: [DMA] the DAC stream alone needs %llu B data + %llu B descriptors, "
+              "over the %llu B data / %llu B descriptor regions.\n",
+              (unsigned long long)total_dac_data, (unsigned long long)total_dac_desc,
+              (unsigned long long)dma.data_size, (unsigned long long)dma.desc_size);
+      for (uint32_t b = 0; b < board_count; b++) dac_word_buf_free(&dac_bufs[b]);
+      g_run_ctrl = NULL; run_ctrl_destroy(&rc); destroy_dma_ctrl(&dma);
+      return -1;
+    }
+    uint64_t adc_data_pb = (dma.data_size - total_dac_data) / board_count;
+    uint64_t adc_desc_pb = (dma.desc_size - total_dac_desc) / board_count;
+    uint32_t budget = dma_wave_adc_cap_ndesc_budget(adc_data_pb, adc_desc_pb);
+    cap_ndesc_cap = (budget > 4u) ? (budget - 4u) : 0u;   // slack for per-slice 64-byte alignment
+    uint32_t max_cap_words = dma_wave_max_cap_words(cap_ndesc_cap, DMA_CAPTURE_PACKET_WORDS);
+    uint32_t need_ndesc    = dma_wave_cap_ndesc(cap_words, DMA_CAPTURE_PACKET_WORDS);
+    printf("[DMA] capacity: DAC %llu B data / %llu B desc; ADC budget %u desc/board (<= %u words); "
+           "this run = %u words/board (%u desc).\n",
+           (unsigned long long)total_dac_data, (unsigned long long)total_dac_desc,
+           cap_ndesc_cap, max_cap_words, cap_words, need_ndesc);
+    if (cap_words > max_cap_words) {
+      fprintf(stderr,
+        "Warning: [DMA] ADC capture is %u words/board but only %u fit (ADC budget %u desc/board at "
+        "threshold %u; DAC uses %llu B data / %llu B desc of %llu / %llu). Continuing captures about "
+        "%u words/board then overflow-faults.\n",
+        cap_words, max_cap_words, cap_ndesc_cap, DMA_CAPTURE_PACKET_WORDS,
+        (unsigned long long)total_dac_data, (unsigned long long)total_dac_desc,
+        (unsigned long long)dma.data_size, (unsigned long long)dma.desc_size, max_cap_words);
+      if (!confirm_continue("Continue anyway?")) {
+        for (uint32_t b = 0; b < board_count; b++) dac_word_buf_free(&dac_bufs[b]);
+        g_run_ctrl = NULL; run_ctrl_destroy(&rc); destroy_dma_ctrl(&dma);
+        return -1;
+      }
+    }
+  }
+
   // Arm every active board: prebuffer its DAC stream and (when capturing) its S2MM ring.
   int rc_arm = 0;
   if (dma_wave_begin(&dma, verbose) != 0) {
     rc_arm = -1;
   } else {
+    // dma_wave_begin left the MCDMA idle; flush the dac_cmd/adc_data FIFOs here (clearing any
+    // latched bridge faults) so a run self-cleans even if a prior one exited before its teardown
+    // reset. This brackets the run with the same buffer reset the teardown asserts.
+    hw_reset_dma_buffers(hw);
     for (uint32_t b = 0; b < board_count && rc_arm == 0; b++) {
       if (dma_wave_add(&dma, (int)b, dac_bufs[b].words, (uint32_t)dac_bufs[b].count,
-                       cap_words, verbose) != 0) {
+                       cap_words, DMA_CAPTURE_PACKET_WORDS, cap_ndesc_cap, verbose) != 0) {
         rc_arm = -1;
       }
     }
@@ -384,6 +450,9 @@ static int run_dma_path(hw_t *hw, config_t *cfg, waveform_file_info_t *input_inf
 
   pthread_sigmask(SIG_SETMASK, &old_mask, NULL);
 
+  // Peak capture backlog per board, for tuning the packing threshold on the bench.
+  uint32_t peak_backlog[MAX_BOARDS] = {0};
+
   int result = 0;
   if (setup_rc != 0) {
     result = -1;
@@ -424,13 +493,25 @@ static int run_dma_path(hw_t *hw, config_t *cfg, waveform_file_info_t *input_inf
         break;
       }
 
-      // Drain each board's capture into its CSV (on both EVENT and TIMEOUT wakes).
+      // Drain each board's capture into its CSV. Hold one packet (DMA_CAPTURE_PACKET_WORDS) of
+      // words undrained while at least that many remain to capture, so the backlog stays at or
+      // above the threshold and the packetizer keeps packing dense. Once fewer than a packet
+      // remain to capture, drain greedily so the capture completes and the final partial packet
+      // flushes -- the held packet can never exceed the threshold, so the tail always fires.
       if (has_adc) {
         uint32_t buf[1024];
         for (uint32_t b = 0; b < board_count && result == 0; b++) {
-          int got;
-          while ((got = dma_wave_read_board(&dma, (int)b, buf,
-                                            (uint32_t)(sizeof buf / sizeof buf[0]))) > 0) {
+          uint32_t avail     = dma_wave_avail_board(&dma, (int)b);
+          uint32_t read_tot  = dma_wave_read_total_board(&dma, (int)b);
+          uint32_t captured  = read_tot + avail;
+          uint32_t remaining = (cap_words > captured) ? (cap_words - captured) : 0u;
+          uint32_t hold = (remaining >= DMA_CAPTURE_PACKET_WORDS) ? DMA_CAPTURE_PACKET_WORDS : 0u;
+          uint32_t to_drain = (avail > hold) ? (avail - hold) : 0u;
+          while (to_drain > 0 && result == 0) {
+            uint32_t want = (to_drain < (uint32_t)(sizeof buf / sizeof buf[0]))
+                            ? to_drain : (uint32_t)(sizeof buf / sizeof buf[0]);
+            int got = dma_wave_read_board(&dma, (int)b, buf, want);
+            if (got <= 0) break;
             for (int i = 0; i < got; i++) {
               uint32_t word = buf[i];
               sample_ch[b][filled[b] * 2u]      = (int16_t)(word & 0xFFFF);
@@ -450,8 +531,10 @@ static int run_dma_path(hw_t *hw, config_t *cfg, waveform_file_info_t *input_inf
                 filled[b] = 0;
               }
             }
-            if (result != 0) break;
+            to_drain -= (uint32_t)got;
           }
+          uint32_t bl = dma_rate_backlog(&dma, (int)b);
+          if (bl > peak_backlog[b]) peak_backlog[b] = bl;
         }
         // Emit every row for which all boards now have a sample queued.
         if (result == 0 && dma_emit_aligned_rows(adc_csv, &walker, rings, board_count,
@@ -503,6 +586,9 @@ static int run_dma_path(hw_t *hw, config_t *cfg, waveform_file_info_t *input_inf
     fclose(adc_csv);
     printf("[DMA] wrote %ld ADC sample(s) x %u channel(s) to %s.waveform_adc_out_A.DMA.csv\n",
            walker.sample_no, channel_count, input_stem);
+    printf("[DMA] peak capture backlog (words):");
+    for (uint32_t b = 0; b < board_count; b++) printf(" board%u=%u", b, peak_backlog[b]);
+    printf("\n");
   }
   if (have_walker) adc_tp_walker_destroy(&walker);
   if (have_tlog) trig_time_log_destroy(&tlog);
@@ -609,6 +695,8 @@ int main(int argc, char *argv[]) {
   printf("datapath   = %s\n", cfg.use_dma ? "DMA (prebuffered MCDMA)" : "PIO");
   printf("verbose    = %s\n", cfg.verbose ? "on" : "off");
   printf("calibrate  = %s\n", cfg.no_cal ? "off" : "on");
+  if (cfg.use_dma)
+    printf("pack       = dense at backlog >= %u words\n", DMA_CAPTURE_PACKET_WORDS);
 
   // --- Validate the input (DAC) file ------------------------------
   waveform_file_info_t input_info;

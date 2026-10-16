@@ -28,6 +28,11 @@ if {$dac_cmd_fifo_addr_width < 10 || $dac_cmd_fifo_addr_width > 17 ||
   exit 1
 }
 
+# ADC capture packet size (words). One dense S2MM packet / descriptor buffer is this many words,
+# and it is also the rate-control packing threshold -- fed to both the packetizer and adc_rate_ctrl
+# from here so the two cannot drift.
+set adc_packet_words 256
+
 ##################################################
 
 ### Ports
@@ -46,6 +51,9 @@ for {set i 0} {$i < $board_count} {incr i} {
   create_bd_intf_pin -mode slave -vlnv xilinx.com:interface:aximm_rtl:1.0 board_fifo_${i}_axi
 }
 create_bd_intf_pin -mode slave -vlnv xilinx.com:interface:aximm_rtl:1.0 trig_axi
+
+# ADC capture rate-control registers, fanned to by the top-level register SmartConnect
+create_bd_intf_pin -mode slave -vlnv xilinx.com:interface:aximm_rtl:1.0 rate_ctrl_axi
 
 # Status concatenated out
 create_bd_pin -dir O -from 543 -to 0 cmd_fifo_sts
@@ -403,7 +411,7 @@ for {set i 0} {$i < $board_count} {incr i} {
     DATA_WIDTH 32
     DEST_WIDTH 8
     FIFO_COUNT_WIDTH [expr {$adc_data_fifo_addr_width + 1}]
-    MAX_PACKET_WORDS 256
+    MAX_PACKET_WORDS $adc_packet_words
     BOARD_INDEX $i
   } {
     aclk aclk
@@ -674,4 +682,55 @@ for {set i 0} {$i < $board_count} {incr i} {
 }
 for {set i $board_count} {$i < 8} {incr i} {
   wire mode_viol_concat/In${i} const_0/dout
+}
+
+## ADC capture rate control: one adc_rate_ctrl register block holds the per-board capture backlog
+## counters. Each board's adc_packetizer reports its emit beat (word_emitted) into the block and
+## takes back a 1-bit accumulate decision (dense vs eager) -- the block compares each backlog
+## against the fixed packet-size threshold (PACKET_WORDS). The block's per-board backlog is cleared
+## by that board's adc_data FIFO reset, so one buffer reset flushes the FIFO, the packetizer, and
+## this count together. The block always carries eight boards (register map width); unused boards
+## sit idle at backlog 0.
+# Gather each board's packetizer emit beat into the block's write-side input.
+cell xilinx.com:ip:xlconcat:2.1 word_emitted_concat {
+  NUM_PORTS 8
+} {}
+for {set i 0} {$i < $board_count} {incr i} {
+  wire word_emitted_concat/In${i} adc_data_packetizer_${i}/word_emitted
+}
+for {set i $board_count} {$i < 8} {incr i} {
+  wire word_emitted_concat/In${i} const_0/dout
+}
+# Gather each board's adc_data FIFO reset as that board's backlog clear; hold unused boards reset.
+cell xilinx.com:ip:xlconcat:2.1 backlog_rst_n_concat {
+  NUM_PORTS 8
+} {}
+for {set i 0} {$i < $board_count} {incr i} {
+  wire backlog_rst_n_concat/In${i} adc_data_fifo_${i}_aclk_rst/peripheral_aresetn
+}
+for {set i $board_count} {$i < 8} {incr i} {
+  wire backlog_rst_n_concat/In${i} const_0/dout
+}
+# The rate-control register block.
+cell shim:user:adc_rate_ctrl adc_rate_ctrl {
+  NUM_BOARDS 8
+  PACKET_WORDS $adc_packet_words
+  AXI_ADDR_WIDTH 16
+} {
+  aclk aclk
+  aresetn aresetn
+  word_emitted word_emitted_concat/dout
+  backlog_rst_n backlog_rst_n_concat/dout
+  S_AXI rate_ctrl_axi
+}
+# Fan the per-board accumulate decision out to each packetizer.
+for {set i 0} {$i < $board_count} {incr i} {
+  cell xilinx.com:ip:xlslice:1.0 accumulate_${i}_slice {
+    DIN_WIDTH 8
+    DIN_FROM $i
+    DIN_TO $i
+  } {
+    din adc_rate_ctrl/accumulate
+  }
+  wire accumulate_${i}_slice/dout adc_data_packetizer_${i}/accumulate
 }

@@ -6,6 +6,11 @@
 
 #include "map_memory.h"   // MAX_BOARDS
 
+// ADC capture packet size (words), fixed to the packetizer's MAX_PACKET_WORDS. One dense S2MM
+// packet / descriptor buffer is this many words, and it is also the packing threshold and the
+// drain-discipline unit. 256 words = 1024 B balances the 8 MB descriptor / 128 MB data regions.
+#define DMA_CAPTURE_PACKET_WORDS 256u
+
 // A live, multi-word waveform run for one board, recorded between arming and teardown. The
 // layout offsets index into the udmabuf regions: the DAC payload and the ADC capture share
 // the data region (udmabuf0), the MM2S descriptor and the S2MM ring share the descriptor
@@ -17,8 +22,11 @@ struct dma_wave_run {
   bool armed;
   int board;
   uint32_t mm2s_off, mm2s_len;   // DAC payload in the data region (bytes)
-  uint32_t cap_off, cap_words;   // ADC capture in the data region; cap_words = ring length
-  uint32_t cap_read;             // words already read out (read cursor)
+  uint32_t cap_off, cap_words;   // ADC capture in the data region; cap_words = total words expected
+  uint32_t cap_ndesc;            // capture ring descriptor count (one packet buffer each)
+  uint32_t cap_read;             // total words read out so far (read cursor)
+  uint32_t cap_desc_read;        // descriptors fully drained by readback
+  uint32_t cap_word_in_desc;     // words drained from the current (partial) descriptor
   uint32_t mm2s_desc_off;        // first MM2S descriptor in the descriptor region (CURDESC)
   uint32_t mm2s_tail_desc_off;   // last MM2S descriptor in the chain (TAILDESC)
   uint32_t ring_desc_off;        // S2MM descriptor ring base in the descriptor region
@@ -40,6 +48,8 @@ struct dma_ctrl_t {
   uint64_t  data_phys;
   uint64_t  data_size;
   int data_fd;
+  volatile uint32_t *rate_ctrl; // adc_rate_ctrl register window (mapped at create time, required)
+  int rate_ctrl_fd;
   struct dma_wave_run wave[MAX_BOARDS]; // per-board run state (see dma_wave_begin / _add)
   uint32_t wave_data_cursor; // bump allocator over the data region, reset by dma_wave_begin
   uint32_t wave_desc_cursor; // bump allocator over the descriptor region, reset likewise
@@ -52,6 +62,16 @@ struct dma_ctrl_t {
 // still lets the rest of the tool run.
 struct dma_ctrl_t create_dma_ctrl(bool verbose);
 void destroy_dma_ctrl(struct dma_ctrl_t *dma);
+
+// ADC capture rate control (the adc_rate_ctrl register block, mapped at create time as a required
+// window). The packing threshold is fixed in the bitstream at the packet size, so software only
+// reports read deltas and reads the per-board backlog -- a board packs dense while its backlog is
+// at least one packet and drains eagerly below it.
+// Report `words` just read from a board's capture, lowering its backlog by that much. Called
+// automatically by dma_wave_read_board, so most callers never invoke it directly.
+void     dma_rate_report_read(struct dma_ctrl_t *dma, int board, uint32_t words);
+// Current capture backlog (unread packetized words sitting in DDR) for a board.
+uint32_t dma_rate_backlog(const struct dma_ctrl_t *dma, int board);
 
 // Prebuffer n_words into DDR and push them through MM2S channel `board`, polled to
 // completion. Returns 0 on success, negative on error. Injects a DAC command stream.
@@ -119,17 +139,33 @@ int dma_wave_arm(struct dma_ctrl_t *dma, int board,
 //
 // dma_wave_begin / dma_wave_add / dma_wave_start return 0 on success, negative on error (add
 // gives a clear message if the board's slice does not fit). cap_words == 0 means DAC-only: the
-// MM2S stream is prebuffered but no S2MM capture ring is built or armed.
+// MM2S stream is prebuffered but no S2MM capture ring is built or armed. dma_wave_add reserves the
+// capture ring for the packed shape at pack_threshold (see dma_wave_cap_ndesc), capped at
+// cap_ndesc_cap descriptors (the board's share of the ADC region); a capture larger than the cap
+// arms a short ring that overflow-faults partway. Pass pack_threshold == UINT32_MAX and
+// cap_ndesc_cap == cap_words for the thin-safe one-descriptor-per-word reservation.
 int dma_wave_begin(struct dma_ctrl_t *dma, bool verbose);
 int dma_wave_add(struct dma_ctrl_t *dma, int board,
                  const uint32_t *dac_words, uint32_t dac_n_words,
-                 uint32_t cap_words, bool verbose);
+                 uint32_t cap_words, uint32_t pack_threshold, uint32_t cap_ndesc_cap, bool verbose);
 // Start every armed board's channels at once (common Run/Stop asserted a single time). Call
 // after all dma_wave_add calls, before releasing the trigger.
 int dma_wave_start(struct dma_ctrl_t *dma, bool verbose);
 // Print per-board MCDMA channel status (CHEN membership + per-channel status register) for every
 // armed board -- pairs with a FIFO-fill print to show where a multi-board run is delivering.
 void dma_wave_print_channels(struct dma_ctrl_t *dma);
+
+// --- Capacity math (for sizing the capture ring and the pre-run capacity check) ---
+// dma_wave_cap_ndesc: descriptors a cap_words capture needs at this threshold (thin start + thin
+// end bounded by the threshold, dense middle). dma_wave_max_cap_words is the inverse (largest
+// cap_words that fits in cap_ndesc). The DAC footprint and ADC budget helpers mirror the layout
+// dma_wave_add builds, so a caller can size the per-board ADC budget and warn before a run that
+// would overflow it.
+uint32_t dma_wave_cap_ndesc(uint32_t cap_words, uint32_t threshold);
+uint32_t dma_wave_max_cap_words(uint32_t cap_ndesc, uint32_t threshold);
+uint64_t dma_wave_dac_footprint_data(uint32_t dac_n_words);
+uint64_t dma_wave_dac_footprint_desc(uint32_t dac_n_words);
+uint32_t dma_wave_adc_cap_ndesc_budget(uint64_t adc_data_bytes, uint64_t adc_desc_bytes);
 
 // Per-board capture accessors (mirror the single-run ones below, indexed by board).
 uint32_t dma_wave_avail_board(struct dma_ctrl_t *dma, int board);

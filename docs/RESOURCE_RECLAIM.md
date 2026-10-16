@@ -92,6 +92,34 @@ need to be elastic CDC buffers (deep enough for the packetizer to accumulate up 
 | 0 | baseline | 4 | 33,692 | 89 | 4 | -- | -- | ok |
 | 1 | all FIFO depths -> 2^10 (`dac_cmd` 2^13->2^10, `dac_data` 2^12->2^10, `adc_data` 2^13->2^10; `adc_cmd` / trig already 2^10) + matching software `*_FIFO_WORDCOUNT` macros | 4 | 33,604 | 21 | 4 | -88 | -68 | ok |
 | 2 | (reverted -- net loss) AXI3->AXI4-Lite converters at both PS GP boundaries to force low-area SmartConnect. `sys_cfg` did go all-Lite (866->603) but the standalone converter cost 532 (`gp0`) / 518 (`gp1`); the board tree stayed chained (`board_ch` masters still full AXI4, `ch*` unchanged at 406). The AXI3->Lite conversion is ~500 LUT whether inside SmartConnect or standalone, so pulling it out just duplicates it. | 4 | 34,181 | 21 | 4 | +577 | 0 | reverted |
+| 3 | current `dma` datapath at branch HEAD: per-board DAC+ADC FIFO bridges merged into one `axi_board_fifo_bridge`, shared `adc_rate_ctrl` capture rate-control core added, DAC/ADC timing calcs + clk snoop map their multipliers to DSP (0 -> 10). dLUT/dRAMB36 vs step 1. | 4 | 31,526 | 21 | 4 | -2,078 | 0 | ok |
+
+## Current build -- 4 boards (`dma` branch)
+
+Build: snickerdoodle_black 1.0, `rev_d_shim`, Vivado 2024.2, synthesized 2026-10-15. Report: `tmp_reports/snickerdoodle_black/1.0/rev_d_shim/hierarchical_utilization.txt`.
+
+Totals: 31,526 LUT (59%), 29,983 FF, 21 RAMB36, 4 RAMB18, 10 DSP. Net against the FIFO-shrink step (step 1, 33,604 LUT) is -2,078 LUT at 4 boards, with BRAM unchanged at 21 RAMB36. This build carries the current `dma`-branch datapath: the per-board DAC and ADC FIFO bridges merged into one `axi_board_fifo_bridge`, the shared `adc_rate_ctrl` capture rate-control core added, and the DAC/ADC timing calculators plus the clock snoop now map their multipliers to DSP slices (0 -> 10 DSP) rather than LUTs.
+
+Top blocks by LUT:
+
+| Block | LUT | FF | RAMB36 | DSP | scales with boards |
+|---|---|---|---|---|---|
+| spi_clk_domain | 12,516 | 9,681 | 0 | 0 | yes (per-channel SPI) |
+| mcdma | 6,063 | 7,381 | 3 | 0 | yes (per channel) |
+| axi_mem_intercon (HP0 SmartConnect) | 4,402 | 4,580 | 0 | 0 | no |
+| axi_spi_interface | 3,209 | 3,057 | 18 | 0 | yes (per-board FIFOs + merged bridge + rate_ctrl) |
+| sys_cfg_axi_intercon | 1,473 | 1,353 | 0 | 0 | ~no |
+| spi_clk_gen | 1,360 | 1,645 | 0 | 0 | no |
+| axi_sys_ctrl | 544 | 1,202 | 0 | 0 | no |
+| status_reg | 463 | 33 | 0 | 0 | ~no |
+| spi_clk_snoop | 385 | 459 | 0 | 2 | no |
+| hw_manager | 373 | 67 | 0 | 0 | ~no |
+| adc_timing_calc | 273 | 190 | 0 | 4 | no (shared) |
+| dac_timing_calc | 262 | 181 | 0 | 4 | no (shared) |
+| s2mm_mux | 89 | 38 | 0 | 0 | yes (SI count) |
+| mm2s_demux | 57 | 82 | 0 | 0 | yes |
+
+The DMA datapath itself is cheap inside `axi_spi_interface`: `adc_rate_ctrl` 447 LUT (one shared core), four `adc_packetizer` at 18 LUT each, four `axi_board_fifo_bridge` at 44 LUT each. Against the 2026-10-06 baseline `axi_spi_interface` fell 5,480 -> 3,209 (merged bridge; RAMB36 86 -> 18 from the FIFO shrink), so the merged bridge and the DSP mapping together more than paid for the rate-control core -- the capture density-control feature landed net-negative on LUTs. `sys_cfg_axi_intercon` grew 866 -> 1,473 as the register/clock-config SmartConnect gained master ports, the `adc_rate_ctrl` AXI-Lite subordinate among them.
 
 ## 8-board result (post-synthesis)
 
@@ -117,6 +145,8 @@ log); the remaining lever is a custom single-beat AXI decoder (reclaim menu item
 to drop the register path toward a few hundred LUT and bring the design toward ~93-95% -- a much
 safer place to implement. The cost is the address-workflow change (addresses move from the
 Vivado address editor into core parameters).
+
+These 8-board figures predate the current 4-board datapath above (merged `axi_board_fifo_bridge`, the timing calcs and clock snoop moved to DSP, the added `adc_rate_ctrl` core, and the larger `sys_cfg_axi_intercon`), so the per-block scaling here is stale -- a fresh 8-board synthesis is needed to update it.
 
 ## Reclaim menu (planned order)
 

@@ -33,11 +33,26 @@
 #define DESC_DEV        "/dev/" DESC_UDMABUF
 #define DESC_SYS        "/sys/class/u-dma-buf/" DESC_UDMABUF
 
+#define RATE_CTRL_DEV       "/dev/adc_rate_ctrl" // adc_rate_ctrl register window (ships in the bitstream)
+#define RATE_CTRL_WIN_BYTES 0x1000UL             // one page
+// adc_rate_ctrl register map (32-bit word indices), mirroring adc_rate_ctrl.v. The packing
+// threshold is a fixed RTL parameter (the packet size), not a register -- software only reports
+// read deltas and reads back the per-board backlog.
+#define RATE_READ_DELTA_BASE 0u
+#define RATE_BACKLOG_BASE    8u
+
 #define DESC_ALIGN      64u             // MCDMA SG descriptor size/alignment
 // DAC payload split into this many words per MM2S packet descriptor, so the MCDMA completes one
 // board's packet then arbitrates to the next board's channel -- the per-board FIFOs fill in
-// lockstep instead of board 0 monopolizing the shared MM2S output.
-#define MM2S_PACKET_WORDS 64u
+// lockstep instead of board 0 monopolizing the shared MM2S output. 256 words (= one 1024-byte
+// descriptor buffer, matching the S2MM capture packet) keeps the DAC descriptor-efficient: 4 MB
+// of descriptors backs the full 64 MB DAC budget. Still far under the FIFO depth, so the
+// arbitration stays fair across boards.
+#define MM2S_PACKET_WORDS 256u
+// ADC capture descriptor buffer capacity (words). The S2MM engine fills 1..this per packet
+// (closed at the packetizer's tlast or buffer-full) and records the real length; readback
+// compacts the partial buffers. Fixed at the packetizer's MAX_PACKET_WORDS (DMA_CAPTURE_PACKET_WORDS).
+#define S2MM_PACKET_WORDS DMA_CAPTURE_PACKET_WORDS
 
 // Fixed slots in the payload region: one MM2S payload and one S2MM capture buffer. Only
 // one transfer runs at a time in the low-level test path, so fixed offsets suffice.
@@ -206,6 +221,25 @@ static uint8_t *map_udmabuf(const char *dev, const char *sysdir, const char *nam
   return p;
 }
 
+// Map the adc_rate_ctrl register window (one page, non-cached). The core ships in the bitstream,
+// so a missing node is a build/deploy error -- fail loudly rather than tolerating its absence.
+static volatile uint32_t *map_rate_ctrl(int *fd_out, bool verbose) {
+  int fd = open(RATE_CTRL_DEV, O_RDWR);
+  if (fd < 0) {
+    fprintf(stderr, "DMA: open %s: %s\n", RATE_CTRL_DEV, strerror(errno));
+    return NULL;
+  }
+  void *p = mmap(NULL, RATE_CTRL_WIN_BYTES, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  if (p == MAP_FAILED) {
+    fprintf(stderr, "DMA: mmap %s: %s\n", RATE_CTRL_DEV, strerror(errno));
+    close(fd);
+    return NULL;
+  }
+  if (verbose) printf("adc_rate_ctrl: %s (pl-reg-shim, no root)\n", RATE_CTRL_DEV);
+  *fd_out = fd;
+  return (volatile uint32_t *)p;
+}
+
 // ------------------------------------------------------------- descriptors --
 
 // One single-buffer, single-packet descriptor covering [buf_phys, buf_phys+len), marked start-
@@ -285,7 +319,7 @@ static uint32_t align_up_u32(uint32_t v, uint32_t a) {
 struct dma_ctrl_t create_dma_ctrl(bool verbose) {
   struct dma_ctrl_t dma;
   memset(&dma, 0, sizeof(dma));
-  dma.reg_fd = dma.desc_fd = dma.data_fd = -1;
+  dma.reg_fd = dma.desc_fd = dma.data_fd = dma.rate_ctrl_fd = -1;
   dma.wave_single_board = -1;
   dma.ok = false;
 
@@ -302,6 +336,11 @@ struct dma_ctrl_t create_dma_ctrl(bool verbose) {
     fprintf(stderr, "DMA u-dma-buf regions unavailable; DMA commands disabled.\n");
     return dma;
   }
+  dma.rate_ctrl = map_rate_ctrl(&dma.rate_ctrl_fd, verbose);
+  if (!dma.rate_ctrl) {
+    fprintf(stderr, "DMA adc_rate_ctrl window unavailable; DMA commands disabled.\n");
+    return dma;
+  }
   dma.ok = true;
   return dma;
 }
@@ -311,11 +350,27 @@ void destroy_dma_ctrl(struct dma_ctrl_t *dma) {
   if (dma->reg)  munmap((void *)dma->reg, MCDMA_WIN_BYTES);
   if (dma->desc) munmap(dma->desc, dma->desc_size);
   if (dma->data) munmap(dma->data, dma->data_size);
+  if (dma->rate_ctrl) munmap((void *)dma->rate_ctrl, RATE_CTRL_WIN_BYTES);
   if (dma->reg_fd  >= 0) close(dma->reg_fd);
   if (dma->desc_fd >= 0) close(dma->desc_fd);
   if (dma->data_fd >= 0) close(dma->data_fd);
+  if (dma->rate_ctrl_fd >= 0) close(dma->rate_ctrl_fd);
   memset(dma, 0, sizeof(*dma));
-  dma->reg_fd = dma->desc_fd = dma->data_fd = -1;
+  dma->reg_fd = dma->desc_fd = dma->data_fd = dma->rate_ctrl_fd = -1;
+}
+
+// --- ADC capture rate control (adc_rate_ctrl). The core is mapped at create time (required), so
+// these assume the register window is present. The packing threshold is fixed in the bitstream
+// (the packet size), so software only reports read deltas and reads the per-board backlog. ---
+
+void dma_rate_report_read(struct dma_ctrl_t *dma, int board, uint32_t words) {
+  if (!dma || board < 0 || board >= MAX_BOARDS || words == 0) return;
+  dma->rate_ctrl[RATE_READ_DELTA_BASE + (uint32_t)board] = words;
+}
+
+uint32_t dma_rate_backlog(const struct dma_ctrl_t *dma, int board) {
+  if (!dma || board < 0 || board >= MAX_BOARDS) return 0;
+  return dma->rate_ctrl[RATE_BACKLOG_BASE + (uint32_t)board];
 }
 
 int dma_mm2s_send(struct dma_ctrl_t *dma, int board, const uint32_t *words, uint32_t n_words, bool verbose) {
@@ -447,6 +502,51 @@ int dma_s2mm_collect(struct dma_ctrl_t *dma, uint32_t *out, uint32_t max_words) 
 
 // ------------------------------------------------- multi-word waveform run --
 
+// --- Capacity math (shared by dma_wave_add and the waveform capacity precheck) ---------------
+//
+// With the backlog-at-threshold drain discipline a capture packs into a fixed shape: a thin
+// start and a thin end (each up to `threshold` single-word packets, while the backlog climbs to
+// the threshold and while it is greedily drained at the end) bracket a dense middle (one
+// S2MM_PACKET_WORDS packet per descriptor). So the descriptor count is far below one-per-word.
+
+// Descriptors a cap_words capture needs under the backlog-at-threshold packing (thin start + thin
+// end bounded by the threshold, dense middle). Clamped at cap_words.
+uint32_t dma_wave_cap_ndesc(uint32_t cap_words, uint32_t threshold) {
+  if (cap_words == 0) return 0;
+  uint64_t two_t = 2ull * (uint64_t)threshold;
+  if ((uint64_t)cap_words <= two_t) return cap_words;    // small capture: could be all thin
+  uint64_t dense = ((uint64_t)cap_words - two_t + (S2MM_PACKET_WORDS - 1u)) / S2MM_PACKET_WORDS;
+  uint64_t n = two_t + dense;
+  return (n >= cap_words) ? cap_words : (uint32_t)n;
+}
+
+// Inverse: the largest cap_words that fits in `cap_ndesc` descriptors at this threshold.
+uint32_t dma_wave_max_cap_words(uint32_t cap_ndesc, uint32_t threshold) {
+  uint64_t two_t = 2ull * (uint64_t)threshold;
+  if ((uint64_t)cap_ndesc <= two_t) return cap_ndesc;    // all-thin regime: one word per descriptor
+  uint64_t m = two_t + (uint64_t)S2MM_PACKET_WORDS * ((uint64_t)cap_ndesc - two_t);
+  return (m > 0xFFFFFFFFull) ? 0xFFFFFFFFu : (uint32_t)m;
+}
+
+// DAC payload and descriptor footprint (bytes) for one board's stream, matching the layout
+// dma_wave_add builds: payload 64-byte aligned, one MM2S_PACKET_WORDS-word packet per descriptor.
+uint64_t dma_wave_dac_footprint_data(uint32_t dac_n_words) {
+  return align_up_u32(dac_n_words * 4u, DESC_ALIGN);
+}
+uint64_t dma_wave_dac_footprint_desc(uint32_t dac_n_words) {
+  uint32_t n = (dac_n_words + MM2S_PACKET_WORDS - 1u) / MM2S_PACKET_WORDS;
+  return (uint64_t)n * DESC_ALIGN;
+}
+
+// Capture descriptors that fit in an ADC budget: each costs one 64-byte descriptor slot and one
+// S2MM_PACKET_WORDS-word (1024-byte) data buffer, so the tighter of the two bounds.
+uint32_t dma_wave_adc_cap_ndesc_budget(uint64_t adc_data_bytes, uint64_t adc_desc_bytes) {
+  uint64_t by_data = adc_data_bytes / (S2MM_PACKET_WORDS * 4u);
+  uint64_t by_desc = adc_desc_bytes / DESC_ALIGN;
+  uint64_t n = (by_data < by_desc) ? by_data : by_desc;
+  return (n > 0xFFFFFFFFull) ? 0xFFFFFFFFu : (uint32_t)n;
+}
+
 // Reset both directions and clear the region allocator / per-board run state. The MCDMA
 // soft-reset (CR bit 2) is global, so resetting here -- before any channel is armed -- avoids
 // a later reset wiping an already-armed channel.
@@ -482,7 +582,7 @@ void dma_wave_halt(struct dma_ctrl_t *dma, bool verbose) {
 // once. Does not reset the directions (dma_wave_begin did).
 int dma_wave_add(struct dma_ctrl_t *dma, int board,
                  const uint32_t *dac_words, uint32_t dac_n_words,
-                 uint32_t cap_words, bool verbose) {
+                 uint32_t cap_words, uint32_t pack_threshold, uint32_t cap_ndesc_cap, bool verbose) {
   if (!dma || !dma->ok) { fprintf(stderr, "DMA not available.\n"); return -1; }
   if (board < 0 || board >= MAX_BOARDS) { fprintf(stderr, "DMA wave: bad board %d.\n", board); return -1; }
   if (dac_n_words == 0) { fprintf(stderr, "DMA wave: empty DAC stream on board %d.\n", board); return -1; }
@@ -491,16 +591,29 @@ int dma_wave_add(struct dma_ctrl_t *dma, int board,
   // cap_words == 0 means DAC-only (no ADC capture): the MM2S stream is prebuffered but no
   // S2MM ring is built or armed. The data/descriptor capture slices then have zero length.
 
-  // Data region slice: DAC payload 64-byte aligned, ADC capture 64-byte aligned after it.
+  // Data region slice: DAC payload 64-byte aligned, ADC capture 64-byte aligned after it. Each
+  // capture descriptor reserves a full S2MM_PACKET_WORDS-word buffer (the engine fills 1..that per
+  // packet; compaction reads back the real length), so the capture reserves cap_ndesc buffers.
   uint32_t mm2s_off = align_up_u32(dma->wave_data_cursor, DESC_ALIGN);
   uint32_t mm2s_len = dac_n_words * 4u;
   uint32_t cap_off  = align_up_u32(mm2s_off + mm2s_len, DESC_ALIGN);
-  uint64_t data_end = (uint64_t)cap_off + (uint64_t)cap_words * 4u;
+  // Reserve descriptors for the packed capture shape (thin start + thin end + dense middle under
+  // the backlog-at-threshold drain), capped at this board's share of the ADC region. If the cap
+  // bites (the capture is larger than fits), the ring is short and the run overflow-faults partway
+  // -- the deliberate "continue anyway" outcome the caller warned about.
+  uint32_t cap_ndesc = dma_wave_cap_ndesc(cap_words, pack_threshold);
+  if (cap_ndesc > cap_ndesc_cap) cap_ndesc = cap_ndesc_cap;
+  if (cap_words > 0 && cap_ndesc == 0) {
+    fprintf(stderr, "DMA wave: board %d has no ADC descriptor budget (the DAC consumed the region).\n", board);
+    return -1;
+  }
+  uint32_t cap_buf_bytes = S2MM_PACKET_WORDS * 4u;
+  uint64_t data_end = (uint64_t)cap_off + (uint64_t)cap_ndesc * cap_buf_bytes;
   if (data_end > dma->data_size) {
     fprintf(stderr,
-      "DMA wave: board %d needs data up to %" PRIu64 " B (DAC %u + capture %u), but %s is %" PRIu64 " B.\n"
+      "DMA wave: board %d needs data up to %" PRIu64 " B (DAC %u B + capture %u desc x %u B), but %s is %" PRIu64 " B.\n"
       "  Reduce the run length or enlarge the %s region.\n",
-      board, data_end, mm2s_len, cap_words * 4u, DATA_UDMABUF, dma->data_size, DATA_UDMABUF);
+      board, data_end, mm2s_len, cap_ndesc, cap_buf_bytes, DATA_UDMABUF, dma->data_size, DATA_UDMABUF);
     return -1;
   }
 
@@ -508,12 +621,12 @@ int dma_wave_add(struct dma_ctrl_t *dma, int board,
   uint32_t mm2s_desc_off = align_up_u32(dma->wave_desc_cursor, DESC_ALIGN);
   uint32_t n_mm2s_desc = (dac_n_words + MM2S_PACKET_WORDS - 1u) / MM2S_PACKET_WORDS;
   uint32_t ring_desc_off = mm2s_desc_off + n_mm2s_desc * DESC_ALIGN;
-  uint64_t desc_end = (uint64_t)ring_desc_off + (uint64_t)cap_words * DESC_ALIGN;
+  uint64_t desc_end = (uint64_t)ring_desc_off + (uint64_t)cap_ndesc * DESC_ALIGN;
   if (desc_end > dma->desc_size) {
     fprintf(stderr,
-      "DMA wave: board %d needs descriptors up to %" PRIu64 " B (MM2S %u + capture %u words), but %s is %" PRIu64 " B.\n"
+      "DMA wave: board %d needs descriptors up to %" PRIu64 " B (MM2S %u + capture %u), but %s is %" PRIu64 " B.\n"
       "  Reduce the run length or enlarge the %s region.\n",
-      board, desc_end, n_mm2s_desc, cap_words, DESC_UDMABUF, dma->desc_size, DESC_UDMABUF);
+      board, desc_end, n_mm2s_desc, cap_ndesc, DESC_UDMABUF, dma->desc_size, DESC_UDMABUF);
     return -1;
   }
 
@@ -535,15 +648,17 @@ int dma_wave_add(struct dma_ctrl_t *dma, int board,
     words_left -= pkt_words;
   }
 
-  // S2MM ring: one one-word receive descriptor per ADC word, contiguous buffers laid out in
-  // order, linked into a ring whose wrap link is never followed (the engine stops at
-  // TAILDESC) but keeps the ring well-formed. Skipped entirely for a DAC-only run.
+  // S2MM ring: one receive descriptor per packet, each with a full S2MM_PACKET_WORDS-word buffer.
+  // The engine writes a packet's words into a descriptor's buffer and closes it on tlast (or
+  // buffer-full), recording the real length; readback compacts the partial buffers. Buffers are
+  // laid out in order; the wrap link is never followed (the engine stops at TAILDESC) but keeps
+  // the ring well-formed. Skipped entirely for a DAC-only run. No data memset is needed -- the
+  // per-descriptor Complete bit gates readback, so unwritten buffer tails are never read.
   if (cap_words > 0) {
-    memset(dma->data + cap_off, 0, (size_t)cap_words * 4u);
-    for (uint32_t k = 0; k < cap_words; k++) {
+    for (uint32_t k = 0; k < cap_ndesc; k++) {
       struct mcdma_desc *rd = (struct mcdma_desc *)(dma->desc + ring_desc_off + (uint64_t)k * DESC_ALIGN);
-      uint64_t next_phys = dma->desc_phys + ring_desc_off + (uint64_t)((k + 1u) % cap_words) * DESC_ALIGN;
-      build_rx_desc(rd, next_phys, dma->data_phys + cap_off + (uint64_t)k * 4u, 4u);
+      uint64_t next_phys = dma->desc_phys + ring_desc_off + (uint64_t)((k + 1u) % cap_ndesc) * DESC_ALIGN;
+      build_rx_desc(rd, next_phys, dma->data_phys + cap_off + (uint64_t)k * cap_buf_bytes, cap_buf_bytes);
     }
   }
   __sync_synchronize(); // payload + all descriptors resident before the engines read them
@@ -568,7 +683,10 @@ int dma_wave_add(struct dma_ctrl_t *dma, int board,
   w->mm2s_len      = mm2s_len;
   w->cap_off       = cap_off;
   w->cap_words     = cap_words;
+  w->cap_ndesc     = cap_ndesc;
   w->cap_read      = 0;
+  w->cap_desc_read = 0;
+  w->cap_word_in_desc = 0;
   w->mm2s_desc_off = mm2s_desc_off;
   w->mm2s_tail_desc_off = mm2s_desc_off + (n_mm2s_desc - 1u) * DESC_ALIGN;
   w->ring_desc_off = ring_desc_off;
@@ -602,7 +720,7 @@ int dma_wave_start(struct dma_ctrl_t *dma, bool verbose) {
     for (int b = 0; b < MAX_BOARDS; b++) {
       struct dma_wave_run *w = &dma->wave[b];
       if (!w->armed || w->cap_words == 0) continue;
-      uint64_t ring_last = dma->desc_phys + w->ring_desc_off + (uint64_t)(w->cap_words - 1u) * DESC_ALIGN;
+      uint64_t ring_last = dma->desc_phys + w->ring_desc_off + (uint64_t)(w->cap_ndesc - 1u) * DESC_ALIGN;
       trigger_channel(r, S2MM_CH_BASE(b), ring_last);
     }
   }
@@ -645,36 +763,64 @@ int dma_wave_arm(struct dma_ctrl_t *dma, int board,
                  const uint32_t *dac_words, uint32_t dac_n_words,
                  uint32_t cap_words, bool verbose) {
   if (dma_wave_begin(dma, verbose) < 0) return -1;
-  int rc = dma_wave_add(dma, board, dac_words, dac_n_words, cap_words, verbose);
+  // Eager threshold + no descriptor cap = the thin-safe one-descriptor-per-word allocation the
+  // single-board bench path has always used (it does not drive the packing threshold).
+  int rc = dma_wave_add(dma, board, dac_words, dac_n_words, cap_words, UINT32_MAX, cap_words, verbose);
   if (rc != 0) return rc;
   dma->wave_single_board = board;
   return dma_wave_start(dma, verbose);
 }
 
-// Contiguous completed capture words past the read cursor, for one board (the S2MM ring
-// fills in order).
+// Completed capture words available past the read cursor, for one board. Walks completed packet
+// descriptors from the read cursor and sums each one's real (compacted) length -- the per-packet
+// buffers are variable-fill, so this is not a simple contiguous count.
 uint32_t dma_wave_avail_board(struct dma_ctrl_t *dma, int board) {
   if (!dma || !dma->ok || board < 0 || board >= MAX_BOARDS || !dma->wave[board].armed) return 0;
   struct dma_wave_run *w = &dma->wave[board];
-  uint32_t k = w->cap_read;
-  while (k < w->cap_words) {
+  uint32_t words = 0;
+  uint32_t skip = w->cap_word_in_desc;  // words already consumed from the first descriptor
+  for (uint32_t k = w->cap_desc_read; k < w->cap_ndesc; k++) {
     struct mcdma_desc *rd = (struct mcdma_desc *)(dma->desc + w->ring_desc_off + (uint64_t)k * DESC_ALIGN);
     if (!(rd->status & DESC_STAT_CMPLT)) break;
-    k++;
+    uint32_t len = (rd->status & DESC_STAT_LEN_MASK) / 4u;
+    if (len > skip) words += len - skip;
+    skip = 0;
   }
-  return k - w->cap_read;
+  return words;
 }
 
+// Drain up to max_words completed capture words into out, compacting the variable-fill per-packet
+// buffers into a contiguous word stream. Splits a descriptor across calls if max_words runs out
+// mid-packet, so any max_words works. Returns the word count copied, or -1 on a bad board.
 int dma_wave_read_board(struct dma_ctrl_t *dma, int board, uint32_t *out, uint32_t max_words) {
   if (!dma || !dma->ok || board < 0 || board >= MAX_BOARDS || !dma->wave[board].armed) return -1;
   struct dma_wave_run *w = &dma->wave[board];
-  uint32_t avail = dma_wave_avail_board(dma, board);
-  uint32_t n = (avail < max_words) ? avail : max_words;
-  if (n) {
-    memcpy(out, dma->data + w->cap_off + (uint64_t)w->cap_read * 4u, (size_t)n * 4u);
-    w->cap_read += n;
+  uint32_t total = 0;
+  while (total < max_words && w->cap_desc_read < w->cap_ndesc) {
+    struct mcdma_desc *rd = (struct mcdma_desc *)(dma->desc + w->ring_desc_off + (uint64_t)w->cap_desc_read * DESC_ALIGN);
+    if (!(rd->status & DESC_STAT_CMPLT)) break;
+    uint32_t len = (rd->status & DESC_STAT_LEN_MASK) / 4u;
+    uint32_t left = (len > w->cap_word_in_desc) ? (len - w->cap_word_in_desc) : 0u;
+    uint32_t take = (left < max_words - total) ? left : (max_words - total);
+    if (take) {
+      memcpy(out + total,
+             dma->data + w->cap_off + (uint64_t)w->cap_desc_read * (S2MM_PACKET_WORDS * 4u)
+               + (uint64_t)w->cap_word_in_desc * 4u,
+             (size_t)take * 4u);
+      total += take;
+      w->cap_word_in_desc += take;
+      w->cap_read += take;
+    }
+    if (w->cap_word_in_desc >= len) {    // this descriptor fully drained -> advance to the next
+      w->cap_desc_read++;
+      w->cap_word_in_desc = 0;
+    } else {
+      break;                              // ran out of max_words mid-descriptor
+    }
   }
-  return (int)n;
+  // Report the read delta so the rate-control backlog tracks what software has consumed.
+  if (total) dma_rate_report_read(dma, board, total);
+  return (int)total;
 }
 
 uint32_t dma_wave_read_total_board(const struct dma_ctrl_t *dma, int board) {

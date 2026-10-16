@@ -42,6 +42,7 @@ class adc_packetizer_base:
 
         # Drive inputs to a defined idle state
         self.dut.aresetn.value = 1
+        self.dut.accumulate.value = 0   # eager drain by default (pre-rate-control behavior)
         self.dut.fifo_rd_data.value = 0
         self.dut.fifo_empty.value = 1
         self.dut.fifo_count_rd_clk.value = 0

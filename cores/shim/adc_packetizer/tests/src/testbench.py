@@ -127,3 +127,87 @@ async def test_backpressure(dut):
     model.cancel()
     ready.cancel()
     tb.kill_clock()
+
+
+@cocotb.test()
+async def test_dense_full_packets(dut):
+    tb = await setup_testbench(dut)
+    tb.dut._log.info("STARTING TEST: test_dense_full_packets")
+    await tb.start_clock()
+    await tb.reset()
+
+    # With accumulate asserted the packetizer holds tvalid low until a whole packet's worth is
+    # resident, then drains a dense MAX_PACKET_WORDS packet. An exact multiple of the cap leaves
+    # no sub-cap tail, so every packet is a full dense one.
+    dut.accumulate.value = 1
+    n = 2 * tb.MAX_PACKET_WORDS
+    tb.preload_words(n)
+    model = cocotb.start_soon(tb.fifo_model_task())
+    ready = cocotb.start_soon(tb.ready_driver(prob=1.0))
+    await tb.axis_scoreboard(len(tb.written))
+
+    tb.check_byte_exact()
+    assert tb.packet_lengths() == [tb.MAX_PACKET_WORDS, tb.MAX_PACKET_WORDS], \
+        f"expected two dense packets, got {tb.packet_lengths()}"
+    assert tb.leftover == [], "stream did not end on a tlast"
+
+    model.cancel()
+    ready.cancel()
+    tb.kill_clock()
+
+
+@cocotb.test()
+async def test_dense_holds_below_cap(dut):
+    tb = await setup_testbench(dut)
+    tb.dut._log.info("STARTING TEST: test_dense_holds_below_cap")
+    await tb.start_clock()
+    await tb.reset()
+
+    # Fewer than a full packet resident with accumulate asserted: the packetizer must not open a
+    # packet. The sub-cap words wait in the FIFO (not in an open descriptor) until more arrive or
+    # accumulate drops -- so tvalid stays low and nothing drains.
+    dut.accumulate.value = 1
+    tb.preload_words(tb.MAX_PACKET_WORDS // 2)
+    model = cocotb.start_soon(tb.fifo_model_task())
+    dut.m_axis_tready.value = 1
+    for _ in range(20):
+        await ReadOnly()
+        assert int(dut.m_axis_tvalid.value) == 0, "tvalid asserted below the dense cap"
+        await RisingEdge(dut.aclk)
+
+    model.cancel()
+    tb.kill_clock()
+
+
+@cocotb.test()
+async def test_dense_then_flush(dut):
+    tb = await setup_testbench(dut)
+    tb.dut._log.info("STARTING TEST: test_dense_then_flush")
+    await tb.start_clock()
+    await tb.reset()
+
+    # A full dense packet plus a sub-cap tail. The tail is held while accumulate is high; dropping
+    # accumulate once the dense packet has drained lets the tail flush eagerly as its own packet --
+    # the end-of-run flush, which falls out of the mode drop with no explicit signal.
+    dut.accumulate.value = 1
+    half = tb.MAX_PACKET_WORDS // 2
+    tb.preload_words(tb.MAX_PACKET_WORDS + half)
+    model = cocotb.start_soon(tb.fifo_model_task())
+    ready = cocotb.start_soon(tb.ready_driver(prob=1.0))
+
+    async def flush_after_dense():
+        while len(tb.received) < tb.MAX_PACKET_WORDS:
+            await RisingEdge(dut.aclk)
+        dut.accumulate.value = 0
+
+    flusher = cocotb.start_soon(flush_after_dense())
+    await tb.axis_scoreboard(len(tb.written))
+
+    tb.check_byte_exact()
+    assert tb.packet_lengths() == [tb.MAX_PACKET_WORDS, half], \
+        f"expected a dense packet then a flushed tail, got {tb.packet_lengths()}"
+
+    flusher.cancel()
+    model.cancel()
+    ready.cancel()
+    tb.kill_clock()

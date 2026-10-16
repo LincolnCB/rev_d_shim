@@ -18,8 +18,14 @@
 // tdest is tied to BOARD_INDEX so the mux and MCDMA route this board's samples back to
 // its own S2MM buffer. MAX_PACKET_WORDS caps a packet so it can never exceed the mux's
 // ARB_ON_MAX_XFERS backstop (which would re-arbitrate mid-packet and corrupt framing).
-//
-// The framing rests on the FIFO's read-side fill count (fifo_count_rd_clk), which is in
+//// Packing density is set by accumulate (from adc_rate_ctrl). With accumulate low the packetizer
+// drains eagerly -- forwards whatever is resident, closing on the FIFO running dry -- the
+// pre-rate-control behavior. With accumulate high it packs dense: it holds tvalid low until a
+// whole packet's worth has accumulated in the FIFO (fifo_count_rd_clk >= MAX_PACKET_WORDS), then
+// drains that dense packet. Only the packet start is gated; once a packet is mid-flight it drains
+// to its close in either mode, so a mode flip never strands an open packet. word_emitted pulses on
+// each emitted word for adc_rate_ctrl's write-side backlog count.
+//// The framing rests on the FIFO's read-side fill count (fifo_count_rd_clk), which is in
 // this same clock domain. That count is Gray-synchronized so it can lag but never
 // over-report: the worst case is closing a packet one word early, which is harmless.
 module adc_packetizer #(
@@ -32,6 +38,9 @@ module adc_packetizer #(
   input  wire                        aclk,
   input  wire                        aresetn,
 
+  // Packing density select (from adc_rate_ctrl): 1 = pack dense, 0 = drain eagerly
+  input  wire                        accumulate,
+
   // FIFO read side (fifo_async read port, first-word-fall-through)
   input  wire [DATA_WIDTH-1:0]       fifo_rd_data,
   output wire                        fifo_rd_en,
@@ -43,7 +52,10 @@ module adc_packetizer #(
   output wire                        m_axis_tvalid,
   input  wire                        m_axis_tready,
   output wire                        m_axis_tlast,
-  output wire [DEST_WIDTH-1:0]       m_axis_tdest
+  output wire [DEST_WIDTH-1:0]       m_axis_tdest,
+
+  // Emit beat for adc_rate_ctrl's per-board write-side backlog count (one pulse per word)
+  output wire                        word_emitted
 );
 
   // Packet-length counter is at least 1 bit wide even for a single-word cap.
@@ -66,10 +78,19 @@ module adc_packetizer #(
   // First-word-fall-through read: the head word is presented; a beat pops it.
   assign m_axis_tdata  = fifo_rd_data;
   assign m_axis_tdest  = BOARD_INDEX[DEST_WIDTH-1:0];
-  assign m_axis_tvalid = ~fifo_empty;
+
+  // Dense packing holds tvalid low until a whole packet's worth is resident, then drains the dense
+  // packet; eager packing forwards whatever is resident. mid_packet keeps a started packet draining
+  // in either mode, so the gate only applies to opening a new packet. A dense packet opened with a
+  // full packet resident always reaches its close, and holding data unopened in the FIFO (rather
+  // than an open descriptor) never blocks software from reading already-completed descriptors.
+  wire mid_packet      = (words_in_packet != 0);
+  wire enough_resident = (fifo_count_rd_clk >= MAX_PACKET_WORDS);
+  assign m_axis_tvalid = ~fifo_empty & (accumulate ? (mid_packet | enough_resident) : 1'b1);
 
   wire beat = m_axis_tvalid & m_axis_tready;
-  assign fifo_rd_en = beat;
+  assign fifo_rd_en   = beat;
+  assign word_emitted = beat;
 
   // Close the packet when this is the last resident word (the board ran dry) or the cap
   // is reached. The count can lag but never over-reports, so "<= 1" at worst closes a

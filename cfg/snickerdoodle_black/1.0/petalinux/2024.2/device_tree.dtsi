@@ -6,15 +6,22 @@
  * prebuffered-sequence buffer. The data region sits above the fixed descriptor
  * region, so growing it moves no base.
  *
+ * The data region holds both the DAC command stream (MM2S) and the ADC capture
+ * (S2MM), and the descriptor region holds both directions' SG rings; the DAC and
+ * ADC slices are carved out of each region by the software bump allocator, so a
+ * single region per kind serves both. Sized for a ~64 MB budget each: 128 MB of
+ * data and, at MAX_PACKET_WORDS = 256 (1024 B per capture descriptor), 8 MB of
+ * descriptors matches 128 MB of data so the two exhaust together.
+ *
  * A shared-dma-pool/reusable (CMA) region must be 4 MiB-aligned in both base and
  * size on 32-bit ARM -- a smaller or misaligned region fails u-dma-buf's probe
- * with of_reserved_mem_device_init return=-22 -- so the descriptor region is the
- * 4 MiB CMA minimum and every base stays 4 MiB-aligned. The 0x30000000 base
- * (768 MiB into the 1 GB map) is verified clear of every other node on this board. */
+ * with of_reserved_mem_device_init return=-22 -- so every base and size stays
+ * 4 MiB-aligned. The 0x30000000 base (768 MiB into the 1 GB map) is verified clear
+ * of every other node on this board; the regions span 0x30000000..0x38800000 (136 MB). */
 #define SHIM_DMA_DESC_BASE  0x30000000
-#define SHIM_DMA_DESC_SIZE  0x00400000   /* 4 MB  -- SG descriptor rings (CMA minimum)      */
-#define SHIM_DMA_DATA_BASE  0x30400000   /* = SHIM_DMA_DESC_BASE + SHIM_DMA_DESC_SIZE       */
-#define SHIM_DMA_DATA_SIZE  0x04000000   /* 64 MB -- prebuffered DAC sequence + ADC capture */
+#define SHIM_DMA_DESC_SIZE  0x00800000   /* 8 MB   -- SG descriptor rings (DAC + ADC)         */
+#define SHIM_DMA_DATA_BASE  0x30800000   /* = SHIM_DMA_DESC_BASE + SHIM_DMA_DESC_SIZE          */
+#define SHIM_DMA_DATA_SIZE  0x08000000   /* 128 MB -- prebuffered DAC sequence + ADC capture   */
 
 /include/ "system-conf.dtsi"
 / {
@@ -29,7 +36,7 @@
       reg = <SHIM_DMA_DESC_BASE SHIM_DMA_DESC_SIZE>;
     };
 
-    shim_dma_data: shim_dma_data@30400000 {
+    shim_dma_data: shim_dma_data@30800000 {
       compatible = "shared-dma-pool";
       reusable;
       reg = <SHIM_DMA_DATA_BASE SHIM_DMA_DATA_SIZE>;

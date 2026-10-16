@@ -1,0 +1,5 @@
+{
+    "NUM_BOARDS": 4,
+    "PACKET_WORDS": 4,
+    "AXI_ADDR_WIDTH": 16
+}
