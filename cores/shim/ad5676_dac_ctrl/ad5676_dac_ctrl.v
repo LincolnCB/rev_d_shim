@@ -23,9 +23,15 @@ module ad5676_dac_ctrl #(
   input  wire        cmd_buf_empty,
   input  wire        blocked,
 
+  // GET_CAL readback only
   output reg         data_buf_wr_en,
   output reg  [31:0] data_word,
   input  wire        data_buf_full,
+
+  // Debug words only; dropped when full (sticky debug_buf_overflow), never halting
+  output reg         debug_buf_wr_en,
+  output reg  [31:0] debug_word,
+  input  wire        debug_buf_full,
 
   input  wire        trigger,
   input  wire        ldac_shared,
@@ -34,6 +40,7 @@ module ad5676_dac_ctrl #(
   output reg         boot_fail,
   output reg         cmd_buf_underflow,
   output reg         data_buf_overflow,
+  output reg         debug_buf_overflow,
   output reg         unexp_trig,
   output reg         ldac_misalign,
   output reg         delay_too_short,
@@ -221,6 +228,7 @@ module ad5676_dac_ctrl #(
   wire        debug_spi_bit;
   wire        debug_dac_write;
   wire        try_data_write;
+  wire        try_debug_write;
 
 
   ///////////////////////////////////////////////////////////////////////////////
@@ -417,7 +425,7 @@ module ad5676_dac_ctrl #(
   // Command buffer underflow if expecting buffer item but buffer is empty
   assign err_cmd_buf_underflow_w  = (cmd_done && expect_next && !next_cmd_ready);
   // Data buffer overflow if trying to write to data buffer while it is full
-  assign err_data_buf_overflow_w  = (try_data_write && (data_buf_full || (blocked && !debug)));
+  assign err_data_buf_overflow_w  = (try_data_write && (data_buf_full || blocked));
   // Combine all error flags into a single error output
   assign error =  err_boot_fail_w
                   || err_unexp_trig_w
@@ -457,6 +465,11 @@ module ad5676_dac_ctrl #(
   always @(posedge clk) begin
     if (!resetn) data_buf_overflow <= 1'b0;
     else if (err_data_buf_overflow_w) data_buf_overflow <= 1'b1;
+  end
+  // Debug buffer overflow is sticky but not an error
+  always @(posedge clk) begin
+    if (!resetn) debug_buf_overflow <= 1'b0;
+    else if (try_debug_write && debug_buf_full) debug_buf_overflow <= 1'b1;
   end
   // DAC val out of bounds check
   assign first_dac_val_cal_signed_oob = (first_dac_val_cal_signed < -$signed(ABS_DAC_MAX_SIGNED) || first_dac_val_cal_signed > $signed(ABS_DAC_MAX_SIGNED));
@@ -788,38 +801,47 @@ module ad5676_dac_ctrl #(
   assign debug_spi_bit = (!running_spi_bit && spi_bit > 0 && debug);
   // DEBUG: DAC write command
   assign debug_dac_write = (cs_wait_done && debug);
-  // Attempt to write data to the data buffer if any of the following are true
-  assign try_data_write = write_cal
-                          || debug_miso_data
-                          || debug_state_transition
-                          || debug_n_cs_timer
-                          || debug_spi_bit
-                          || debug_dac_write;
+  // Calibration readback goes to the data buffer, debug words to the debug buffer
+  assign try_data_write = write_cal;
+  assign try_debug_write = debug_miso_data
+                           || debug_state_transition
+                           || debug_n_cs_timer
+                           || debug_spi_bit
+                           || debug_dac_write;
   // DAC data output write enable
-  // Write DAC data to the data buffer when attempting a write and buffer isn't full
   always @(posedge clk) begin
-    if (!resetn) data_buf_wr_en <= 1'b0; // Reset data word write enable on reset
-    else if (try_data_write && !(data_buf_full || (blocked && !debug))) data_buf_wr_en <= 1'b1; // Write data word when two words are ready and buffer isn't full
+    if (!resetn) data_buf_wr_en <= 1'b0;
+    else if (try_data_write && !(data_buf_full || blocked)) data_buf_wr_en <= 1'b1;
     else data_buf_wr_en <= 1'b0;
   end
-  // DAC data word
+  // DAC data word: calibration value with channel number
   always @(posedge clk) begin
-    if (!resetn) data_word <= 32'd0; // Reset data word on reset or error
-    else if (try_data_write && !(data_buf_full || (blocked && !debug))) begin
-      if (write_cal) begin
-        data_word <= {CAL_DATA, 9'd0, cmd_word[18:16], cal_val[cmd_word[18:16]]}; // Write calibration value with channel number and debug code
-      end else if (debug_miso_data) begin
-        data_word <= {DBG_MISO_DATA, 12'd0, miso_data_mosi_clk[15:0]}; // Write MISO data with debug code
+    if (!resetn) data_word <= 32'd0;
+    else if (try_data_write && !(data_buf_full || blocked)) data_word <= {CAL_DATA, 9'd0, cmd_word[18:16], cal_val[cmd_word[18:16]]};
+    else data_word <= 32'd0;
+  end
+  // Debug output write enable
+  always @(posedge clk) begin
+    if (!resetn) debug_buf_wr_en <= 1'b0;
+    else if (try_debug_write && !debug_buf_full) debug_buf_wr_en <= 1'b1;
+    else debug_buf_wr_en <= 1'b0;
+  end
+  // Debug word (one per cycle; simultaneous events keep the first in this order)
+  always @(posedge clk) begin
+    if (!resetn) debug_word <= 32'd0;
+    else if (try_debug_write && !debug_buf_full) begin
+      if (debug_miso_data) begin
+        debug_word <= {DBG_MISO_DATA, 12'd0, miso_data_mosi_clk[15:0]};
       end else if (debug_state_transition) begin
-        data_word <= {DBG_STATE_TRANSITION, 20'd0, prev_state[3:0], state[3:0]}; // Write state transition with debug code
+        debug_word <= {DBG_STATE_TRANSITION, 20'd0, prev_state[3:0], state[3:0]};
       end else if (debug_n_cs_timer) begin
-        data_word <= {DBG_N_CS_TIMER, 23'd0, (n_cs_timer + 5'd1)}; // Write n_cs timer value with debug code
+        debug_word <= {DBG_N_CS_TIMER, 23'd0, (n_cs_timer + 5'd1)};
       end else if (debug_spi_bit) begin
-        data_word <= {DBG_SPI_BIT, 23'd0, spi_bit}; // Write SPI bit counter value with debug code
-      end else if (debug_dac_write) begin
-        data_word <= {DBG_DAC_WRITE, 4'd0, mosi_shift_reg}; // Write the upcoming DAC write command with debug code
+        debug_word <= {DBG_SPI_BIT, 23'd0, spi_bit};
+      end else begin
+        debug_word <= {DBG_DAC_WRITE, 4'd0, mosi_shift_reg};
       end
-    end else data_word <= 32'd0;
+    end else debug_word <= 32'd0;
   end
 
   //// ---- Functions for conversions

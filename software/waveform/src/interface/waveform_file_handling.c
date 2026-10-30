@@ -101,7 +101,7 @@ static int next_double(char **cursor, double *out) {
 // to cycles (round-to-nearest, via hw_time_to_cycles) first and takes the delta in cycles --
 // so the result is exactly the shortest delay the command stream will carry, and the check
 // predicts the hardware's own minimum-delay enforcement.
-bool timestamp_file_min_delay_cycles(const char *path, uint32_t spi_clk_hz, uint32_t *min_cycles) {
+bool timestamp_file_min_delay_cycles(const char *path, uint32_t spi_clk_hz, uint32_t *min_cycles, timestamp_gap_t *where) {
   FILE *fp = fopen(path, "r");
   if (fp == NULL) {
     fprintf(stderr, "Error: could not open '%s' for timing validation: %s\n", path, strerror(errno));
@@ -111,8 +111,11 @@ bool timestamp_file_min_delay_cycles(const char *path, uint32_t spi_clk_hz, uint
   bool has_prev = false;
   double prev_ts = 0.0;
   uint32_t prev_cyc = 0;
+  long line_no = 0, prev_line_no = 0;
   uint32_t min_delta = UINT32_MAX;
+  timestamp_gap_t gap = {0, 0, 0.0, 0.0};
   while (fgets(line, sizeof(line), fp) != NULL) {
+    line_no++;
     strip_comments_and_trim(line);
     if (line[0] == '\0') {
       continue;
@@ -130,14 +133,17 @@ bool timestamp_file_min_delay_cycles(const char *path, uint32_t spi_clk_hz, uint
       uint32_t delta = cyc - prev_cyc;
       if (delta < min_delta) {
         min_delta = delta;
+        gap = (timestamp_gap_t){prev_line_no, line_no, prev_ts, ts};
       }
     }
     prev_ts = ts;
     prev_cyc = cyc;
+    prev_line_no = line_no;
     has_prev = true;
   }
   fclose(fp);
   *min_cycles = min_delta;
+  if (where != NULL) *where = gap;
   return true;
 }
 

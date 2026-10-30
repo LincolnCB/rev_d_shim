@@ -12,8 +12,8 @@
 #define HW_STS_REG_OFFSET (uint32_t) 0 // Hardware status register
 // Command FIFO status offset for DAC board (in 32-bit words)
 #define DAC_CMD_FIFO_STS_OFFSET(board)   (1 + (2 * (board)))
-// Data FIFO status offset for DAC board (in 32-bit words)
-#define DAC_DATA_FIFO_STS_OFFSET(board)  (18 + (2 * (board)))
+// Debug FIFO status offset for DAC board (in 32-bit words)
+#define DAC_DEBUG_FIFO_STS_OFFSET(board) (18 + (2 * (board)))
 // Command FIFO status offset for ADC board (in 32-bit words)
 #define ADC_CMD_FIFO_STS_OFFSET(board)   (1 + (2 * (board) + 1))
 // Data FIFO status offset for ADC board (in 32-bit words)
@@ -51,6 +51,14 @@
 // Command counters since reset (32-bit per board)
 #define DAC_CMDS_SINCE_RESET_OFFSET(board)    (57 + (board))
 #define ADC_CMDS_SINCE_RESET_OFFSET(board)    (65 + (board))
+// ADC debug FIFO status (32-bit per board)
+#define ADC_DEBUG_FIFO_STS_OFFSET(board)      (73 + (board))
+// DAC data (calibration readback) FIFO status (32-bit per board)
+#define DAC_DATA_FIFO_STS_OFFSET(board)       (81 + (board))
+// Debug full: sticky per-board flag that a debug word was dropped on a full debug FIFO
+#define DEBUG_FULL_OFFSET                     (uint32_t) 89
+#define DEBUG_FULL_DAC(word, board)           (((word) >> (board)) & 0x1)
+#define DEBUG_FULL_ADC(word, board)           (((word) >> (8 + (board))) & 0x1)
 
 // Macro for extracting the 4-bit state
 #define HW_STS_STATE(hw_status) ((hw_status) & 0xF)
@@ -144,10 +152,13 @@
 // System status structure
 struct sys_sts_t {
   volatile uint32_t *hw_status_reg;        // Hardware status
-  volatile uint32_t *dac_cmd_fifo_sts[8];  // DAC command FIFO status for 8 boards
-  volatile uint32_t *dac_data_fifo_sts[8]; // DAC data FIFO status for 8 boards
-  volatile uint32_t *adc_cmd_fifo_sts[8];  // ADC command FIFO status for 8 boards
-  volatile uint32_t *adc_data_fifo_sts[8]; // ADC data FIFO status for 8 boards
+  volatile uint32_t *dac_cmd_fifo_sts[8];   // DAC command FIFO status for 8 boards
+  volatile uint32_t *dac_debug_fifo_sts[8]; // DAC debug FIFO status for 8 boards
+  volatile uint32_t *dac_data_fifo_sts[8];  // DAC data (calibration readback) FIFO status for 8 boards
+  volatile uint32_t *adc_cmd_fifo_sts[8];   // ADC command FIFO status for 8 boards
+  volatile uint32_t *adc_debug_fifo_sts[8]; // ADC debug FIFO status for 8 boards
+  volatile uint32_t *adc_data_fifo_sts[8];  // ADC data FIFO status for 8 boards
+  volatile uint32_t *debug_full;            // Debug full flags (see DEBUG_FULL_DAC/ADC)
   volatile uint32_t *trig_cmd_fifo_sts;    // Trigger command FIFO status
   volatile uint32_t *trig_data_fifo_sts;   // Trigger data FIFO status
   volatile uint32_t *clk_freq_hz;      // SPI clock frequency in Hz
@@ -165,6 +176,11 @@ struct sys_sts_t {
 // Structure initialization function
 struct sys_sts_t create_sys_sts(bool verbose);
 
+// Number of boards the running bitstream instantiated, read from the FIFO-present bit (31) of
+// each board's DAC command FIFO status word -- set for built boards, zero for the rest. Boards
+// are contiguous 0..N-1; computed once and cached.
+int board_count(void);
+
 // Get hardware status register value
 uint32_t sys_sts_get_hw_status(struct sys_sts_t *sys_sts, bool verbose);
 // Get SPI clock frequency in Hz
@@ -175,12 +191,18 @@ uint32_t sys_sts_get_source_clk_freq_hz(struct sys_sts_t *sys_sts, bool verbose)
 uint32_t get_fifo_status(volatile uint32_t *fifo_sts_ptr, const char *fifo_name, bool verbose);
 // Get DAC command FIFO status for a specific board
 uint32_t sys_sts_get_dac_cmd_fifo_status(struct sys_sts_t *sys_sts, uint8_t board, bool verbose);
-// Get DAC data FIFO status for a specific board
+// Get DAC debug FIFO status for a specific board
+uint32_t sys_sts_get_dac_debug_fifo_status(struct sys_sts_t *sys_sts, uint8_t board, bool verbose);
+// Get DAC data (calibration readback) FIFO status for a specific board
 uint32_t sys_sts_get_dac_data_fifo_status(struct sys_sts_t *sys_sts, uint8_t board, bool verbose);
 // Get ADC command FIFO status for a specific board
 uint32_t sys_sts_get_adc_cmd_fifo_status(struct sys_sts_t *sys_sts, uint8_t board, bool verbose);
+// Get ADC debug FIFO status for a specific board
+uint32_t sys_sts_get_adc_debug_fifo_status(struct sys_sts_t *sys_sts, uint8_t board, bool verbose);
 // Get ADC data FIFO status for a specific board
 uint32_t sys_sts_get_adc_data_fifo_status(struct sys_sts_t *sys_sts, uint8_t board, bool verbose);
+// Get the debug full word (see DEBUG_FULL_DAC/ADC)
+uint32_t sys_sts_get_debug_full(struct sys_sts_t *sys_sts, bool verbose);
 // Get trigger command FIFO status
 uint32_t sys_sts_get_trig_cmd_fifo_status(struct sys_sts_t *sys_sts, bool verbose);
 // Get trigger data FIFO status

@@ -103,6 +103,16 @@ int cmd_hard_reset(const char** args, int arg_count, const command_flag_t* flags
       ctx->dac_debug_stream_running[board] = false;
     }
 
+    // Stop ADC debug streams
+    if (ctx->adc_debug_stream_running[board]) {
+      printf("    Stopping ADC debug stream for board %d\n", board);
+      ctx->adc_debug_stream_stop[board] = true;
+      if (pthread_join(ctx->adc_debug_stream_threads[board], NULL) != 0) {
+        fprintf(stderr, "Warning: Failed to join ADC debug streaming thread for board %d\n", board);
+      }
+      ctx->adc_debug_stream_running[board] = false;
+    }
+
     // Stop ADC streams
     if (ctx->adc_data_stream_running[board]) {
       printf("    Stopping ADC data stream for board %d\n", board);
@@ -505,17 +515,19 @@ void safe_buffer_reset(command_context_t* ctx, bool verbose) {
       }
     }
 
-    // Check DAC data buffer
+    // Check DAC data and debug buffers (both clear on the DAC data-reset bit)
     uint32_t dac_data_fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, board, false);
+    uint32_t dac_rd_words = FIFO_STS_WORD_COUNT(dac_data_fifo_status)
+                            + FIFO_STS_WORD_COUNT(sys_sts_get_dac_debug_fifo_status(ctx->sys_sts, board, false));
     if (FIFO_PRESENT(dac_data_fifo_status)) {
-      if (system_is_off || FIFO_STS_WORD_COUNT(dac_data_fifo_status) > 0) {
+      if (system_is_off || dac_rd_words > 0) {
         data_reset_mask |= (1U << dac_bit);
         if (verbose) {
-          printf("  DAC board %d data buffer: %s - will reset\n", board,
-                 (FIFO_STS_WORD_COUNT(dac_data_fifo_status) > 0 ? "has entries" : "empty"));
+          printf("  DAC board %d data/debug buffers: %s - will reset\n", board,
+                 (dac_rd_words > 0 ? "has entries" : "empty"));
         }
       } else if (verbose) {
-        printf("  DAC board %d data buffer: empty - skipping reset\n", board);
+        printf("  DAC board %d data/debug buffers: empty - skipping reset\n", board);
       }
     }
   }
@@ -526,17 +538,19 @@ void safe_buffer_reset(command_context_t* ctx, bool verbose) {
   for (int board = 0; board < 8; board++) {
     uint32_t adc_bit = board * 2 + 1;  // 1, 3, 5, 7, 9, 11, 13, 15
 
-    // Check ADC command buffer
+    // Check ADC command and debug buffers (both clear on the ADC command-reset bit)
     uint32_t adc_cmd_fifo_status = sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, board, false);
+    uint32_t adc_cmd_words = FIFO_STS_WORD_COUNT(adc_cmd_fifo_status)
+                             + FIFO_STS_WORD_COUNT(sys_sts_get_adc_debug_fifo_status(ctx->sys_sts, board, false));
     if (FIFO_PRESENT(adc_cmd_fifo_status)) {
-      if (system_is_off || FIFO_STS_WORD_COUNT(adc_cmd_fifo_status) > 0) {
+      if (system_is_off || adc_cmd_words > 0) {
         cmd_reset_mask |= (1U << adc_bit);
         if (verbose) {
-          printf("  ADC board %d command buffer: %s - will reset\n", board,
-                 (FIFO_STS_WORD_COUNT(adc_cmd_fifo_status) > 0 ? "has entries" : "empty"));
+          printf("  ADC board %d command/debug buffers: %s - will reset\n", board,
+                 (adc_cmd_words > 0 ? "has entries" : "empty"));
         }
       } else if (verbose) {
-        printf("  ADC board %d command buffer: empty - skipping reset\n", board);
+        printf("  ADC board %d command/debug buffers: empty - skipping reset\n", board);
       }
     }
 

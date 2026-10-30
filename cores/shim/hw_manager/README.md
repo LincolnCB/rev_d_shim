@@ -16,7 +16,7 @@ The `hw_manager` module manages the hardware system's startup, operation, and sh
   - `pow_en`: Power stage enable (turn on power stage).
   - `spi_off`: SPI system powered off.
   - `calc_n_cs_done`: DAC/ADC n_cs timing calculation done.
-  - `ext_en`: External enable (deadman shutdown).
+  - `ext_en`: External enable (deadman shutdown). Used directly, so it must already be synchronized to `clk` (the block design passes the `Manual_Enable` pin through `manual_enable_sync`).
 
 - **Configuration Status**
   - `lock_viol`: Configuration lock violation.

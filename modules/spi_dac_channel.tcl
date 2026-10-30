@@ -34,6 +34,7 @@ create_bd_pin -dir O cal_oob
 create_bd_pin -dir O dac_val_oob
 create_bd_pin -dir O cmd_buf_underflow
 create_bd_pin -dir O data_buf_overflow
+create_bd_pin -dir O debug_buf_overflow
 create_bd_pin -dir O unexp_trig
 create_bd_pin -dir O ldac_misalign
 create_bd_pin -dir O delay_too_short
@@ -47,6 +48,9 @@ create_bd_pin -dir I dac_cmd_empty
 create_bd_pin -dir O -from 31 -to 0 dac_data
 create_bd_pin -dir O dac_data_wr_en
 create_bd_pin -dir I dac_data_full
+create_bd_pin -dir O -from 31 -to 0 dac_debug
+create_bd_pin -dir O dac_debug_wr_en
+create_bd_pin -dir I dac_debug_full
 
 # Block buffers and next command execution until HW Manager is ready
 create_bd_pin -dir I blocked
@@ -94,11 +98,15 @@ cell shim:user:ad5676_dac_ctrl dac_spi {
   data_buf_wr_en dac_data_wr_en
   data_word dac_data
   data_buf_full dac_data_full
+  debug_buf_wr_en dac_debug_wr_en
+  debug_word dac_debug
+  debug_buf_full dac_debug_full
   trigger trigger
   ldac_shared ldac_shared
   waiting_for_trig waiting_for_trig
   cmd_buf_underflow cmd_buf_underflow
   data_buf_overflow data_buf_overflow
+  debug_buf_overflow debug_buf_overflow
   unexp_trig unexp_trig
   ldac_misalign ldac_misalign
   delay_too_short delay_too_short

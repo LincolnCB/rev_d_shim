@@ -19,7 +19,8 @@ typedef enum {
 
 //////////////////// ADC Control Definitions ////////////////////
 // ADC FIFO depths
-#define ADC_CMD_FIFO_WORDCOUNT   (uint32_t)(1 << 10) // 1024 words (2^10)
+#define ADC_CMD_FIFO_WORDCOUNT   (uint32_t)(1 << 12) // 4096 words (2^12)
+#define ADC_DEBUG_FIFO_WORDCOUNT (uint32_t)(1 << 12) // 4096 words (2^12)
 #define ADC_DATA_FIFO_WORDCOUNT  (uint32_t)(1 << 10) // 1024 words (2^10)
 
 // ADC state codes
@@ -48,7 +49,7 @@ typedef enum {
 #define ADC_CMD_CONT_BIT 27
 #define ADC_CMD_REPEAT_BIT 26
 
-// ADC debug codes
+// ADC debug codes (top 4 bits of words on the debug lane)
 #define ADC_DBG(word)                (((word) >> 28) & 0x0F) // Top 4 bits for debug code
 #define ADC_DBG_MISO_DATA            1
 #define ADC_DBG_STATE_TRANSITION     2
@@ -64,14 +65,18 @@ typedef enum {
 
 // ADC control structure
 struct adc_ctrl_t {
-  volatile uint32_t *buffer[MAX_BOARDS];  // ADC FIFO (command and data)
+  volatile uint32_t *cmd[MAX_BOARDS];    // ADC command FIFO word (write)
+  volatile uint32_t *debug[MAX_BOARDS];  // ADC debug FIFO word (read)
+  volatile uint32_t *data[MAX_BOARDS];   // ADC data FIFO word (read)
 };
 
 // Function declarations
 // Create ADC control structure
 struct adc_ctrl_t create_adc_ctrl(bool verbose);
-// Read ADC data word from a specific board
-uint32_t adc_read_word(struct adc_ctrl_t *adc_ctrl, uint8_t board);
+// Read one sample word (pair or single-channel read) from a specific board
+uint32_t adc_read_data(struct adc_ctrl_t *adc_ctrl, uint8_t board);
+// Read one debug word from a specific board
+uint32_t adc_read_debug(struct adc_ctrl_t *adc_ctrl, uint8_t board);
 // Interpret and format ADC value as debug information
 char* adc_format_debug(uint32_t adc_value, bool verbose);
 // Interpret and format the ADC state

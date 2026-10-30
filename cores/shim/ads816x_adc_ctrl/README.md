@@ -116,6 +116,8 @@ When `boot_test_skip` is asserted, step 4 is skipped and the core transitions di
 
 The core operates based on 32-bit command words read from the command buffer. Each command is executed fully before the next is read (except for CANCEL, which can interrupt waits).
 
+A repeating command (REPEAT bit set on NO_OP, ADC_RD or ADC_RD_CH) starts running as soon as it's read, and its repeat count word only has to arrive before that first iteration finishes, so software writing the two words separately doesn't disturb the timing. If the first iteration finishes and the count word still isn't in the buffer, the core halts with `cmd_buf_underflow`.
+
 ### Command Types
 
 - **NO_OP (`3'd0`)**: Delay or trigger wait.
@@ -198,7 +200,7 @@ If `debug` is asserted, the core outputs debug information in addition to ADC sa
 2. If a single ADC sample is ready, output that.
 3. If a MISO data word is read during boot test, output a word using Debug Code 1 (`DBG_MISO_DATA`), including the MISO data.
 4. If a state transition occurs, output a word using Debug Code 2 (`DBG_STATE_TRANSITION`), including the previous and current state.
-5. If a repeat starts, output a word using Debug Code 3 (`DBG_REPEAT_BIT`), including the repeated command and repeat counter.
+5. If a repeat count word is read, output a word using Debug Code 3 (`DBG_REPEAT_BIT`), including the repeated command and repeat counter.
 6. If the chip select timer starts, output a word using Debug Code 4 (`DBG_N_CS_TIMER`), including the timer value.
 7. If the SPI bit counter changes from 0 to nonzero, output a word using Debug Code 5 (`DBG_SPI_BIT`), including the SPI bit value.
 8. If a command finishes, output a word using Debug Code 6 (`DBG_CMD_DONE`), including the command state and repeat counter.
@@ -225,7 +227,7 @@ If none of the above conditions are met, the output word is zero and nothing is 
 - Delay too short (`delay_too_short`)
 - Invalid commands (`bad_cmd`)
 - Buffer underflow (expect next command with command buffer empty) (`cmd_buf_underflow`)
-- Underflow while starting a repeat (`cmd_buf_underflow`)
+- Repeating command finished its first iteration before its repeat count word arrived (`cmd_buf_underflow`)
 - Buffer overflow (try to write to data buffer with data buffer full) (`data_buf_overflow`)
 
 ## Notes

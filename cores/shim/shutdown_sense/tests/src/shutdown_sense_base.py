@@ -15,19 +15,27 @@ class shutdown_sense_base:
         # Initialize input signals
         self.dut.shutdown_sense_pin.value = 0
         self.dut.shutdown_sense_connected.value = connected
+        self.connected = connected
+        self.DWELL_CYCLES = int(self.dut.DWELL_CYCLES.value)
 
     async def shutdown_sense_en_drive_low(self):
-        """Drive the shutdown sense en low to initialize `shutdown_sense_sel` to `000` and clear the `shutdown_sense` register."""
+        """Drive the shutdown sense en and pin low to initialize `shutdown_sense_sel` to `000`, clear the `shutdown_sense` register, and flush the pin synchronizer."""
         await RisingEdge(self.dut.clk)
         self.dut.shutdown_sense_en.value = 0
+        self.dut.shutdown_sense_pin.value = 0
         await RisingEdge(self.dut.clk)
         await RisingEdge(self.dut.clk)
         self.dut._log.info("DUT now at a known STATE.")
 
     async def monitor_and_scoreboard(self):
         """Monitor the shim shutdown sense signals and score them against expected values."""
+        # Expected register state after each edge: select, dwell counter, sticky flags, and the
+        # two pin synchronizer stages (flushed to 0 by shutdown_sense_en_drive_low).
         shutdown_sense_expected_next = [0, 0, 0, 0, 0, 0, 0, 0]
         shutdown_sense_sel_expected_next = 0
+        dwell_next = 0
+        sync0_next = 0
+        sync1_next = 0
         while True:
             await RisingEdge(self.dut.clk)
             await ReadOnly()
@@ -52,14 +60,22 @@ class shutdown_sense_base:
                                f"EXPECTED shutdown_sense: {list(reversed(shutdown_sense_expected_next))}")
 
             # Update the next cycle's expected values based on the current state of the DUT
+            sync1 = sync1_next
             if self.dut.shutdown_sense_en.value == 0:
                 shutdown_sense_expected_next = [0, 0, 0, 0, 0, 0, 0, 0]
                 shutdown_sense_sel_expected_next = 0
+                dwell_next = 0
+            elif dwell_next == self.DWELL_CYCLES - 1:
+                # Window end: sample the synchronized pin for the current select, then advance
+                sel = shutdown_sense_sel_expected_next
+                if sync1 == 1 and (self.connected >> sel) & 1:
+                    shutdown_sense_expected_next[sel] = 1
+                shutdown_sense_sel_expected_next = (sel + 1) % 8
+                dwell_next = 0
             else:
-                if self.dut.shutdown_sense_pin.value == 1:
-                    shutdown_sense_expected_next[shutdown_sense_sel_expected_next] = 1
-
-                shutdown_sense_sel_expected_next = (shutdown_sense_sel_expected_next + 1) % 8
+                dwell_next += 1
+            sync1_next = sync0_next
+            sync0_next = int(self.dut.shutdown_sense_pin.value)
 
 
 

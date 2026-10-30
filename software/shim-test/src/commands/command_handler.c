@@ -82,10 +82,12 @@ static command_entry_t command_table[] = {
 
   // ===== DAC COMMANDS (from dac_commands.h) =====
   {"dac_cmd_fifo_sts", cmd_dac_cmd_fifo_sts, {1, 1, {-1}, "Show DAC command FIFO status for specified board (0-7)"}},
-  {"dac_data_fifo_sts", cmd_dac_data_fifo_sts, {1, 1, {-1}, "Show DAC data FIFO status for specified board (0-7)"}},
+  {"dac_data_fifo_sts", cmd_dac_data_fifo_sts, {1, 1, {-1}, "Show DAC data (calibration readback) FIFO status for specified board (0-7)"}},
+  {"dac_debug_fifo_sts", cmd_dac_debug_fifo_sts, {1, 1, {-1}, "Show DAC debug FIFO status and dropped-word flag for specified board (0-7)"}},
   {"dac_last_received_cmd", cmd_dac_last_received_cmd, {1, 1, {-1}, "Show and decode last received DAC command for specified board (0-7)"}},
   {"dac_cmds_since_reset", cmd_dac_cmds_since_reset, {1, 1, {-1}, "Show DAC command count since last reset for specified board (0-7)"}},
-  {"read_dac_data", cmd_read_dac_data, {1, 1, {FLAG_ALL, -1}, "Read and print data (debug or calibration) from specified board (0-7)"}},
+  {"read_dac_data", cmd_read_dac_data, {1, 1, {FLAG_ALL, -1}, "Read and print calibration readback (GET_CAL) from specified board (0-7) [--all]"}},
+  {"read_dac_debug", cmd_read_dac_debug, {1, 1, {FLAG_ALL, -1}, "Read and print DAC debug words from specified board (0-7) [--all]"}},
   {"dac_noop", cmd_dac_noop, {3, 3, {FLAG_CONTINUE, -1}, "Send DAC no-op command: <board|all> <\"trig\"|\"delay\"> <value> [--continue]"}},
   {"dac_cancel", cmd_dac_cancel, {1, 1, {-1}, "Send DAC cancel command to specified board (0-7)"}},
   {"do_dac_wr", cmd_do_dac_wr, {11, 11, {FLAG_CONTINUE, -1}, "Send DAC write update command: <board> <ch0> <ch1> <ch2> <ch3> <ch4> <ch5> <ch6> <ch7> <\"trig\"|\"delay\"> <value> [--continue]"}},
@@ -103,11 +105,12 @@ static command_entry_t command_table[] = {
   // ===== ADC COMMANDS (from adc_commands.h) =====
   {"adc_cmd_fifo_sts", cmd_adc_cmd_fifo_sts, {1, 1, {-1}, "Show ADC command FIFO status for specified board (0-7)"}},
   {"adc_data_fifo_sts", cmd_adc_data_fifo_sts, {1, 1, {-1}, "Show ADC data FIFO status for specified board (0-7)"}},
+  {"adc_debug_fifo_sts", cmd_adc_debug_fifo_sts, {1, 1, {-1}, "Show ADC debug FIFO status and dropped-word flag for specified board (0-7)"}},
   {"adc_last_received_cmd", cmd_adc_last_received_cmd, {1, 1, {-1}, "Show and decode last received ADC command for specified board (0-7)"}},
   {"adc_cmds_since_reset", cmd_adc_cmds_since_reset, {1, 1, {-1}, "Show ADC command count since last reset for specified board (0-7)"}},
   {"read_adc_pair", cmd_read_adc_pair, {1, 1, {FLAG_ALL, -1}, "Read paired ADC channel sample(s) from specified board (0-7) [--all]"}},
   {"read_adc_single", cmd_read_adc_single, {1, 1, {FLAG_ALL, -1}, "Read single ADC channel data sample(s) from specified board (0-7) [--all]"}},
-  {"read_adc_dbg", cmd_read_adc_dbg, {1, 1, {FLAG_ALL, -1}, "Read and print debug information for ADC data from specified board (0-7)"}},
+  {"read_adc_dbg", cmd_read_adc_dbg, {1, 1, {FLAG_ALL, -1}, "Read and print ADC debug words from specified board (0-7) [--all]"}},
   {"adc_noop", cmd_adc_noop, {3, 3, {FLAG_CONTINUE, -1}, "Send ADC no-op command: <board|all> <\"trig\"|\"delay\"> <value> [--continue]"}},
   {"adc_cancel", cmd_adc_cancel, {1, 1, {-1}, "Send ADC cancel command to specified board (0-7)"}},
   {"adc_set_ord", cmd_adc_set_ord, {9, 9, {-1}, "Set ADC channel order: <board> <ord0> <ord1> <ord2> <ord3> <ord4> <ord5> <ord6> <ord7> (each order value must be 0-7)"}},
@@ -117,6 +120,8 @@ static command_entry_t command_table[] = {
   {"stream_adc_commands_from_file", cmd_stream_adc_commands_from_file, {2, 3, {FLAG_SIMPLE, -1}, "Start ADC command streaming from file: <board> <file_path> [iterations] [--simple] (supports * wildcards, iterations defaults to 1)"}},
   {"stop_adc_data_stream", cmd_stop_adc_data_stream, {1, 1, {-1}, "Stop ADC data streaming for specified board (0-7)"}},
   {"stop_adc_cmd_stream", cmd_stop_adc_cmd_stream, {1, 1, {-1}, "Stop ADC command streaming for specified board (0-7)"}},
+  {"stream_adc_debug", cmd_stream_adc_debug, {2, 2, {-1}, "Start ADC debug streaming to file: <board> <file_path> (streams ADC debug words as they arrive)"}},
+  {"stop_adc_debug_stream", cmd_stop_adc_debug_stream, {1, 1, {-1}, "Stop ADC debug streaming for specified board (0-7)"}},
 
   // ===== TRIGGER COMMANDS (from trigger_commands.h) =====
   {"trig_cmd_fifo_sts", cmd_trig_cmd_fifo_sts, {0, 0, {-1}, "Show trigger command FIFO status"}},

@@ -9,7 +9,7 @@
 //  All flags are optional and have defaults:
 //    --adc, -a      (string)  default: none (unset)
 //    --lockout, -l  (double)  default: 10.0
-//    --clk_MHz, -c  (double)  default: 10.0
+//    --clk_MHz, -c  (double)  default: TIMING_ADC_MAX_CLK_HZ (10.0)
 //    --iters, -i    (int)     default: 1
 //    --pio, -p                default: off (prebuffered MCDMA datapath)
 //    --verbose, -v            default: off
@@ -37,7 +37,7 @@ typedef struct {
   const char *input_file;  // required positional argument
   const char *adc_file;    // --adc, default: NULL (none)
   double lockout;          // --lockout, default: 10.0
-  double clk_MHz;          // --clk_MHz, default: 10.0
+  double clk_MHz;          // --clk_MHz, default: TIMING_ADC_MAX_CLK_HZ
   int iters;               // --iters, default: 1
   bool use_dma;            // default: true (prebuffered MCDMA datapath); --pio selects PIO instead
   bool verbose;            // --verbose, default: false (detailed hardware status logging)
@@ -64,13 +64,13 @@ static void print_usage(const char *prog) {
     "Options:\n"
     "  -a, --adc <path>          ADC file path (default: none)\n"
     "  -l, --lockout <float>     Lockout value in ms (default: 10.0)\n"
-    "  -c, --clk_MHz <float>     Clock value (MHz, default: 10.0)\n"
+    "  -c, --clk_MHz <float>     Clock value (MHz, default: %g)\n"
     "  -i, --iters <int>         Number of iterations (default: 1)\n"
     "  -p, --pio                 Use the PIO datapath instead of the default prebuffered MCDMA\n"
     "  -v, --verbose             Enable detailed hardware status logging\n"
     "      --no-cal              Skip the pre-run channel calibration\n"
     "  -h, --help                Show this help message\n",
-    prog);
+    prog, TIMING_ADC_MAX_CLK_HZ / 1e6);
 }
 
 // Parse a double from a string, exiting with an error on failure.
@@ -167,10 +167,10 @@ typedef struct {
 static bool timing_fits_at(uint32_t clk_hz, void *p) {
   clk_fit_arg_t *a = p;
   uint32_t cycles;
-  if (!timestamp_file_min_delay_cycles(a->dac_path, clk_hz, &cycles)) { a->read_ok = false; return false; }
+  if (!timestamp_file_min_delay_cycles(a->dac_path, clk_hz, &cycles, NULL)) { a->read_ok = false; return false; }
   if (cycles < timing_dac_min_delay_cycles(clk_hz)) return false;
   if (a->adc_path == NULL) return true;
-  if (!timestamp_file_min_delay_cycles(a->adc_path, clk_hz, &cycles)) { a->read_ok = false; return false; }
+  if (!timestamp_file_min_delay_cycles(a->adc_path, clk_hz, &cycles, NULL)) { a->read_ok = false; return false; }
   return cycles >= timing_adc_min_delay_cycles(clk_hz);
 }
 
@@ -181,36 +181,47 @@ static void suggest_min_clock(const char *dac_path, const char *adc_path) {
   if (!a.read_ok) return;
   if (hz == 0) {
     fprintf(stderr, "No SPI clock up to %.1f MHz is fast enough for this timing -- widen the shortest sample spacing.\n",
-            TIMING_CLK_MAX_HZ / 1e6);
+            SPI_CLK_MAX_HZ / 1e6);
     return;
   }
   fprintf(stderr, "Minimum SPI clock for this timing: %.1f MHz (rerun with -c %.1f).\n", hz / 1e6, hz / 1e6);
-  if (hz > 10000000u) {
-    fprintf(stderr, "Warning: that is above 10 MHz, so channel calibration will be skipped.\n");
+  if (hz > TIMING_ADC_MAX_CLK_HZ) {
+    fprintf(stderr, "Warning: that is above %g MHz, so channel calibration will be skipped.\n", TIMING_ADC_MAX_CLK_HZ / 1e6);
     if (adc_path != NULL) {
-      fprintf(stderr, "Warning: ADC readback is unreliable above 10 MHz -- captured ADC data may be corrupt.\n");
+      fprintf(stderr, "Warning: ADC readback is unreliable above %g MHz -- captured ADC data may be corrupt.\n",
+              TIMING_ADC_MAX_CLK_HZ / 1e6);
     }
   }
+}
+
+// Report where in a file its shortest gap is, after a timing rejection.
+static void print_gap_location(const char *path, const timestamp_gap_t *gap) {
+  if (gap->line == 0) return;
+  fprintf(stderr, "  Shortest gap in %s: line %ld (t = %.9g s) -> line %ld (t = %.9g s)\n",
+          path, gap->prev_line, gap->prev_t_sec, gap->line, gap->t_sec);
 }
 
 // Check both files' shortest delays against the software model of the hardware minimums at
 // clk_hz, before power-on. Reports each failure, then suggests a clock. Returns true if they fit.
 static bool precheck_timing(const config_t *cfg, uint32_t clk_hz) {
   uint32_t cycles, need;
+  timestamp_gap_t gap;
   bool ok = true;
-  if (!timestamp_file_min_delay_cycles(cfg->input_file, clk_hz, &cycles)) return false;
+  if (!timestamp_file_min_delay_cycles(cfg->input_file, clk_hz, &cycles, &gap)) return false;
   need = timing_dac_min_delay_cycles(clk_hz);
   if (cycles < need) {
     fprintf(stderr, "Error: DAC timing invalid -- smallest delay %u SPI cycles is below the minimum %u cycles at %u Hz.\n",
             cycles, need, clk_hz);
+    print_gap_location(cfg->input_file, &gap);
     ok = false;
   }
   if (cfg->adc_file != NULL) {
-    if (!timestamp_file_min_delay_cycles(cfg->adc_file, clk_hz, &cycles)) return false;
+    if (!timestamp_file_min_delay_cycles(cfg->adc_file, clk_hz, &cycles, &gap)) return false;
     need = timing_adc_min_delay_cycles(clk_hz);
     if (cycles < need) {
       fprintf(stderr, "Error: ADC timing invalid -- smallest delay %u SPI cycles is below the minimum %u cycles at %u Hz.\n",
               cycles, need, clk_hz);
+      print_gap_location(cfg->adc_file, &gap);
       ok = false;
     }
   }
@@ -679,7 +690,7 @@ int main(int argc, char *argv[]) {
     .input_file = NULL,
     .adc_file   = NULL,
     .lockout    = 10.0,
-    .clk_MHz    = 10.0,
+    .clk_MHz    = TIMING_ADC_MAX_CLK_HZ / 1e6,
     .iters      = 1,
     .use_dma    = true,
     .verbose    = false,
@@ -793,13 +804,12 @@ int main(int argc, char *argv[]) {
     has_adc_info = true;
     adc_info.iters = cfg.iters;
     printf("ADC file OK: %ld trigger point(s) match the input file\n", adc_info.num_trigs);
-    // ADC readback is unreliable above 10 MHz (known hardware limitation), so warn when an ADC
-    // capture is requested at a higher clock -- the DAC playback is fine, but the captured data
-    // may be corrupt.
-    if (cfg.clk_MHz > 10.0) {
-      fprintf(stderr, "Warning: SPI clock is %g MHz (> 10 MHz). ADC readback is unreliable above "
-                      "10 MHz -- captured ADC data may be corrupt. Use -c 10 for valid ADC capture.\n",
-              cfg.clk_MHz);
+    // ADC readback is unreliable above the measured cap, so warn when an ADC capture is requested
+    // at a higher clock -- the DAC playback is fine, but the captured data may be corrupt.
+    if (cfg.clk_MHz > TIMING_ADC_MAX_CLK_HZ / 1e6) {
+      fprintf(stderr, "Warning: SPI clock is %g MHz (> %g MHz). ADC readback is unreliable above "
+                      "%g MHz -- captured ADC data may be corrupt. Use -c %g for valid ADC capture.\n",
+              cfg.clk_MHz, TIMING_ADC_MAX_CLK_HZ / 1e6, TIMING_ADC_MAX_CLK_HZ / 1e6, TIMING_ADC_MAX_CLK_HZ / 1e6);
     }
   }
 
@@ -867,22 +877,25 @@ int main(int argc, char *argv[]) {
   // command synthesis does, so the smallest delay checked here is the one the hardware will
   // see -- and the hardware minimum is frequency-dependent, read fresh after power-on.
   uint32_t dac_min_delay_cycles;
-  if (!timestamp_file_min_delay_cycles(cfg.input_file, hw.spi_clk_hz, &dac_min_delay_cycles)) {
+  timestamp_gap_t gap;
+  if (!timestamp_file_min_delay_cycles(cfg.input_file, hw.spi_clk_hz, &dac_min_delay_cycles, &gap)) {
     hw_power_off(&hw);
     return EXIT_FAILURE;
   }
   if (!hw_dac_timing_valid(&hw, dac_min_delay_cycles)) {
+    print_gap_location(cfg.input_file, &gap);
     suggest_min_clock(cfg.input_file, cfg.adc_file);
     hw_power_off(&hw);
     return EXIT_FAILURE;
   }
   if (has_adc_info) {
     uint32_t adc_min_delay_cycles;
-    if (!timestamp_file_min_delay_cycles(cfg.adc_file, hw.spi_clk_hz, &adc_min_delay_cycles)) {
+    if (!timestamp_file_min_delay_cycles(cfg.adc_file, hw.spi_clk_hz, &adc_min_delay_cycles, &gap)) {
       hw_power_off(&hw);
       return EXIT_FAILURE;
     }
     if (!hw_adc_timing_valid(&hw, adc_min_delay_cycles)) {
+      print_gap_location(cfg.adc_file, &gap);
       suggest_min_clock(cfg.input_file, cfg.adc_file);
       hw_power_off(&hw);
       return EXIT_FAILURE;

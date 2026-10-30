@@ -311,16 +311,70 @@ set_property PACKAGE_PIN U20 [get_ports {MOSI_SCK_n[0]}]
 # Internal clock definition and constraints
 #------------------------------------------------------------
 
-create_clock -name miso_sck_0 -period 20 [get_ports MISO_SCK_p[0]]
-create_clock -name miso_sck_1 -period 20 [get_ports MISO_SCK_p[1]]
-create_clock -name miso_sck_2 -period 20 [get_ports MISO_SCK_p[2]]
-create_clock -name miso_sck_3 -period 20 [get_ports MISO_SCK_p[3]]
-create_clock -name miso_sck_4 -period 20 [get_ports MISO_SCK_p[4]]
-create_clock -name miso_sck_5 -period 20 [get_ports MISO_SCK_p[5]]
-create_clock -name miso_sck_6 -period 20 [get_ports MISO_SCK_p[6]]
-create_clock -name miso_sck_7 -period 20 [get_ports MISO_SCK_p[7]]
+# Returned MISO SCKs run at the SPI rate, timed at the 30 MHz maximum
+create_clock -name miso_sck_0 -period 33.333 [get_ports MISO_SCK_p[0]]
+create_clock -name miso_sck_1 -period 33.333 [get_ports MISO_SCK_p[1]]
+create_clock -name miso_sck_2 -period 33.333 [get_ports MISO_SCK_p[2]]
+create_clock -name miso_sck_3 -period 33.333 [get_ports MISO_SCK_p[3]]
+create_clock -name miso_sck_4 -period 33.333 [get_ports MISO_SCK_p[4]]
+create_clock -name miso_sck_5 -period 33.333 [get_ports MISO_SCK_p[5]]
+create_clock -name miso_sck_6 -period 33.333 [get_ports MISO_SCK_p[6]]
+create_clock -name miso_sck_7 -period 33.333 [get_ports MISO_SCK_p[7]]
+
+# Forwarded MOSI SCK at its output pin, one per SPI clock mux input (runtime MMCM, 5 MHz boot clock).
+# The MMCM clock is built at the 30 MHz maximum (block_design.tcl), so that's the rate timed here.
+create_generated_clock -name mosi_sck_fwd -source [get_pins -of_objects [get_cells -hierarchical -filter {NAME =~ *spi_mosi_sck_gate* && REF_NAME == BUFR}] -filter {REF_PIN_NAME == I}] -master_clock [get_clocks -of_objects [get_pins -hierarchical spi_clk_gen/clk_out1]] -divide_by 1 -add [get_ports {MOSI_SCK_p[0]}]
+create_generated_clock -name mosi_sck_fwd_boot -source [get_pins -of_objects [get_cells -hierarchical -filter {NAME =~ *spi_mosi_sck_gate* && REF_NAME == BUFR}] -filter {REF_PIN_NAME == I}] -master_clock [get_clocks clk_fpga_1] -divide_by 1 -add [get_ports {MOSI_SCK_p[0]}]
 
 set_clock_groups -name clk_group_source -asynchronous -group [get_clocks -of_object [get_pins -hierarchical spi_clk_gen/clk_in1]]
 set_clock_groups -name clk_group_fpga -asynchronous -group [get_clocks clk_fpga_0]
-set_clock_groups -name miso_sck_group -asynchronous -group [get_clocks miso_sck*]
-set_clock_groups -logically_exclusive -group [get_clocks -of_object [get_pins -hierarchical ps/FCLK_CLK1]] -group [get_clocks -of_object [get_pins -hierarchical spi_clk_gen/clk_out1]]
+# Derived clocks (the gated MISO SCKs) are pulled in through their masters, not matched by name
+set_clock_groups -name miso_sck_group -asynchronous -group [get_clocks -include_generated_clocks miso_sck_?]
+# The SPI clock mux passes one input at a time; the clocks it derives downstream (e.g. the gated MOSI SCK) are exclusive too
+set_clock_groups -logically_exclusive -group [get_clocks -include_generated_clocks -of_object [get_pins -hierarchical ps/FCLK_CLK1]] -group [get_clocks -include_generated_clocks -of_object [get_pins -hierarchical spi_clk_gen/clk_out1]]
+
+
+#------------------------------------------------------------
+# SPI I/O timing
+#------------------------------------------------------------
+
+# MOSI, CS and LDAC launch on the rising SPI clock and both chips sample on the falling forwarded
+# SCK: the AD5676 directly, the ADS816x through the amp board's SN74LVC1G04 inverter (0.7-3.3 ns).
+# External skew budget: FIN1028 part-to-part 1.0 ns (the data lanes sit on different receivers
+# than SCK) plus 0.5 ns for pair-to-pair cable and trace mismatch. The SYNC/CS-to-first-SCLK setup
+# (11 ns DAC, 15 ns ADC) is set by the cores' CS timing, not checked here.
+#   DAC: max = tsu 3 + 1.5 skew; min = -(th 2 + 1.5 skew)
+#   ADC: max = tsu 3 + 1.5 skew - 0.7 inverter min; min = -(th 4 + 1.5 skew + 3.3 inverter max)
+set_output_delay -clock [get_clocks mosi_sck_fwd] -clock_fall -max 4.5 [get_ports {DAC_MOSI_p[*] DAC_MOSI_n[*] n_DAC_CS_p[*] n_DAC_CS_n[*] LDAC_p[0] LDAC_n[0]}]
+set_output_delay -clock [get_clocks mosi_sck_fwd] -clock_fall -min -3.5 [get_ports {DAC_MOSI_p[*] DAC_MOSI_n[*] n_DAC_CS_p[*] n_DAC_CS_n[*] LDAC_p[0] LDAC_n[0]}]
+set_output_delay -clock [get_clocks mosi_sck_fwd_boot] -clock_fall -max -add_delay 4.5 [get_ports {DAC_MOSI_p[*] DAC_MOSI_n[*] n_DAC_CS_p[*] n_DAC_CS_n[*] LDAC_p[0] LDAC_n[0]}]
+set_output_delay -clock [get_clocks mosi_sck_fwd_boot] -clock_fall -min -add_delay -3.5 [get_ports {DAC_MOSI_p[*] DAC_MOSI_n[*] n_DAC_CS_p[*] n_DAC_CS_n[*] LDAC_p[0] LDAC_n[0]}]
+set_output_delay -clock [get_clocks mosi_sck_fwd] -clock_fall -max 3.8 [get_ports {ADC_MOSI_p[*] ADC_MOSI_n[*] n_ADC_CS_p[*] n_ADC_CS_n[*]}]
+set_output_delay -clock [get_clocks mosi_sck_fwd] -clock_fall -min -8.8 [get_ports {ADC_MOSI_p[*] ADC_MOSI_n[*] n_ADC_CS_p[*] n_ADC_CS_n[*]}]
+set_output_delay -clock [get_clocks mosi_sck_fwd_boot] -clock_fall -max -add_delay 3.8 [get_ports {ADC_MOSI_p[*] ADC_MOSI_n[*] n_ADC_CS_p[*] n_ADC_CS_n[*]}]
+set_output_delay -clock [get_clocks mosi_sck_fwd_boot] -clock_fall -min -add_delay -8.8 [get_ports {ADC_MOSI_p[*] ADC_MOSI_n[*] n_ADC_CS_p[*] n_ADC_CS_n[*]}]
+# Neither chip samples on rising SCK, so the rising-edge delays (the DAC/ADC envelope) are declared only to be cut
+set_output_delay -clock [get_clocks mosi_sck_fwd] -max -add_delay 4.5 [get_ports {DAC_MOSI_p[*] DAC_MOSI_n[*] n_DAC_CS_p[*] n_DAC_CS_n[*] LDAC_p[0] LDAC_n[0] ADC_MOSI_p[*] ADC_MOSI_n[*] n_ADC_CS_p[*] n_ADC_CS_n[*]}]
+set_output_delay -clock [get_clocks mosi_sck_fwd] -min -add_delay -8.8 [get_ports {DAC_MOSI_p[*] DAC_MOSI_n[*] n_DAC_CS_p[*] n_DAC_CS_n[*] LDAC_p[0] LDAC_n[0] ADC_MOSI_p[*] ADC_MOSI_n[*] n_ADC_CS_p[*] n_ADC_CS_n[*]}]
+set_output_delay -clock [get_clocks mosi_sck_fwd_boot] -max -add_delay 4.5 [get_ports {DAC_MOSI_p[*] DAC_MOSI_n[*] n_DAC_CS_p[*] n_DAC_CS_n[*] LDAC_p[0] LDAC_n[0] ADC_MOSI_p[*] ADC_MOSI_n[*] n_ADC_CS_p[*] n_ADC_CS_n[*]}]
+set_output_delay -clock [get_clocks mosi_sck_fwd_boot] -min -add_delay -8.8 [get_ports {DAC_MOSI_p[*] DAC_MOSI_n[*] n_DAC_CS_p[*] n_DAC_CS_n[*] LDAC_p[0] LDAC_n[0] ADC_MOSI_p[*] ADC_MOSI_n[*] n_ADC_CS_p[*] n_ADC_CS_n[*]}]
+set_false_path -rise_to [get_clocks {mosi_sck_fwd mosi_sck_fwd_boot}]
+
+# DAC MISO is only read during the DAC boot test, which runs on the 5 MHz FCLK_CLK1 boot clock
+# (spi_off holds the SPI clock mux there until every DAC and ADC finishes setup). At 200 ns the
+# AD5676's 50 ns SDO-valid delay leaves about 100 ns of margin, and its ~9 MHz readback limit means
+# DAC MISO couldn't be timed at the runtime rate anyway.
+set_false_path -from [get_ports {DAC_MISO_p[*] DAC_MISO_n[*]}]
+
+# TODO: ADC MISO is deliberately left unconstrained (TIMING-18 stays visible) until the capture-edge
+# fix in docs/HARDWARE_UPDATE_TODO.md -- the current rising-edge capture can't meet 30 MHz.
+
+
+#------------------------------------------------------------
+# Slow control I/O
+#------------------------------------------------------------
+
+# Each input is synchronized in the RTL (manual_enable_sync, shutdown_sense, trigger_core) and the
+# outputs drive relays and the shutdown sense mux, so none has a meaningful clock relationship.
+set_false_path -from [get_ports {Manual_Enable Shutdown_Sense Trigger_In}]
+set_false_path -to [get_ports {Shutdown_Sense_Sel[*] n_Shutdown_Force Shutdown_Reset}]

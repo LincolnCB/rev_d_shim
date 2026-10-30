@@ -33,14 +33,6 @@
 #define DESC_DEV        "/dev/" DESC_UDMABUF
 #define DESC_SYS        "/sys/class/u-dma-buf/" DESC_UDMABUF
 
-#define RATE_CTRL_DEV       "/dev/adc_rate_ctrl" // adc_rate_ctrl register window (ships in the bitstream)
-#define RATE_CTRL_WIN_BYTES 0x1000UL             // one page
-// adc_rate_ctrl register map (32-bit word indices), mirroring adc_rate_ctrl.v. The packing
-// threshold is a fixed RTL parameter (the packet size), not a register -- software only reports
-// read deltas and reads back the per-board backlog.
-#define RATE_READ_DELTA_BASE 0u
-#define RATE_BACKLOG_BASE    8u
-
 #define DESC_ALIGN      64u             // MCDMA SG descriptor size/alignment
 // DAC payload split into this many words per MM2S packet descriptor, so the MCDMA completes one
 // board's packet then arbitrates to the next board's channel -- the per-board FIFOs fill in
@@ -221,25 +213,6 @@ static uint8_t *map_udmabuf(const char *dev, const char *sysdir, const char *nam
   return p;
 }
 
-// Map the adc_rate_ctrl register window (one page, non-cached). The core ships in the bitstream,
-// so a missing node is a build/deploy error -- fail loudly rather than tolerating its absence.
-static volatile uint32_t *map_rate_ctrl(int *fd_out, bool verbose) {
-  int fd = open(RATE_CTRL_DEV, O_RDWR);
-  if (fd < 0) {
-    fprintf(stderr, "DMA: open %s: %s\n", RATE_CTRL_DEV, strerror(errno));
-    return NULL;
-  }
-  void *p = mmap(NULL, RATE_CTRL_WIN_BYTES, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-  if (p == MAP_FAILED) {
-    fprintf(stderr, "DMA: mmap %s: %s\n", RATE_CTRL_DEV, strerror(errno));
-    close(fd);
-    return NULL;
-  }
-  if (verbose) printf("adc_rate_ctrl: %s (pl-reg-shim, no root)\n", RATE_CTRL_DEV);
-  *fd_out = fd;
-  return (volatile uint32_t *)p;
-}
-
 // ------------------------------------------------------------- descriptors --
 
 // One single-buffer, single-packet descriptor covering [buf_phys, buf_phys+len), marked start-
@@ -319,7 +292,7 @@ static uint32_t align_up_u32(uint32_t v, uint32_t a) {
 struct dma_ctrl_t create_dma_ctrl(bool verbose) {
   struct dma_ctrl_t dma;
   memset(&dma, 0, sizeof(dma));
-  dma.reg_fd = dma.desc_fd = dma.data_fd = dma.rate_ctrl_fd = -1;
+  dma.reg_fd = dma.desc_fd = dma.data_fd = -1;
   dma.wave_single_board = -1;
   dma.ok = false;
 
@@ -336,9 +309,9 @@ struct dma_ctrl_t create_dma_ctrl(bool verbose) {
     fprintf(stderr, "DMA u-dma-buf regions unavailable; DMA commands disabled.\n");
     return dma;
   }
-  dma.rate_ctrl = map_rate_ctrl(&dma.rate_ctrl_fd, verbose);
-  if (!dma.rate_ctrl) {
-    fprintf(stderr, "DMA adc_rate_ctrl window unavailable; DMA commands disabled.\n");
+  dma.board_fifo = map_board_fifo(verbose);
+  if (!dma.board_fifo) {
+    fprintf(stderr, "DMA board FIFO window unavailable (capture rate lane); DMA commands disabled.\n");
     return dma;
   }
   dma.ok = true;
@@ -350,27 +323,25 @@ void destroy_dma_ctrl(struct dma_ctrl_t *dma) {
   if (dma->reg)  munmap((void *)dma->reg, MCDMA_WIN_BYTES);
   if (dma->desc) munmap(dma->desc, dma->desc_size);
   if (dma->data) munmap(dma->data, dma->data_size);
-  if (dma->rate_ctrl) munmap((void *)dma->rate_ctrl, RATE_CTRL_WIN_BYTES);
   if (dma->reg_fd  >= 0) close(dma->reg_fd);
   if (dma->desc_fd >= 0) close(dma->desc_fd);
   if (dma->data_fd >= 0) close(dma->data_fd);
-  if (dma->rate_ctrl_fd >= 0) close(dma->rate_ctrl_fd);
   memset(dma, 0, sizeof(*dma));
-  dma->reg_fd = dma->desc_fd = dma->data_fd = dma->rate_ctrl_fd = -1;
+  dma->reg_fd = dma->desc_fd = dma->data_fd = -1;
 }
 
-// --- ADC capture rate control (adc_rate_ctrl). The core is mapped at create time (required), so
-// these assume the register window is present. The packing threshold is fixed in the bitstream
-// (the packet size), so software only reports read deltas and reads the per-board backlog. ---
+// --- ADC capture rate control (adc_rate_ctrl, through each board's rate lane in the board FIFO
+// window, mapped at create time). The packing threshold is fixed in the bitstream (the packet
+// size), so software only reports read deltas and reads the per-board backlog. ---
 
 void dma_rate_report_read(struct dma_ctrl_t *dma, int board, uint32_t words) {
   if (!dma || board < 0 || board >= MAX_BOARDS || words == 0) return;
-  dma->rate_ctrl[RATE_READ_DELTA_BASE + (uint32_t)board] = words;
+  dma->board_fifo[board * BOARD_FIFO_PAGE_WORDS + BOARD_FIFO_ADC_RATE_WORD] = words;
 }
 
 uint32_t dma_rate_backlog(const struct dma_ctrl_t *dma, int board) {
   if (!dma || board < 0 || board >= MAX_BOARDS) return 0;
-  return dma->rate_ctrl[RATE_BACKLOG_BASE + (uint32_t)board];
+  return dma->board_fifo[board * BOARD_FIFO_PAGE_WORDS + BOARD_FIFO_ADC_RATE_WORD];
 }
 
 int dma_mm2s_send(struct dma_ctrl_t *dma, int board, const uint32_t *words, uint32_t n_words, bool verbose) {

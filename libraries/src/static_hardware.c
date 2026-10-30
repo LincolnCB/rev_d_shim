@@ -33,6 +33,10 @@ hw_t hw_init(uint32_t channel_count, bool verbose) {
       fprintf(stderr, "Error: DAC command FIFO for board %u is not present. Channel count may be too high for hardware configuration.\n", i);
       exit(1);
     }
+    if (!FIFO_PRESENT(sys_sts_get_dac_debug_fifo_status(&hw.sys_sts, i, verbose))) {
+      fprintf(stderr, "Error: DAC debug FIFO for board %u is not present. Channel count may be too high for hardware configuration.\n", i);
+      exit(1);
+    }
     if (!FIFO_PRESENT(sys_sts_get_dac_data_fifo_status(&hw.sys_sts, i, verbose))) {
       fprintf(stderr, "Error: DAC data FIFO for board %u is not present. Channel count may be too high for hardware configuration.\n", i);
       exit(1);
@@ -64,10 +68,12 @@ void hw_status_summary(hw_t *hw) {
   uint32_t board_count = (hw->channel_count - 1) / 8 + 1;
   for (uint32_t board = 0; board < board_count; board++) {
     printf("  DAC %u cmd FIFO count   : %u\n", board, FIFO_STS_WORD_COUNT(sys_sts_get_dac_cmd_fifo_status(&hw->sys_sts, board, hw->verbose)));
+    printf("  DAC %u debug FIFO count : %u\n", board, FIFO_STS_WORD_COUNT(sys_sts_get_dac_debug_fifo_status(&hw->sys_sts, board, hw->verbose)));
     printf("  DAC %u data FIFO count  : %u\n", board, FIFO_STS_WORD_COUNT(sys_sts_get_dac_data_fifo_status(&hw->sys_sts, board, hw->verbose)));
   }
   for (uint32_t board = 0; board < board_count; board++) {
     printf("  ADC %u cmd FIFO count   : %u\n", board, FIFO_STS_WORD_COUNT(sys_sts_get_adc_cmd_fifo_status(&hw->sys_sts, board, hw->verbose)));
+    printf("  ADC %u debug FIFO count : %u\n", board, FIFO_STS_WORD_COUNT(sys_sts_get_adc_debug_fifo_status(&hw->sys_sts, board, hw->verbose)));
     printf("  ADC %u data FIFO count  : %u\n", board, FIFO_STS_WORD_COUNT(sys_sts_get_adc_data_fifo_status(&hw->sys_sts, board, hw->verbose)));
   }
   printf("  Trigger cmd FIFO count : %u\n", FIFO_STS_WORD_COUNT(sys_sts_get_trig_cmd_fifo_status(&hw->sys_sts, hw->verbose)));
@@ -237,6 +243,10 @@ int hw_clear_dac_buffers(hw_t *hw) {
   for (uint32_t board = 0; board < board_count; board++) {
     if (!FIFO_STS_EMPTY(sys_sts_get_dac_cmd_fifo_status(&hw->sys_sts, board, hw->verbose))) {
       fprintf(stderr, "Error: DAC command FIFO for board %u is not empty after buffer reset.\n", board);
+      return -1;
+    }
+    if (!FIFO_STS_EMPTY(sys_sts_get_dac_debug_fifo_status(&hw->sys_sts, board, hw->verbose))) {
+      fprintf(stderr, "Error: DAC debug FIFO for board %u is not empty after buffer reset.\n", board);
       return -1;
     }
     if (!FIFO_STS_EMPTY(sys_sts_get_dac_data_fifo_status(&hw->sys_sts, board, hw->verbose))) {
@@ -574,7 +584,7 @@ int hw_read_adc_channel(hw_t *hw, uint32_t channel, double *adc_value_amps) {
   }
 
   // Read ADC value from FIFO
-  uint32_t adc_word = adc_read_word(&hw->adc_ctrl, board);
+  uint32_t adc_word = adc_read_data(&hw->adc_ctrl, board);
   uint16_t adc_reading_raw = (uint16_t)(adc_word & 0xFFFF);
   int16_t adc_reading = adc_reading_raw <= 32767 ? (int16_t)adc_reading_raw : (int16_t)(adc_reading_raw - 65536);
   *adc_value_amps = HW_MAX_ABS_AMPS * ((double)adc_reading) / 32767.0;
@@ -614,7 +624,7 @@ int hw_read_adcs(hw_t *hw, double *adc_values_amps) {
   uint32_t channel_index = 0;
   for (uint32_t board = 0; board < board_count; board++) {
     for (uint32_t pair = 0; pair < 4; pair++) {
-      uint32_t adc_pair_word = adc_read_word(&hw->adc_ctrl, board);
+      uint32_t adc_pair_word = adc_read_data(&hw->adc_ctrl, board);
       uint16_t raw = (uint16_t)(adc_pair_word & 0xFFFF);
       int16_t adc_val_ch_1 = (raw <= 32767) ? (int16_t)raw : (int16_t)(raw - 65536);
       raw = (uint16_t)((adc_pair_word >> 16) & 0xFFFF);

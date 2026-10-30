@@ -17,6 +17,7 @@
 #include "sys_sts.h"
 #include "trigger_ctrl.h"
 #include "command_handler.h"
+#include "hw_config.h"
 
 //////////////////// Usage ////////////////////
 static void print_usage(const char *prog_name)
@@ -97,6 +98,11 @@ int main(int argc, char *argv[])
   printf("DMA mover initialized%s\n", dma_ctrl.ok ? "" : " (unavailable -- DMA commands disabled)");
 
   printf("Hardware initialization complete.\n");
+
+  // shim-test leaves the SPI clock wherever it is (the bitstream starts it at the maximum)
+  fprintf(stderr, "\nWarning: the SPI clock is not set on startup and may be above 10 MHz (the bitstream\n"
+                  "default is %.0f MHz). The current hardware doesn't support ADC reads above 10 MHz --\n"
+                  "run 'clk_set 10' before any ADC reads.\n\n", SPI_CLK_MAX_HZ / 1e6);
 
   // Print help
   print_help();
@@ -192,6 +198,14 @@ int main(int argc, char *argv[])
       } else {
         printf("DAC command stream for board %d stopped.\n", i);
       }
+    }
+    if (cmd_ctx.dac_debug_stream_running[i]) {
+      cmd_ctx.dac_debug_stream_stop[i] = true;
+      pthread_join(cmd_ctx.dac_debug_stream_threads[i], NULL);
+    }
+    if (cmd_ctx.adc_debug_stream_running[i]) {
+      cmd_ctx.adc_debug_stream_stop[i] = true;
+      pthread_join(cmd_ctx.adc_debug_stream_threads[i], NULL);
     }
   }
 

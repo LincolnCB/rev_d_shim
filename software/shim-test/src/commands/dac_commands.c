@@ -37,7 +37,6 @@ static int validate_system_running(command_context_t* ctx) {
 int cmd_dac_cmd_fifo_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for dac_cmd_fifo_sts: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
   uint32_t fifo_status = sys_sts_get_dac_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose));
@@ -45,10 +44,21 @@ int cmd_dac_cmd_fifo_sts(const char** args, int arg_count, const command_flag_t*
   return 0;
 }
 
+int cmd_dac_debug_fifo_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  int board = validate_board_number(args[0]);
+  if (board < 0) {
+    return -1;
+  }
+  uint32_t fifo_status = sys_sts_get_dac_debug_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose));
+  print_fifo_status(fifo_status, "DAC Debug");
+  printf("  Words dropped (FIFO full): %s\n",
+         DEBUG_FULL_DAC(sys_sts_get_debug_full(ctx->sys_sts, *(ctx->verbose)), board) ? "Yes" : "No");
+  return 0;
+}
+
 int cmd_dac_data_fifo_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for dac_data_fifo_sts: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
   uint32_t fifo_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose));
@@ -59,7 +69,6 @@ int cmd_dac_data_fifo_sts(const char** args, int arg_count, const command_flag_t
 int cmd_dac_last_received_cmd(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for dac_last_received_cmd: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -72,7 +81,6 @@ int cmd_dac_last_received_cmd(const char** args, int arg_count, const command_fl
 int cmd_dac_cmds_since_reset(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for dac_cmds_since_reset: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -81,10 +89,10 @@ int cmd_dac_cmds_since_reset(const char** args, int arg_count, const command_fla
   return 0;
 }
 
+// Read calibration readback (GET_CAL) words from the DAC data lane
 int cmd_read_dac_data(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  int board = parse_board_number(args[0]);
+  int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for read_dac_data: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -114,6 +122,29 @@ int cmd_read_dac_data(const char** args, int arg_count, const command_flag_t* fl
     printf("Reading one data sample from DAC FIFO for board %d...\n", board);
     printf("%s\n", dac_format_data(data, *(ctx->verbose)));
   }
+  return 0;
+}
+
+// Read debug words from the DAC debug lane
+int cmd_read_dac_debug(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  int board = validate_board_number(args[0]);
+  if (board < 0) {
+    return -1;
+  }
+
+  if (FIFO_STS_EMPTY(sys_sts_get_dac_debug_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
+    printf("DAC debug FIFO for board %d is empty.\n", board);
+    return -1;
+  }
+
+  bool read_all = has_flag(flags, flag_count, FLAG_ALL);
+  do {
+    uint32_t word = dac_read_debug(ctx->dac_ctrl, (uint8_t)board);
+    if (*(ctx->verbose)) {
+      printf("  Raw DAC Debug word: 0x%08X\n", word);
+    }
+    printf("%s\n", dac_format_data(word, *(ctx->verbose)));
+  } while (read_all && !FIFO_STS_EMPTY(sys_sts_get_dac_debug_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))));
   return 0;
 }
 
@@ -172,7 +203,6 @@ int cmd_dac_noop(const char** args, int arg_count, const command_flag_t* flags, 
   } else {
     int board = validate_board_number(args[0]);
     if (board < 0) {
-      fprintf(stderr, "Invalid board number for dac_noop: '%s'. Must be 0-7.\n", args[0]);
       return -1;
     }
 
@@ -193,7 +223,6 @@ int cmd_dac_noop(const char** args, int arg_count, const command_flag_t* flags, 
 int cmd_dac_cancel(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for dac_cancel: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -211,7 +240,6 @@ int cmd_dac_cancel(const char** args, int arg_count, const command_flag_t* flags
 int cmd_do_dac_wr(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for do_dac_wr: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -706,11 +734,11 @@ static void* dac_debug_stream_thread(void* arg) {
       break;
     }
 
-    // Check data FIFO status
-    uint32_t data_status = sys_sts_get_dac_data_fifo_status(ctx->sys_sts, board, false);
+    // Check debug FIFO status
+    uint32_t data_status = sys_sts_get_dac_debug_fifo_status(ctx->sys_sts, board, false);
 
     if (FIFO_PRESENT(data_status) == 0) {
-      fprintf(stderr, "DAC Debug Stream Thread[%d]: Data FIFO not present, stopping stream\n", board);
+      fprintf(stderr, "DAC Debug Stream Thread[%d]: Debug FIFO not present, stopping stream\n", board);
       break;
     }
 
@@ -719,7 +747,7 @@ static void* dac_debug_stream_thread(void* arg) {
     if (words_available > 0) {
       // Read and process available words
       for (uint32_t i = 0; i < words_available; i++) {
-        uint32_t debug_word = dac_read_data(ctx->dac_ctrl, board);
+        uint32_t debug_word = dac_read_debug(ctx->dac_ctrl, board);
 
         // Format and write the debug data using our formatting function
         fprintf(file, "[%llu] %s\n", samples_written, dac_format_data(debug_word, *(ctx->verbose)));
@@ -867,9 +895,8 @@ cleanup:
 
 int cmd_stream_dac_commands_from_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   // Parse board number
-  int board = parse_board_number(args[0]);
+  int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for stream_dac_from_file: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -1003,9 +1030,8 @@ int cmd_stream_dac_commands_from_file(const char** args, int arg_count, const co
 
 int cmd_stop_dac_cmd_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   // Parse board number
-  int board = parse_board_number(args[0]);
+  int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for stop_dac_cmd_stream: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -1055,9 +1081,9 @@ int cmd_dac_zero(const char** args, int arg_count, const command_flag_t* flags, 
     target_all = true;
     printf("Setting all DAC channels to calibrated zero on all connected boards...\n");
   } else {
-    target_board = validate_board_number(args[0]);
+    target_board = parse_board_number(args[0]);
     if (target_board < 0) {
-      printf("Error: Invalid board number '%s'. Must be 0-7 or 'all'\n", args[0]);
+      printf("Error: Invalid board number '%s'. Must be 0 to %d or 'all'.\n", args[0], board_count() - 1);
       return -1;
     }
     target_boards[target_board] = true;
@@ -1197,9 +1223,8 @@ int cmd_dac_zero(const char** args, int arg_count, const command_flag_t* flags, 
 // DAC debug streaming commands
 int cmd_stream_dac_debug(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   // Parse board number
-  int board = parse_board_number(args[0]);
+  int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for stream_dac_debug: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -1209,21 +1234,18 @@ int cmd_stream_dac_debug(const char** args, int arg_count, const command_flag_t*
     return -1;
   }
 
-  // Check DAC data FIFO presence
-  if (FIFO_PRESENT(sys_sts_get_dac_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))) == 0) {
-    printf("DAC data FIFO for board %d is not present. Cannot start debug streaming.\n", board);
+  // Check DAC debug FIFO presence
+  if (FIFO_PRESENT(sys_sts_get_dac_debug_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))) == 0) {
+    printf("DAC debug FIFO for board %d is not present. Cannot start debug streaming.\n", board);
     return -1;
   }
 
-  // Resolve glob pattern if present
-  char resolved_path[1024];
-  if (resolve_file_pattern(args[1], resolved_path, sizeof(resolved_path)) != 0) {
-    return -1;
-  }
-
-  // Clean and expand file path
+  // Output file: no glob resolution (it fails on files that don't exist yet)
   char full_path[1024];
-  clean_and_expand_path(resolved_path, full_path, sizeof(full_path));
+  clean_and_expand_path(args[1], full_path, sizeof(full_path));
+  if (create_output_file(full_path) != 0) {
+    return -1;
+  }
 
   if (*(ctx->verbose)) {
     printf("Starting DAC debug streaming for board %d to file '%s'\n", board, full_path);
@@ -1259,9 +1281,8 @@ int cmd_stream_dac_debug(const char** args, int arg_count, const command_flag_t*
 
 int cmd_stop_dac_debug_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   // Parse board number
-  int board = parse_board_number(args[0]);
+  int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for stop_dac_debug_stream: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -1297,9 +1318,11 @@ int cmd_set_dac_cal_init(const char** args, int arg_count, const command_flag_t*
   }
 
   sys_ctrl_set_dac_cal_init(ctx->sys_ctrl, (int16_t)cal_init_value, true);
+  return 0;
 }
 
 // Toggle the DAC pre-delay bit in the do_dac_pre_delay register
 int cmd_toggle_dac_pre_delay(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   sys_ctrl_toggle_dac_pre_delay(ctx->sys_ctrl, true);
+  return 0;
 }

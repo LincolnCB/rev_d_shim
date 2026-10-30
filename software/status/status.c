@@ -67,19 +67,24 @@ int main(int argc, char *argv[]) {
   printf("ADC min delay time     : %u cycles\n", sys_sts_get_adc_min_delay_time(&sys_sts, false));
   printf("\n");
 
+  uint32_t debug_full = sys_sts_get_debug_full(&sys_sts, false);
+
   for (uint8_t board = 0; board < 8; board++) {
     char name[64];
     snprintf(name, sizeof(name), "DAC %u cmd FIFO", board);
     uint32_t dac_cmd_status = sys_sts_get_dac_cmd_fifo_status(&sys_sts, board, false);
     print_fifo_status(dac_cmd_status, name);
+    snprintf(name, sizeof(name), "DAC %u debug FIFO", board);
+    print_fifo_status(sys_sts_get_dac_debug_fifo_status(&sys_sts, board, false), name);
     snprintf(name, sizeof(name), "DAC %u data FIFO", board);
-    uint32_t dac_data_status = sys_sts_get_dac_data_fifo_status(&sys_sts, board, false);
-    print_fifo_status(dac_data_status, name);
+    print_fifo_status(sys_sts_get_dac_data_fifo_status(&sys_sts, board, false), name);
 
     if (FIFO_PRESENT(dac_cmd_status)) {
       printf("  Last received DAC command for board %u: 0x%08" PRIx32 "\n",
              board,
              sys_sts_get_last_received_dac_cmd(&sys_sts, board, false));
+      printf("  DAC debug words dropped (debug FIFO full) for board %u: %s\n",
+             board, DEBUG_FULL_DAC(debug_full, board) ? "Yes" : "No");
     }
     printf("  DAC commands since reset for board %u: %u\n",
            board,
@@ -92,6 +97,8 @@ int main(int argc, char *argv[]) {
     snprintf(name, sizeof(name), "ADC %u cmd FIFO", board);
     uint32_t adc_cmd_status = sys_sts_get_adc_cmd_fifo_status(&sys_sts, board, false);
     print_fifo_status(adc_cmd_status, name);
+    snprintf(name, sizeof(name), "ADC %u debug FIFO", board);
+    print_fifo_status(sys_sts_get_adc_debug_fifo_status(&sys_sts, board, false), name);
     snprintf(name, sizeof(name), "ADC %u data FIFO", board);
     uint32_t adc_data_status = sys_sts_get_adc_data_fifo_status(&sys_sts, board, false);
     print_fifo_status(adc_data_status, name);
@@ -100,6 +107,8 @@ int main(int argc, char *argv[]) {
       printf("  Last received ADC command for board %u: 0x%08" PRIx32 "\n",
              board,
              sys_sts_get_last_received_adc_cmd(&sys_sts, board, false));
+      printf("  ADC debug words dropped (debug FIFO full) for board %u: %s\n",
+             board, DEBUG_FULL_ADC(debug_full, board) ? "Yes" : "No");
     }
     printf("  ADC commands since reset for board %u: %u\n",
            board,

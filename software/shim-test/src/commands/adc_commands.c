@@ -18,6 +18,7 @@
 // Forward declarations for helper functions
 static void* adc_data_stream_thread(void* arg);
 static void* adc_cmd_stream_thread(void* arg);
+static void* adc_debug_stream_thread(void* arg);
 static int parse_adc_command_file(const char* file_path, adc_command_t** commands, int* command_count);
 
 // Local helper function to check if system is running
@@ -35,7 +36,6 @@ static int validate_system_running(command_context_t* ctx) {
 int cmd_adc_cmd_fifo_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for adc_cmd_fifo_sts: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
   uint32_t fifo_status = sys_sts_get_adc_cmd_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose));
@@ -46,7 +46,6 @@ int cmd_adc_cmd_fifo_sts(const char** args, int arg_count, const command_flag_t*
 int cmd_adc_data_fifo_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for adc_data_fifo_sts: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
   uint32_t fifo_status = sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose));
@@ -54,10 +53,21 @@ int cmd_adc_data_fifo_sts(const char** args, int arg_count, const command_flag_t
   return 0;
 }
 
+int cmd_adc_debug_fifo_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  int board = validate_board_number(args[0]);
+  if (board < 0) {
+    return -1;
+  }
+  uint32_t fifo_status = sys_sts_get_adc_debug_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose));
+  print_fifo_status(fifo_status, "ADC Debug");
+  printf("  Words dropped (FIFO full): %s\n",
+         DEBUG_FULL_ADC(sys_sts_get_debug_full(ctx->sys_sts, *(ctx->verbose)), board) ? "Yes" : "No");
+  return 0;
+}
+
 int cmd_adc_last_received_cmd(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for adc_last_received_cmd: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -71,7 +81,6 @@ int cmd_adc_last_received_cmd(const char** args, int arg_count, const command_fl
 int cmd_adc_cmds_since_reset(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for adc_cmds_since_reset: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -84,7 +93,6 @@ int cmd_adc_cmds_since_reset(const char** args, int arg_count, const command_fla
 int cmd_read_adc_pair(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for read_adc_data: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -104,14 +112,14 @@ int cmd_read_adc_pair(const char** args, int arg_count, const command_flag_t* fl
     printf("Reading all data from ADC FIFO for board %d...\n", board);
     int count = 0;
     while (!FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
-      uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
+      uint32_t data = adc_read_data(ctx->adc_ctrl, (uint8_t)board);
       if (*(ctx->verbose)) printf("Sample %d - ADC data from board %d: 0x%" PRIx32 "\n", ++count, board, data);
       printf("%s\n", adc_format_pair(data, *(ctx->verbose)));
       printf("\n");
     }
     printf("Read %d samples total.\n", count);
   } else {
-    uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
+    uint32_t data = adc_read_data(ctx->adc_ctrl, (uint8_t)board);
     if (*(ctx->verbose)) printf("Read ADC data from board %d: 0x%" PRIx32 "\n", board, data);
     printf("%s\n", adc_format_pair(data, *(ctx->verbose)));
   }
@@ -121,7 +129,6 @@ int cmd_read_adc_pair(const char** args, int arg_count, const command_flag_t* fl
 int cmd_read_adc_single(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for read_adc_single: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -136,7 +143,7 @@ int cmd_read_adc_single(const char** args, int arg_count, const command_flag_t* 
     printf("Reading all available ADC data for board %d...\n", board);
     int count = 0;
     while (!FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
-      uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
+      uint32_t data = adc_read_data(ctx->adc_ctrl, (uint8_t)board);
       count++;
       if (*(ctx->verbose)) printf("Sample %d - ADC data from board %d: 0x%" PRIx32 "\n", count, board, data);
       printf("%s\n", adc_format_single(data, *(ctx->verbose)));
@@ -149,41 +156,41 @@ int cmd_read_adc_single(const char** args, int arg_count, const command_flag_t* 
       return -1;
     }
 
-    uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
+    uint32_t data = adc_read_data(ctx->adc_ctrl, (uint8_t)board);
     if (*(ctx->verbose)) printf("Read ADC data from board %d: 0x%" PRIx32 "\n", board, data);
     printf("%s\n", adc_format_single(data, *(ctx->verbose)));
   }
   return 0;
 }
 
+// Read debug words from the ADC debug lane
 int cmd_read_adc_dbg(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
-  int board = parse_board_number(args[0]);
+  int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for read_adc_dbg: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
-  if (FIFO_PRESENT(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))) == 0) {
-    printf("ADC data FIFO for board %d is not present. Cannot read data.\n", board);
+  if (FIFO_PRESENT(sys_sts_get_adc_debug_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))) == 0) {
+    printf("ADC debug FIFO for board %d is not present. Cannot read debug.\n", board);
     return -1;
   }
 
-  if (FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
-    printf("ADC data FIFO for board %d is empty. Cannot read data.\n", board);
+  if (FIFO_STS_EMPTY(sys_sts_get_adc_debug_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
+    printf("ADC debug FIFO for board %d is empty.\n", board);
     return -1;
   }
 
   bool read_all = has_flag(flags, flag_count, FLAG_ALL);
 
   if (read_all) {
-    printf("Reading all debug information from ADC FIFO for board %d...\n", board);
-    while (!FIFO_STS_EMPTY(sys_sts_get_adc_data_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
-      uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
+    printf("Reading all debug words from the ADC debug FIFO for board %d...\n", board);
+    while (!FIFO_STS_EMPTY(sys_sts_get_adc_debug_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose)))) {
+      uint32_t data = adc_read_debug(ctx->adc_ctrl, (uint8_t)board);
       printf("%s\n", adc_format_debug(data, *(ctx->verbose)));
     }
   } else {
-    uint32_t data = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
-    printf("Reading one debug sample from ADC FIFO for board %d...\n", board);
+    uint32_t data = adc_read_debug(ctx->adc_ctrl, (uint8_t)board);
+    printf("Reading one debug word from the ADC debug FIFO for board %d...\n", board);
     printf("%s\n", adc_format_debug(data, *(ctx->verbose)));
   }
   return 0;
@@ -238,7 +245,6 @@ int cmd_adc_noop(const char** args, int arg_count, const command_flag_t* flags, 
   } else {
     int board = validate_board_number(args[0]);
     if (board < 0) {
-      fprintf(stderr, "Invalid board number for adc_noop: '%s'. Must be 0-7.\n", args[0]);
       return -1;
     }
 
@@ -253,7 +259,6 @@ int cmd_adc_noop(const char** args, int arg_count, const command_flag_t* flags, 
 int cmd_adc_cancel(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for adc_cancel: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -265,7 +270,6 @@ int cmd_adc_cancel(const char** args, int arg_count, const command_flag_t* flags
 int cmd_adc_set_ord(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for adc_set_ord: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -296,7 +300,6 @@ int cmd_adc_set_ord(const char** args, int arg_count, const command_flag_t* flag
 int cmd_do_adc_rd(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for adc_rd: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -418,7 +421,7 @@ static void* adc_data_stream_thread(void* arg) {
 
       // Read data from FIFO
       for (uint32_t i = 0; i < words_to_read; i++) {
-        write_buffer[i] = adc_read_word(ctx->adc_ctrl, board);
+        write_buffer[i] = adc_read_data(ctx->adc_ctrl, board);
       }
 
       // Write data based on format mode
@@ -507,9 +510,8 @@ cleanup:
 
 int cmd_stream_adc_data_to_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   // Parse board number
-  int board = parse_board_number(args[0]);
+  int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for stream_adc_data_to_file: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -572,6 +574,9 @@ int cmd_stream_adc_data_to_file(const char** args, int arg_count, const command_
     printf("Output file path: '%s' -> '%s' (%s format)\n",
            args[2], final_path, binary_mode ? "binary" : "ASCII");
   }
+  if (create_output_file(final_path) != 0) {
+    return -1;
+  }
 
   // Allocate thread data structure
   adc_data_stream_params_t* stream_data = malloc(sizeof(adc_data_stream_params_t));
@@ -625,9 +630,8 @@ int cmd_stream_adc_data_to_file(const char** args, int arg_count, const command_
 
 int cmd_stop_adc_data_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   // Parse board number
-  int board = parse_board_number(args[0]);
+  int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for stop_adc_data_stream: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -941,9 +945,8 @@ cleanup:
 
 int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   // Parse board number
-  int board = parse_board_number(args[0]);
+  int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for stream_adc_commands_from_file: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -1038,9 +1041,8 @@ int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const co
 
 int cmd_stop_adc_cmd_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
   // Parse board number
-  int board = parse_board_number(args[0]);
+  int board = validate_board_number(args[0]);
   if (board < 0) {
-    fprintf(stderr, "Invalid board number for stop_adc_cmd_stream: '%s'. Must be 0-7.\n", args[0]);
     return -1;
   }
 
@@ -1110,4 +1112,123 @@ uint64_t calculate_expected_adc_words(const char* file_path, int iterations, boo
   }
 
   return total_adc_words;
+}
+
+// Thread function for ADC debug streaming: drains the ADC debug lane into a text file
+static void* adc_debug_stream_thread(void* arg) {
+  adc_debug_stream_params_t* stream_data = (adc_debug_stream_params_t*)arg;
+  command_context_t* ctx = stream_data->ctx;
+  uint8_t board = stream_data->board;
+  const char* file_path = stream_data->file_path;
+  volatile bool* should_stop = stream_data->should_stop;
+  uint64_t words_written = 0;
+
+  FILE* file = fopen(file_path, "w");
+  if (file == NULL) {
+    fprintf(stderr, "ADC Debug Stream Thread[%d]: Failed to open file '%s' for writing: %s\n",
+            board, file_path, strerror(errno));
+    goto cleanup;
+  }
+  fprintf(file, "# ADC Debug Data Stream for Board %d\n", board);
+  fprintf(file, "# Format: [index] ADC debug information\n");
+  fprintf(file, "# Generated by shim-test ADC debug streaming\n\n");
+
+  while (!(*should_stop)) {
+    if (HW_STS_STATE(sys_sts_get_hw_status(ctx->sys_sts, *(ctx->verbose))) == S_HALTED) {
+      fprintf(stderr, "ADC Debug Stream Thread[%d]: Hardware is halted. Stopping stream.\n", board);
+      break;
+    }
+    uint32_t debug_status = sys_sts_get_adc_debug_fifo_status(ctx->sys_sts, board, false);
+    if (FIFO_PRESENT(debug_status) == 0) {
+      fprintf(stderr, "ADC Debug Stream Thread[%d]: Debug FIFO not present, stopping stream\n", board);
+      break;
+    }
+    uint32_t words_available = FIFO_STS_WORD_COUNT(debug_status);
+    if (words_available == 0) {
+      usleep(1000);
+      continue;
+    }
+    for (uint32_t i = 0; i < words_available && !(*should_stop); i++) {
+      uint32_t debug_word = adc_read_debug(ctx->adc_ctrl, board);
+      fprintf(file, "[%" PRIu64 "] %s\n", words_written, adc_format_debug(debug_word, *(ctx->verbose)));
+      if (++words_written % 100 == 0) fflush(file);
+    }
+  }
+
+cleanup:
+  if (file) {
+    fflush(file);
+    fclose(file);
+  }
+  printf("ADC Debug Stream Thread[%d]: %s, wrote %" PRIu64 " debug words to '%s'\n", board,
+         *should_stop ? "Stopping stream (user requested)" : "Stream ended", words_written, file_path);
+  ctx->adc_debug_stream_running[board] = false;
+  free(stream_data);
+  return NULL;
+}
+
+// Start streaming the ADC debug lane to a file: <board> <file_path>
+int cmd_stream_adc_debug(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  int board = validate_board_number(args[0]);
+  if (board < 0) {
+    return -1;
+  }
+  if (ctx->adc_debug_stream_running[board]) {
+    printf("ADC debug stream for board %d is already running.\n", board);
+    return -1;
+  }
+  if (FIFO_PRESENT(sys_sts_get_adc_debug_fifo_status(ctx->sys_sts, (uint8_t)board, *(ctx->verbose))) == 0) {
+    printf("ADC debug FIFO for board %d is not present. Cannot start debug streaming.\n", board);
+    return -1;
+  }
+
+  // Output file: no glob resolution (it fails on files that don't exist yet)
+  char full_path[1024];
+  clean_and_expand_path(args[1], full_path, sizeof(full_path));
+  if (create_output_file(full_path) != 0) {
+    return -1;
+  }
+
+  adc_debug_stream_params_t* stream_data = malloc(sizeof(adc_debug_stream_params_t));
+  if (stream_data == NULL) {
+    fprintf(stderr, "Failed to allocate memory for ADC debug stream data\n");
+    return -1;
+  }
+  stream_data->ctx = ctx;
+  stream_data->board = (uint8_t)board;
+  snprintf(stream_data->file_path, sizeof(stream_data->file_path), "%s", full_path);
+  stream_data->should_stop = &(ctx->adc_debug_stream_stop[board]);
+
+  ctx->adc_debug_stream_stop[board] = false;
+  ctx->adc_debug_stream_running[board] = true;
+  if (pthread_create(&(ctx->adc_debug_stream_threads[board]), NULL, adc_debug_stream_thread, stream_data) != 0) {
+    fprintf(stderr, "Failed to create ADC debug streaming thread for board %d: %s\n", board, strerror(errno));
+    ctx->adc_debug_stream_running[board] = false;
+    free(stream_data);
+    return -1;
+  }
+
+  printf("Started ADC debug streaming for board %d to file '%s'\n", board, full_path);
+  return 0;
+}
+
+// Stop the ADC debug stream for a board: <board>
+int cmd_stop_adc_debug_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx) {
+  int board = validate_board_number(args[0]);
+  if (board < 0) {
+    return -1;
+  }
+  if (!ctx->adc_debug_stream_running[board]) {
+    printf("ADC debug stream for board %d is not running.\n", board);
+    return -1;
+  }
+
+  printf("Stopping ADC debug streaming for board %d...\n", board);
+  ctx->adc_debug_stream_stop[board] = true;
+  if (pthread_join(ctx->adc_debug_stream_threads[board], NULL) != 0) {
+    fprintf(stderr, "Failed to join ADC debug streaming thread for board %d: %s\n", board, strerror(errno));
+    return -1;
+  }
+  printf("ADC debug streaming for board %d has been stopped.\n", board);
+  return 0;
 }

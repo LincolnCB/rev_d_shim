@@ -42,9 +42,18 @@ typedef struct {
   bool simple_mode;     // Whether to unroll repeats instead of using repeat count in commands
 } adc_command_stream_params_t;
 
+// Structure to pass data to the ADC debug streaming thread
+typedef struct {
+  command_context_t* ctx;
+  uint8_t board;
+  char file_path[1024];
+  volatile bool* should_stop;
+} adc_debug_stream_params_t;
+
 // ADC FIFO status commands
 int cmd_adc_cmd_fifo_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_adc_data_fifo_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+int cmd_adc_debug_fifo_sts(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_adc_last_received_cmd(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_adc_cmds_since_reset(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
@@ -69,6 +78,10 @@ int cmd_stop_adc_data_stream(const char** args, int arg_count, const command_fla
 // ADC command streaming operations (streaming commands from files)
 int cmd_stream_adc_commands_from_file(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 int cmd_stop_adc_cmd_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+
+// ADC debug streaming operations (reading the ADC debug lane to a file)
+int cmd_stream_adc_debug(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
+int cmd_stop_adc_debug_stream(const char** args, int arg_count, const command_flag_t* flags, int flag_count, command_context_t* ctx);
 
 // Helper function to calculate expected number of ADC words from an ADC command file
 uint64_t calculate_expected_adc_words(const char* file_path, int iterations, bool verbose);

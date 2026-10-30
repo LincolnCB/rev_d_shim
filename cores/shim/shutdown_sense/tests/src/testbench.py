@@ -24,7 +24,7 @@ async def test_latch_all_high(dut):
     # Then start the monitor and scoreboard task
     monitor_and_scoreboard_task = cocotb.start_soon(tb.monitor_and_scoreboard())
 
-    for _ in range(8):
+    for _ in range(8 * tb.DWELL_CYCLES):
         await RisingEdge(dut.clk)
         dut.shutdown_sense_en.value = 1
         dut.shutdown_sense_pin.value = 1
@@ -33,6 +33,7 @@ async def test_latch_all_high(dut):
     await RisingEdge(dut.clk)
     await RisingEdge(dut.clk)
     monitor_and_scoreboard_task.cancel()
+    assert int(dut.shutdown_sense_o.value) == 0xFF, f"Expected every board latched, got {int(dut.shutdown_sense_o.value):08b}"
 
 # Test to drive each single bit in shutdown_sense to high one by one
 @cocotb.test()
@@ -52,15 +53,17 @@ async def test_drive_single_bit_high(dut):
     for i in range(8):
         await tb.shutdown_sense_en_drive_low()
 
+        # Hold the pin high only through board i's select window
         for j in range(8):
-            await RisingEdge(dut.clk)
-            dut.shutdown_sense_en.value = 1
-            if j != i:
-                dut.shutdown_sense_pin.value = 0
-            else:
-                dut.shutdown_sense_pin.value = 1
-                continue
+            for _ in range(tb.DWELL_CYCLES):
+                await RisingEdge(dut.clk)
+                dut.shutdown_sense_en.value = 1
+                dut.shutdown_sense_pin.value = 1 if j == i else 0
 
+        await RisingEdge(dut.clk)
+        await ReadOnly()
+        assert int(dut.shutdown_sense_o.value) == (1 << i), f"Expected only board {i} latched, got {int(dut.shutdown_sense_o.value):08b}"
+        await RisingEdge(dut.clk)
 
     # Give time to finish monitoring and kill the task
     await RisingEdge(dut.clk)
@@ -81,12 +84,11 @@ async def test_no_latching_when_disabled(dut):
 
     tb.dut._log.info(f"Shutdown sense connected == {int(dut.shutdown_sense_connected.value):08b}")
     tb.dut._log.info(f"Shutdown sense at start  == {int(dut.shutdown_sense_o.value):08b}")
-    for i in range(8):
+    for i in range(8 * tb.DWELL_CYCLES):
         await RisingEdge(dut.clk)
         dut.shutdown_sense_en.value = 1
         dut.shutdown_sense_pin.value = 1
         # No latching should occur since all channels are disabled
-        tb.dut._log.info(f"Shutdown sense after step {i} == {int(dut.shutdown_sense_o.value):08b}")
         assert int(dut.shutdown_sense_o.value) == 0, "Expected no latching when all channels are disabled."
 
 # Test numerous random operations
@@ -104,11 +106,11 @@ async def test_random_operations(dut):
     # Then start the monitor and scoreboard task
     monitor_and_scoreboard_task = cocotb.start_soon(tb.monitor_and_scoreboard())
 
-    for _ in range(200):
+    # Enable drops rarely enough that full scans (8 * DWELL_CYCLES) still complete
+    for _ in range(10 * tb.DWELL_CYCLES * 8):
         await RisingEdge(dut.clk)
-        # Make 0 more rare for shutdown_sense_en (e.g., 10% chance for 0, 90% for 1)
-        dut.shutdown_sense_en.value = 0 if random.random() < 0.1 else 1
-        dut.shutdown_sense_pin.value = random.choice([0, 1])
+        dut.shutdown_sense_en.value = 0 if random.random() < 0.002 else 1
+        dut.shutdown_sense_pin.value = 0 if random.random() < 0.9 else 1
 
     # Give time to finish monitoring and kill the task
     await RisingEdge(dut.clk)

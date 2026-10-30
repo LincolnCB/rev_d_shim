@@ -84,6 +84,7 @@ class shim_ad5676_dac_ctrl_base:
         self.dut.ldac_shared.value = 0
         self.dut.miso.value = 0
         self.dut.data_buf_full.value = 0
+        self.dut.debug_buf_full.value = 0
 
         # Interface FIFOs
         self.cmd_buf_depth = cmd_buf_depth

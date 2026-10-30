@@ -48,8 +48,7 @@ struct dma_ctrl_t {
   uint64_t  data_phys;
   uint64_t  data_size;
   int data_fd;
-  volatile uint32_t *rate_ctrl; // adc_rate_ctrl register window (mapped at create time, required)
-  int rate_ctrl_fd;
+  volatile uint32_t *board_fifo; // shared board FIFO window, for each board's capture rate lane
   struct dma_wave_run wave[MAX_BOARDS]; // per-board run state (see dma_wave_begin / _add)
   uint32_t wave_data_cursor; // bump allocator over the data region, reset by dma_wave_begin
   uint32_t wave_desc_cursor; // bump allocator over the descriptor region, reset likewise
@@ -63,10 +62,10 @@ struct dma_ctrl_t {
 struct dma_ctrl_t create_dma_ctrl(bool verbose);
 void destroy_dma_ctrl(struct dma_ctrl_t *dma);
 
-// ADC capture rate control (the adc_rate_ctrl register block, mapped at create time as a required
-// window). The packing threshold is fixed in the bitstream at the packet size, so software only
-// reports read deltas and reads the per-board backlog -- a board packs dense while its backlog is
-// at least one packet and drains eagerly below it.
+// ADC capture rate control (the adc_rate_ctrl core, reached through each board's rate lane in the
+// board FIFO window, mapped at create time). The packing threshold is fixed in the bitstream at
+// the packet size, so software only reports read deltas and reads the per-board backlog -- a
+// board packs dense while its backlog is at least one packet and drains eagerly below it.
 // Report `words` just read from a board's capture, lowering its backlog by that much. Called
 // automatically by dma_wave_read_board, so most callers never invoke it directly.
 void     dma_rate_report_read(struct dma_ctrl_t *dma, int board, uint32_t words);

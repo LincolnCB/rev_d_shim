@@ -18,7 +18,7 @@ The `trigger_core` module provides command-driven trigger orchestration for the 
 - `cmd_buf_empty`: Command FIFO empty flag.
 - `data_buf_full`: Data FIFO full flag.
 - `data_buf_almost_full`: Data FIFO almost-full flag. This is used to guarantee room for two log words.
-- `ext_trig`: External trigger input (internally synchronized with a 2-flop synchronizer).
+- `ext_trig`: External trigger input (internally synchronized with a 2-flop synchronizer, then masked while `blocked` is high).
 - `dac_waiting_for_trig [7:0]`: Per-channel DAC waiting flags.
 - `adc_waiting_for_trig [7:0]`: Per-channel ADC waiting flags.
 

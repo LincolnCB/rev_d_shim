@@ -290,7 +290,7 @@ int cmd_channel_test(const char** args, int arg_count, const command_flag_t* fla
   }
   __sync_synchronize(); // Memory barrier
 
-  uint16_t raw_adc_value = (uint16_t)(adc_read_word(ctx->adc_ctrl, (uint8_t)board) & 0xFFFF);
+  uint16_t raw_adc_value = (uint16_t)(adc_read_data(ctx->adc_ctrl, (uint8_t)board) & 0xFFFF);
   int16_t adc_value = (raw_adc_value <= 32767) ? (int16_t)raw_adc_value : (int16_t)(raw_adc_value - 65536);
 
   // Apply ADC bias correction if available
@@ -1319,7 +1319,7 @@ static void* fieldmap_thread(void* arg) {
 
         // Read 4 words from this board (ADC pair data)
         for (int word = 0; word < 4; word++) {
-          uint32_t adc_word = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
+          uint32_t adc_word = adc_read_data(ctx->adc_ctrl, (uint8_t)board);
 
           // Each word contains 2 channels (lower 16 bits = even channel, upper 16 bits = odd channel)
           int ch_base = board * 8 + word * 2;
@@ -2040,7 +2040,7 @@ int cmd_find_bias(const char** args, int arg_count, const command_flag_t* flags,
           break;
         }
 
-        uint32_t adc_word = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
+        uint32_t adc_word = adc_read_data(ctx->adc_ctrl, (uint8_t)board);
         uint16_t adc_reading_raw = (uint16_t)(adc_word & 0xFFFF);
         int16_t adc_reading = adc_reading_raw < 32768 ? adc_reading_raw : adc_reading_raw - 65536; // Convert to signed
         double adc_value = (double)adc_reading;
@@ -2182,7 +2182,7 @@ int cmd_find_bias(const char** args, int arg_count, const command_flag_t* flags,
         break;
       }
 
-      uint32_t adc_word = adc_read_word(ctx->adc_ctrl, (uint8_t)board);
+      uint32_t adc_word = adc_read_data(ctx->adc_ctrl, (uint8_t)board);
       uint16_t adc_reading_raw = (uint16_t)(adc_word & 0xFFFF);
       int16_t adc_reading = adc_reading_raw < 32768 ? adc_reading_raw : adc_reading_raw - 65536; // Convert to signed
       samples[i] = (double)adc_reading;

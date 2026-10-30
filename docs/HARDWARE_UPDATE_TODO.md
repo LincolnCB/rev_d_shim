@@ -1,0 +1,17 @@
+# Hardware Update TODO
+
+Firmware changes that wait on the next hardware revision (new cable pinout, an LVDS conversion stage outside the FPGA). None of these work on the current hardware, so none of them are in the code yet.
+
+## Fixes to make
+
+- ADC MISO capture edge. The ADS816x (SPI-00) drives SDO on the falling edge of its SCLK and takes up to 19 ns to settle, holding the previous bit for at least 2.5 ns. Its SCLK is the inverted SCK that loops back as `MISO_SCK`, and the cores capture MISO on the rising edge of that returned clock -- half a period after launch, which is 50 ns at 10 MHz but only 16.7 ns at 30 MHz. Once the new board's returned-clock path is confirmed, capture on the falling edge instead (a full period, 33.3 ns at 30 MHz) in `ads816x_adc_ctrl`, then re-check the MISO bit alignment on hardware. The 2.5 ns hold is the tight side; a fixed IDELAY on the MISO inputs is the fallback if the input timing doesn't close. The DAC capture edge stays as it is, since DAC readback only happens on the 5 MHz boot clock.
+- CS-loopback word framing. Today the MISO bit counter starts from `start_miso`, raised at a fixed point in the SPI clock domain and passed through a 2-flop synchronizer into the returned-clock domain. The returned clock runs at the same rate but is phase-shifted by the cable and transceiver round trip, so the synchronizer can resolve one cycle early or late depending on that phase. At 10 MHz the shift is a small, stable fraction of a cycle; at 30 MHz it can land near the synchronizer's sampling point and move the word start by a bit, which is what holds the ADC at 10 MHz. With `ADC_CS_LB` routed back to an FPGA pin, capture the looped-back CS in the returned-clock domain and start the bit count from its falling edge, so the round-trip delay drops out.
+- MISO input timing constraints. Add `set_input_delay` on each board's MISO against its `miso_sck_b` (ADS816x 19 ns max / 2.5 ns min, plus FIN1047 channel skew) once the capture edge above is in. Until then the ADC MISO inputs are left unconstrained, since the current rising-edge capture can't meet 30 MHz.
+
+## Good to know
+
+- The LVDS conversion moves to a stage just outside the FPGA, so the FPGA drives and receives single-ended signals. That halves the SPI pin count, which is what frees pins for the CS loopback. On the firmware side, `modules/io_bufs.tcl` (the `diff_in_buf` / `diff_out_buf` cells) and the `LVDS_25` / `DIFF_TERM` settings in `ports.xdc` become plain single-ended I/O, and the bank voltages may change with the new I/O standard.
+- The external converter adds its own propagation delay and part-to-part skew to every SPI path. On the MOSI side that goes into the output-delay budget against SCK; on the MISO side it cancels as long as the returned clock and its data share a converter package, as they share the FIN1047 today.
+- The returned `MISO_SCK` inputs need to stay on clock-capable pins, since each one drives a BUFR clock gate.
+- Chip readbacks (the DAC boot test, the ADC register check) run on the 5 MHz `FCLK_CLK1` boot clock -- `spi_off` holds the SPI clock mux there until every DAC and ADC finishes setup, and returns to it after an error -- so the AD5676's ~9 MHz readback limit doesn't constrain the runtime SPI rate.
+- 30 MHz is the target runtime rate (the 10 us sample time). 50 MHz isn't: the AD5676 needs SCLK low for at least 12 ns at VLOGIC of 2.7 V or more, which caps it near 41 MHz at a 50% duty cycle, and the ADC's write-side hold margin shrinks to under 2 ns.

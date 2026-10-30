@@ -47,7 +47,7 @@ static uint32_t step_worst_hz(uint32_t step) {
 
 uint32_t timing_find_min_clk_hz(timing_fits_fn fits, void *arg) {
   uint32_t lo = TIMING_CLK_MIN_HZ / TIMING_CLK_STEP_HZ;
-  uint32_t hi = TIMING_CLK_MAX_HZ / TIMING_CLK_STEP_HZ;
+  uint32_t hi = SPI_CLK_MAX_HZ / TIMING_CLK_STEP_HZ;
   if (!fits(step_worst_hz(hi), arg)) return 0;
   // Invariant: grid point hi fits; find the lowest one that does
   while (lo < hi) {
@@ -55,5 +55,7 @@ uint32_t timing_find_min_clk_hz(timing_fits_fn fits, void *arg) {
     if (fits(step_worst_hz(mid), arg)) hi = mid;
     else lo = mid + 1u;
   }
-  return hi * TIMING_CLK_STEP_HZ;
+  uint32_t hz = hi * TIMING_CLK_STEP_HZ;
+  if (hz > TIMING_ADC_MAX_CLK_HZ && fits(TIMING_ADC_MAX_CLK_HZ, arg)) return TIMING_ADC_MAX_CLK_HZ;
+  return hz;
 }

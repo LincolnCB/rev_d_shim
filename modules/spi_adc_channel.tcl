@@ -20,6 +20,7 @@ create_bd_pin -dir O boot_fail
 create_bd_pin -dir O bad_cmd
 create_bd_pin -dir O cmd_buf_underflow
 create_bd_pin -dir O data_buf_overflow
+create_bd_pin -dir O debug_buf_overflow
 create_bd_pin -dir O unexp_trig
 create_bd_pin -dir O delay_too_short
 create_bd_pin -dir O -from 31 -to 0 last_received_cmd
@@ -32,6 +33,9 @@ create_bd_pin -dir I adc_cmd_empty
 create_bd_pin -dir O -from 31 -to 0 adc_data
 create_bd_pin -dir O adc_data_wr_en
 create_bd_pin -dir I adc_data_full
+create_bd_pin -dir O -from 31 -to 0 adc_debug
+create_bd_pin -dir O adc_debug_wr_en
+create_bd_pin -dir I adc_debug_full
 
 # Block buffers and next command execution until HW Manager is ready
 create_bd_pin -dir I blocked
@@ -70,6 +74,9 @@ cell shim:user:ads816x_adc_ctrl adc_spi {} {
   data_buf_wr_en adc_data_wr_en
   data_word adc_data
   data_buf_full adc_data_full
+  debug_buf_wr_en adc_debug_wr_en
+  debug_word adc_debug
+  debug_buf_full adc_debug_full
   trigger trigger
   setup_done setup_done
   boot_fail boot_fail
@@ -78,6 +85,7 @@ cell shim:user:ads816x_adc_ctrl adc_spi {} {
   cmds_since_reset cmds_since_reset
   cmd_buf_underflow cmd_buf_underflow
   data_buf_overflow data_buf_overflow
+  debug_buf_overflow debug_buf_overflow
   unexp_trig unexp_trig
   delay_too_short delay_too_short
   waiting_for_trig waiting_for_trig

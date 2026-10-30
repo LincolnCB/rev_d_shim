@@ -215,8 +215,16 @@ int validate_adc_file(const char *path, long expected_trigs, adc_cmd_file_info_t
 // timestamp is converted to cycles with hw_time_to_cycles (round-to-nearest, same as the
 // command synthesis), so the cycle deltas here are exactly those the hardware will see. On
 // success returns true and sets *min_cycles (UINT32_MAX when the file has no within-sweep gap
-// to constrain); on a file error prints a message and returns false.
-bool timestamp_file_min_delay_cycles(const char *path, uint32_t spi_clk_hz, uint32_t *min_cycles);
+// to constrain); on a file error prints a message and returns false. If where is non-NULL it is
+// filled with the location of the shortest gap (line numbers are 1-based file lines; 0 when there
+// is no gap).
+typedef struct {
+  long prev_line;    // line of the row the shortest gap starts at
+  long line;         // line of the row the shortest gap ends at
+  double prev_t_sec;
+  double t_sec;
+} timestamp_gap_t;
+bool timestamp_file_min_delay_cycles(const char *path, uint32_t spi_clk_hz, uint32_t *min_cycles, timestamp_gap_t *where);
 
 // Initialize an adc_data_file_info_t. num_samples should match the ADC file's
 // row count; iters is the number of times the whole run will be replayed. The

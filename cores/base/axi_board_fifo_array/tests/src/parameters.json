@@ -1,0 +1,5 @@
+{
+  "NUM_BOARDS": 6,
+  "AXI_ADDR_WIDTH": 16,
+  "AXI_DATA_WIDTH": 32
+}

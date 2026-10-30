@@ -1,258 +1,82 @@
 # Capture Packing Design Notes
 
-Design notes for how the S2MM ADC capture packs data into RAM. The v1 mechanism is implemented
-(the RTL core `adc_rate_ctrl` plus the software mover; cocotb-passed, hardware build pending)
-and summarized in `DMA_PLAN.md`, with the detail kept here. The v2 streaming prerequisite
-remains open (see Remaining open items).
+Design notes for how the S2MM ADC capture packs data into RAM. The v1 mechanism (the `adc_rate_ctrl` core plus the software mover) is implemented and hardware-validated; `DMA_PLAN.md` summarizes it. The v2 streaming prerequisite is still open (see Remaining open items).
 
-## The problem in one line
+## The problem
 
-The capture has to work at both extremes from one mechanism: a flat-out max-rate burst that
-fills RAM as fast as possible, and a word-by-word trickle -- without running out of
-descriptors in between, and without capping how much of RAM the PL can fill just because
-software is slow to read.
+One mechanism has to handle both extremes: a max-rate burst that fills RAM as fast as possible, and a word-by-word trickle -- without running out of descriptors, and without limiting how much RAM the PL can fill because software reads slowly.
 
-## What the per-word ring did
+The original S2MM ring used one 64-byte descriptor per 4-byte ADC word, a 16x overhead: the 8 MB descriptor region (`udmabuf1`) ran dry at 512 KB of ADC data while the 128 MB data region (`udmabuf0`) sat ~99.6% empty. Per-packet descriptors plus density control fix that.
 
-The original S2MM ring used one 64-byte descriptor per single 4-byte ADC word (`dma_wave_add`
-in `software/*/src/sys/dma_ctrl.c`). That is 16x descriptor overhead, so the 8 MB descriptor
-region (`udmabuf1`) ran dry at 131,072 words = 512 KB of ADC data while the 128 MB data region
-(`udmabuf0`) sat ~99.6% empty -- descriptors were exhausted long before RAM filled. Packing
-thin unconditionally was the bug; per-packet descriptors plus density control (below) fix it.
+## Mechanics this rests on
 
-## Mechanics this rests on (the facts)
+- The data region (`udmabuf0`, 128 MB) holds samples; the descriptor region (`udmabuf1`, 8 MB) holds 64-byte scatter-gather descriptors.
+- Every S2MM packet (every `tlast`) consumes at least one descriptor: the engine closes a descriptor on `tlast` or a full buffer, writes back Complete and the transferred length, and moves on. Descriptors consumed == packet count.
+- Freeing descriptors is a software action. The engine never runs past `TAILDESC`, so the `CURDESC`-to-`TAILDESC` gap is a credit window software controls by advancing `TAILDESC` (the standard tail-chasing / continuous-SG pattern).
+- The packetizer (`cores/shim/adc_packetizer`) closes a packet when the FIFO is about to run dry (`fifo_count_rd_clk <= 1`) or at `MAX_PACKET_WORDS` (256), so draining a full FIFO yields one dense packet.
+- The `adc_data` FIFO is 2^10 words. At the ~500k words/s per-board maximum, filling from 256 to 1024 words takes ~1.5 ms.
 
-- Two DDR regions: data region (`udmabuf0`, 128 MB) holds the samples; descriptor region
-  (`udmabuf1`, 8 MB) holds the scatter-gather descriptors (64 B each). The two are balanced at
-  the packet size (below), so neither is the sole scarce one.
-- In scatter-gather S2MM, every packet (every `tlast`) consumes at least one descriptor. The
-  engine closes the current descriptor on `tlast` or when its buffer fills, writes back the
-  Complete bit and the actual transferred length, then moves to the next descriptor. You
-  cannot pack two packets into one descriptor. So descriptors-consumed == packet-count (plus
-  spill when a packet is bigger than its buffer).
-- Descriptor "freeing" is a software action, not automatic. The engine marks a descriptor
-  Complete and leaves it owned by software. The back-channel that hands descriptors back to
-  the engine is the `TAILDESC` register: the engine never runs past `TAILDESC`, so the gap
-  between `CURDESC` (where the engine is) and `TAILDESC` (where software has released to) is a
-  credit window software controls. Advancing `TAILDESC` == returning credits. This is the
-  standard tail-chasing / continuous-SG pattern (the plan already assumes append-at-tail for
-  MM2S).
-- The packetizer (`cores/shim/adc_packetizer`) closes a packet when the FIFO is about to run
-  dry (`fifo_count_rd_clk <= 1`) or at `MAX_PACKET_WORDS` (currently 256). Crucially it keeps
-  one packet open while the FIFO stays deep, so draining a full FIFO yields one dense packet,
-  not many thin ones.
-- The adc_data FIFO is 2^10 = 1024 words deep (shrunk from 2^13 in the Stage 5 reclaim, still
-  well above `MAX_PACKET_WORDS`). Per-board ADC rate tops out ~2 MB/s = ~500k words/s, so
-  filling from a 256-word packet up to the 1024 ceiling is ~1.5 ms of headroom at max rate.
+## Why 256 words
 
-## The region-balance number (why 256 is a sweet spot)
-
-At `MAX_PACKET_WORDS = 256`, a full packet buffer is 1024 B. 131,072 descriptors x 1024 B =
-exactly 128 MB = the data region. So with full packets the two regions are perfectly matched:
-you exhaust both at the same moment, 128 MB of ADC data, a 256x improvement over the per-word
-ring's 512 KB. Below 256-word packets the descriptor region binds first; above 256 (raising
-`MAX_PACKET_WORDS`) the data region binds first and descriptors become abundant. 256 is the
-balance point for the current 8 MB / 128 MB split.
+A full 256-word packet is 1024 B, and 131,072 descriptors x 1024 B is exactly 128 MB, so with full packets both regions run out together -- 128 MB of capture, 256x the per-word ring. Smaller packets make the descriptor region bind first; larger ones (raising `MAX_PACKET_WORDS`) make the data region bind first.
 
 ## The control law
 
-Always drain into RAM (RAM is an extended buffer -- fill it). Vary only the packing density,
-and tie density to the backlog = (write frontier - software read cursor):
+Always drain into RAM, and vary only the packing density with the backlog (write frontier minus software read cursor):
 
-- Big backlog (software idle or far behind): pack dense (accumulate toward `MAX_PACKET_WORDS`
-  per descriptor). Software has plenty buffered, so the accumulation latency costs nothing,
-  and dense packing is exactly what lets the whole data region fill without exhausting
-  descriptors.
-- Small backlog (software draining fast, near the frontier): pack thin / eager (drain
-  whatever is resident, down to a word) so software gets data with low latency. Thin packing
-  is safe here because fast draining recycles descriptors as fast as they are spent.
+- Big backlog (software idle or far behind): pack dense, accumulating toward `MAX_PACKET_WORDS` per descriptor. The latency costs nothing, and it's what lets the whole data region fill.
+- Small backlog (software keeping up): pack thin, draining whatever is resident, so software gets data with low latency. Fast draining recycles descriptors as fast as they're spent.
 
-This unifies the extremes: idle software is the dense, descriptor-efficient, fill-all-of-RAM
-case; a hungry fast reader is the thin, low-latency, recycle-as-you-go case. The per-word
-exhaustion only happened because we packed thin unconditionally. The switch between the two is
-a single comparison in hardware (backlog vs a fixed threshold, the packet size), not a
-decision software has to make per read -- see Mechanism.
+The switch is one hardware comparison (backlog vs a fixed threshold equal to the packet size), not a per-read software decision.
 
-## Mechanism: decouple density from flow control
+## Mechanism: density separate from flow control
 
-The clean framing splits the job into two orthogonal mechanisms instead of overloading one.
+Flow control is the `TAILDESC` credit window, and only that: credits say whether there's RAM/descriptor space to write into. When RAM fills, credits run out, the engine stalls, the FIFO backs up, and an overflow is the detected ADC-overflow error (`hw_manager` shutdown) -- the intended failure mode. Credits never control density.
 
-Flow control = the `TAILDESC` credit window. Software advances `TAILDESC` as it drains and
-recycles descriptors. Credits reflect only one thing: is there RAM/descriptor space free to
-write into. When RAM fills (software behind or idle), credits run out, the engine stalls, the
-FIFO accumulates, and if it overflows that is the detected ADC-overflow error (hw_manager
-shutdown) -- the intended failure mode, not something to design around. Credits are never
-used to control density.
+Density is one comparison against a threshold fixed at the packet size (256 words). At or above it, the packetizer holds `tvalid` and lets the FIFO fill toward `MAX_PACKET_WORDS` before draining a dense packet; below it, it drains eagerly and closes at `fifo_count_rd_clk <= 1`. `MAX_PACKET_WORDS` always caps a packet, and a mode flip mid-accumulation just closes the packet early. Because the threshold equals the packet size, a final sub-packet always sits below it and drains, so the run tail always flushes with no explicit flush. The threshold is a compile-time parameter (`adc_rate_ctrl`'s `PACKET_WORDS`, fed from the same value as `MAX_PACKET_WORDS`), not a register. From reset every backlog is zero, so each board starts in eager drain.
 
-Density is chosen by one comparison: the backlog against a threshold fixed at the packet size
-(256 words). If backlog >= threshold the core accumulates -- the packetizer holds `tvalid` and
-lets the FIFO fill toward `MAX_PACKET_WORDS` before draining the whole dense packet. If
-backlog < threshold it drains eagerly -- forwards whatever is resident now and closes the
-packet at `fifo_count_rd_clk <= 1` (the thin behavior). `MAX_PACKET_WORDS` always caps a packet
-regardless. A mode flip mid-accumulation is harmless: if the backlog drops below the threshold
-while the FIFO holds, say, 100 words, the packet just closes at 100 and drains. Tying the
-threshold to the packet size is also what makes the run tail always flush: a final sub-packet
-is by definition smaller than a packet, so the backlog it represents is below the threshold and
-the core drains it eagerly rather than waiting for an accumulation that can never complete. The
-threshold is a compile-time parameter (`adc_rate_ctrl`'s `PACKET_WORDS`, driven from the same
-value as the packetizer's `MAX_PACKET_WORDS`), not a register -- software never sets it. From
-reset every backlog is zero, below the threshold, so each board starts in eager drain and ramps
-to dense only as real capture data backs up.
+The backlog is one running count per board: the packetizer adds each word it emits, and software subtracts each batch it reads by writing the delta to the board's rate lane (word 7 of its page in `axi_board_fifo_array`, writable during a run and outside the `sys_ctrl` config lock); a saturating subtract floors it at zero. Software never chooses density -- it only reports reads.
 
-The backlog is a single running count the core holds per board, not two cumulative totals. The
-packetizer adds each word it emits (one per beat) as the data is written, and software
-subtracts the words it has just read by writing that delta into a per-board register as a
-mechanical part of its drain loop; the core's saturating subtract floors the backlog at zero.
-Software never decides density -- it only reports how much it read, in word-count deltas.
+That makes it impossible to miss. Idle software stops reporting reads, the backlog climbs on its own, and the core packs at max density until RAM fills. Reporting reads late only makes the backlog look bigger, which biases toward denser packing, never toward overflow. There's no software deadline, and the scanner-side rates never enter in.
 
-This is what makes it un-missable. When software goes idle it stops reporting reads, but the
-packetizer keeps adding emitted words, so the backlog climbs past the threshold on its own and
-the core packs at max density with no software action -- RAM fills densely until full, then the
-FIFO accumulates and overflows (the intended error). Because the write side is tracked in
-hardware, reporting reads late only makes the backlog look bigger, biasing toward denser
-packing (safe, conserves descriptors), never toward overflow or lost data. No deadline, and
-nothing for software to forget. The scanner-side unknowns never enter in -- density depends
-only on the read/write gap.
+Timing `TAILDESC` releases in software to force accumulation would overload credits with a second job and bring back a soft real-time deadline; keeping them separate also leaves a clean base for v2 streaming. The RTL cost is the shared `adc_rate_ctrl` core (per-board counters, the subtract and the compare, with no AXI slave) plus the dense-hold logic in each `adc_packetizer` (18 LUT each).
 
-Keeping density out of the credit mechanism is deliberate: the alternative (time `TAILDESC`
-releases in software to force FIFO accumulation) overloads credits for two jobs and brings
-back a soft real-time deadline. The threshold split has no tight software deadline (hardware
-enforces density; the only overflow is the legitimate RAM-full one) and keeps credits as clean
-flow-control, which is also the right base for v2 streaming. The RTL cost is modest: the shared
-`adc_rate_ctrl` AXI-Lite core (per-board backlog registers, the read-delta subtract, and the
-backlog-vs-threshold compare against the fixed `PACKET_WORDS` parameter) measures ~447 LUT for
-all eight boards, plus a couple of LUT per `adc_packetizer` for the dense-hold logic (18 LUT
-each).
+### Why not compute the backlog in software?
 
-The per-board read-delta and backlog registers live in a small live-writable control block (the
-`adc_rate_ctrl` AXI-Lite window), not behind the `sys_ctrl` config lock, since the read-delta
-register is written during a run; the threshold is not a register at all. End-of-run flush falls
-out for free: as software catches up, the backlog drops below the threshold, the core switches
-to eager drain,
-and the FIFO tail self-flushes -- no explicit flush write.
+Software could compute it from descriptor completion status and its own read cursor, but the PL needs it continuously, and most of all when software is idle -- exactly when a software-fed value would go stale. The PL can't see reads either, since software reads DDR directly with CPU loads. So each side tracks what it observes -- the PL its writes, software its reads -- and the hardware subtracts them.
 
-### Why the split -- can't software compute the backlog itself?
+The backlog is separate from the `adc_data` FIFO status: the FIFO count is raw data waiting before the DMA (used for packet boundaries and overflow watch), while the backlog is packetized data in RAM waiting for software. Both updates land on the 100 MHz `aclk` the packetizer and AXI control share, so there's no clock crossing, and a scalar per board needs no BRAM. The backlog can read slightly high, since the DMA lands emitted words a little later; that only biases toward denser packing. Software uses descriptor completion, not this counter, to know what it may read.
 
-Software does know what is available to it: it learns the write frontier by reading descriptor
-completion status from RAM, and it knows its own read cursor, so it could compute the backlog.
-The catch is not computing it but delivering it to the consumer. The density decision runs in
-the PL, continuously, and has to be right exactly when software is idle -- that is when it
-should ramp to max density and fill RAM. If software fed the backlog to the PL, the write side
-would go stale the instant software stopped polling, the moment it is growing fastest. And the
-read side is invisible to the PL: software reads the u-dma-buf region straight from DDR with
-CPU loads, which the PL never sees, so the PL cannot track reads on its own either. So each
-side is tracked by whoever observes it directly and in time -- the PL its own writes, software
-its own reads -- and the hardware subtracts them. Neither side can do it alone.
+## Per-packet descriptors and compaction
 
-This is not the existing FIFO status register repurposed. That register reports adc_data FIFO
-occupancy -- raw data waiting in the PL before the DMA, which the packetizer already reads for
-packet boundaries. The backlog is a different pipeline stage: packetized data sitting in RAM,
-unread, after the DMA. Both stay and both are useful (the FIFO count for overflow watch, the
-backlog for density and for software to monitor); the backlog tracker is additive.
-
-The tracker is shaped like the fill count on an ordinary PL FIFO, but over the DDR buffer: the
-backlog rises as the packetizer emits words and falls as software reports reads, so it is the
-buffer occupancy. Both updates land on the same 100 MHz aclk the packetizer and AXI control
-already share -- the emit side adds one word per beat, the read side subtracts a software-
-written delta -- so there is no clock-domain crossing and no buffering. It is a scalar per
-board, a handful of registers, so no BRAM is needed for it.
-
-The packetizer then does with the backlog what it already does with the FIFO count: compare it
-to the threshold, accumulating to `MAX_PACKET_WORDS` when the backlog is at or above it and
-draining eagerly otherwise. One subtlety: the backlog counts words the packetizer has emitted,
-which the DMA lands in RAM a touch later, so it can read slightly high versus what is actually
-readable -- harmless, since an over-estimate only biases toward denser packing. Software uses
-the real descriptor-completion status, not this counter, to know what it may read.
-
-## Shared, needed regardless: per-packet descriptors + compaction
-
-Whatever controls density, the descriptor ring has to change from one-word buffers to
-per-packet buffers:
-- Each descriptor's buffer sized to `MAX_PACKET_WORDS` (1024 B), so a dense packet lands in
-  one descriptor; a thin packet partially fills its buffer and the engine records the real
-  length.
-- Readback walks completed descriptors, reads each one's actual transferred length, and
-  compacts the partially-filled buffers into a contiguous sample stream. Replaces today's
-  contiguous `memcpy` in `dma_wave_avail_board` / `dma_wave_read_board`.
-- A packet larger than its buffer would spill into the next descriptor (engine closes the
-  current one on buffer-full without EOF, continues into the next); compaction handles that via
-  the EOF bit + length. In practice `MAX_PACKET_WORDS` caps every packet at the buffer size, so
-  this does not arise.
+- Each descriptor's buffer is `MAX_PACKET_WORDS` (1024 B), so a dense packet fills one descriptor and a thin one partially fills it, with the real length written back.
+- Readback (`dma_wave_avail_board` / `dma_wave_read_board`) walks completed descriptors and compacts the partial buffers into a contiguous sample stream.
+- A packet bigger than its buffer would spill into the next descriptor, which compaction handles via EOF + length; `MAX_PACKET_WORDS` caps packets at the buffer size, so it doesn't arise.
 
 ## Knobs and their ceilings
 
-- Backlog threshold: the accumulate-vs-drain level, fixed at the packet size as the
-  `adc_rate_ctrl` `PACKET_WORDS` parameter (driven from the same value as the packetizer's
-  `MAX_PACKET_WORDS`). Not a register and not a runtime knob.
-- `MAX_PACKET_WORDS` (RTL param, currently 256): caps a single packet/descriptor and is the
-  packing threshold. Must stay under the mux `ARB_ON_MAX_XFERS` (1024) and below the FIFO depth
-  (now 1024). Raising it makes each descriptor denser and shifts the bind point from
-  descriptors to the data region; move it and `adc_rate_ctrl`'s `PACKET_WORDS` together (the
-  block design feeds both from one value).
-- DDR region sizes (`SHIM_DMA_*` defines): the absolute cap. The two regions (8 MB descriptors,
-  128 MB data) use 136 MB of the 1 GB, so there is room to grow both for more than 128 MB of
-  capture; grow them together to keep the balance at the chosen `MAX_PACKET_WORDS`.
+- Backlog threshold: fixed at the packet size by `PACKET_WORDS`; not a runtime knob.
+- `MAX_PACKET_WORDS` (256): must stay under the mux `ARB_ON_MAX_XFERS` (1024) and the FIFO depth (1024). Raising it shifts the binding limit from descriptors to data; move it and `PACKET_WORDS` together (the block design feeds both from one value).
+- DDR region sizes (`SHIM_DMA_*` defines): the absolute cap. The two regions use 136 MB of the 1 GB; grow them together to keep the balance.
 
 ## Plan and branching
 
-The work is staged so there is a clean, mergeable stable point partway through. v1 is the first
-point the dev branch merges back.
+v1 -- implemented and hardware-validated: per-packet descriptors with compaction, the per-board backlog, and the accumulate-vs-drain compare in `adc_rate_ctrl`, targeting `waveform` end-of-run readback. The capture ring is fixed and sized to the whole run, so no descriptor recycling is needed. On the four-board bench, DMA runs write every sample with peak backlogs of 32-512 words, so dense mode engages and the tail flushes (`DMA_TEST_PLAN.md` 5.1.g, 5.2.g, 5.4.c).
 
-v1 -- implemented (cocotb-passed, hardware build pending). The tool behaves as it did before,
-but with the capture backed by the DMA extended buffer: per-packet descriptors + compaction
-readback, the per-board backlog (packetizer emit-count minus software read-deltas), and the
-backlog-vs-threshold compare driving accumulate-vs-drain, all in the shared `adc_rate_ctrl`
-core. The target is `waveform` end-of-run readback, which keeps the testing self-contained. The
-capture ring is a fixed ring sized to the whole run, so no descriptor recycling (append-at-tail)
-is needed -- per-packet packing makes a waveform-sized capture fit. What remains for v1 is the
-hardware run; the RTL is cocotb-verified and the software host-compiles.
-
-v2 -- a new dev branch after the v1 merge. The fixed ring becomes a recycled circular buffer
-drained continuously, so capture length is bounded by drain rate rather than ring size (live /
-streaming capture). The density mechanism is unchanged -- it only looks at the backlog. The one
-new hardware dependency is append-at-tail on a running S2MM channel, whose behavior is best
-pinned down on a toy testbed (something like `ex05_dma`) rather than the full system before it
-goes into rev_d (see Remaining open items for where to confirm it).
-
-LUT reclaim ran first. The Stage 5 reclaim in `DMA_PLAN.md` (shrink the DMA-driven CDC FIFOs,
-merge the per-board bridges, consolidate the register AXI) landed before the v1 core, freeing
-LUT headroom and the BRAM the deep FIFOs held (see `RESOURCE_RECLAIM.md`).
+v2 -- a dev branch after the v1 merge: the ring becomes a recycled circular buffer drained continuously, so capture length is set by drain rate rather than ring size. Density control is unchanged. The new dependency is append-at-tail on a running S2MM channel, best pinned down on a toy testbed (like `ex05_dma`) first.
 
 ## Settled decisions
 
-- Overflow is the failure mode, not a thing to avoid: when RAM fills and software has not
-  drained, credits run out, the FIFO accumulates, and an overflow is the detected ADC-overflow
-  error (hw_manager shutdown). No "park at end-of-region" special case.
-- Density is decoupled from flow control: a hardware backlog-vs-threshold compare in the
-  packetizer sets packing; `TAILDESC` credits are pure backpressure. The threshold is fixed at
-  the packet size, which also guarantees the run tail flushes.
-- Density is driven by a hardware per-board backlog (the packetizer adds each emitted word,
-  software subtracts the words it reads), not by software setting density.
-- First target is `waveform` end-of-run readback (v1): fixed ring, no append-at-tail.
-  Live/continuous capture is v2.
+- Overflow is the failure mode: when RAM fills, the FIFO backs up and overflows into the ADC-overflow shutdown. No "park at end-of-region" special case.
+- Density is set by a hardware backlog-vs-threshold compare; `TAILDESC` credits are pure backpressure. The threshold equals the packet size, which guarantees the tail flushes.
+- The backlog is a 32-bit per-board hardware counter (emitted words minus software-reported reads), reached through the rate lane; the compare is binary.
+- v1 targets `waveform` end-of-run readback with a fixed ring; live capture is v2.
 
 ## Remaining open items
 
-The v1 implementation settled the earlier sub-decisions: the backlog is a 32-bit per-board
-register (covers far more than the 128 MB region), the control block is the `adc_rate_ctrl`
-AXI-Lite window (per-board read-delta and backlog registers, with the threshold a compile-time
-`PACKET_WORDS` parameter rather than a register), and the accumulate/drain compare is the binary
-form (no graded mapping). The one item left is the v2 prerequisite.
-
-- v2 prerequisite (does not block v1): does MCDMA S2MM support append-at-tail (advancing
-  `TAILDESC`) on a running channel? Find out from PG288 (the per-channel tail-descriptor
-  register behavior on a running channel), the mainline `xilinx_dma.c` cyclic/continuous S2MM
-  path, and a small hardware test, in that order.
+- v2 prerequisite: does MCDMA S2MM support append-at-tail (advancing `TAILDESC`) on a running channel? Check PG288, the mainline `xilinx_dma.c` cyclic S2MM path, and a small hardware test, in that order.
 
 ## Diagnostics and tooling (future work)
 
-- `memory_log` file (behind a flag): log the per-descriptor word counts for a run -- for each
-  descriptor, the words written (DAC, MM2S) and read (ADC, S2MM). This makes the actual packing
-  density and the thin/dense boundaries visible after a run, so the capacity estimate and the
-  allocation can be checked against what the hardware really did (how many descriptors ended up
-  thin vs dense, where the backlog held). Pairs with the capacity precheck's numbers.
-- `command_log` -- rework `--verbose`: today verbose mode is scattered inline prints. The goal is
-  a structured, log-style output (a command/event log written to a file behind a flag) that
-  captures the sequence of commands and state transitions, so weird behavior on the bench can be
-  reconstructed after the fact instead of scraped from interleaved stdout. Applies beyond the DMA
-  path; this is where the need surfaced.
+- `memory_log` (behind a flag): per-descriptor word counts for a run (DAC MM2S and ADC S2MM), to show the real packing density and check the capacity estimate against what the hardware did.
+- `command_log`: replace the scattered `--verbose` prints with a structured command/event log written to a file behind a flag, so bench behavior can be reconstructed afterwards. Applies beyond the DMA path.

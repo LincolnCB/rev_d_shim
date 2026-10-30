@@ -2,6 +2,7 @@
 #include <stdlib.h>
 
 #include "waveform_hw.h"
+#include "timing.h"
 
 // Initialize and validate hardware control structure for a given channel count. Exits on failure
 hw_t hw_init(uint32_t channel_count, double clk_MHz, bool verbose) {
@@ -31,6 +32,10 @@ hw_t hw_init(uint32_t channel_count, double clk_MHz, bool verbose) {
     }
     if (!FIFO_PRESENT(sys_sts_get_dac_cmd_fifo_status(&hw.sys_sts, i, verbose))) {
       fprintf(stderr, "Error: DAC command FIFO for board %u is not present. Channel count may be too high for hardware configuration.\n", i);
+      exit(1);
+    }
+    if (!FIFO_PRESENT(sys_sts_get_dac_debug_fifo_status(&hw.sys_sts, i, verbose))) {
+      fprintf(stderr, "Error: DAC debug FIFO for board %u is not present. Channel count may be too high for hardware configuration.\n", i);
       exit(1);
     }
     if (!FIFO_PRESENT(sys_sts_get_dac_data_fifo_status(&hw.sys_sts, i, verbose))) {
@@ -107,6 +112,10 @@ int hw_clear_dac_buffers(hw_t *hw) {
   for (uint32_t board = 0; board < board_count; board++) {
     if (!FIFO_STS_EMPTY(sys_sts_get_dac_cmd_fifo_status(&hw->sys_sts, board, hw->verbose))) {
       fprintf(stderr, "Error: DAC command FIFO for board %u is not empty after buffer reset.\n", board);
+      return -1;
+    }
+    if (!FIFO_STS_EMPTY(sys_sts_get_dac_debug_fifo_status(&hw->sys_sts, board, hw->verbose))) {
+      fprintf(stderr, "Error: DAC debug FIFO for board %u is not empty after buffer reset.\n", board);
       return -1;
     }
     if (!FIFO_STS_EMPTY(sys_sts_get_dac_data_fifo_status(&hw->sys_sts, board, hw->verbose))) {
@@ -330,7 +339,7 @@ channel_cal_ctx_t hw_channel_cal_ctx(hw_t *hw) {
 }
 
 // Run channel calibration over the PIO FIFO bridge, or over the MCDMA when the boards are in DMA
-// mode. Calibration needs clean ADC reads, so it is skipped above 10 MHz.
+// mode. Calibration needs clean ADC reads, so it is skipped above TIMING_ADC_MAX_CLK_HZ.
 int hw_calibrate(hw_t *hw, bool use_dma) {
   if (hw == NULL) {
     return -1;
@@ -340,9 +349,10 @@ int hw_calibrate(hw_t *hw, bool use_dma) {
     return -1;
   }
   uint32_t clk_freq = sys_sts_get_clk_freq_hz(&hw->sys_sts, hw->verbose);
-  // 1% margin so a requested 10 MHz that measures slightly high still calibrates
-  if (clk_freq > 10.1e6) {
-    fprintf(stderr, "Warning: skipping channel calibration -- SPI clock is %.3f MHz, and calibration needs the clean ADC reads only available at <= 10 MHz.\n", (double)clk_freq / 1e6);
+  // Clock tolerance so a requested cap that measures slightly high still calibrates
+  if (clk_freq > TIMING_ADC_MAX_CLK_HZ + TIMING_ADC_MAX_CLK_HZ / 100u * TIMING_CLK_TOL_PCT) {
+    fprintf(stderr, "Warning: skipping channel calibration -- SPI clock is %.3f MHz, and calibration needs the clean ADC reads only available at <= %g MHz.\n",
+            (double)clk_freq / 1e6, TIMING_ADC_MAX_CLK_HZ / 1e6);
     return 0;
   }
   channel_cal_ctx_t ctx = hw_channel_cal_ctx(hw);
@@ -729,7 +739,7 @@ int hw_read_adc_data(hw_t *hw, double *amps) {
   // Read 4 pairs (8 channels) per active board and convert to amps
   for (uint32_t board = 0; board < board_count; board++) {
     for (uint32_t pair = 0; pair < 4; pair++) {
-      uint32_t data_word = adc_read_word(&hw->adc_ctrl, board);
+      uint32_t data_word = adc_read_data(&hw->adc_ctrl, board);
       uint16_t raw = (uint16_t)(data_word & 0xFFFF);
       int16_t adc_val_lo = (raw <= 32767) ? (int16_t)raw : (int16_t)(raw - 65536);
       raw = (uint16_t)((data_word >> 16) & 0xFFFF);

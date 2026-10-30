@@ -30,8 +30,11 @@ set use_ext_clk 1
 #   the adc/dac/tri_ctrl .h files in software to prevent unclear AXI crashes
 # ----------------------------!!!!!!!!!!!!!!!!!!-------------------------------
 set dac_cmd_fifo_addr_width 10
-set dac_data_fifo_addr_width 10
-set adc_cmd_fifo_addr_width 10
+set dac_debug_fifo_addr_width 12
+# Calibration readback only (one word per GET_CAL)
+set dac_data_fifo_addr_width 5
+set adc_cmd_fifo_addr_width 12
+set adc_debug_fifo_addr_width 12
 set adc_data_fifo_addr_width 10
 set trig_cmd_fifo_addr_width 10
 set trig_data_fifo_addr_width 10
@@ -207,12 +210,13 @@ cell xilinx.com:ip:proc_sys_reset:5.0 ps_rst {} {
 }
 
 ### Unified register SmartConnect on GP0. Carries the four control windows (sys_ctrl, status,
-### spi_clk, mcdma) on M00-M03 plus every per-board FIFO bridge, the trigger bridge, and the ADC
-### rate-control registers on M04+, so the whole register map rides one GP port (GP1 is unused).
+### spi_clk, mcdma) on M00-M03, then the all-board FIFO array (M04) and the trigger bridge (M05),
+### so the whole register map rides one GP port (GP1 is unused) and the port count does not grow
+### with board_count.
 ### GP0 reaches 0x4000_0000 -- 0x7FFF_FFFF, so the FIFO windows live there rather than at 0x8000_0000.
 cell xilinx.com:ip:smartconnect:1.0 sys_cfg_axi_intercon {
   NUM_SI 1
-  NUM_MI [expr {$board_count + 6}]
+  NUM_MI 6
 } {
   aclk ps/FCLK_CLK0
   S00_AXI ps/M_AXI_GP0
@@ -252,6 +256,14 @@ addr 0x40000000 128 axi_sys_ctrl/S_AXI ps/M_AXI_GP0
 ###############################################################################
 
 ### Hardware manager
+# Manual_Enable is an external pin, so it's synchronized before the state machine sees it
+cell base:user:sync_incoherent manual_enable_sync {
+  WIDTH 1
+} {
+  clk ps/FCLK_CLK0
+  resetn ps_rst/peripheral_aresetn
+  din Manual_Enable
+}
 # Set SPI start wait to 5 seconds
 cell shim:user:hw_manager hw_manager {
   SPI_START_WAIT 500000000
@@ -260,7 +272,7 @@ cell shim:user:hw_manager hw_manager {
   aresetn ps_rst/peripheral_aresetn
   ctrl_en axi_sys_ctrl/ctrl_en
   pow_en axi_sys_ctrl/pow_en
-  ext_en Manual_Enable
+  ext_en manual_enable_sync/dout
   ctrl_en_oob axi_sys_ctrl/ctrl_en_oob
   pow_en_oob axi_sys_ctrl/pow_en_oob
   cmd_buf_reset_oob axi_sys_ctrl/cmd_buf_reset_oob
@@ -300,16 +312,16 @@ cell shim:user:shutdown_sense shutdown_sense {} {
 ###############################################################################
 
 ### SPI clock control
-## Variably define the default SPI clock frequency (MHz)
+## Build-time SPI clock frequency (MHz). This is also the rate the SPI domain and SPI I/O are timed
+## at (ports.xdc), so it stays at the 30 MHz maximum; software retunes the MMCM to its own target at
+## startup, and the clock snoop flags anything above about 31 MHz.
 # ----------------------------!!!!!!!!!!!!!!!!!!-------------------------------
-# If you change this, MAKE SURE to also change the default parameters
-#   of the spi_clk_snoop core below to match the clock wizard configuration.
-# You can find these by looking in Vivado at the block diagram and double 
-#   clicking on the spi_clk_gen core, then going to "MMCM Settings" tab.
-set spi_clk_freq_mhz 10.000
-# If the default SPI clock frequency is not between 1 and 50 MHz, then error out
-if {$spi_clk_freq_mhz < 1.0 || $spi_clk_freq_mhz > 50.0} {
-  puts "Error: spi_clk_freq_mhz must be between 1.0 and 50.0."
+# If you change this, MAKE SURE to also change the clock wizard settings and the default parameters
+#   of the spi_clk_snoop core below to match. You can find these by looking in Vivado at the block
+#   diagram and double clicking on the spi_clk_gen core, then going to "MMCM Settings" tab.
+set spi_clk_freq_mhz 30.000
+if {$spi_clk_freq_mhz < 1.0 || $spi_clk_freq_mhz > 30.0} {
+  puts "Error: spi_clk_freq_mhz must be between 1.0 and 30.0."
   exit 1
 }
 # ----------------------------!!!!!!!!!!!!!!!!!!-------------------------------
@@ -317,12 +329,20 @@ if {$use_ext_clk} {
   # MMCM (handles down to 10 MHz input)
   # Includes power down and dynamic reconfiguration
   # Safe clock startup prevents clock output when not locked
+  # 10 MHz settings, for switching back: CLKOUT1_REQUESTED_OUT_FREQ 10.000, MMCM_CLKFBOUT_MULT_F 29.750,
+  #   MMCM_CLKOUT0_DIVIDE_F 89.250, CLKOUT1_JITTER 444.300, CLKOUT1_PHASE_ERROR 230.442; spi_clk_snoop
+  #   CLKFBOUT_MULT_DEFAULT 29, CLKFBOUT_FRAC_MULT_DEFAULT 750, CLKOUT0_DIVIDE_DEFAULT 89,
+  #   CLKOUT0_FRAC_DIVIDE_DEFAULT 250
   cell xilinx.com:ip:clk_wiz:6.0 spi_clk_gen {
     PRIMITIVE MMCM
     USE_DYN_RECONFIG true
     USE_SAFE_CLOCK_STARTUP true
     PRIM_IN_FREQ 30
     CLKOUT1_REQUESTED_OUT_FREQ ${spi_clk_freq_mhz}
+    MMCM_CLKFBOUT_MULT_F 32.500
+    MMCM_CLKOUT0_DIVIDE_F 32.500
+    CLKOUT1_JITTER 317.943
+    CLKOUT1_PHASE_ERROR 210.329
     FEEDBACK_SOURCE FDBK_AUTO
     CLKOUT1_DRIVES BUFGCE
   } {
@@ -337,11 +357,11 @@ if {$use_ext_clk} {
   cell shim:user:axi_clock_timing_snoop spi_clk_snoop {
     SOURCE_CLK_FREQ_HZ 30000000
     DIVCLK_DIVIDE_DEFAULT 1
-    CLKFBOUT_MULT_DEFAULT 29
-    CLKFBOUT_FRAC_MULT_DEFAULT 750
-    CLKOUT0_DIVIDE_DEFAULT 89
-    CLKOUT0_FRAC_DIVIDE_DEFAULT 250
-    MAX_CLK_FREQ_HZ 100000000
+    CLKFBOUT_MULT_DEFAULT 32
+    CLKFBOUT_FRAC_MULT_DEFAULT 500
+    CLKOUT0_DIVIDE_DEFAULT 32
+    CLKOUT0_FRAC_DIVIDE_DEFAULT 500
+    MAX_CLK_OUT_FREQ_HZ 31000000
   } {
     aclk ps/FCLK_CLK0
     aresetn ps_rst/peripheral_aresetn
@@ -378,7 +398,7 @@ if {$use_ext_clk} {
     CLKFBOUT_FRAC_MULT_DEFAULT 875
     CLKOUT0_DIVIDE_DEFAULT 33
     CLKOUT0_FRAC_DIVIDE_DEFAULT 250
-    MAX_CLK_FREQ_HZ 100000000
+    MAX_CLK_OUT_FREQ_HZ 31000000
   } {
     aclk ps/FCLK_CLK0
     aresetn ps_rst/peripheral_aresetn
@@ -506,14 +526,10 @@ module axi_spi_interface axi_spi_interface {
   spi_clk spi_clk/clk_o
   datapath_mode axi_sys_ctrl/datapath_mode
 }
-# Fan the unified register SmartConnect to the module's per-board + trigger AXI slaves
-# (control windows take M00-M03; boards take M04+, the trigger bridge then the rate-control block
-# take the last two MIs).
-for {set i 0} {$i < $board_count} {incr i} {
-  wire axi_spi_interface/board_fifo_${i}_axi sys_cfg_axi_intercon/[format "M%02d_AXI" [expr {4 + $i}]]
-}
-wire axi_spi_interface/trig_axi sys_cfg_axi_intercon/[format "M%02d_AXI" [expr {4 + $board_count}]]
-wire axi_spi_interface/rate_ctrl_axi sys_cfg_axi_intercon/[format "M%02d_AXI" [expr {5 + $board_count}]]
+# Fan the unified register SmartConnect to the module's AXI slaves (control windows take
+# M00-M03; the board FIFO array and the trigger bridge take M04-M05).
+wire axi_spi_interface/board_fifo_axi sys_cfg_axi_intercon/M04_AXI
+wire axi_spi_interface/trig_axi sys_cfg_axi_intercon/M05_AXI
 ## Wire channel pins for the module
 # DAC and ADC FIFOs
 for {set i 0} {$i < $board_count} {incr i} {
@@ -523,12 +539,18 @@ for {set i 0} {$i < $board_count} {incr i} {
   wire axi_spi_interface/dac_ch${i}_data spi_clk_domain/dac_ch${i}_data
   wire axi_spi_interface/dac_ch${i}_data_wr_en spi_clk_domain/dac_ch${i}_data_wr_en
   wire axi_spi_interface/dac_ch${i}_data_full spi_clk_domain/dac_ch${i}_data_full
+  wire axi_spi_interface/dac_ch${i}_debug spi_clk_domain/dac_ch${i}_debug
+  wire axi_spi_interface/dac_ch${i}_debug_wr_en spi_clk_domain/dac_ch${i}_debug_wr_en
+  wire axi_spi_interface/dac_ch${i}_debug_full spi_clk_domain/dac_ch${i}_debug_full
   wire axi_spi_interface/adc_ch${i}_cmd spi_clk_domain/adc_ch${i}_cmd
   wire axi_spi_interface/adc_ch${i}_cmd_rd_en spi_clk_domain/adc_ch${i}_cmd_rd_en
   wire axi_spi_interface/adc_ch${i}_cmd_empty spi_clk_domain/adc_ch${i}_cmd_empty
   wire axi_spi_interface/adc_ch${i}_data spi_clk_domain/adc_ch${i}_data
   wire axi_spi_interface/adc_ch${i}_data_wr_en spi_clk_domain/adc_ch${i}_data_wr_en
   wire axi_spi_interface/adc_ch${i}_data_full spi_clk_domain/adc_ch${i}_data_full
+  wire axi_spi_interface/adc_ch${i}_debug spi_clk_domain/adc_ch${i}_debug
+  wire axi_spi_interface/adc_ch${i}_debug_wr_en spi_clk_domain/adc_ch${i}_debug_wr_en
+  wire axi_spi_interface/adc_ch${i}_debug_full spi_clk_domain/adc_ch${i}_debug_full
 }
 # Trigger command FIFO
 wire axi_spi_interface/trig_cmd spi_clk_domain/trig_cmd
@@ -540,16 +562,12 @@ wire axi_spi_interface/trig_data_wr_en spi_clk_domain/trig_data_wr_en
 wire axi_spi_interface/trig_data_full spi_clk_domain/trig_data_full
 wire axi_spi_interface/trig_data_almost_full spi_clk_domain/trig_data_almost_full
 ## Address assignment
-# DAC/ADC FIFOs: one 8KB window per board at 0x410b_0000 (GP0 range; addr[12] selects
-# DAC @ +0x0000 / ADC @ +0x1000)
-for {set i 0} {$i < $board_count} {incr i} {
-  addr 0x410${i}0000 8K axi_spi_interface/board_fifo_${i}_bridge/S_AXI ps/M_AXI_GP0
-}
+# DAC/ADC FIFOs: one 32KB window at 0x4100_0000 (GP0 range), a 4KB page per board (board b at
+# +b*0x1000; lane words inside a page, including the ADC capture rate lane, see
+# cores/base/axi_board_fifo_array). The window is sized for eight boards regardless of board_count.
+addr 0x41000000 32K axi_spi_interface/board_fifo_array/S_AXI ps/M_AXI_GP0
 # Trigger command and data FIFOs
 addr 0x42000000 128 axi_spi_interface/trig_fifo_axi_bridge/S_AXI ps/M_AXI_GP0
-# ADC capture rate-control registers (threshold + per-board backlog), in the free control slot
-# between spi_clk (0x40200000) and mcdma (0x40400000)
-addr 0x40300000 4K axi_spi_interface/adc_rate_ctrl/S_AXI ps/M_AXI_GP0
 
 ## AXI-domain over/underflow detection
 wire axi_spi_interface/dac_cmd_buf_overflow hw_manager/dac_cmd_buf_overflow
@@ -753,12 +771,25 @@ cell xilinx.com:ip:xlconcat:2.1 adc_min_delay_time_concat {
   In0 adc_timing_calc/min_delay_time
   In1 pad_7/dout
 }
+# Debug-full word: sticky per-board debug-lane overflow (dropped debug words), DAC in [7:0],
+# ADC in [15:8], zero-padded
+cell xilinx.com:ip:xlconstant:1.1 pad_16 {
+  CONST_VAL 0
+  CONST_WIDTH 16
+} {}
+cell xilinx.com:ip:xlconcat:2.1 debug_full_concat {
+  NUM_PORTS 3
+} {
+  In0 spi_clk_domain/dac_debug_buf_overflow
+  In1 spi_clk_domain/adc_debug_buf_overflow
+  In2 pad_16/dout
+}
 # 512 bytes (4096 bits)
 addr 0x40100000 512 status_reg/S_AXI ps/M_AXI_GP0
 ## Concatenation
 #  0    31 : 0    --  32b Hardware status code (31:29 board num, 28:4 status code, 3:0 internal state)
 #  1   575 : 32   -- 544b Command FIFO status (32 bits per buffer, ordered as DAC0, ADC0, ..., DAC7, ADC7, Trigger)
-#  2  1119 : 576  -- 544b Data FIFO status (32 bits per buffer, ordered as DAC0, ADC0, ..., DAC7, ADC7, Trigger)
+#  2  1119 : 576  -- 544b Data FIFO status (32 bits per buffer, ordered as DAC0 debug, ADC0 data, ..., DAC7 debug, ADC7 data, Trigger)
 #  3  1151 : 1120 --  32b SPI clock frequency in Hz
 #  4  1183 : 1152 --  32b SPI source clock frequency in Hz
 #  5  1215 : 1184 --  32b Trigger counter (number of triggers received)
@@ -769,9 +800,12 @@ addr 0x40100000 512 status_reg/S_AXI ps/M_AXI_GP0
 # 10  1823 : 1568 -- 256b ADC last received command (32 bits per channel, ordered as ADC0, ..., ADC7)
 # 11  2079 : 1824 -- 256b DAC commands since reset  (32 bits per channel, ordered as DAC0, ..., DAC7)
 # 12  2335 : 2080 -- 256b ADC commands since reset  (32 bits per channel, ordered as ADC0, ..., ADC7)
-# 13  4095 : 2336 -- RESERVED (zero-filled)
+# 13  2591 : 2336 -- 256b ADC debug FIFO status (32 bits per buffer, ordered as ADC0, ..., ADC7)
+# 14  2847 : 2592 -- 256b DAC data (calibration readback) FIFO status (ordered as DAC0, ..., DAC7)
+# 15  2879 : 2848 --  32b Debug full (7:0 DAC debug overflow, 15:8 ADC debug overflow, per board)
+# 16  4095 : 2880 -- RESERVED (zero-filled)
 cell xilinx.com:ip:xlconcat:2.1 sts_concat {
-  NUM_PORTS 14
+  NUM_PORTS 17
 } {
   In0 hw_manager/status_word
   In1 axi_spi_interface/cmd_fifo_sts
@@ -786,15 +820,18 @@ cell xilinx.com:ip:xlconcat:2.1 sts_concat {
   In10 spi_clk_domain/last_received_adc_cmds_concat
   In11 spi_clk_domain/dac_cmds_since_reset_concat
   In12 spi_clk_domain/adc_cmds_since_reset_concat
+  In13 axi_spi_interface/adc_debug_fifo_sts
+  In14 axi_spi_interface/dac_data_fifo_sts
+  In15 debug_full_concat/dout
   dout status_reg/sts_data
 }
 
 # Pad reserved bits
 cell xilinx.com:ip:xlconstant:1.1 pad_sts_reserved {
   CONST_VAL 0
-  CONST_WIDTH [expr {4096 - 2336}]
+  CONST_WIDTH [expr {4096 - 2880}]
 } {
-  dout sts_concat/In13
+  dout sts_concat/In16
 }
 
 ## IRQ interrupt concat

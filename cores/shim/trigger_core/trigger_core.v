@@ -77,7 +77,8 @@ module trigger_core #(
   reg  [27:0] lockout_counter;
   reg  [27:0] ext_trig_counter;
   reg  [27:0] trig_lockout;
-  reg  ext_trig_sync[1:0]; // 2-stage synchronizer for external trigger
+  (* ASYNC_REG = "TRUE" *) reg ext_trig_sync[1:0]; // 2-stage synchronizer for external trigger
+  wire ext_trig_live; // Synchronized trigger, masked while the buffers are blocked
   reg  log_trig;
   wire do_log;
   wire do_trig;
@@ -94,9 +95,11 @@ module trigger_core #(
       ext_trig_sync[1] <= 0;
     end else begin
       ext_trig_sync[0] <= ext_trig;
-      ext_trig_sync[1] <= ext_trig_sync[0] && !blocked; // Block trigger if blocked is high
+      ext_trig_sync[1] <= ext_trig_sync[0];
     end
   end
+  // Masked after the synchronizer so no logic sits between its stages
+  assign ext_trig_live = ext_trig_sync[1] && !blocked;
 
   // Checks for cancel / reset count command and synchronization conditions
   assign cancel = cmd_ready && cmd_type == CMD_CANCEL;
@@ -106,7 +109,7 @@ module trigger_core #(
   // Command done logic
   assign cmd_done = (state == S_IDLE && !cmd_buf_empty)
                   || (state == S_SYNC_CH && all_waiting)
-                  || (state == S_EXPECT_TRIG && ext_trig_counter == 1 && lockout_counter == 0 && ext_trig_sync[1])
+                  || (state == S_EXPECT_TRIG && ext_trig_counter == 1 && lockout_counter == 0 && ext_trig_live)
                   || (state == S_DELAY && delay_counter == 0)
                   || (state != S_ERROR && cancel); // Allow cancel at any time
   assign do_next_cmd = cmd_done && !cmd_buf_empty;
@@ -155,7 +158,7 @@ module trigger_core #(
   assign do_trig = (do_next_cmd && cmd_type == CMD_FORCE_TRIG) // Force trigger
                     || (do_next_cmd && cmd_type == CMD_SYNC_CH && all_waiting) // Sync channels edge case where all channels are already waiting
                     || (state == S_SYNC_CH && all_waiting) // Sync channels when all are waiting
-                    || (state == S_EXPECT_TRIG && lockout_counter == 0 && ext_trig_sync[1]); // External trigger when expected and lockout is done
+                    || (state == S_EXPECT_TRIG && lockout_counter == 0 && ext_trig_live); // External trigger when expected and lockout is done
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) trig_out <= 0;
     else trig_out <= do_trig; // Trigger pulse

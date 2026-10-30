@@ -11,7 +11,7 @@ Zynq-7000 FPGA project (target: Snickerdoodle Black) controlling up to 8 magneti
 **PL (FPGA/RTL):**
 - `block_design.tcl` — top-level Vivado design, key vars: `board_count`, `threshold_core_level`, `use_ext_clk`, FIFO address widths
 - `modules/*.tcl` — sub-modules sourced by `block_design.tcl`, each using `module_get_upvar` for inherited scope
-- `cores/base/` — FIFOs, clock domain sync (`sync_coherent`, `sync_incoherent`), diff I/O buffers
+- `cores/base/` — FIFOs, clock domain sync (`sync_coherent`, `sync_incoherent`, `reset_sync`), diff I/O buffers
 - `cores/shim/` — shim-specific cores (below)
 - `cores/pavel-demin/` — upstream cores (Red Pitaya Notes)
 
@@ -32,8 +32,9 @@ Zynq-7000 FPGA project (target: Snickerdoodle Black) controlling up to 8 magneti
 
 ## Clock Domains
 AXI/PS clock ↔ SPI clock, crossed via:
-- `sync_coherent` (async FIFO) — multi-bit, bit-coherent data
+- `sync_coherent` (req/ack handshake) — multi-bit, bit-coherent data
 - `sync_incoherent` (double-flop) — control signals/masks, no coherency needed
+- `reset_sync` (async assert, synchronous release) — per-FIFO buffer resets in `axi_spi_interface`; use it rather than `proc_sys_reset` for internal software-driven resets
 - `spi_en` uses a 4-stage synchronizer for extra margin
 
 ## Key Conventions

@@ -4,36 +4,53 @@
 #include <inttypes.h> // For PRIx32 format specifier
 #include "dac_ctrl.h"
 #include "map_memory.h"
+#include "sys_sts.h"
 
 // Create DAC control structure for all boards
 struct dac_ctrl_t create_dac_ctrl(bool verbose) {
   struct dac_ctrl_t dac_ctrl;
 
   // Boards absent from this bitstream keep a NULL mapping
-  for (int board = 0; board < MAX_BOARDS; board++) dac_ctrl.buffer[board] = NULL;
+  for (int board = 0; board < MAX_BOARDS; board++) {
+    dac_ctrl.cmd[board] = NULL;
+    dac_ctrl.debug[board] = NULL;
+    dac_ctrl.data[board] = NULL;
+  }
 
-  // Map each present board's DAC FIFO by its pl-reg /dev node
+  // Point each present board at its DAC lanes in the shared board FIFO window
+  uint32_t *base = map_board_fifo(verbose);
+  if (base == NULL) {
+    fprintf(stderr, "Failed to map the board FIFO window for DAC access\n");
+    exit(EXIT_FAILURE);
+  }
   for (int board = 0; board < board_count(); board++) {
-    char dev_path[32];
-    snprintf(dev_path, sizeof(dev_path), BOARD_FIFO_DEV_FMT, board);
-    dac_ctrl.buffer[board] = map_board_fifo(dev_path, 0, verbose);
-    if (dac_ctrl.buffer[board] == NULL) {
-      fprintf(stderr, "Failed to map DAC FIFO access for board %d\n", board);
-      exit(EXIT_FAILURE);
-    }
+    uint32_t *page = base + board * BOARD_FIFO_PAGE_WORDS;
+    dac_ctrl.cmd[board] = page + BOARD_FIFO_DAC_CMD_WORD;
+    dac_ctrl.debug[board] = page + BOARD_FIFO_DAC_DEBUG_WORD;
+    dac_ctrl.data[board] = page + BOARD_FIFO_DAC_DATA_WORD;
   }
 
   return dac_ctrl;
 }
 
-// Read DAC data from a specific board
+// Read one calibration readback word from a specific board
 uint32_t dac_read_data(struct dac_ctrl_t *dac_ctrl, uint8_t board) {
   if (board > 7) {
     fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
     return 0; // Return 0 for invalid board
   }
 
-  return *(dac_ctrl->buffer[board]);
+  return *(dac_ctrl->data[board]);
+}
+
+// Read one debug word from a specific board
+uint32_t dac_read_debug(struct dac_ctrl_t *dac_ctrl, uint8_t board) {
+  if (board > 7) {
+    fprintf(stderr, "Invalid DAC board: %d. Must be 0-7.\n", board);
+    return 0;
+  }
+
+  return *(dac_ctrl->debug[board]);
 }
 
 // Interpret and format DAC data word as calibration or debug information
@@ -269,7 +286,7 @@ void dac_cmd_noop(struct dac_ctrl_t *dac_ctrl, uint8_t board, dac_wait_mode_t tr
   if (verbose) {
     printf("DAC[%d] NO_OP command word: 0x%08X\n", board, cmd_word);
   }
-  *(dac_ctrl->buffer[board]) = cmd_word;
+  *(dac_ctrl->cmd[board]) = cmd_word;
 }
 
 // Build a NO_OP command word into out[0]. Returns the word count (1).
@@ -330,7 +347,7 @@ void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[
   if (verbose) {
     printf("DAC[%d] DAC_WR command word: 0x%08X\n", board, words[0]);
   }
-  *(dac_ctrl->buffer[board]) = words[0];
+  *(dac_ctrl->cmd[board]) = words[0];
 
   // Write channel values
   for (int i = 0; i < 8; i += 2) {
@@ -341,7 +358,7 @@ void dac_cmd_dac_wr(struct dac_ctrl_t *dac_ctrl, uint8_t board, int16_t ch_vals[
       printf("DAC[%d] Channel data word %d: 0x%08X (ch%d=0x%04X, ch%d=0x%04X)\n",
              board, i/2, words[1 + i/2], i, val0, i+1, val1);
     }
-    *(dac_ctrl->buffer[board]) = words[1 + i/2];
+    *(dac_ctrl->cmd[board]) = words[1 + i/2];
   }
 }
 
@@ -362,7 +379,7 @@ void dac_cmd_dac_wr_ch(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t ch, i
     printf("DAC[%d] DAC_WR_CH command word: 0x%08X (channel %d, value=%d, bits=0x%04X)\n",
            board, cmd_word, ch, ch_val, (uint16_t)ch_val & 0xFFFF);
   }
-  *(dac_ctrl->buffer[board]) = cmd_word;
+  *(dac_ctrl->cmd[board]) = cmd_word;
 }
 
 void dac_cmd_set_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t ch, int16_t cal, bool verbose) {
@@ -382,7 +399,7 @@ void dac_cmd_set_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t ch, int
     printf("DAC[%d] SET_CAL command word: 0x%08X (channel %d, cal=%d, bits=0x%04X)\n",
            board, cmd_word, ch, cal, (uint16_t)cal & 0xFFFF);
   }
-  *(dac_ctrl->buffer[board]) = cmd_word;
+  *(dac_ctrl->cmd[board]) = cmd_word;
 }
 
 void dac_cmd_get_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel, bool verbose) {
@@ -402,7 +419,7 @@ void dac_cmd_get_cal(struct dac_ctrl_t *dac_ctrl, uint8_t board, uint8_t channel
     printf("DAC[%d] GET_CAL command word: 0x%08X (channel %d)\n",
            board, cmd_word, channel);
   }
-  *(dac_ctrl->buffer[board]) = cmd_word;
+  *(dac_ctrl->cmd[board]) = cmd_word;
 }
 
 void dac_cmd_zero(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool verbose) {
@@ -415,7 +432,7 @@ void dac_cmd_zero(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool verbose) {
   if (verbose) {
     printf("DAC[%d] ZERO command word: 0x%08X\n", board, cmd_word);
   }
-  *(dac_ctrl->buffer[board]) = cmd_word;
+  *(dac_ctrl->cmd[board]) = cmd_word;
 }
 
 void dac_cmd_cancel(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool verbose) {
@@ -428,5 +445,5 @@ void dac_cmd_cancel(struct dac_ctrl_t *dac_ctrl, uint8_t board, bool verbose) {
   if (verbose) {
     printf("DAC[%d] CANCEL command word: 0x%08X\n", board, cmd_word);
   }
-  *(dac_ctrl->buffer[board]) = cmd_word;
+  *(dac_ctrl->cmd[board]) = cmd_word;
 }

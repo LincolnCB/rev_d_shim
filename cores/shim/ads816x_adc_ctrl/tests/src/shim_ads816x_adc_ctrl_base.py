@@ -79,6 +79,7 @@ class shim_ads816x_adc_ctrl_base:
         self.dut.cmd_buf_empty.value = 1
         self.dut.blocked.value = 0
         self.dut.data_buf_full.value = 0
+        self.dut.debug_buf_full.value = 0
         self.dut.trigger.value = 0
         self.dut.miso.value = 0
 
@@ -967,6 +968,9 @@ class shim_ads816x_adc_ctrl_base:
             prev_cmd_done = int(self.dut.cmd_done.value)
             prev_next_cmd_state = int(self.dut.next_cmd_state.value)
             prev_start_repeat = int(self.dut.start_repeat.value)
+            prev_repeat_pending = int(self.dut.repeat_pending.value)
+            prev_awaiting_repeat = prev_start_repeat or prev_repeat_pending
+            prev_repeat_fetch = prev_awaiting_repeat and not int(self.dut.cmd_buf_empty.value)
             #prev_cancel_repeat = int(self.dut.cancel_repeat.value)
             prev_repeat_cmd_word_reg = int(self.dut.repeat_cmd_word.value)
             prev_prev_cmd_buf_word_reg = int(self.dut.prev_cmd_buf_word.value) # The register 'prev_cmd_buf_word'
@@ -1009,6 +1013,8 @@ class shim_ads816x_adc_ctrl_base:
             curr_repeat_cmd_word = int(self.dut.repeat_cmd_word.value)
             curr_cmd_buf_word = int(self.dut.cmd_buf_word.value)
             curr_start_repeat = int(self.dut.start_repeat.value)
+            curr_repeat_pending = int(self.dut.repeat_pending.value)
+            curr_awaiting_repeat = curr_start_repeat or curr_repeat_pending
             curr_repeat_counter = int(self.dut.repeat_counter.value)
             curr_state = int(self.dut.state.value)
             curr_cmd_done = int(self.dut.cmd_done.value)
@@ -1084,7 +1090,7 @@ class shim_ads816x_adc_ctrl_base:
                 f"Comb Error: cmd_word expected {hex(exp_cmd_word)}, got {hex(curr_cmd_word)}"
 
             # check next_cmd_ready
-            if curr_start_repeat:
+            if curr_awaiting_repeat:
                 exp_next_cmd_ready = 0
             elif curr_repeating:
                 exp_next_cmd_ready = 1
@@ -1107,7 +1113,7 @@ class shim_ads816x_adc_ctrl_base:
             cond_state = (curr_state != self.STATE_ENCODING['S_ERROR'])
             cond_empty = (not curr_cmd_buf_empty)
             cond_repeat = (not curr_repeating)
-            cond_triggers = (curr_cmd_done or curr_cancel_wait or curr_start_repeat)
+            cond_triggers = (curr_cmd_done or curr_cancel_wait or curr_awaiting_repeat)
 
             exp_cmd_buf_rd_en = 1 if (cond_state and cond_empty and cond_repeat and cond_triggers) else 0
 
@@ -1258,12 +1264,25 @@ class shim_ads816x_adc_ctrl_base:
             assert curr_start_repeat == exp_start_repeat, \
                 f"Sequential Error: start_repeat expected {exp_start_repeat}, got {curr_start_repeat}"
 
+            # check repeat_pending (count word not read yet, first iteration still running)
+            if prev_resetn == 0 or prev_state == self.STATE_ENCODING['S_ERROR']:
+                exp_repeat_pending = 0
+            elif prev_repeat_fetch:
+                exp_repeat_pending = 0
+            elif prev_start_repeat:
+                exp_repeat_pending = 1
+            else:
+                exp_repeat_pending = prev_repeat_pending
+
+            assert curr_repeat_pending == exp_repeat_pending, \
+                f"Sequential Error: repeat_pending expected {exp_repeat_pending}, got {curr_repeat_pending}"
+
             # check repeat_cmd_word
             exp_repeat_cmd_word = prev_repeat_cmd_word_reg
 
             if prev_resetn == 0 or prev_state == self.STATE_ENCODING['S_ERROR']:
                 exp_repeat_cmd_word = 0
-            elif prev_start_repeat:
+            elif prev_repeat_fetch:
                 # prev_cmd_buf_word & ~(32'd1 << REPEAT_BIT)
                 mask = ~(1 << self.REPEAT_BIT) & 0xFFFFFFFF
                 exp_repeat_cmd_word = prev_prev_cmd_buf_word_reg & mask
@@ -1278,7 +1297,7 @@ class shim_ads816x_adc_ctrl_base:
                 exp_repeat_counter = 0
             elif prev_repeating and prev_cmd_done:
                 exp_repeat_counter = prev_repeat_counter - 1
-            elif prev_start_repeat:
+            elif prev_repeat_fetch:
                 # repeat_counter <= cmd_buf_word[31:0]
                 exp_repeat_counter = prev_cmd_buf_word
 
@@ -1334,7 +1353,8 @@ class shim_ads816x_adc_ctrl_base:
                              and (int(self.dut.cmd_word.value) & 0x1FFFFFF) < int(self.dut.min_delay_latched.value)))
             err_cmd = (curr_do_next_cmd and curr_next_cmd_state == self.STATE_ENCODING['S_ERROR'])
             err_underflow = (curr_cmd_done and curr_expect_next and not curr_next_cmd_ready)
-            err_repeat = (curr_start_repeat and curr_cmd_buf_empty)
+            curr_repeat_fetch = curr_awaiting_repeat and not curr_cmd_buf_empty
+            err_repeat = (curr_cmd_done and curr_awaiting_repeat and not (curr_start_repeat and curr_repeat_fetch))
             err_data_full = (curr_try_data_write and curr_data_buf_full)
 
             exp_error = 1 if (err_boot or err_trig or err_delay or err_cmd or err_underflow or err_repeat or err_data_full) else 0
@@ -1356,7 +1376,7 @@ class shim_ads816x_adc_ctrl_base:
                 if err_underflow:
                     self.dut._log.warning(f"  Command buffer underflow: cmd_done={curr_cmd_done}, expect_next={curr_expect_next}, next_cmd_ready={curr_next_cmd_ready}")
                 if err_repeat:
-                    self.dut._log.warning(f"  Command buffer underflow on repeat start: start_repeat={curr_start_repeat}, cmd_buf_empty={curr_cmd_buf_empty}")
+                    self.dut._log.warning(f"  Repeating command finished before its repeat count was read: start_repeat={curr_start_repeat}, repeat_pending={curr_repeat_pending}, cmd_buf_empty={curr_cmd_buf_empty}")
                 if err_data_full:
                     self.dut._log.warning(f"  Data buffer overflow: try_data_write={curr_try_data_write}, data_buf_full={curr_data_buf_full}")
 
@@ -1424,7 +1444,8 @@ class shim_ads816x_adc_ctrl_base:
             exp_cmd_buf_underflow = prev_cmd_buf_underflow
             if prev_resetn == 0:
                 exp_cmd_buf_underflow = 0
-            elif (prev_cmd_done and prev_expect_next and not prev_next_cmd_ready) or (prev_start_repeat and prev_cmd_buf_empty):
+            elif (prev_cmd_done and prev_expect_next and not prev_next_cmd_ready) or \
+                 (prev_cmd_done and prev_awaiting_repeat and not (prev_start_repeat and prev_repeat_fetch)):
                 exp_cmd_buf_underflow = 1
 
             assert curr_cmd_buf_underflow == exp_cmd_buf_underflow, \
@@ -1600,15 +1621,9 @@ class shim_ads816x_adc_ctrl_base:
             assert curr_adc_ch_data_ready == exp_adc_ch_data_ready, \
                 f"Comb Error: adc_ch_data_ready expected {exp_adc_ch_data_ready}, got {curr_adc_ch_data_ready}"
 
-            # check try_data_write
+            # check try_data_write (sample words only; debug words have their own port)
             cond_try_write = (curr_adc_pair_data_ready or
-                              curr_adc_ch_data_ready or
-                              curr_debug_miso_data or
-                              curr_debug_state_transition or
-                              curr_debug_repeat_bit or
-                              curr_debug_n_cs_timer or
-                              curr_debug_spi_bit or
-                              curr_debug_cmd_done)
+                              curr_adc_ch_data_ready)
             exp_try_data_write = 1 if cond_try_write else 0
 
             assert curr_try_data_write == exp_try_data_write, \

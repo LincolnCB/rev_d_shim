@@ -311,6 +311,9 @@ int cmd_stream_trig_data_to_file(const char** args, int arg_count, const command
   if (*(ctx->verbose)) {
     printf("Final output file path: %s\n", final_path);
   }
+  if (create_output_file(final_path) != 0) {
+    return -1;
+  }
 
   // Allocate thread data structure
   trigger_data_stream_params_t* stream_data = malloc(sizeof(trigger_data_stream_params_t));

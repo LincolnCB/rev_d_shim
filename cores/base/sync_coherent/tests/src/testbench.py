@@ -1,183 +1,104 @@
 import cocotb
-from cocotb.clock import Clock
-from cocotb.triggers import RisingEdge, ReadOnly, ReadWrite, Combine
+from cocotb.triggers import RisingEdge
 import random
 from sync_coherent_base import sync_coherent_base
 
 async def setup_testbench(dut, in_clk_period=4, out_clk_period=4, time_unit="ns"):
     tb = sync_coherent_base(dut, in_clk_period, out_clk_period, time_unit)
+    await tb.start_clocks()
+    await tb.reset_both()
+    # Let a value still in flight from a previous test land before the coherence monitor starts
+    await tb.settle()
     return tb
 
+# dout follows a sequence of held values at equal, faster-in and slower-in clock ratios
 @cocotb.test()
-async def test_prev_din_after_reset(dut):
-    in_clk_period = 4
-    out_clk_period = 4
-    tb = await setup_testbench(dut, in_clk_period, out_clk_period)
-    tb.dut._log.info("STARTING TEST: Previous din after reset")
-    await tb.start_clocks()
+async def test_tracks_din(dut):
+    for in_period, out_period in ((4, 4), (4, 10), (10, 4)):
+        tb = await setup_testbench(dut, in_period, out_period)
+        monitor = cocotb.start_soon(tb.coherence_monitor())
+        for value in (0x11, 0x22, 0xC3, 0x00, 0xFF):
+            await tb.drive(value)
+            await tb.settle()
+            await tb.expect_dout(value, f"after holding din (in {in_period} ns, out {out_period} ns)")
+        monitor.cancel()
+        await tb.kill_clocks()
 
-    # Perform reset
-    in_side_reset_task1 = cocotb.start_soon(tb.in_side_reset())
-    out_side_reset_task1 = cocotb.start_soon(tb.out_side_reset())
-    prev_din_and_wr_en_scoreboard_task = cocotb.start_soon(tb.prev_din_and_wr_en_scoreboard())
-
-    await in_side_reset_task1
-    await out_side_reset_task1
-
-    # Drive din with known values and check dout
-    # Last data written will be 10
-    din_driver_task1 = cocotb.start_soon(tb.static_din_driver_and_monitor(cycles=10, initial_data=1))
-    dout_scoreboard_task1 = cocotb.start_soon(tb.dout_scoreboard())
-
-    await din_driver_task1
-    await dout_scoreboard_task1
-
-    # Perform reset
-    in_side_reset_task2 = cocotb.start_soon(tb.in_side_reset())
-    out_side_reset_task2 = cocotb.start_soon(tb.out_side_reset())
-
-    await in_side_reset_task2
-    await out_side_reset_task2
-
-    # Now start driving with prev_din after reset
-    din_driver_task2 = cocotb.start_soon(tb.static_din_driver_and_monitor(cycles=10, initial_data=10))
-    dout_scoreboard_task2 = cocotb.start_soon(tb.dout_scoreboard())
-
-    await din_driver_task2
-    await dout_scoreboard_task2
-
-    # Ensure we don't collide with other tests
-    await RisingEdge(dut.in_clk)
-    await RisingEdge(dut.out_clk)
-    await RisingEdge(dut.in_clk)
-    await RisingEdge(dut.out_clk)
-    await tb.kill_clocks()
-    din_driver_task1.cancel()
-    dout_scoreboard_task1.cancel()
-    din_driver_task2.cancel()
-    dout_scoreboard_task2.cancel()
-    prev_din_and_wr_en_scoreboard_task.cancel()
-
+# An output-only reset (the SPI side of spi_cfg_sync on every SPI power cycle) refills dout
+# from the current din without din changing
 @cocotb.test()
-async def test_faster_in_clk(dut):
-    # Random seed
-    seed = 1234
-    random.seed(seed)
-    dut._log.info(f"Random seed set to: {seed}")
-
-    in_clk_period = 4 # 250MHz
-    out_clk_period = 10 # 100MHz
-
-    tb = await setup_testbench(dut, in_clk_period, out_clk_period)
-    tb.dut._log.info(f"STARTING TEST: Test Faster In Clk")
-    await tb.start_clocks()
-
-    # Perform reset
-    in_side_reset_task = cocotb.start_soon(tb.in_side_reset())
-    out_side_reset_task = cocotb.start_soon(tb.out_side_reset())
-    prev_din_and_wr_en_scoreboard_task = cocotb.start_soon(tb.prev_din_and_wr_en_scoreboard())
-
-    await in_side_reset_task
-    await out_side_reset_task
-
-    # Start coroutines
-    din_driver_and_monitor_task = cocotb.start_soon(tb.random_din_driver_and_monitor(cycles=50))
-    dout_scoreboard_task = cocotb.start_soon(tb.dout_scoreboard())
-
-    # Wait for coroutines to complete
-    await din_driver_and_monitor_task
-    await dout_scoreboard_task
-
-    # Ensure we don't collide with the new tests
-    await RisingEdge(dut.in_clk)
-    await RisingEdge(dut.out_clk)
-    await RisingEdge(dut.in_clk)
-    await RisingEdge(dut.out_clk)
+async def test_out_only_reset_refills(dut):
+    tb = await setup_testbench(dut, 6, 8)
+    monitor = cocotb.start_soon(tb.coherence_monitor())
+    await tb.drive(0x5A)
+    await tb.settle()
+    await tb.expect_dout(0x5A, "before the output reset")
+    for _ in range(3):
+        await tb.out_reset()
+        await tb.settle()
+        await tb.expect_dout(0x5A, "after an output-only reset with din unchanged")
+    monitor.cancel()
     await tb.kill_clocks()
-    din_driver_and_monitor_task.cancel()
-    dout_scoreboard_task.cancel()
-    prev_din_and_wr_en_scoreboard_task.cancel()
 
+# An input-only reset pauses snapshots: dout keeps its value, then follows din once released
 @cocotb.test()
-async def test_slower_in_clk(dut):
-    # Random seed
-    seed = 1234
-    random.seed(seed)
-    dut._log.info(f"Random seed set to: {seed}")
-
-    in_clk_period = 10 # 100MHz
-    out_clk_period = 4 # 250MHz
-
-    tb = await setup_testbench(dut, in_clk_period, out_clk_period)
-    tb.dut._log.info(f"STARTING TEST: Test Slower In Clk")
-    await tb.start_clocks()
-
-    # Perform reset
-    in_side_reset_task = cocotb.start_soon(tb.in_side_reset())
-    out_side_reset_task = cocotb.start_soon(tb.out_side_reset())
-    prev_din_and_wr_en_scoreboard_task = cocotb.start_soon(tb.prev_din_and_wr_en_scoreboard())
-
-    await in_side_reset_task
-    await out_side_reset_task
-
-    # Start coroutines
-    din_driver_and_monitor_task = cocotb.start_soon(tb.random_din_driver_and_monitor(cycles=50))
-    dout_scoreboard_task = cocotb.start_soon(tb.dout_scoreboard())
-
-    # Wait for coroutines to complete
-    await din_driver_and_monitor_task
-    await dout_scoreboard_task
-
-    # Ensure we don't collide with the new tests
-    await RisingEdge(dut.in_clk)
-    await RisingEdge(dut.out_clk)
-    await RisingEdge(dut.in_clk)
-    await RisingEdge(dut.out_clk)
+async def test_in_only_reset_holds(dut):
+    tb = await setup_testbench(dut, 8, 6)
+    monitor = cocotb.start_soon(tb.coherence_monitor())
+    await tb.drive(0x3C)
+    await tb.settle()
+    await tb.expect_dout(0x3C, "before the input reset")
+    await tb.in_reset_start()
+    tb.set_din(0xC3)
+    await tb.settle()
+    await tb.expect_dout(0x3C, "while the input side is in reset")
+    await tb.in_reset_end()
+    await tb.settle()
+    await tb.expect_dout(0xC3, "after the input reset is released")
+    monitor.cancel()
     await tb.kill_clocks()
-    din_driver_and_monitor_task.cancel()
-    dout_scoreboard_task.cancel()
-    prev_din_and_wr_en_scoreboard_task.cancel()
 
+# din changing every input cycle: dout skips values but only ever shows ones that were driven
+@cocotb.test()
+async def test_fast_changing_din(dut):
+    random.seed(1234)
+    for in_period, out_period in ((4, 10), (10, 4), (7, 7)):
+        tb = await setup_testbench(dut, in_period, out_period)
+        monitor = cocotb.start_soon(tb.coherence_monitor())
+        await tb.random_driver(steps=200, max_hold=0)
+        final = random.randint(0, tb.MAX_DATA_VALUE)
+        await tb.drive(final)
+        await tb.settle()
+        await tb.expect_dout(final, "after din stops changing")
+        monitor.cancel()
+        await tb.kill_clocks()
+
+# Random clock ratios, random din timing, and resets on either side mid-stream
 @cocotb.test()
 async def test_random(dut):
-    # Random seed
-    seed = 1234
-    random.seed(seed)
-    dut._log.info(f"Random seed set to: {seed}")
-
-    # Test Iteration
+    random.seed(4321)
     for i in range(10):
-        in_clk_period = random.randint(4, 20)
-        out_clk_period = random.randint(4, 20)
-
-        tb = await setup_testbench(dut, in_clk_period, out_clk_period)
-        tb.dut._log.info(f"STARTING TEST: Random Tests Iteration: {i+1}")
-        await tb.start_clocks()
-
-        # Perform reset
-        in_side_reset_task = cocotb.start_soon(tb.in_side_reset())
-        out_side_reset_task = cocotb.start_soon(tb.out_side_reset())
-        prev_din_and_wr_en_scoreboard_task = cocotb.start_soon(tb.prev_din_and_wr_en_scoreboard())
-
-        await in_side_reset_task
-        await out_side_reset_task
-
-        # Start coroutines
-        din_driver_and_monitor_task = cocotb.start_soon(tb.random_din_driver_and_monitor(cycles=100))
-        dout_scoreboard_task = cocotb.start_soon(tb.dout_scoreboard())
-
-        # Wait for coroutines to complete
-        await din_driver_and_monitor_task
-        await dout_scoreboard_task
-
-        # Ensure we don't collide with the new iteration
-        await RisingEdge(dut.in_clk)
-        await RisingEdge(dut.out_clk)
-        await RisingEdge(dut.in_clk)
-        await RisingEdge(dut.out_clk)
+        in_period = random.randint(4, 20)
+        out_period = random.randint(4, 20)
+        tb = await setup_testbench(dut, in_period, out_period)
+        tb.dut._log.info(f"Random iteration {i + 1}: in {in_period} ns, out {out_period} ns")
+        monitor = cocotb.start_soon(tb.coherence_monitor())
+        await tb.random_driver(steps=40, max_hold=12)
+        monitor.cancel()
+        if random.random() < 0.5:
+            await tb.out_reset()
+        else:
+            await tb.in_reset_start()
+            for _ in range(random.randint(1, 10)):
+                await RisingEdge(dut.in_clk)
+            await tb.in_reset_end()
+        monitor = cocotb.start_soon(tb.coherence_monitor())
+        await tb.random_driver(steps=40, max_hold=12)
+        final = random.randint(0, tb.MAX_DATA_VALUE)
+        await tb.drive(final)
+        await tb.settle()
+        await tb.expect_dout(final, f"at the end of random iteration {i + 1}")
+        monitor.cancel()
         await tb.kill_clocks()
-        din_driver_and_monitor_task.cancel()
-        dout_scoreboard_task.cancel()
-        prev_din_and_wr_en_scoreboard_task.cancel()
 
 

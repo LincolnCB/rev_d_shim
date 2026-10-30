@@ -37,47 +37,31 @@ uint32_t *map_pl_reg(const char *dev_path, bool verbose) {
   return (uint32_t *)mapped;
 }
 
-// Map a per-board FIFO node's two-page window, offset into it (see map_memory.h)
-uint32_t *map_board_fifo(const char *dev_path, size_t word_offset, bool verbose) {
+// Map the board FIFO array window once and share it (see map_memory.h)
+uint32_t *map_board_fifo(bool verbose) {
+  static uint32_t *base = NULL;
+  if (base != NULL) return base;
 
-  if (verbose) printf("Mapping board FIFO window [%s]...\n", dev_path);
+  if (verbose) printf("Mapping board FIFO window [%s]...\n", BOARD_FIFO_DEV);
 
-  int fd = open(dev_path, O_RDWR);
+  int fd = open(BOARD_FIFO_DEV, O_RDWR);
   if (fd < 0) {
-    fprintf(stderr, "Failed to open %s: %s\n", dev_path, strerror(errno));
+    fprintf(stderr, "Failed to open %s: %s\n", BOARD_FIFO_DEV, strerror(errno));
     return NULL;
   }
 
-  // Two pages: DAC half at offset 0, ADC half at 0x1000
-  size_t map_size = 2 * (size_t)sysconf(_SC_PAGESIZE);
+  // One 4 KB page per board, sized for MAX_BOARDS regardless of how many are built
+  size_t map_size = (size_t)MAX_BOARDS * BOARD_FIFO_PAGE_WORDS * sizeof(uint32_t);
   void *mapped = mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (mapped == MAP_FAILED) {
-    fprintf(stderr, "mmap of %s failed: %s\n", dev_path, strerror(errno));
+    fprintf(stderr, "mmap of %s failed: %s\n", BOARD_FIFO_DEV, strerror(errno));
     close(fd);
     return NULL;
   }
 
   close(fd);
 
-  if (verbose) printf("Board FIFO window %s mapped\n", dev_path);
-  return (uint32_t *)mapped + word_offset;
-}
-
-// Discover how many boards are present in the running bitstream (see map_memory.h)
-int board_count(void) {
-  static int cached = -1;
-  if (cached >= 0) return cached;
-
-  int count = 0;
-  // The first absent board_fifo node ends the count. This path must track
-  // BOARD_FIFO_DEV_FMT in map_memory.h.
-  for (int board = 0; board < MAX_BOARDS; board++) {
-    char dev_path[32];
-    snprintf(dev_path, sizeof(dev_path), "/dev/board_fifo_%d", board);
-    if (access(dev_path, F_OK) != 0) break;
-    count++;
-  }
-
-  cached = count;
-  return count;
+  if (verbose) printf("Board FIFO window %s mapped\n", BOARD_FIFO_DEV);
+  base = (uint32_t *)mapped;
+  return base;
 }

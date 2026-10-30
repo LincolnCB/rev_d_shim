@@ -17,5 +17,5 @@ No arguments. Run it on the target to dump the current status of the shim hardwa
 - **Clock frequencies** — SPI clock and SPI source clock, in Hz.
 - **Timing debug register** — clock-locked/SPI-off flags, DAC/ADC `~CS` high times, and the SPI clock snoop reconfiguration state machine state.
 - **Minimum delay times** — DAC and ADC "delay too short" thresholds, in SPI clock cycles.
-- **Per-board FIFO status (boards 0–7)** — DAC and ADC command/data FIFO status (word count, full / almost-full / empty / almost-empty / present flags), the last received command word, and the command count since reset.
+- **Per-board FIFO status (boards 0–7)** — DAC command/debug/data and ADC command/debug/data FIFO status (word count, full / almost-full / empty / almost-empty / present flags), the last received command word, whether debug words were dropped on a full debug FIFO, and the command count since reset.
 - **Trigger FIFOs** — command and data FIFO status.

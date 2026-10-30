@@ -55,6 +55,7 @@ create_bd_pin -dir O -from 7 -to 0 dac_cal_oob
 create_bd_pin -dir O -from 7 -to 0 dac_val_oob
 create_bd_pin -dir O -from 7 -to 0 dac_cmd_buf_underflow
 create_bd_pin -dir O -from 7 -to 0 dac_data_buf_overflow
+create_bd_pin -dir O -from 7 -to 0 dac_debug_buf_overflow
 create_bd_pin -dir O -from 7 -to 0 unexp_dac_trig
 create_bd_pin -dir O -from 7 -to 0 ldac_misalign
 create_bd_pin -dir O -from 7 -to 0 dac_delay_too_short
@@ -65,6 +66,7 @@ create_bd_pin -dir O -from 7 -to 0 adc_boot_fail
 create_bd_pin -dir O -from 7 -to 0 bad_adc_cmd
 create_bd_pin -dir O -from 7 -to 0 adc_cmd_buf_underflow
 create_bd_pin -dir O -from 7 -to 0 adc_data_buf_overflow
+create_bd_pin -dir O -from 7 -to 0 adc_debug_buf_overflow
 create_bd_pin -dir O -from 7 -to 0 unexp_adc_trig
 create_bd_pin -dir O -from 7 -to 0 adc_delay_too_short
 create_bd_pin -dir O -from 255 -to 0 last_received_adc_cmds_concat
@@ -77,10 +79,15 @@ for {set i 0} {$i < $board_count} {incr i} {
   create_bd_pin -dir O dac_ch${i}_cmd_rd_en
   create_bd_pin -dir I dac_ch${i}_cmd_empty
 
-  # DAC data channel
+  # DAC data channel (calibration readback)
   create_bd_pin -dir O -from 31 -to 0 dac_ch${i}_data
   create_bd_pin -dir O dac_ch${i}_data_wr_en
   create_bd_pin -dir I dac_ch${i}_data_full
+
+  # DAC debug channel
+  create_bd_pin -dir O -from 31 -to 0 dac_ch${i}_debug
+  create_bd_pin -dir O dac_ch${i}_debug_wr_en
+  create_bd_pin -dir I dac_ch${i}_debug_full
 
   # ADC command channel
   create_bd_pin -dir I -from 31 -to 0 adc_ch${i}_cmd
@@ -91,6 +98,11 @@ for {set i 0} {$i < $board_count} {incr i} {
   create_bd_pin -dir O -from 31 -to 0 adc_ch${i}_data
   create_bd_pin -dir O adc_ch${i}_data_wr_en
   create_bd_pin -dir I adc_ch${i}_data_full
+
+  # ADC debug channel
+  create_bd_pin -dir O -from 31 -to 0 adc_ch${i}_debug
+  create_bd_pin -dir O adc_ch${i}_debug_wr_en
+  create_bd_pin -dir I adc_ch${i}_debug_full
 }
 # Trigger command channel
 create_bd_pin -dir I -from 31 -to 0 trig_cmd
@@ -182,6 +194,7 @@ cell shim:user:spi_sts_sync spi_sts_sync {} {
   dac_val_oob_sync dac_val_oob
   dac_cmd_buf_underflow_sync dac_cmd_buf_underflow
   dac_data_buf_overflow_sync dac_data_buf_overflow
+  dac_debug_buf_overflow_sync dac_debug_buf_overflow
   unexp_dac_trig_sync unexp_dac_trig
   ldac_misalign_sync ldac_misalign
   dac_delay_too_short_sync dac_delay_too_short
@@ -191,6 +204,7 @@ cell shim:user:spi_sts_sync spi_sts_sync {} {
   bad_adc_cmd_sync bad_adc_cmd
   adc_cmd_buf_underflow_sync adc_cmd_buf_underflow
   adc_data_buf_overflow_sync adc_data_buf_overflow
+  adc_debug_buf_overflow_sync adc_debug_buf_overflow
   unexp_adc_trig_sync unexp_adc_trig
   adc_delay_too_short_sync adc_delay_too_short
   last_received_adc_cmds_concat_sync last_received_adc_cmds_concat
@@ -250,6 +264,9 @@ for {set i 0} {$i < $board_count} {incr i} {
     dac_data dac_ch${i}_data
     dac_data_wr_en dac_ch${i}_data_wr_en
     dac_data_full dac_ch${i}_data_full
+    dac_debug dac_ch${i}_debug
+    dac_debug_wr_en dac_ch${i}_debug_wr_en
+    dac_debug_full dac_ch${i}_debug_full
     blocked spi_cfg_sync/block_bufs_sync
     trigger trig_core/trig_out
   }
@@ -266,6 +283,9 @@ for {set i 0} {$i < $board_count} {incr i} {
     adc_data adc_ch${i}_data
     adc_data_wr_en adc_ch${i}_data_wr_en
     adc_data_full adc_ch${i}_data_full
+    adc_debug adc_ch${i}_debug
+    adc_debug_wr_en adc_ch${i}_debug_wr_en
+    adc_debug_full adc_ch${i}_debug_full
     blocked spi_cfg_sync/block_bufs_sync
     trigger trig_core/trig_out
   }
@@ -617,6 +637,19 @@ for {set i $board_count} {$i < 8} {incr i} {
   wire dac_data_buf_overflow_concat/In${i} const_0/dout
 }
 
+## dac_debug_buf_overflow
+cell xilinx.com:ip:xlconcat:2.1 dac_debug_buf_overflow_concat {
+  NUM_PORTS 8
+} {
+  dout spi_sts_sync/dac_debug_buf_overflow
+}
+for {set i 0} {$i < $board_count} {incr i} {
+  wire dac_debug_buf_overflow_concat/In${i} dac_ch${i}/debug_buf_overflow
+}
+for {set i $board_count} {$i < 8} {incr i} {
+  wire dac_debug_buf_overflow_concat/In${i} const_0/dout
+}
+
 ## unexp_dac_trig
 cell xilinx.com:ip:xlconcat:2.1 unexp_dac_trig_concat {
   NUM_PORTS 8
@@ -732,6 +765,19 @@ for {set i 0} {$i < $board_count} {incr i} {
 }
 for {set i $board_count} {$i < 8} {incr i} {
   wire adc_data_buf_overflow_concat/In${i} const_0/dout
+}
+
+## adc_debug_buf_overflow
+cell xilinx.com:ip:xlconcat:2.1 adc_debug_buf_overflow_concat {
+  NUM_PORTS 8
+} {
+  dout spi_sts_sync/adc_debug_buf_overflow
+}
+for {set i 0} {$i < $board_count} {incr i} {
+  wire adc_debug_buf_overflow_concat/In${i} adc_ch${i}/debug_buf_overflow
+}
+for {set i $board_count} {$i < 8} {incr i} {
+  wire adc_debug_buf_overflow_concat/In${i} const_0/dout
 }
 
 ## unexp_adc_trig

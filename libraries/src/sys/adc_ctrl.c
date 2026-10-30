@@ -4,46 +4,63 @@
 #include <inttypes.h> // For PRIx32 format specifier
 #include "adc_ctrl.h"
 #include "map_memory.h"
+#include "sys_sts.h"
 
-// Create ADC control structure for a single board
+// Create ADC control structure for all boards
 struct adc_ctrl_t create_adc_ctrl(bool verbose) {
   struct adc_ctrl_t adc_ctrl;
 
   // Boards absent from this bitstream keep a NULL mapping
-  for (int board = 0; board < MAX_BOARDS; board++) adc_ctrl.buffer[board] = NULL;
+  for (int board = 0; board < MAX_BOARDS; board++) {
+    adc_ctrl.cmd[board] = NULL;
+    adc_ctrl.debug[board] = NULL;
+    adc_ctrl.data[board] = NULL;
+  }
 
-  // Map each present board's ADC FIFO by its pl-reg /dev node
+  // Point each present board at its ADC lanes in the shared board FIFO window
+  uint32_t *base = map_board_fifo(verbose);
+  if (base == NULL) {
+    fprintf(stderr, "Failed to map the board FIFO window for ADC access\n");
+    exit(EXIT_FAILURE);
+  }
   for (int board = 0; board < board_count(); board++) {
-    char dev_path[32];
-    snprintf(dev_path, sizeof(dev_path), BOARD_FIFO_DEV_FMT, board);
-    adc_ctrl.buffer[board] = map_board_fifo(dev_path, BOARD_FIFO_ADC_WORD_OFFSET, verbose);
-    if (adc_ctrl.buffer[board] == NULL) {
-      fprintf(stderr, "Failed to map ADC FIFO access for board %d\n", board);
-      exit(EXIT_FAILURE);
-    }
+    uint32_t *page = base + board * BOARD_FIFO_PAGE_WORDS;
+    adc_ctrl.cmd[board] = page + BOARD_FIFO_ADC_CMD_WORD;
+    adc_ctrl.debug[board] = page + BOARD_FIFO_ADC_DEBUG_WORD;
+    adc_ctrl.data[board] = page + BOARD_FIFO_ADC_DATA_WORD;
   }
 
   return adc_ctrl;
 }
 
-// Read ADC sample pair word from a specific board
-uint32_t adc_read_word(struct adc_ctrl_t *adc_ctrl, uint8_t board) {
+// Read one sample word (pair or single-channel read) from a specific board
+uint32_t adc_read_data(struct adc_ctrl_t *adc_ctrl, uint8_t board) {
   if (board > 7) {
     fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
     return 0; // Return 0 for invalid board
   }
 
-  // Additional safety check for null pointer
-  if (adc_ctrl->buffer[board] == NULL) {
-    fprintf(stderr, "Error: ADC buffer[%d] is NULL. Cannot read data.\n", board);
+  if (adc_ctrl->data[board] == NULL) {
+    fprintf(stderr, "Error: ADC data FIFO for board %d is not mapped. Cannot read data.\n", board);
     return 0;
   }
 
-  // Use volatile access to prevent compiler optimization and ensure actual memory read
-  volatile uint32_t *buffer_ptr = adc_ctrl->buffer[board];
-  uint32_t value = *buffer_ptr;
+  return *(adc_ctrl->data[board]);
+}
 
-  return value;
+// Read one debug word from a specific board
+uint32_t adc_read_debug(struct adc_ctrl_t *adc_ctrl, uint8_t board) {
+  if (board > 7) {
+    fprintf(stderr, "Invalid ADC board: %d. Must be 0-7.\n", board);
+    return 0;
+  }
+
+  if (adc_ctrl->debug[board] == NULL) {
+    fprintf(stderr, "Error: ADC debug FIFO for board %d is not mapped. Cannot read debug.\n", board);
+    return 0;
+  }
+
+  return *(adc_ctrl->debug[board]);
 }
 
 // Interpret and format ADC value as debug information
@@ -309,13 +326,13 @@ void adc_cmd_noop_repeat(struct adc_ctrl_t *adc_ctrl, uint8_t board, adc_wait_mo
   if (verbose) {
     printf("ADC[%d] NO_OP command word: 0x%08X\n", board, cmd_word);
   }
-  *(adc_ctrl->buffer[board]) = cmd_word;
+  *(adc_ctrl->cmd[board]) = cmd_word;
 
   if (repeat_count > 0) {
     if (verbose) {
       printf("ADC[%d] REPEAT count: 0x%08X (repeat count: %u)\n", board, repeat_count, repeat_count);
     }
-    *(adc_ctrl->buffer[board]) = repeat_count;
+    *(adc_ctrl->cmd[board]) = repeat_count;
   }
 }
 
@@ -337,13 +354,13 @@ void adc_cmd_adc_rd(struct adc_ctrl_t *adc_ctrl, uint8_t board, adc_wait_mode_t 
   if (verbose) {
     printf("ADC[%d] ADC_RD command word: 0x%08X\n", board, cmd_word);
   }
-  *(adc_ctrl->buffer[board]) = cmd_word;
+  *(adc_ctrl->cmd[board]) = cmd_word;
 
   if (repeat_count > 0) {
     if (verbose) {
       printf("ADC[%d] REPEAT count: 0x%08X (repeat count: %u)\n", board, repeat_count, repeat_count);
     }
-    *(adc_ctrl->buffer[board]) = repeat_count;
+    *(adc_ctrl->cmd[board]) = repeat_count;
   }
 }
 
@@ -364,13 +381,13 @@ void adc_cmd_adc_rd_ch(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t ch, u
   if (verbose) {
     printf("ADC[%d] ADC_RD_CH command word: 0x%08X (channel: %d)\n", board, cmd_word, ch);
   }
-  *(adc_ctrl->buffer[board]) = cmd_word;
+  *(adc_ctrl->cmd[board]) = cmd_word;
 
   if (repeat_count > 0) {
     if (verbose) {
       printf("ADC[%d] REPEAT count: 0x%08X (repeat count: %u)\n", board, repeat_count, repeat_count);
     }
-    *(adc_ctrl->buffer[board]) = repeat_count;
+    *(adc_ctrl->cmd[board]) = repeat_count;
   }
 }
 
@@ -402,7 +419,7 @@ void adc_cmd_set_ord(struct adc_ctrl_t *adc_ctrl, uint8_t board, uint8_t channel
            board, cmd_word, channel_order[0], channel_order[1], channel_order[2], channel_order[3],
            channel_order[4], channel_order[5], channel_order[6], channel_order[7]);
   }
-  *(adc_ctrl->buffer[board]) = cmd_word;
+  *(adc_ctrl->cmd[board]) = cmd_word;
 }
 
 void adc_cmd_cancel(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool verbose) {
@@ -416,7 +433,7 @@ void adc_cmd_cancel(struct adc_ctrl_t *adc_ctrl, uint8_t board, bool verbose) {
   if (verbose) {
     printf("ADC[%d] CANCEL command word: 0x%08X\n", board, cmd_word);
   }
-  *(adc_ctrl->buffer[board]) = cmd_word;
+  *(adc_ctrl->cmd[board]) = cmd_word;
 }
 
 // Convert and format a single ADC sample from a 32-bit word (low 16 bits)

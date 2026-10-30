@@ -101,6 +101,7 @@ int resolve_file_pattern(const char* pattern, char* resolved_path, size_t resolv
     }
   } else {
     // No matches or error, use the pattern as-is
+    printf("Error: No file found matching '%s'\n", pattern);
     strncpy(resolved_path, pattern, resolved_path_size - 1);
     resolved_path[resolved_path_size - 1] = '\0';
     if (glob_ret == 0) globfree(&glob_result);
@@ -218,6 +219,17 @@ void set_file_permissions(const char* file_path, bool verbose) {
   }
 }
 
+// Create (or truncate) an output file now, so a bad path errors before a stream thread starts
+int create_output_file(const char* file_path) {
+  FILE* file = fopen(file_path, "w");
+  if (file == NULL) {
+    printf("Error: Cannot create file '%s': %s\n", file_path, strerror(errno));
+    return -1;
+  }
+  fclose(file);
+  return 0;
+}
+
 // Prompt user for file selection with optional default
 int prompt_file_selection(const char* prompt_text, const char* default_file,
                          char* resolved_path, size_t resolved_path_size) {
@@ -260,7 +272,6 @@ int prompt_file_selection(const char* prompt_text, const char* default_file,
 
   // Resolve the input pattern/path
   if (resolve_file_pattern(input_buffer, resolved_path, resolved_path_size) != 0) {
-    fprintf(stderr, "Failed to resolve file pattern: '%s'\n", input_buffer);
     return -1;
   }
 

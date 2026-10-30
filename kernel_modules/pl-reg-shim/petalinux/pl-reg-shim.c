@@ -51,33 +51,30 @@
 // -- /dev naming policy ------------------------------------------------------
 //
 // PetaLinux names each auto-node after its Vivado instance label. For this
-// project those labels are either a bare control-window name or a decorated
-// per-board FIFO-bridge name; the rules below turn them into the short, stable
-// /dev names userspace opens. Two rule kinds, applied in order:
+// project those labels are either a bare control-window name or a name nested
+// under the axi_spi_interface module; the rules below turn them into the short,
+// stable /dev names userspace opens. Two rule kinds, applied in order:
 //
-//   exact  the whole label maps to a fixed name  (the singleton control windows)
-//   affix  trim a known prefix and/or suffix      (per-board FIFO bridges, whose
-//          board index sits in the middle and must survive the trim)
+//   exact  the whole label maps to a fixed name
+//   affix  trim a known prefix and/or suffix, keeping the middle
 //
 //   register window        Vivado instance label                       /dev name
 //   -------------------    ----------------------------------------    -----------
 //   sys ctrl  0x40000000   axi_sys_ctrl                                sys_ctrl
 //   status    0x40100000   status_reg                                 sys_sts
 //   SPI clk   0x40200000   spi_clk_snoop                              spi_clk
-//   rate ctrl 0x40300000   axi_spi_interface_adc_rate_ctrl            adc_rate_ctrl
-//   board FIFO board b      axi_spi_interface_board_fifo_<b>_bridge     board_fifo_<b>
-//   trigger   0x80100000   axi_spi_interface_trig_fifo_axi_bridge     trig_fifo
+//   board FIFOs 0x41000000 axi_spi_interface_board_fifo_array         board_fifo
+//   trigger   0x42000000   axi_spi_interface_trig_fifo_axi_bridge     trig_fifo
 //
 // Keep this in sync with the shim programs' src/sys/*.h device-name macros.
 static const struct { const char *label, *dev; } pl_reg_name_exact[] = {
 	{ "axi_sys_ctrl",  "sys_ctrl" },
 	{ "status_reg",    "sys_sts"  },
 	{ "spi_clk_snoop", "spi_clk"  },
-	{ "axi_spi_interface_adc_rate_ctrl", "adc_rate_ctrl" },
+	{ "axi_spi_interface_board_fifo_array", "board_fifo" },
 };
 static const struct { const char *prefix, *suffix; } pl_reg_name_affix[] = {
 	{ "axi_spi_interface_", "_axi_bridge" },   // -> trig_fifo  (trig_fifo_axi_bridge)
-	{ "axi_spi_interface_", "_bridge" },       // -> board_fifo_<b>  (board_fifo_<b>_bridge)
 };
 
 // Convert a Vivado instance label to the short /dev name, writing at most outlen
@@ -276,8 +273,7 @@ static const struct of_device_id pl_reg_of_match[] = {
 	{ .compatible = "xlnx,axi-sys-ctrl-1.0" },            // axi_sys_ctrl @0x40000000
 	{ .compatible = "xlnx,axi-sts-register-1.0" },       // status_reg   @0x40100000
 	{ .compatible = "xlnx,axi-clock-timing-snoop-1.0" }, // spi_clk_snoop @0x40200000
-	{ .compatible = "xlnx,adc-rate-ctrl-1.0" },          // adc_rate_ctrl @0x40300000
-	{ .compatible = "xlnx,axi-board-fifo-bridge-1.0" },  // per-board dac/adc FIFO bridges
+	{ .compatible = "xlnx,axi-board-fifo-array-1.0" },   // all-board dac/adc FIFO array
 	{ .compatible = "xlnx,axi-fifo-bridge-1.0" },        // trigger FIFO bridge
 	// The project's device_tree.dtsi retags the MCDMA control window with this
 	// private compatible so no in-kernel driver claims it, letting pl-reg-shim

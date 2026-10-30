@@ -24,6 +24,7 @@ module spi_sts_sync (
   input  wire [  7:0]  dac_val_oob,
   input  wire [  7:0]  dac_cmd_buf_underflow,
   input  wire [  7:0]  dac_data_buf_overflow,
+  input  wire [  7:0]  dac_debug_buf_overflow,
   input  wire [  7:0]  unexp_dac_trig,
   input  wire [  7:0]  ldac_misalign,
   input  wire [  7:0]  dac_delay_too_short,
@@ -34,6 +35,7 @@ module spi_sts_sync (
   input  wire [  7:0]  bad_adc_cmd,
   input  wire [  7:0]  adc_cmd_buf_underflow,
   input  wire [  7:0]  adc_data_buf_overflow,
+  input  wire [  7:0]  adc_debug_buf_overflow,
   input  wire [  7:0]  unexp_adc_trig,
   input  wire [  7:0]  adc_delay_too_short,
   input  wire [255:0]  last_received_adc_cmds_concat,
@@ -57,6 +59,7 @@ module spi_sts_sync (
   output wire [  7:0]  dac_val_oob_sync,
   output wire [  7:0]  dac_cmd_buf_underflow_sync,
   output wire [  7:0]  dac_data_buf_overflow_sync,
+  output wire [  7:0]  dac_debug_buf_overflow_sync,
   output wire [  7:0]  unexp_dac_trig_sync,
   output wire [  7:0]  ldac_misalign_sync,
   output wire [  7:0]  dac_delay_too_short_sync,
@@ -67,6 +70,7 @@ module spi_sts_sync (
   output wire [  7:0]  bad_adc_cmd_sync,
   output wire [  7:0]  adc_cmd_buf_underflow_sync,
   output wire [  7:0]  adc_data_buf_overflow_sync,
+  output wire [  7:0]  adc_debug_buf_overflow_sync,
   output wire [  7:0]  unexp_adc_trig_sync,
   output wire [  7:0]  adc_delay_too_short_sync,
   output wire [255:0]  last_received_adc_cmds_concat_sync,
@@ -74,13 +78,19 @@ module spi_sts_sync (
 );
 
   //// Synchronize each signal using a sync_incoherent module
-  // SPI system on/off status
+  // SPI system on/off status. spi_off arrives as a combinational AND of every board's
+  // setup_done, so it's registered in the SPI domain first to keep glitches out of the synchronizer.
+  reg spi_off_reg;
+  always @(posedge spi_clk) begin
+    if (!sync_resetn) spi_off_reg <= 1'b1;
+    else spi_off_reg <= spi_off;
+  end
   sync_incoherent #(
     .WIDTH(1)
   ) sync_spi_off (
     .clk(aclk),
     .resetn(aresetn),
-    .din(spi_off),
+    .din(spi_off_reg),
     .dout(spi_off_sync)
   );
 
@@ -114,10 +124,10 @@ module spi_sts_sync (
   sync_coherent #(
     .WIDTH(32)
   ) sync_trig_counter (
-    .in_clk(aclk),
-    .in_resetn(aresetn),
-    .out_clk(spi_clk),
-    .out_resetn(sync_resetn),
+    .in_clk(spi_clk),
+    .in_resetn(sync_resetn),
+    .out_clk(aclk),
+    .out_resetn(aresetn),
     .din(trig_counter),
     .dout(trig_counter_sync),
     .dout_default(32'd0)
@@ -190,6 +200,14 @@ module spi_sts_sync (
   );
   sync_incoherent #(
     .WIDTH(8)
+  ) sync_dac_debug_buf_overflow (
+    .clk(aclk),
+    .resetn(aresetn),
+    .din(dac_debug_buf_overflow),
+    .dout(dac_debug_buf_overflow_sync)
+  );
+  sync_incoherent #(
+    .WIDTH(8)
   ) sync_unexp_dac_trig (
     .clk(aclk),
     .resetn(aresetn),
@@ -219,10 +237,10 @@ module spi_sts_sync (
       sync_coherent #(
         .WIDTH(32)
       ) sync_last_received_dac_cmds_concat (
-        .in_clk(aclk),
-        .in_resetn(aresetn),
-        .out_clk(spi_clk),
-        .out_resetn(sync_resetn),
+        .in_clk(spi_clk),
+        .in_resetn(sync_resetn),
+        .out_clk(aclk),
+        .out_resetn(aresetn),
         .din(last_received_dac_cmds_concat[(i+1)*32-1 -:32]),
         .dout(last_received_dac_cmds_concat_sync[(i+1)*32-1 -:32]),
         .dout_default(32'd0)
@@ -230,10 +248,10 @@ module spi_sts_sync (
       sync_coherent #(
         .WIDTH(32)
       ) sync_dac_cmds_since_reset_concat (
-        .in_clk(aclk),
-        .in_resetn(aresetn),
-        .out_clk(spi_clk),
-        .out_resetn(sync_resetn),
+        .in_clk(spi_clk),
+        .in_resetn(sync_resetn),
+        .out_clk(aclk),
+        .out_resetn(aresetn),
         .din(dac_cmds_since_reset_concat[(i+1)*32-1 -:32]),
         .dout(dac_cmds_since_reset_concat_sync[(i+1)*32-1 -:32]),
         .dout_default(32'd0)
@@ -276,6 +294,14 @@ module spi_sts_sync (
   );
   sync_incoherent #(
     .WIDTH(8)
+  ) sync_adc_debug_buf_overflow (
+    .clk(aclk),
+    .resetn(aresetn),
+    .din(adc_debug_buf_overflow),
+    .dout(adc_debug_buf_overflow_sync)
+  );
+  sync_incoherent #(
+    .WIDTH(8)
   ) sync_unexp_adc_trig (
     .clk(aclk),
     .resetn(aresetn),
@@ -297,10 +323,10 @@ module spi_sts_sync (
       sync_coherent #(
         .WIDTH(32)
       ) sync_last_received_adc_cmds_concat (
-        .in_clk(aclk),
-        .in_resetn(aresetn),
-        .out_clk(spi_clk),
-        .out_resetn(sync_resetn),
+        .in_clk(spi_clk),
+        .in_resetn(sync_resetn),
+        .out_clk(aclk),
+        .out_resetn(aresetn),
         .din(last_received_adc_cmds_concat[(j+1)*32-1 -:32]),
         .dout(last_received_adc_cmds_concat_sync[(j+1)*32-1 -:32]),
         .dout_default(32'd0)
@@ -308,10 +334,10 @@ module spi_sts_sync (
       sync_coherent #(
         .WIDTH(32)
       ) sync_adc_cmds_since_reset_concat (
-        .in_clk(aclk),
-        .in_resetn(aresetn),
-        .out_clk(spi_clk),
-        .out_resetn(sync_resetn),
+        .in_clk(spi_clk),
+        .in_resetn(sync_resetn),
+        .out_clk(aclk),
+        .out_resetn(aresetn),
         .din(adc_cmds_since_reset_concat[(j+1)*32-1 -:32]),
         .dout(adc_cmds_since_reset_concat_sync[(j+1)*32-1 -:32]),
         .dout_default(32'd0)

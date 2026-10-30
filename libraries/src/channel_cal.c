@@ -77,7 +77,7 @@ static int xport_adc_read(const channel_cal_ctx_t *ctx, cal_transport_t xport, i
   adc_cmd_adc_rd_ch(ctx->adc, (uint8_t)board, (uint8_t)channel, 0, verbose);
   for (int tries = 0; tries < CAL_PIO_POLL_TRIES; tries++) {
     if (FIFO_STS_WORD_COUNT(sys_sts_get_adc_data_fifo_status(ctx->sts, (uint8_t)board, false)) > 0) {
-      *out = (int16_t)(adc_read_word(ctx->adc, (uint8_t)board) & 0xFFFF);
+      *out = (int16_t)(adc_read_data(ctx->adc, (uint8_t)board) & 0xFFFF);
       return 0;
     }
     usleep(CAL_PIO_POLL_US);

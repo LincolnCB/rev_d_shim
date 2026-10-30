@@ -1,6 +1,6 @@
 import cocotb
 import os
-from cocotb.triggers import RisingEdge
+from cocotb.triggers import RisingEdge, ReadOnly
 import random
 
 from shim_ad5676_dac_ctrl_base import shim_ad5676_dac_ctrl_base
@@ -396,6 +396,54 @@ async def test_cancel(dut):
 # Free-running waveform sim (no pass/fail). Skipped in the automated suite so `make tests`
 # stays bounded; run on demand with RUN_EXAMPLE_SIMS=1 (e.g.
 # RUN_EXAMPLE_SIMS=1 ./scripts/make/test_core.sh rev_d_shim shim ad5676_dac_ctrl).
+@cocotb.test()
+async def test_debug_lane(dut):
+    """Debug words go to the debug port only, GET_CAL readback to the data port; a full debug
+    buffer drops debug words with a sticky flag and never halts the core."""
+    tb = await setup_testbench(dut)
+    tb.dut._log.info("STARTING TEST: test_debug_lane")
+    dut.debug.value = 1
+    counts = {"debug": 0, "data": 0}
+    data_words = []
+
+    async def count_writes():
+        while True:
+            await RisingEdge(dut.clk)
+            await ReadOnly()
+            if int(dut.debug_buf_wr_en.value):
+                counts["debug"] += 1
+                assert (int(dut.debug_word.value) >> 28) != tb.CAL_DATA, "calibration word on the debug port"
+            if int(dut.data_buf_wr_en.value):
+                counts["data"] += 1
+                data_words.append(int(dut.data_word.value))
+
+    await tb.reset()
+    counter_task = cocotb.start_soon(count_writes())
+    cmd_buf_task = cocotb.start_soon(tb.command_buf_model())
+
+    # Boot sweep and a write produce debug words; only GET_CAL reaches the data port
+    await tb.send_commands([tb.build_dac_wr_ch(7, 1000), tb.build_get_cal(ch=3)])
+    for _ in range(300):
+        await RisingEdge(dut.clk)
+    assert counts["debug"] > 0, "debug mode produced no debug words"
+    assert counts["data"] == 1 and (data_words[0] >> 28) == tb.CAL_DATA, f"data port carried {data_words}"
+    assert int(dut.debug_buf_overflow.value) == 0, "debug_buf_overflow set with room in the buffer"
+
+    # Full debug buffer: debug words dropped, sticky flag set, GET_CAL readback unaffected
+    dut.debug_buf_full.value = 1
+    debug_before = counts["debug"]
+    await tb.send_commands([tb.build_dac_wr_ch(5, 2000), tb.build_get_cal(ch=5)])
+    for _ in range(300):
+        await RisingEdge(dut.clk)
+    assert counts["debug"] == debug_before, "debug word written while the debug buffer was full"
+    assert int(dut.debug_buf_overflow.value) == 1, "debug_buf_overflow not set"
+    assert counts["data"] == 2, "GET_CAL readback lost while the debug buffer was full"
+    assert int(dut.data_buf_overflow.value) == 0, "data_buf_overflow set"
+    assert int(dut.state.value) != tb.STATE_ENCODING['S_ERROR'], "full debug buffer halted the core"
+
+    counter_task.cancel()
+    cmd_buf_task.cancel()
+
 @cocotb.test(skip=not os.environ.get("RUN_EXAMPLE_SIMS"))
 async def example_simulation(dut):
     tb = await setup_testbench(dut)

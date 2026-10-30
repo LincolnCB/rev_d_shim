@@ -21,12 +21,18 @@ module ads816x_adc_ctrl (
   output reg  [31:0] data_word,
   input  wire        data_buf_full,
 
+  // Debug words only; dropped when full (sticky debug_buf_overflow), never halting
+  output reg         debug_buf_wr_en,
+  output reg  [31:0] debug_word,
+  input  wire        debug_buf_full,
+
   input  wire        trigger,
   output wire        waiting_for_trig,
 
   output reg         boot_fail,
   output reg         cmd_buf_underflow,
   output reg         data_buf_overflow,
+  output reg         debug_buf_overflow,
   output reg         unexp_trig,
   output reg         delay_too_short,
   output reg         bad_cmd,
@@ -125,6 +131,9 @@ module ads816x_adc_ctrl (
   reg         wait_for_trig;
   reg         expect_next;
   reg         start_repeat;
+  reg         repeat_pending; // Repeat count word not read yet; first iteration still running
+  wire        awaiting_repeat;
+  wire        repeat_fetch;
   // Wait done signals
   wire        trig_wait_done;
   wire        delay_wait_done;
@@ -188,6 +197,7 @@ module ads816x_adc_ctrl (
   wire        debug_spi_bit;
   wire        debug_cmd_done;
   wire        try_data_write;
+  wire        try_debug_write;
 
 
   ///////////////////////////////////////////////////////////////////////////////
@@ -202,7 +212,7 @@ module ads816x_adc_ctrl (
                     : cmd_buf_empty ? 32'd0
                     : cmd_buf_word;
   assign command =  cmd_word[31:29];
-  assign next_cmd_ready = start_repeat  ? 1'b0
+  assign next_cmd_ready = awaiting_repeat ? 1'b0
                           : (repeating) ? !blocked
                           : !(cmd_buf_empty || blocked);
   // Allow a cancel command to cancel a repeat
@@ -213,7 +223,7 @@ module ads816x_adc_ctrl (
   assign cmd_buf_rd_en =  state != S_ERROR
                           && !(cmd_buf_empty || blocked)
                           && !repeating 
-                          && (cmd_done || cancel_wait || start_repeat);
+                          && (cmd_done || cancel_wait || awaiting_repeat);
   // Command bits processing
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) begin
@@ -296,14 +306,23 @@ module ads816x_adc_ctrl (
     else if (do_next_cmd && ((command == CMD_ADC_RD) || (command == CMD_ADC_RD_CH) || (command == CMD_NO_OP)))
       start_repeat <= (cancel_repeat || start_repeat) ? 1'b0 : cmd_word[REPEAT_BIT];
   end
+  // Repeat count word: may arrive any time before the first iteration finishes, else underflow.
+  // next_cmd_ready stays low while awaiting it, so it's never decoded as a command (e.g. CANCEL).
+  assign awaiting_repeat = start_repeat || repeat_pending;
+  assign repeat_fetch = awaiting_repeat && !(cmd_buf_empty || blocked);
+  always @(posedge clk) begin
+    if (!resetn || state == S_ERROR) repeat_pending <= 1'b0;
+    else if (repeat_fetch) repeat_pending <= 1'b0;
+    else if (start_repeat) repeat_pending <= 1'b1;
+  end
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) repeat_cmd_word <= 32'd0;
-    else if (start_repeat) repeat_cmd_word <= prev_cmd_buf_word & ~(32'd1 << REPEAT_BIT); // Clear the REPEAT_BIT when storing the command for repeating
+    else if (repeat_fetch) repeat_cmd_word <= prev_cmd_buf_word & ~(32'd1 << REPEAT_BIT); // Clear the REPEAT_BIT when storing the command for repeating
   end
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) repeat_counter <= 32'd0;
     else if (repeating && cmd_done) repeat_counter <= repeat_counter - 1;
-    else if (start_repeat) repeat_counter <= cmd_buf_word[31:0];
+    else if (repeat_fetch) repeat_counter <= cmd_buf_word[31:0];
   end
 
 
@@ -373,10 +392,13 @@ module ads816x_adc_ctrl (
                                      || (state == S_ADC_RD && !adc_rd_done && !wait_for_trig && delay_wait_done);
   // Bad command if next command is parsed as ERROR
   assign err_bad_cmd_w            = (do_next_cmd && next_cmd_state == S_ERROR);
-  // Command buffer underflow if expecting buffer item but buffer is empty
-  assign err_cmd_buf_underflow_w  = (cmd_done && expect_next && !next_cmd_ready) || (start_repeat && (cmd_buf_empty || blocked));
+  // Command buffer underflow if expecting buffer item but buffer is empty, or if a repeating
+  // command's first iteration finishes before its count word was read. A count read on the
+  // command's very first cycle may coincide with a one-cycle NO_OP finishing.
+  assign err_cmd_buf_underflow_w  = (cmd_done && expect_next && !next_cmd_ready)
+                                    || (cmd_done && awaiting_repeat && !(start_repeat && repeat_fetch));
   // Data buffer overflow if trying to write to data buffer while it is full
-  assign err_data_buf_overflow_w  = (try_data_write && (data_buf_full || (blocked && !debug)));
+  assign err_data_buf_overflow_w  = (try_data_write && (data_buf_full || blocked));
   // Combine all error flags into a single error output
   assign error = err_boot_fail_w
                 || err_unexp_trig_w
@@ -407,6 +429,11 @@ module ads816x_adc_ctrl (
   always @(posedge clk) begin
     if (!resetn) data_buf_overflow <= 1'b0;
     else if (err_data_buf_overflow_w) data_buf_overflow <= 1'b1;
+  end
+  // Debug buffer overflow is sticky but not an error
+  always @(posedge clk) begin
+    if (!resetn) debug_buf_overflow <= 1'b0;
+    else if (try_debug_write && debug_buf_full) debug_buf_overflow <= 1'b1;
   end
 
 
@@ -619,7 +646,7 @@ module ads816x_adc_ctrl (
   // DEBUG: Repeat counter when it starts
   always @(posedge clk) begin
     if (!resetn || state == S_ERROR) debug_repeat_bit <= 1'b0;
-    else if (start_repeat && debug) debug_repeat_bit <= 1'b1;
+    else if (repeat_fetch && debug) debug_repeat_bit <= 1'b1;
     else debug_repeat_bit <= 1'b0;
   end
   // DEBUG: n_cs_timer start value
@@ -632,20 +659,19 @@ module ads816x_adc_ctrl (
   assign debug_spi_bit = (!running_spi_bit && spi_bit > 0 && debug);
   // DEBUG: Command done
   assign debug_cmd_done = (cmd_done && debug);
-  // Attempt to write data to the data buffer if any of the following are true
-  assign try_data_write = adc_pair_data_ready
-                          || adc_ch_data_ready
-                          || debug_miso_data
-                          || debug_state_transition
-                          || debug_repeat_bit
-                          || debug_n_cs_timer
-                          || debug_spi_bit
-                          || debug_cmd_done;
+  // Sample words (pairs and single-channel reads) go to the data buffer
+  assign try_data_write = adc_pair_data_ready || adc_ch_data_ready;
+  // Debug words go to the debug buffer
+  assign try_debug_write = debug_miso_data
+                           || debug_state_transition
+                           || debug_repeat_bit
+                           || debug_n_cs_timer
+                           || debug_spi_bit
+                           || debug_cmd_done;
   // ADC data output write enable
-  // Write ADC data to the data buffer when attempting a write and buffer isn't full
   always @(posedge clk) begin
-    if (!resetn) data_buf_wr_en <= 1'b0; // Reset data word write enable on reset
-    else if (try_data_write && !(data_buf_full || (blocked && !debug))) data_buf_wr_en <= 1'b1; // Write data word when two words are ready and buffer isn't full
+    if (!resetn) data_buf_wr_en <= 1'b0;
+    else if (try_data_write && !(data_buf_full || blocked)) data_buf_wr_en <= 1'b1;
     else data_buf_wr_en <= 1'b0;
   end
   // MISO data stored flag
@@ -666,33 +692,40 @@ module ads816x_adc_ctrl (
   // For data, [15:0] is the first word, [31:16] is the second word
   always @(posedge clk) begin
     if (!resetn) data_word <= 32'd0; // Reset data word on reset
-    else if (try_data_write && !(data_buf_full || (blocked && !debug))) begin
+    else if (try_data_write && !(data_buf_full || blocked)) begin
       // If ADC data pair is ready, write the two MISO data words to the data buffer
       if (adc_pair_data_ready) begin
         data_word <= {offset_to_signed(miso_data_mosi_clk[15:0]), miso_data_storage};
       // If single ADC sample is ready, write single MISO data word with upper 16 bits zeroed
-      end else if (adc_ch_data_ready) begin
+      end else begin
         data_word <= {16'd0, offset_to_signed(miso_data_mosi_clk[15:0])};
-      // Write MISO data with debug code
-      end else if (debug_miso_data) begin
-        data_word <= {DBG_MISO_DATA, 12'd0, miso_data_mosi_clk[15:0]};
-      // Write state transition with debug code
-      end else if (debug_state_transition) begin
-        data_word <= {DBG_STATE_TRANSITION, 20'd0, prev_state[3:0], state[3:0]};
-      // Write repeat counter value with debug code
-      end else if (debug_repeat_bit) begin
-        data_word <= {DBG_REPEAT_BIT, 6'd0, repeat_cmd_word[31:26], repeat_counter[15:0]};
-      // Write n_cs timer value with debug code
-      end else if (debug_n_cs_timer) begin
-        data_word <= {DBG_N_CS_TIMER, 20'd0, (n_cs_timer + 8'd1)};
-      // Write SPI bit counter value with debug code
-      end else if (debug_spi_bit) begin
-        data_word <= {DBG_SPI_BIT, 23'd0, spi_bit};
-      // Write command done with debug code
-      end else if (debug_cmd_done) begin
-        data_word <= {DBG_CMD_DONE, 5'd0, next_cmd_ready, cmd_word[31:26], repeat_counter[15:0]};
       end
     end else data_word <= 32'd0;
+  end
+  // Debug output write enable
+  always @(posedge clk) begin
+    if (!resetn) debug_buf_wr_en <= 1'b0;
+    else if (try_debug_write && !debug_buf_full) debug_buf_wr_en <= 1'b1;
+    else debug_buf_wr_en <= 1'b0;
+  end
+  // Debug word to write (one per cycle; simultaneous events keep the first in this order)
+  always @(posedge clk) begin
+    if (!resetn) debug_word <= 32'd0;
+    else if (try_debug_write && !debug_buf_full) begin
+      if (debug_miso_data) begin
+        debug_word <= {DBG_MISO_DATA, 12'd0, miso_data_mosi_clk[15:0]};
+      end else if (debug_state_transition) begin
+        debug_word <= {DBG_STATE_TRANSITION, 20'd0, prev_state[3:0], state[3:0]};
+      end else if (debug_repeat_bit) begin
+        debug_word <= {DBG_REPEAT_BIT, 6'd0, repeat_cmd_word[31:26], repeat_counter[15:0]};
+      end else if (debug_n_cs_timer) begin
+        debug_word <= {DBG_N_CS_TIMER, 20'd0, (n_cs_timer + 8'd1)};
+      end else if (debug_spi_bit) begin
+        debug_word <= {DBG_SPI_BIT, 23'd0, spi_bit};
+      end else begin
+        debug_word <= {DBG_CMD_DONE, 5'd0, next_cmd_ready, cmd_word[31:26], repeat_counter[15:0]};
+      end
+    end else debug_word <= 32'd0;
   end
 
 

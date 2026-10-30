@@ -26,7 +26,8 @@ typedef enum {
 //////////////////// DAC Control Definitions ////////////////////
 // DAC FIFO depths
 #define DAC_CMD_FIFO_WORDCOUNT   (uint32_t)(1 << 10) // 1024 words (2^10)
-#define DAC_DATA_FIFO_WORDCOUNT  (uint32_t)(1 << 10) // 1024 words (2^10)
+#define DAC_DEBUG_FIFO_WORDCOUNT (uint32_t)(1 << 12) // 4096 words (2^12)
+#define DAC_DATA_FIFO_WORDCOUNT  (uint32_t)(1 << 5)  // 32 words (2^5), calibration readback
 
 // DAC state codes
 #define DAC_STATE_RESET          0
@@ -58,8 +59,9 @@ typedef enum {
 #define DAC_CMD_CONT_BIT 27
 #define DAC_CMD_LDAC_BIT 26
 
-// DAC data codes
-#define DAC_DATA_CODE(word)       (((word) >> 28) & 0x0F) // Top 4 bits for debug code
+// DAC data and debug word codes (top 4 bits): calibration readback on the data lane, debug words
+// on the debug lane
+#define DAC_DATA_CODE(word)       (((word) >> 28) & 0x0F)
 #define DAC_DBG_MISO_DATA         1
 #define DAC_DBG_STATE_TRANSITION  2
 #define DAC_DBG_N_CS_TIMER        3
@@ -83,15 +85,19 @@ typedef enum {
 
 // DAC control structure
 struct dac_ctrl_t {
-  volatile uint32_t *buffer[MAX_BOARDS];  // DAC FIFO (command and data)
+  volatile uint32_t *cmd[MAX_BOARDS];    // DAC command FIFO word (write)
+  volatile uint32_t *debug[MAX_BOARDS];  // DAC debug FIFO word (read)
+  volatile uint32_t *data[MAX_BOARDS];   // DAC data FIFO word (read, calibration readback)
 };
 
 // Function declarations
 // Create DAC control structure
 struct dac_ctrl_t create_dac_ctrl(bool verbose);
-// Read DAC data from a specific board
+// Read one calibration readback word from a specific board
 uint32_t dac_read_data(struct dac_ctrl_t *dac_ctrl, uint8_t board);
-// Interpret and format DAC data word as calibration or debug information
+// Read one debug word from a specific board
+uint32_t dac_read_debug(struct dac_ctrl_t *dac_ctrl, uint8_t board);
+// Interpret and format a DAC data or debug word
 char* dac_format_data(uint32_t dac_value, bool verbose);
 // Interpret and format the DAC state
 char* dac_format_state(uint8_t state_code, bool verbose);

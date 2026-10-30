@@ -3,6 +3,7 @@
 #include "clk_ctrl.h"
 #include "sys_sts.h"
 #include "map_memory.h"
+#include "hw_config.h"
 
 #define CLK_RESET_KEY        ((uint32_t)0x0000000A)
 #define CLK_LOCKED_MASK      ((uint32_t)0x1)
@@ -26,7 +27,7 @@
 #define CLK_FB_FREQ_MIN_HZ   (600000000.0)
 #define CLK_FB_FREQ_MAX_HZ   (1200000000.0)
 
-#define CLK_MAX_FREQ_HZ      (100000000.0) // 100 MHz max frequency for SPI system
+#define CLK_MAX_FREQ_HZ      ((double)SPI_CLK_MAX_HZ)
 
 #define CLK_FB_MULT_WHOLE(encoded) (((encoded) & CLK_FB_MULT_WHOLE_MASK) >> CLK_FB_MULT_WHOLE_SHIFT)
 #define CLK_FB_MULT_FRAC(encoded)  (((encoded) & CLK_FB_MULT_FRAC_MASK) >> CLK_FB_MULT_FRAC_SHIFT)
@@ -482,7 +483,7 @@ int clk_ctrl_set_target_freq(struct clk_ctrl_t *clk_ctrl, struct sys_sts_t *sys_
         double error_hz = achieved_freq - target_freq_hz;
         if (error_hz < 0.0) error_hz = -error_hz;
 
-        if (error_hz < best_error_hz && achieved_freq < CLK_MAX_FREQ_HZ) {
+        if (error_hz < best_error_hz && achieved_freq <= CLK_MAX_FREQ_HZ) {
           best_error_hz       = error_hz;
           best_clk_fb_mult_8  = fb_mult_8;
           best_clk_fb_div     = (uint8_t)fb_div;

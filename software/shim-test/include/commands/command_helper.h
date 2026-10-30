@@ -51,6 +51,9 @@ typedef struct command_context {
   pthread_t adc_cmd_stream_threads[8];       // Thread handles for ADC command streaming (from file)
   bool adc_cmd_stream_running[8];            // Status of each ADC command stream thread
   volatile bool adc_cmd_stream_stop[8];      // Stop signals for each ADC command stream thread
+  pthread_t adc_debug_stream_threads[8];     // Thread handles for ADC debug streaming (reading to file)
+  bool adc_debug_stream_running[8];          // Status of each ADC debug stream thread
+  volatile bool adc_debug_stream_stop[8];    // Stop signals for each ADC debug stream thread
 
   // DAC streaming management
   pthread_t dac_cmd_stream_threads[8];      // Thread handles for DAC command streaming
@@ -103,6 +106,7 @@ int resolve_file_pattern(const char* pattern, char* resolved_path, size_t resolv
 // File path utilities
 void clean_and_expand_path(const char* input_path, char* full_path, size_t full_path_size);
 void set_file_permissions(const char* file_path, bool verbose);
+int create_output_file(const char* file_path);
 
 // File selection utilities
 int prompt_file_selection(const char* prompt_text, const char* default_file,

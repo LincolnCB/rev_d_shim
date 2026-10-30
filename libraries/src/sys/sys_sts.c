@@ -4,6 +4,7 @@
 #include <unistd.h> // For read, write, close functions
 #include <fcntl.h> // For open function
 #include <pthread.h> // For pthread functions
+#include <sys/mman.h> // For munmap function
 #include "sys_sts.h"
 #include "map_memory.h"
 
@@ -24,10 +25,13 @@ struct sys_sts_t create_sys_sts(bool verbose) {
   // Initialize FIFO status pointers for each board
   for (int i = 0; i < 8; i++) {
     sys_sts.dac_cmd_fifo_sts[i] = sys_sts_ptr + DAC_CMD_FIFO_STS_OFFSET(i);
+    sys_sts.dac_debug_fifo_sts[i] = sys_sts_ptr + DAC_DEBUG_FIFO_STS_OFFSET(i);
     sys_sts.dac_data_fifo_sts[i] = sys_sts_ptr + DAC_DATA_FIFO_STS_OFFSET(i);
     sys_sts.adc_cmd_fifo_sts[i] = sys_sts_ptr + ADC_CMD_FIFO_STS_OFFSET(i);
+    sys_sts.adc_debug_fifo_sts[i] = sys_sts_ptr + ADC_DEBUG_FIFO_STS_OFFSET(i);
     sys_sts.adc_data_fifo_sts[i] = sys_sts_ptr + ADC_DATA_FIFO_STS_OFFSET(i);
   }
+  sys_sts.debug_full = sys_sts_ptr + DEBUG_FULL_OFFSET;
 
   // Initialize trigger FIFO status pointers
   sys_sts.trig_cmd_fifo_sts = sys_sts_ptr + TRIG_CMD_FIFO_STS_OFFSET;
@@ -58,6 +62,24 @@ struct sys_sts_t create_sys_sts(bool verbose) {
   }
 
   return sys_sts;
+}
+
+// Count the boards present from the FIFO-present status bits (see sys_sts.h)
+int board_count(void) {
+  static int cached = -1;
+  if (cached >= 0) return cached;
+
+  volatile uint32_t *sts = map_pl_reg(SYS_STS_DEV, false);
+  if (sts == NULL) {
+    fprintf(stderr, "Failed to map system status to count boards.\n");
+    exit(EXIT_FAILURE);
+  }
+  int count = 0;
+  while (count < MAX_BOARDS && FIFO_PRESENT(sts[DAC_CMD_FIFO_STS_OFFSET(count)])) count++;
+  munmap((void *)sts, (size_t)sysconf(_SC_PAGESIZE));
+
+  cached = count;
+  return count;
 }
 
 // Get hardware status register value
@@ -383,7 +405,16 @@ uint32_t sys_sts_get_dac_cmd_fifo_status(struct sys_sts_t *sys_sts, uint8_t boar
   return get_fifo_status(sys_sts->dac_cmd_fifo_sts[board], "DAC Command", verbose);
 }
 
-// Get DAC data FIFO status for a specific board
+// Get DAC debug FIFO status for a specific board
+uint32_t sys_sts_get_dac_debug_fifo_status(struct sys_sts_t *sys_sts, uint8_t board, bool verbose) {
+  if (board >= 8) {
+    fprintf(stderr, "Invalid board number %u for DAC debug FIFO status. Must be 0-7.\n", board);
+    exit(EXIT_FAILURE);
+  }
+  return get_fifo_status(sys_sts->dac_debug_fifo_sts[board], "DAC Debug", verbose);
+}
+
+// Get DAC data (calibration readback) FIFO status for a specific board
 uint32_t sys_sts_get_dac_data_fifo_status(struct sys_sts_t *sys_sts, uint8_t board, bool verbose) {
   if (board >= 8) {
     fprintf(stderr, "Invalid board number %u for DAC data FIFO status. Must be 0-7.\n", board);
@@ -399,6 +430,15 @@ uint32_t sys_sts_get_adc_cmd_fifo_status(struct sys_sts_t *sys_sts, uint8_t boar
     exit(EXIT_FAILURE);
   }
   return get_fifo_status(sys_sts->adc_cmd_fifo_sts[board], "ADC Command", verbose);
+}
+
+// Get ADC debug FIFO status for a specific board
+uint32_t sys_sts_get_adc_debug_fifo_status(struct sys_sts_t *sys_sts, uint8_t board, bool verbose) {
+  if (board >= 8) {
+    fprintf(stderr, "Invalid board number %u for ADC debug FIFO status. Must be 0-7.\n", board);
+    exit(EXIT_FAILURE);
+  }
+  return get_fifo_status(sys_sts->adc_debug_fifo_sts[board], "ADC Debug", verbose);
 }
 
 // Get ADC data FIFO status for a specific board
@@ -418,6 +458,13 @@ uint32_t sys_sts_get_trig_cmd_fifo_status(struct sys_sts_t *sys_sts, bool verbos
 // Get trigger data FIFO status
 uint32_t sys_sts_get_trig_data_fifo_status(struct sys_sts_t *sys_sts, bool verbose) {
   return get_fifo_status(sys_sts->trig_data_fifo_sts, "Trigger Data", verbose);
+}
+
+// Get the debug full word
+uint32_t sys_sts_get_debug_full(struct sys_sts_t *sys_sts, bool verbose) {
+  uint32_t value = *(sys_sts->debug_full);
+  if (verbose) printf("Debug full raw: 0x%08" PRIx32 "\n", value);
+  return value;
 }
 
 // Get trigger counter value
